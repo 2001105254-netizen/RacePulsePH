@@ -1,0 +1,31 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 64 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    
+    function isValidOrder(data) {
+      return data.keys().hasAll(['runnerName', 'bibNumber', 'distance', 'finishingTime', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().size() >= 7 && data.keys().size() <= 9
+        && data.runnerName is string && data.runnerName.size() >= 1 && data.runnerName.size() <= 100
+        && data.bibNumber is string && data.bibNumber.size() >= 1 && data.bibNumber.size() <= 20
+        && data.distance is string && data.distance.size() >= 1 && data.distance.size() <= 50
+        && data.finishingTime is string && data.finishingTime.size() >= 1 && data.finishingTime.size() <= 20
+        && data.status is string && (data.status == 'queued' || data.status == 'inprogress' || data.status == 'ready' || data.status == 'completed')
+        && data.createdAt is string
+        && data.updatedAt is string
+        && (!data.keys().hasAny(['rank']) || (data.rank is string && data.rank.size() <= 50))
+        && (!data.keys().hasAny(['customInscription']) || (data.customInscription is string && data.customInscription.size() <= 150));
+    }
+
+    match /orders/{orderId} {
+      allow get: if isValidId(orderId);
+      allow list: if true;
+      allow create: if isValidId(orderId) && isValidOrder(request.resource.data);
+      allow update: if isValidId(orderId) && isValidOrder(request.resource.data);
+      allow delete: if true; // Operators can delete incorrect/canceled entries
+    }
+  }
+}

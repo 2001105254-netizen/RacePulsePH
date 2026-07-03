@@ -1,0 +1,6 @@
+{
+  "name": "RacePulsePH by Loud & Clear",
+  "description": "An app for managing race medal engraving orders, allowing runners to input their details and operators to view, manage, and copy details.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

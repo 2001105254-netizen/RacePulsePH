@@ -1,0 +1,57 @@
+{
+  "entities": {
+    "Order": {
+      "title": "Order",
+      "description": "A race medal engraving order placed by a customer in-person or live.",
+      "type": "object",
+      "properties": {
+        "runnerName": {
+          "type": "string",
+          "description": "The runner's full name"
+        },
+        "bibNumber": {
+          "type": "string",
+          "description": "The runner's race number (bib)"
+        },
+        "distance": {
+          "type": "string",
+          "description": "The race distance, e.g., 5K, 10K, Half, Full"
+        },
+        "finishingTime": {
+          "type": "string",
+          "description": "The runner's finish time (HH:MM:SS)"
+        },
+        "rank": {
+          "type": "string",
+          "description": "The rank or category information"
+        },
+        "customInscription": {
+          "type": "string",
+          "description": "Custom message or inscription for the medal"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["queued", "inprogress", "ready", "completed"],
+          "description": "The flow status of the medal engraving"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC3339 timestamp of order creation"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC3339 timestamp of order modification"
+        }
+      },
+      "required": ["runnerName", "bibNumber", "distance", "finishingTime", "status", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Collection of race medal engraving orders."
+    }
+  }
+}
