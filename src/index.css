@@ -1,36 +1,184 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
 @import "tailwindcss";
 
+/* Toggle-driven (not OS-preference-driven) dark mode: .dark class on <html> */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Space Grotesk", sans-serif;
   --font-mono: "JetBrains Mono", monospace;
 
-  /* Redefine Amber palette to premium glowing Obsidian Red shades */
-  --color-amber-50: #fef2f2;
-  --color-amber-100: #fee2e2;
-  --color-amber-200: #fca5a5;
-  --color-amber-300: #f87171;
-  --color-amber-400: #ef4444;
-  --color-amber-500: #dc2626; /* Obsidian Core Red */
-  --color-amber-600: #b91c1c; 
-  --color-amber-700: #991b1b;
-  --color-amber-800: #7f1d1d;
-  --color-amber-900: #450a0a;
-  --color-amber-950: #2a0808;
-  --color-amber-505: #f87171;
-  --color-amber-550: #f87171;
-  
+  /* Premium Apple-red accent scale (~#FF3B30 system red). "amber-*" and "red-*"
+     are both mapped to this same scale so every existing usage of either name
+     renders identically - one accent color, used consistently everywhere. */
+  --color-amber-50: #fff1f0;
+  --color-amber-100: #ffe1de;
+  --color-amber-200: #ffbcb5;
+  --color-amber-300: #ff8f85;
+  --color-amber-400: #ff6259;
+  --color-amber-500: #ff3b30; /* Apple System Red */
+  --color-amber-600: #e0362c;
+  --color-amber-700: #c22e25;
+  --color-amber-800: #9e2019;
+  --color-amber-900: #6b1512;
+  --color-amber-950: #3d0b09;
+  --color-amber-505: #ff6259;
+  --color-amber-550: #ff6259;
+
+  --color-red-50: #fff1f0;
+  --color-red-100: #ffe1de;
+  --color-red-200: #ffbcb5;
+  --color-red-300: #ff8f85;
+  --color-red-400: #ff6259;
+  --color-red-500: #ff3b30; /* Apple System Red */
+  --color-red-600: #e0362c;
+  --color-red-700: #c22e25;
+  --color-red-800: #9e2019;
+  --color-red-900: #6b1512;
+  --color-red-950: #3d0b09;
+
   /* Additional Granite Black theme accents */
-  --color-granite-dark: #090a0c;
+  --color-granite-dark: #0a0a0a;
   --color-granite-card: #121316;
   --color-granite-inner: #070809;
+
+  --animate-fadeIn: fadeIn 0.5s ease-out both;
+}
+
+/* Semantic surface/text tokens: light values are the default, .dark overrides them */
+:root {
+  --surface-page: #f5f5f7;
+  --surface-card: #ffffff;
+  --surface-inset: #f5f5f7;
+  --surface-hover: #e8e8ec;
+  --border-default: #e4e4e7;
+  --border-subtle: #edeef0;
+  --text-primary: #0a0a0a;
+  --text-secondary: #52525b;
+  --text-muted: #86868b;
+  color-scheme: light;
+
+  /* Design-system constants: shared across every page for a consistent look */
+  --radius-panel: 26px;
+  --radius-control: 20px;
+  --glass-blur: 28px;
+}
+
+.dark {
+  --surface-page: #0a0a0a;
+  --surface-card: #141414;
+  --surface-inset: #0a0a0b;
+  --surface-hover: #27272a;
+  --border-default: #27272a;
+  --border-subtle: #1c1c1e;
+  --text-primary: #f5f5f7;
+  --text-secondary: #a1a1aa;
+  --text-muted: #86868b;
+  color-scheme: dark;
 }
 
 body {
   font-family: var(--font-sans);
-  background-color: #090a0c; /* High-end raw Granite Black */
-  color: #f4f4f5;
+  background-color: var(--surface-page);
+  color: var(--text-primary);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* ============================================================
+   Design System: Glassmorphism primitives
+   Used consistently across every page - cards, modals, tables,
+   nav, inputs - so the whole app reads as one visual system.
+   ============================================================ */
+
+.glass-panel {
+  background: color-mix(in srgb, var(--surface-card) 62%, transparent);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid color-mix(in srgb, var(--border-default) 70%, transparent);
+  border-radius: var(--radius-panel);
+  box-shadow: 0 24px 60px -16px rgba(0, 0, 0, 0.16), 0 1px 0 0 rgba(255, 255, 255, 0.4) inset;
+}
+
+.dark .glass-panel {
+  box-shadow: 0 24px 70px -12px rgba(0, 0, 0, 0.65), 0 1px 0 0 rgba(255, 255, 255, 0.04) inset;
+}
+
+.glass-inset {
+  background: color-mix(in srgb, var(--surface-inset) 72%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+}
+
+.glass-nav {
+  background: color-mix(in srgb, var(--surface-card) 55%, transparent);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  border: 1px solid color-mix(in srgb, var(--border-default) 70%, transparent);
+}
+
+/* Static "floating" heading treatment: elevation is implied through layered
+   shadow and glow, not motion - the text should look suspended while staying
+   completely still. Dark mode gets a brushed-metal embossed fill (light mode
+   stays solid text - a silver gradient has no contrast on a white page). */
+.heading-float {
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5), 0 18px 34px rgba(0, 0, 0, 0.18);
+}
+
+.dark .heading-float {
+  background: linear-gradient(180deg, #ffffff 0%, #e4e4e7 45%, #98989f 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35), 0 4px 16px rgba(0, 0, 0, 0.8), 0 22px 45px rgba(255, 59, 48, 0.3);
+}
+
+.heading-float-chip {
+  box-shadow: 0 20px 45px -12px rgba(255, 59, 48, 0.45), 0 2px 0 0 rgba(255, 255, 255, 0.15) inset;
+}
+
+.dark .heading-float-chip {
+  box-shadow: 0 24px 55px -10px rgba(255, 59, 48, 0.55), 0 2px 0 0 rgba(255, 255, 255, 0.08) inset;
+}
+
+/* Hero glow: a concentrated red-to-black corner gradient for page/section
+   headers, layered underneath .glass-panel to create a dramatic banner
+   moment behind big titles (a stronger, focused accent vs. the ambient
+   page-wide glow). */
+.hero-glow {
+  background-image:
+    radial-gradient(ellipse 60% 100% at 12% 0%, rgba(255, 59, 48, 0.16), transparent 60%),
+    linear-gradient(120deg, rgba(255, 59, 48, 0.10), transparent 55%);
+}
+
+.dark .hero-glow {
+  background-image:
+    radial-gradient(ellipse 60% 100% at 12% 0%, rgba(255, 59, 48, 0.35), transparent 60%),
+    linear-gradient(120deg, rgba(255, 59, 48, 0.16), transparent 55%);
+}
+
+/* Full-page dark-mode backdrop: a single dramatic red light beam shining in
+   from the top-left corner, fading through deep red into black - replaces
+   the softer scattered-blob glow used in light mode. Built from layered
+   gradients (a bright corner hotspot, a conic "ray" fan, a broad soft
+   falloff) rather than a bitmap so it stays crisp at any size. */
+.dark .ambient-glow {
+  background-color: #000000;
+  background-image:
+    radial-gradient(circle at 3% 4%, rgba(255, 232, 225, 0.9) 0%, rgba(255, 100, 80, 0.55) 5%, rgba(255, 60, 45, 0.3) 12%, transparent 26%),
+    conic-gradient(from 95deg at 0% 0%,
+      transparent 0deg,
+      rgba(255, 90, 70, 0.16) 8deg,
+      transparent 18deg,
+      rgba(255, 90, 70, 0.12) 32deg,
+      transparent 44deg,
+      rgba(255, 90, 70, 0.15) 58deg,
+      transparent 72deg,
+      transparent 90deg),
+    radial-gradient(ellipse 90% 75% at 0% 0%, rgba(190, 20, 15, 0.4) 0%, rgba(90, 8, 8, 0.2) 32%, transparent 60%);
+  background-repeat: no-repeat;
 }
 
 /* Custom card animations and keyframes */
@@ -51,3 +199,15 @@ body {
 .pulse-ring {
   animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+

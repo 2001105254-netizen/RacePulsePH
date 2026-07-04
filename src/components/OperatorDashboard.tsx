@@ -679,7 +679,7 @@ export default function OperatorDashboard({
       
       {/* Alert bar for live arrivals */}
       {newOrderAlert && (
-        <div className="bg-gradient-to-r from-amber-600 to-amber-500 text-black px-5 py-3 rounded-xl font-black font-display shadow-2xl border border-amber-400 flex items-center justify-between text-xs tracking-wider uppercase animate-bounce">
+        <div className="bg-gradient-to-r from-amber-600 to-amber-500 text-black px-5 py-3 rounded-[20px] font-black font-display shadow-2xl border border-amber-400 flex items-center justify-between text-xs tracking-wider uppercase animate-bounce">
           <div className="flex items-center gap-2">
             <span className="p-1.5 bg-black text-amber-500 rounded-lg">🔔</span>
             <span>{newOrderAlert}</span>
@@ -689,14 +689,14 @@ export default function OperatorDashboard({
       )}
 
       {/* Header Operator Info */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-zinc-800 pb-5 gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between glass-panel hero-glow px-4 sm:px-6 py-5 gap-4 animate-fadeIn">
         <div>
           <div className="flex items-center gap-2">
             <span className="text-[10px] tracking-widest font-extrabold text-amber-500 font-display bg-amber-500/10 px-2.5 py-1 rounded-full uppercase border border-amber-500/20">Engraver Control</span>
-            <span className="h-4 w-px bg-zinc-800"></span>
+            <span className="h-4 w-px bg-[var(--surface-hover)]"></span>
             <div className="flex items-center gap-2">
               <span className={`w-2 h-2 rounded-full ${typeof navigator !== 'undefined' && navigator.onLine ? 'bg-green-500 animate-pulse' : 'bg-rose-500 animate-ping'}`}></span>
-              <span className="text-xs text-zinc-400 font-bold uppercase tracking-wider font-mono flex items-center gap-1.5">
+              <span className="text-xs text-[var(--text-secondary)] font-bold uppercase tracking-wider font-mono flex items-center gap-1.5">
                 {typeof navigator !== 'undefined' && navigator.onLine ? (
                   <>
                     <Wifi className="w-3.5 h-3.5 text-green-550" />
@@ -711,8 +711,8 @@ export default function OperatorDashboard({
               </span>
             </div>
           </div>
-          <h1 className="text-2xl font-black tracking-tight font-display text-white mt-1.5 uppercase">Medal Engraving Command Center</h1>
-          <p className="text-xs text-zinc-400 mt-1">Copy-paste data directly to laser machine and handle runner statuses with zero miskey errors.</p>
+          <h1 className="heading-float text-2xl font-black tracking-tight font-display text-[var(--text-primary)] mt-1.5 uppercase">Medal Engraving Command Center</h1>
+          <p className="text-xs text-[var(--text-secondary)] mt-1">Copy-paste data directly to laser machine and handle runner statuses with zero miskey errors.</p>
         </div>
 
         {/* Action Controls right */}
@@ -720,7 +720,7 @@ export default function OperatorDashboard({
           {/* LightBurn Guide Button */}
           <button
             onClick={() => setShowLightBurnModal(true)}
-            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800 transition duration-150 uppercase tracking-wider"
+            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-[20px] bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-default)] text-[var(--text-primary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)] transition duration-150 uppercase tracking-wider"
             title="Open interactive manual for LightBurn Variable Text integration"
           >
             <HelpCircle className="w-4 h-4 text-amber-500" /> Guide
@@ -729,7 +729,7 @@ export default function OperatorDashboard({
           {/* Export CSV for LightBurn */}
           <button
             onClick={handleDownloadCSV}
-            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-[#121316] hover:bg-zinc-900 text-amber-500 border border-zinc-805 hover:border-zinc-750 font-extrabold transition duration-150 uppercase tracking-wider active:scale-95"
+            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-[20px] bg-[var(--surface-card)]/72 backdrop-blur-2xl hover:bg-[var(--surface-inset)]/75 backdrop-blur-md text-amber-500 border border-[var(--border-default)] hover:border-[var(--border-default)] font-extrabold transition duration-150 uppercase tracking-wider active:scale-95"
             title="Download formatted CSV file to sync with LightBurn's Variable Text pane"
           >
             <FileDown className="w-4 h-4" /> Export CSV
@@ -738,7 +738,7 @@ export default function OperatorDashboard({
           {/* Generate PDF Report Button */}
           <button
             onClick={() => setShowPdfModal(true)}
-            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-[#121316] hover:bg-zinc-900 text-red-400 border border-zinc-805 hover:border-zinc-750 font-extrabold transition duration-150 uppercase tracking-wider active:scale-95"
+            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-[20px] bg-[var(--surface-card)]/72 backdrop-blur-2xl hover:bg-[var(--surface-inset)]/75 backdrop-blur-md text-red-400 border border-[var(--border-default)] hover:border-[var(--border-default)] font-extrabold transition duration-150 uppercase tracking-wider active:scale-95"
             title="Generate and download a printable PDF report of registered athletes and medal status"
           >
             <FileText className="w-4 h-4 text-red-400" /> PDF Report
@@ -751,7 +751,7 @@ export default function OperatorDashboard({
               setQrScanSuccessMessage('');
               setShowQrScanModal(true);
             }}
-            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white border border-violet-700 font-extrabold transition duration-150 uppercase tracking-wider active:scale-95"
+            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-[20px] bg-violet-600 hover:bg-violet-500 text-white border border-violet-700 font-extrabold transition duration-150 uppercase tracking-wider active:scale-95"
             title="Activate laptop webcam to scan an offline runner's QR Sync Ticket"
           >
             <QrCode className="w-4 h-4 text-violet-200" /> Scan QR
@@ -764,7 +764,7 @@ export default function OperatorDashboard({
               setBackupErrorMessage('');
               setShowBackupModal(true);
             }}
-            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-[#121316] hover:bg-zinc-900 border border-zinc-805 hover:border-zinc-750 text-green-500 font-extrabold transition duration-150 uppercase tracking-wider active:scale-95"
+            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-[20px] bg-[var(--surface-card)]/72 backdrop-blur-2xl hover:bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-default)] hover:border-[var(--border-default)] text-green-500 font-extrabold transition duration-150 uppercase tracking-wider active:scale-95"
             title="Backup, export or import the entire queue for dual-laptop completely offline operations"
           >
             <DownloadCloud className="w-4 h-4 text-green-550" /> Offline Backup
@@ -776,21 +776,21 @@ export default function OperatorDashboard({
               setSoundEnabled(!soundEnabled);
               triggerBeepSound();
             }}
-            className={`flex items-center gap-2 text-xs font-bold px-3 py-2 rounded-xl border transition duration-150 uppercase tracking-wider ${
+            className={`flex items-center gap-2 text-xs font-bold px-3 py-2 rounded-[20px] border transition duration-150 uppercase tracking-wider ${
               soundEnabled 
                 ? 'bg-amber-500/10 border-amber-500/30 text-amber-500' 
-                : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800'
+                : 'bg-[var(--surface-inset)]/75 backdrop-blur-md border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
             }`}
             title="Toggle buzzer sound when new customer submits engraving request"
           >
-            {soundEnabled ? <Volume2 className="w-4 h-4 text-amber-500" /> : <VolumeX className="w-4 h-4 text-zinc-500" />}
+            {soundEnabled ? <Volume2 className="w-4 h-4 text-amber-500" /> : <VolumeX className="w-4 h-4 text-[var(--text-secondary)]" />}
             {soundEnabled ? "Buzzer On" : "Buzzer Off"}
           </button>
 
           {/* Purge / Clear DB */}
           <button
             onClick={handlePurgeDatabase}
-            className="text-xs text-zinc-400 hover:text-red-400 hover:bg-red-950/20 border border-zinc-800 hover:border-red-900 font-bold px-3.5 py-2 rounded-xl transition duration-150 flex items-center gap-1.5 uppercase tracking-wider"
+            className="text-xs text-[var(--text-secondary)] hover:text-red-400 hover:bg-red-950/20 border border-[var(--border-default)] hover:border-red-900 font-bold px-3.5 py-2 rounded-[20px] transition duration-150 flex items-center gap-1.5 uppercase tracking-wider"
             title="Deletes all database documents for a completely fresh queue."
           >
             <Trash2 className="w-3.5 h-3.5" /> Purge DB
@@ -805,7 +805,7 @@ export default function OperatorDashboard({
               setPasscodeSuccess(false);
               setShowPasscodeModal(true);
             }}
-            className="text-xs text-zinc-400 border border-zinc-800 hover:bg-zinc-900 hover:text-white font-bold px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 uppercase tracking-wider"
+            className="text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)]/75 backdrop-blur-md hover:text-[var(--text-primary)] font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
             title="Change operator access passcode"
           >
             <Lock className="w-3.5 h-3.5 text-amber-500" /> Passcode
@@ -813,7 +813,7 @@ export default function OperatorDashboard({
           
           <button 
             onClick={onBackToRoleSelection}
-            className="text-xs text-zinc-400 border border-zinc-800 hover:bg-zinc-900 hover:text-white font-bold px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 uppercase tracking-wider"
+            className="text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)]/75 backdrop-blur-md hover:text-[var(--text-primary)] font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
           >
             ← Exit Panel
           </button>
@@ -824,72 +824,72 @@ export default function OperatorDashboard({
       <div id="operator_stats_grid" className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-4">
         
         {/* Total Avails */}
-        <div className="bg-[#141414] border border-zinc-850 rounded-xl p-4 shadow-sm flex items-center gap-3">
+        <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-subtle)] rounded-[20px] p-4 shadow-sm flex items-center gap-3">
           <div className="p-3 bg-amber-500/10 text-amber-500 rounded-lg">
             <TrendingUp className="w-5 h-5" />
           </div>
           <div>
-            <span className="block text-[9px] uppercase font-extrabold text-zinc-500 tracking-wider">Total Availed</span>
-            <span className="text-xl font-black font-mono text-white leading-none">{stats.total}</span>
-            <span className="text-[9px] block text-zinc-500 mt-0.5 font-medium">Recorded Submissions</span>
+            <span className="block text-[9px] uppercase font-extrabold text-[var(--text-secondary)] tracking-wider">Total Availed</span>
+            <span className="text-xl font-black font-mono text-[var(--text-primary)] leading-none">{stats.total}</span>
+            <span className="text-[9px] block text-[var(--text-secondary)] mt-0.5 font-medium">Recorded Submissions</span>
           </div>
         </div>
 
         {/* Queued */}
-        <div className="bg-[#141414] border border-zinc-850 rounded-xl p-4 shadow-sm flex items-center gap-3">
+        <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-subtle)] rounded-[20px] p-4 shadow-sm flex items-center gap-3">
           <div className="p-3 bg-amber-500/10 text-amber-500 rounded-lg">
             <Clock className="w-5 h-5 animate-pulse" />
           </div>
           <div>
-            <span className="block text-[9px] uppercase font-extrabold text-zinc-500 tracking-wider">Queue Backlog</span>
+            <span className="block text-[9px] uppercase font-extrabold text-[var(--text-secondary)] tracking-wider">Queue Backlog</span>
             <span className="text-xl font-black font-mono text-amber-500 leading-none">{stats.queued}</span>
-            <span className="text-[9px] block text-zinc-500 mt-0.5 font-medium">Awaiting Laser Cut</span>
+            <span className="text-[9px] block text-[var(--text-secondary)] mt-0.5 font-medium">Awaiting Laser Cut</span>
           </div>
         </div>
 
         {/* In Progress */}
-        <div className="bg-[#141414] border border-zinc-850 rounded-xl p-4 shadow-sm flex items-center gap-3">
+        <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-subtle)] rounded-[20px] p-4 shadow-sm flex items-center gap-3">
           <div className="p-3 bg-orange-500/10 text-orange-500 rounded-lg animate-pulse">
             <Play className="w-5 h-5 fill-orange-500" />
           </div>
           <div>
-            <span className="block text-[9px] uppercase font-extrabold text-zinc-500 tracking-wider">Laser Active</span>
+            <span className="block text-[9px] uppercase font-extrabold text-[var(--text-secondary)] tracking-wider">Laser Active</span>
             <span className="text-xl font-black font-mono text-orange-500 leading-none">{stats.inprogress}</span>
-            <span className="text-[9px] block text-zinc-500 mt-0.5 font-medium">Engraving Ingress</span>
+            <span className="text-[9px] block text-[var(--text-secondary)] mt-0.5 font-medium">Engraving Ingress</span>
           </div>
         </div>
 
         {/* Ready */}
-        <div className="bg-[#141414] border border-zinc-850 rounded-xl p-4 shadow-sm flex items-center gap-3">
+        <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-subtle)] rounded-[20px] p-4 shadow-sm flex items-center gap-3">
           <div className="p-3 bg-blue-500/10 text-blue-400 rounded-lg">
             <Sparkles className="w-5 h-5 text-blue-400" />
           </div>
           <div>
-            <span className="block text-[9px] uppercase font-extrabold text-zinc-500 tracking-wider">Ready for P/U</span>
+            <span className="block text-[9px] uppercase font-extrabold text-[var(--text-secondary)] tracking-wider">Ready for P/U</span>
             <span className="text-xl font-black font-mono text-blue-400 leading-none">{stats.ready}</span>
-            <span className="text-[9px] block text-zinc-500 mt-0.5 font-medium">Standing by Cabin</span>
+            <span className="text-[9px] block text-[var(--text-secondary)] mt-0.5 font-medium">Standing by Cabin</span>
           </div>
         </div>
 
         {/* Completed */}
-        <div className="bg-[#141414] border border-zinc-850 rounded-xl p-4 shadow-sm flex items-center gap-3">
+        <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-subtle)] rounded-[20px] p-4 shadow-sm flex items-center gap-3">
           <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-lg">
             <CheckSquare className="w-5 h-5" />
           </div>
           <div>
-            <span className="block text-[9px] uppercase font-extrabold text-zinc-500 tracking-wider">Handed Over</span>
+            <span className="block text-[9px] uppercase font-extrabold text-[var(--text-secondary)] tracking-wider">Handed Over</span>
             <span className="text-xl font-black font-mono text-emerald-400 leading-none">{stats.completed}</span>
-            <span className="text-[9px] block text-zinc-500 mt-0.5 font-medium">Complete / Closed</span>
+            <span className="text-[9px] block text-[var(--text-secondary)] mt-0.5 font-medium">Complete / Closed</span>
           </div>
         </div>
 
         {/* Price Per Medal Input */}
-        <div className="bg-[#141414] border border-zinc-850 rounded-xl p-4 shadow-sm flex items-center gap-3">
+        <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-subtle)] rounded-[20px] p-4 shadow-sm flex items-center gap-3">
           <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-lg">
             <Coins className="w-5 h-5 text-indigo-400" />
           </div>
           <div className="flex-1 min-w-0">
-            <span className="block text-[9px] uppercase font-extrabold text-zinc-500 tracking-wider">Price per Medal</span>
+            <span className="block text-[9px] uppercase font-extrabold text-[var(--text-secondary)] tracking-wider">Price per Medal</span>
             <div className="flex items-center gap-1 mt-0.5">
               <span className="text-sm font-black font-mono text-amber-500">₱</span>
               <input
@@ -900,16 +900,16 @@ export default function OperatorDashboard({
                   const val = parseFloat(e.target.value);
                   handlePriceChange(isNaN(val) ? 0 : val);
                 }}
-                className="w-full bg-[#0C0C0C] text-white border border-zinc-800 rounded px-1.5 py-0.5 text-sm font-black font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                className="w-full bg-[var(--surface-inset)]/75 backdrop-blur-md text-[var(--text-primary)] border border-[var(--border-default)] rounded px-1.5 py-0.5 text-sm font-black font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
                 placeholder="0"
               />
             </div>
-            <span className="text-[9px] block text-zinc-500 mt-1 font-medium leading-none">Setup pricing</span>
+            <span className="text-[9px] block text-[var(--text-secondary)] mt-1 font-medium leading-none">Setup pricing</span>
           </div>
         </div>
 
         {/* Total Earnings */}
-        <div className="bg-[#141414] border border-zinc-850 rounded-xl p-4 shadow-sm flex items-center gap-3 col-span-2 sm:col-span-1">
+        <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-subtle)] rounded-[20px] p-4 shadow-sm flex items-center gap-3 col-span-2 sm:col-span-1">
           <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-lg">
             <DollarSign className="w-5 h-5 text-emerald-400" />
           </div>
@@ -918,7 +918,7 @@ export default function OperatorDashboard({
             <span className="text-lg font-black font-mono text-emerald-400 leading-none block mt-0.5">
               ₱{(stats.completed * pricePerMedal).toLocaleString()}
             </span>
-            <span className="text-[9px] block text-zinc-500 mt-1 font-mono leading-none">
+            <span className="text-[9px] block text-[var(--text-secondary)] mt-1 font-mono leading-none">
               Potential: ₱{(stats.total * pricePerMedal).toLocaleString()}
             </span>
           </div>
@@ -927,14 +927,14 @@ export default function OperatorDashboard({
       </div>
 
       {/* Double-Check Code Lookup isolated verification */}
-      <div id="double_check_terminal" className="bg-[#141414] text-zinc-100 rounded-2xl p-5 shadow-2xl border border-zinc-850">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-zinc-850 pb-4 mb-4">
+      <div id="double_check_terminal" className="bg-[var(--surface-card)]/72 backdrop-blur-2xl text-[var(--text-primary)] rounded-[26px] p-5 shadow-2xl border border-[var(--border-subtle)]">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-[var(--border-subtle)] pb-4 mb-4">
           <div>
             <h2 className="text-sm font-bold font-display text-amber-500 flex items-center gap-2 uppercase tracking-wide">
               <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
               Double-Check isolated Terminal
             </h2>
-            <p className="text-xs text-zinc-400 mt-0.5">Type or search any short ref code. Displays values in grand fonts to double check spelling.</p>
+            <p className="text-xs text-[var(--text-secondary)] mt-0.5">Type or search any short ref code. Displays values in grand fonts to double check spelling.</p>
           </div>
           <div className="relative w-full md:w-56">
             <input
@@ -943,12 +943,12 @@ export default function OperatorDashboard({
               maxLength={4}
               value={doubleCheckCode}
               onChange={(e) => setDoubleCheckCode(e.target.value.toUpperCase())}
-              className="w-full bg-[#0C0C0C] text-white border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs font-bold font-mono tracking-widest placeholder-zinc-700 focus:outline-none focus:ring-1 focus:ring-amber-500"
+              className="w-full bg-[var(--surface-inset)]/75 backdrop-blur-md text-[var(--text-primary)] border border-[var(--border-default)] rounded-[20px] px-3.5 py-2.5 text-xs font-bold font-mono tracking-widest placeholder-[var(--text-muted)] focus:outline-none focus:ring-1 focus:ring-amber-500"
             />
             {doubleCheckCode && (
               <button 
                 onClick={() => setDoubleCheckCode('')}
-                className="absolute right-3.5 top-3 text-xs text-zinc-500 hover:text-white"
+                className="absolute right-3.5 top-3 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
               >
                 ✕
               </button>
@@ -958,11 +958,11 @@ export default function OperatorDashboard({
 
         {/* Found Result Panel */}
         {foundDoubleCheckOrder ? (
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center bg-[#0C0C0C] border border-amber-500/20 rounded-xl p-4 animate-fadeIn">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center bg-[var(--surface-inset)]/75 backdrop-blur-md border border-amber-500/20 rounded-[20px] p-4 animate-fadeIn">
             
             {/* Short Code badge */}
-            <div className="md:col-span-2 text-center md:border-r border-zinc-850 pr-2">
-              <span className="text-[9px] text-zinc-505 font-bold block uppercase tracking-wider">Matched Ref</span>
+            <div className="md:col-span-2 text-center md:border-r border-[var(--border-subtle)] pr-2">
+              <span className="text-[9px] text-[var(--text-secondary)] font-bold block uppercase tracking-wider">Matched Ref</span>
               <span className="text-4xl font-mono font-black text-amber-500 block my-1">{foundDoubleCheckOrder.id}</span>
               <span className="text-[10px] py-1 px-2.5 bg-amber-500 text-black rounded-lg inline-block font-black uppercase">
                 {foundDoubleCheckOrder.status}
@@ -973,12 +973,12 @@ export default function OperatorDashboard({
             <div className="md:col-span-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               
               {/* Runner name */}
-              <div className="bg-zinc-950/60 border border-zinc-850 rounded-xl p-3 relative group">
-                <span className="block text-[9px] uppercase font-bold text-zinc-500 tracking-wider">1. Runner Full Name</span>
-                <span className="block text-xl font-black text-white truncate pr-7 font-display mt-0.5">{foundDoubleCheckOrder.runnerName}</span>
+              <div className="bg-[var(--surface-card)]/60 border border-[var(--border-subtle)] rounded-[20px] p-3 relative group">
+                <span className="block text-[9px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">1. Runner Full Name</span>
+                <span className="block text-xl font-black text-[var(--text-primary)] truncate pr-7 font-display mt-0.5">{foundDoubleCheckOrder.runnerName}</span>
                 <button
                   onClick={() => handleCopyText('lookup_name', foundDoubleCheckOrder.runnerName)}
-                  className="absolute right-2.5 bottom-2.5 text-zinc-500 hover:text-amber-500 p-1.5 bg-zinc-900 hover:bg-zinc-800 rounded transition"
+                  className="absolute right-2.5 bottom-2.5 text-[var(--text-secondary)] hover:text-amber-500 p-1.5 bg-[var(--surface-inset)]/75 backdrop-blur-md hover:bg-[var(--surface-hover)] rounded transition"
                   title="Copy Name"
                 >
                   {copiedStates['lookup_name'] ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
@@ -986,12 +986,12 @@ export default function OperatorDashboard({
               </div>
 
               {/* Finishing Time */}
-              <div className="bg-zinc-950/60 border border-zinc-850 rounded-xl p-3 relative group">
-                <span className="block text-[9px] uppercase font-bold text-zinc-500 tracking-wider">2. Finishing Time</span>
+              <div className="bg-[var(--surface-card)]/60 border border-[var(--border-subtle)] rounded-[20px] p-3 relative group">
+                <span className="block text-[9px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">2. Finishing Time</span>
                 <span className="block text-xl font-mono font-black text-amber-500 pr-7 mt-0.5">{foundDoubleCheckOrder.finishingTime}</span>
                 <button
                   onClick={() => handleCopyText('lookup_time', foundDoubleCheckOrder.finishingTime)}
-                  className="absolute right-2.5 bottom-2.5 text-zinc-500 hover:text-amber-500 p-1.5 bg-zinc-900 hover:bg-zinc-800 rounded transition"
+                  className="absolute right-2.5 bottom-2.5 text-[var(--text-secondary)] hover:text-amber-500 p-1.5 bg-[var(--surface-inset)]/75 backdrop-blur-md hover:bg-[var(--surface-hover)] rounded transition"
                   title="Copy Time"
                 >
                   {copiedStates['lookup_time'] ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
@@ -999,22 +999,22 @@ export default function OperatorDashboard({
               </div>
 
               {/* Bib / Distance */}
-              <div className="bg-zinc-950/60 border border-zinc-850 rounded-xl p-3 relative group">
-                <span className="block text-[9px] uppercase font-bold text-zinc-500 tracking-wider">3. Distance & Bib</span>
-                <span className="block text-sm font-extrabold text-zinc-100 pr-6 truncate mt-1.5">
+              <div className="bg-[var(--surface-card)]/60 border border-[var(--border-subtle)] rounded-[20px] p-3 relative group">
+                <span className="block text-[9px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">3. Distance & Bib</span>
+                <span className="block text-sm font-extrabold text-[var(--text-primary)] pr-6 truncate mt-1.5">
                   #{foundDoubleCheckOrder.bibNumber} &bull; <strong className="text-amber-400 font-bold">{foundDoubleCheckOrder.distance}</strong>
                 </span>
                 <div className="absolute right-2.5 bottom-2.5 flex gap-1">
                   <button
                     onClick={() => handleCopyText('lookup_bib', foundDoubleCheckOrder.bibNumber)}
-                    className="text-[9px] font-black py-0.5 px-2 bg-zinc-900 text-zinc-300 hover:text-amber-500 rounded border border-zinc-800 transition"
+                    className="text-[9px] font-black py-0.5 px-2 bg-[var(--surface-inset)]/75 backdrop-blur-md text-[var(--text-primary)] hover:text-amber-500 rounded border border-[var(--border-default)] transition"
                     title="Copy Bib"
                   >
                     Bib
                   </button>
                   <button
                     onClick={() => handleCopyText('lookup_dist', foundDoubleCheckOrder.distance)}
-                    className="text-[9px] font-black py-0.5 px-2 bg-zinc-900 text-zinc-300 hover:text-amber-500 rounded border border-zinc-800 transition"
+                    className="text-[9px] font-black py-0.5 px-2 bg-[var(--surface-inset)]/75 backdrop-blur-md text-[var(--text-primary)] hover:text-amber-500 rounded border border-[var(--border-default)] transition"
                     title="Copy Dist"
                   >
                     Dist
@@ -1023,15 +1023,15 @@ export default function OperatorDashboard({
               </div>
 
               {/* Rank (Optional) */}
-              <div className="bg-zinc-950/60 border border-zinc-850 rounded-xl p-3 relative group col-span-1 sm:col-span-2 md:col-span-1">
-                <span className="block text-[9px] uppercase font-bold text-zinc-500 tracking-wider">4. Official Rank</span>
+              <div className="bg-[var(--surface-card)]/60 border border-[var(--border-subtle)] rounded-[20px] p-3 relative group col-span-1 sm:col-span-2 md:col-span-1">
+                <span className="block text-[9px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">4. Official Rank</span>
                 <span className="block text-sm font-black text-amber-200 truncate mt-1">
                   {foundDoubleCheckOrder.rank || 'N/A (-)'}
                 </span>
                 {foundDoubleCheckOrder.rank && (
                   <button
                     onClick={() => handleCopyText('lookup_rank', foundDoubleCheckOrder.rank!)}
-                    className="absolute right-2.5 bottom-2.5 text-zinc-500 hover:text-amber-500 p-1.5 bg-zinc-900 hover:bg-zinc-800 rounded transition"
+                    className="absolute right-2.5 bottom-2.5 text-[var(--text-secondary)] hover:text-amber-500 p-1.5 bg-[var(--surface-inset)]/75 backdrop-blur-md hover:bg-[var(--surface-hover)] rounded transition"
                     title="Copy Rank"
                   >
                     {copiedStates['lookup_rank'] ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
@@ -1040,15 +1040,15 @@ export default function OperatorDashboard({
               </div>
 
               {/* Custom inscription */}
-              <div className="bg-zinc-950/60 border border-zinc-850 rounded-xl p-3 relative group col-span-1 sm:col-span-2">
-                <span className="block text-[9px] uppercase font-bold text-zinc-500 tracking-wider">5. Custom Inscription Text</span>
-                <span className="block text-xs italic text-zinc-300 mt-1.5 max-w-[90%] truncate">
+              <div className="bg-[var(--surface-card)]/60 border border-[var(--border-subtle)] rounded-[20px] p-3 relative group col-span-1 sm:col-span-2">
+                <span className="block text-[9px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">5. Custom Inscription Text</span>
+                <span className="block text-xs italic text-[var(--text-primary)] mt-1.5 max-w-[90%] truncate">
                   {foundDoubleCheckOrder.customInscription ? `"${foundDoubleCheckOrder.customInscription}"` : 'No custom inscription text (-)'}
                 </span>
                 {foundDoubleCheckOrder.customInscription && (
                   <button
                     onClick={() => handleCopyText('lookup_inscription', foundDoubleCheckOrder.customInscription!)}
-                    className="absolute right-2.5 bottom-2.5 text-zinc-500 hover:text-amber-500 p-1.5 bg-zinc-900 hover:bg-zinc-800 rounded transition"
+                    className="absolute right-2.5 bottom-2.5 text-[var(--text-secondary)] hover:text-amber-500 p-1.5 bg-[var(--surface-inset)]/75 backdrop-blur-md hover:bg-[var(--surface-hover)] rounded transition"
                     title="Copy Inscription"
                   >
                     {copiedStates['lookup_inscription'] ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
@@ -1062,7 +1062,7 @@ export default function OperatorDashboard({
             <div className="md:col-span-2 flex flex-col gap-2 mt-4 md:mt-0">
               <button
                 onClick={() => handleCopyTSVRow(foundDoubleCheckOrder)}
-                className="w-full text-xs font-black font-display uppercase tracking-widest py-3 bg-amber-500 hover:bg-amber-400 text-black rounded-xl transition flex items-center justify-center gap-1 border-b-2 border-amber-700 active:scale-95"
+                className="w-full text-xs font-black font-display uppercase tracking-widest py-3 bg-amber-500 hover:bg-amber-400 text-black rounded-[20px] transition flex items-center justify-center gap-1 border-b-2 border-amber-700 active:scale-95"
                 title="Copies all fields as tab-separated values to paste row into software"
               >
                 {copiedStates[`${foundDoubleCheckOrder.id}_tsv_all`] ? (
@@ -1106,7 +1106,7 @@ export default function OperatorDashboard({
 
           </div>
         ) : (
-          <div className="bg-black/40 p-4 rounded-xl text-center text-xs text-zinc-550 font-sans border border-zinc-900 leading-normal">
+          <div className="bg-[var(--surface-inset)]/75 backdrop-blur-md p-4 rounded-[20px] text-center text-xs text-[var(--text-secondary)] font-sans border border-[var(--border-subtle)] leading-normal">
             {doubleCheckCode.trim() 
               ? `No active order found matched code: "${doubleCheckCode.toUpperCase()}"` 
               : "READY FOR DUAL SCREEN VERIFICATION. ENTER OR SCAN RUNNER'S PASSCODE TO ALIGN EXACT NAME AND PREVENTS MISTAKES."
@@ -1116,23 +1116,23 @@ export default function OperatorDashboard({
       </div>
 
       {/* Orders Filter & Search bar */}
-      <div className="flex flex-col md:flex-row items-center justify-between border border-zinc-850 bg-[#141414] rounded-xl p-4 shadow-xl gap-4">
+      <div className="flex flex-col md:flex-row items-center justify-between border border-[var(--border-subtle)] bg-[var(--surface-card)]/72 backdrop-blur-2xl rounded-[20px] p-4 shadow-xl gap-4">
         
         {/* Search Input Left */}
         <div className="relative w-full md:w-80">
-          <Search className="w-4 h-4 text-zinc-500 absolute left-3.5 top-3.5" />
+          <Search className="w-4 h-4 text-[var(--text-secondary)] absolute left-3.5 top-3.5" />
           <input
             type="text"
             placeholder="Search Name, Bib, or Code..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-[#0C0C0C] border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-sm font-semibold text-white placeholder-zinc-700 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:bg-black transition"
+            className="w-full bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-default)] rounded-[20px] pl-10 pr-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-1 focus:ring-amber-500 transition"
           />
         </div>
 
         {/* Tab Filters right */}
         <div className="flex items-center gap-1 w-full md:w-auto overflow-x-auto py-1">
-          <span className="text-zinc-500 text-xs font-bold mr-2.5 whitespace-nowrap"><Filter className="w-3.5 h-3.5 inline mr-1 text-amber-500" /> STATUS:</span>
+          <span className="text-[var(--text-secondary)] text-xs font-bold mr-2.5 whitespace-nowrap"><Filter className="w-3.5 h-3.5 inline mr-1 text-amber-500" /> STATUS:</span>
           
           {(['all', 'queued', 'inprogress', 'ready', 'completed'] as const).map((filterOpt) => (
             <button
@@ -1145,11 +1145,11 @@ export default function OperatorDashboard({
                     : filterOpt === 'ready' ? 'bg-blue-500/10 border-blue-500/30 text-blue-400 font-bold'
                     : filterOpt === 'completed' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-bold'
                     : 'bg-amber-500 border-amber-500 text-black font-extrabold'
-                  : 'bg-[#0c0c0c] border-zinc-850 text-zinc-450 hover:bg-zinc-900 hover:text-white'
+                  : 'bg-[var(--surface-inset)]/75 backdrop-blur-md border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--surface-inset)]/75 backdrop-blur-md hover:text-[var(--text-primary)]'
               }`}
             >
               {filterOpt === 'all' ? 'All Orders' : filterOpt}
-              <span className="ml-1.5 px-1.5 py-[1px] bg-black/40 rounded font-mono text-[9px] text-zinc-400">
+              <span className="ml-1.5 px-1.5 py-[1px] bg-[var(--surface-inset)]/75 backdrop-blur-md rounded font-mono text-[9px] text-[var(--text-secondary)]">
                 {filterOpt === 'all' ? stats.total 
                   : filterOpt === 'queued' ? stats.queued 
                   : filterOpt === 'inprogress' ? stats.inprogress 
@@ -1164,15 +1164,15 @@ export default function OperatorDashboard({
 
       {/* Orders List Container */}
       {loading ? (
-        <div className="flex flex-col items-center justify-center py-20 bg-[#141414] border border-zinc-850 rounded-2xl space-y-3">
+        <div className="flex flex-col items-center justify-center py-20 bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-subtle)] rounded-[26px] space-y-3">
           <RefreshCw className="w-10 h-10 text-amber-500 animate-spin" />
-          <p className="text-xs font-bold text-zinc-400 font-display uppercase tracking-widest">Loading Live Registry...</p>
+          <p className="text-xs font-bold text-[var(--text-secondary)] font-display uppercase tracking-widest">Loading Live Registry...</p>
         </div>
       ) : filteredOrders.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 bg-[#141414] border border-zinc-850 rounded-2xl text-center px-4">
-          <BadgeMinus className="w-12 h-12 text-zinc-650 mb-2" />
-          <h3 className="text-sm font-bold text-zinc-300 font-display uppercase tracking-wider">No Engravings Found</h3>
-          <p className="text-xs text-zinc-500 mt-1 max-w-sm">
+        <div className="flex flex-col items-center justify-center py-16 bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-subtle)] rounded-[26px] text-center px-4">
+          <BadgeMinus className="w-12 h-12 text-[var(--text-muted)] mb-2" />
+          <h3 className="text-sm font-bold text-[var(--text-primary)] font-display uppercase tracking-wider">No Engravings Found</h3>
+          <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-sm">
             Try adjusting your search criteria, selecting another filter, or wait for runners to submit.
           </p>
         </div>
@@ -1186,26 +1186,26 @@ export default function OperatorDashboard({
               queued: 'border-l-4 border-l-amber-500 bg-amber-550/5',
               inprogress: 'border-l-4 border-l-orange-500 bg-orange-550/10 shadow-[0_0_15px_rgba(249,115,22,0.05)]',
               ready: 'border-l-4 border-l-blue-500 bg-blue-550/5',
-              completed: 'border-l-4 border-l-zinc-700 bg-zinc-950/10 opacity-60 hover:opacity-100 transition duration-150'
+              completed: 'border-l-4 border-l-[var(--border-default)] bg-[var(--surface-card)]/10 opacity-60 hover:opacity-100 transition duration-150'
             };
 
             const statusBadges = {
               queued: 'bg-amber-500/10 text-amber-505 border-amber-500/20',
               inprogress: 'bg-orange-500/10 text-orange-400 border-orange-500/20 animate-pulse',
               ready: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-              completed: 'bg-zinc-800 text-zinc-400 border-zinc-700'
+              completed: 'bg-[var(--surface-hover)] text-[var(--text-secondary)] border-[var(--border-default)]'
             };
 
             return (
               <div 
                 key={order.id} 
-                className={`bg-[#141414]/90 rounded-xl border border-zinc-850 p-5 flex flex-col justify-between shadow-xl relative overflow-hidden transition-all duration-200 hover:border-zinc-800 ${accents[order.status]}`}
+                className={`bg-[var(--surface-card)]/90 rounded-[20px] border border-[var(--border-subtle)] p-5 flex flex-col justify-between shadow-xl relative overflow-hidden transition-all duration-200 hover:border-[var(--border-default)] ${accents[order.status]}`}
               >
                 
                 {/* Upper row: ID and Status badges */}
-                <div className="flex items-center justify-between border-b border-zinc-850 pb-3 mb-3">
+                <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3 mb-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-[9px] font-bold text-zinc-550 font-mono">CODE</span>
+                    <span className="text-[9px] font-bold text-[var(--text-secondary)] font-mono">CODE</span>
                     <span 
                       onClick={() => setDoubleCheckCode(order.id)}
                       className="text-lg font-black font-mono text-amber-500 hover:bg-amber-500/10 px-2 py-0.5 rounded cursor-pointer transition border border-dashed border-amber-500/25"
@@ -1225,13 +1225,13 @@ export default function OperatorDashboard({
                   
                   {/* Runner Name Block */}
                   <div className="relative group/copy pr-6">
-                    <span className="block text-[8px] uppercase font-bold text-zinc-500 tracking-wider">Runner Name</span>
-                    <strong className="text-base font-extrabold text-white truncate block font-display">
+                    <span className="block text-[8px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">Runner Name</span>
+                    <strong className="text-base font-extrabold text-[var(--text-primary)] truncate block font-display">
                       {order.runnerName}
                     </strong>
                     <button
                       onClick={() => handleCopyText(`${order.id}_name`, order.runnerName)}
-                      className="absolute right-0 top-1 text-zinc-500 hover:text-amber-500 p-1 rounded hover:bg-zinc-900 transition"
+                      className="absolute right-0 top-1 text-[var(--text-secondary)] hover:text-amber-500 p-1 rounded hover:bg-[var(--surface-inset)]/75 backdrop-blur-md transition"
                       title="Copy Name"
                     >
                       {copiedStates[`${order.id}_name`] ? <Check className="w-3 text-emerald-500" /> : <Copy className="w-3" />}
@@ -1239,28 +1239,28 @@ export default function OperatorDashboard({
                   </div>
 
                   {/* Bib & Distance Block */}
-                  <div className="grid grid-cols-2 gap-2 border-t border-zinc-850 pt-2 pb-1 text-xs text-zinc-300">
+                  <div className="grid grid-cols-2 gap-2 border-t border-[var(--border-subtle)] pt-2 pb-1 text-xs text-[var(--text-primary)]">
                     <div>
-                      <span className="block text-[8px] uppercase font-bold text-zinc-500 tracking-wider">Bib Number</span>
-                      <strong className="font-mono text-white font-bold">{order.bibNumber}</strong>
+                      <span className="block text-[8px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">Bib Number</span>
+                      <strong className="font-mono text-[var(--text-primary)] font-bold">{order.bibNumber}</strong>
                     </div>
                     <div>
-                      <span className="block text-[8px] uppercase font-bold text-zinc-500 tracking-wider">Distance</span>
-                      <span className="text-white font-bold truncate block">{order.distance}</span>
+                      <span className="block text-[8px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">Distance</span>
+                      <span className="text-[var(--text-primary)] font-bold truncate block">{order.distance}</span>
                     </div>
                   </div>
 
                   {/* Finishing Time Block with massive COPY BUTTON */}
-                  <div className="bg-[#0C0C0C] border border-zinc-850 px-3 py-2 rounded-lg flex items-center justify-between relative group/copy">
+                  <div className="bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-subtle)] px-3 py-2 rounded-lg flex items-center justify-between relative group/copy">
                     <div>
-                      <span className="block text-[8px] uppercase font-bold text-zinc-550 tracking-wider leading-none">Finishing Time</span>
-                      <span className="text-base font-black font-mono text-white mt-1 block">
+                      <span className="block text-[8px] uppercase font-bold text-[var(--text-secondary)] tracking-wider leading-none">Finishing Time</span>
+                      <span className="text-base font-black font-mono text-[var(--text-primary)] mt-1 block">
                         {order.finishingTime}
                       </span>
                     </div>
                     <button
                       onClick={() => handleCopyText(`${order.id}_time`, order.finishingTime)}
-                      className="text-[10px] font-bold text-zinc-300 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 rounded-lg py-1 px-2.5 flex items-center gap-1 transition"
+                      className="text-[10px] font-bold text-[var(--text-primary)] bg-[var(--surface-inset)]/75 backdrop-blur-md hover:bg-[var(--surface-hover)] border border-[var(--border-default)] rounded-lg py-1 px-2.5 flex items-center gap-1 transition"
                       title="Copy Time Only"
                     >
                       {copiedStates[`${order.id}_time`] ? (
@@ -1269,7 +1269,7 @@ export default function OperatorDashboard({
                         </>
                       ) : (
                         <>
-                          <Copy className="w-3 text-zinc-400" /> Copy
+                          <Copy className="w-3 text-[var(--text-secondary)]" /> Copy
                         </>
                       )}
                     </button>
@@ -1278,11 +1278,11 @@ export default function OperatorDashboard({
                   {/* Rank Block (Only if exists) */}
                   {order.rank && (
                     <div className="relative group/copy pr-6">
-                      <span className="block text-[8px] uppercase font-bold text-zinc-500 tracking-wider leading-none">Rank / Group</span>
+                      <span className="block text-[8px] uppercase font-bold text-[var(--text-secondary)] tracking-wider leading-none">Rank / Group</span>
                       <span className="text-xs font-semibold text-amber-200 block mt-0.5 truncate">{order.rank}</span>
                       <button
                         onClick={() => handleCopyText(`${order.id}_rank`, order.rank!)}
-                        className="absolute right-0 top-0 text-zinc-500 hover:text-amber-500 p-0.5 rounded transition"
+                        className="absolute right-0 top-0 text-[var(--text-secondary)] hover:text-amber-500 p-0.5 rounded transition"
                         title="Copy Rank"
                       >
                         {copiedStates[`${order.id}_rank`] ? <Check className="w-2.5 text-emerald-500" /> : <Copy className="w-2.5" />}
@@ -1293,11 +1293,11 @@ export default function OperatorDashboard({
                   {/* Custom Inscription Block (Only if exists) */}
                   {order.customInscription && (
                     <div className="relative group/copy pr-6 bg-amber-500/5 p-2.5 rounded-lg border border-amber-500/10">
-                      <span className="block text-[8px] uppercase font-bold text-zinc-550 tracking-wider leading-none">Custom Text</span>
-                      <span className="text-xs italic text-zinc-250 block mt-1.5 truncate">"{order.customInscription}"</span>
+                      <span className="block text-[8px] uppercase font-bold text-[var(--text-secondary)] tracking-wider leading-none">Custom Text</span>
+                      <span className="text-xs italic text-[var(--text-primary)] block mt-1.5 truncate">"{order.customInscription}"</span>
                       <button
                         onClick={() => handleCopyText(`${order.id}_inscription`, order.customInscription!)}
-                        className="absolute right-1 top-1.5 text-zinc-500 hover:text-amber-500 p-0.5 rounded transition"
+                        className="absolute right-1 top-1.5 text-[var(--text-secondary)] hover:text-amber-500 p-0.5 rounded transition"
                         title="Copy Inscription Only"
                       >
                         {copiedStates[`${order.id}_inscription`] ? <Check className="w-2.5 text-emerald-500" /> : <Copy className="w-2.5" />}
@@ -1308,14 +1308,14 @@ export default function OperatorDashboard({
                 </div>
 
                 {/* Lower Action Workflow Controllers */}
-                <div className="border-t border-zinc-850 pt-3 mt-4 space-y-2">
+                <div className="border-t border-[var(--border-subtle)] pt-3 mt-4 space-y-2">
                   <div className="flex gap-1.5">
                     
                     {/* Workflow status progressor */}
                     {order.status === 'queued' && (
                       <button
                         onClick={() => handleUpdateStatus(order.id, 'inprogress')}
-                        className="flex-1 text-xs font-bold font-display uppercase tracking-widest py-2 bg-gradient-to-r from-orange-600 to-orange-500 hover:brightness-110 text-white rounded-xl shadow-sm transition flex items-center justify-center gap-1 active:scale-95"
+                        className="flex-1 text-xs font-bold font-display uppercase tracking-widest py-2 bg-gradient-to-r from-orange-600 to-orange-500 hover:brightness-110 text-white rounded-[20px] shadow-sm transition flex items-center justify-center gap-1 active:scale-95"
                       >
                         <Play className="w-3.5 h-3.5 fill-white" /> Start Laser
                       </button>
@@ -1324,7 +1324,7 @@ export default function OperatorDashboard({
                     {order.status === 'inprogress' && (
                       <button
                         onClick={() => handleUpdateStatus(order.id, 'ready')}
-                        className="flex-1 text-xs font-bold font-display uppercase tracking-widest py-2 bg-gradient-to-r from-blue-600 to-blue-550 hover:brightness-110 text-white rounded-xl shadow-sm transition flex items-center justify-center gap-1 active:scale-95"
+                        className="flex-1 text-xs font-bold font-display uppercase tracking-widest py-2 bg-gradient-to-r from-blue-600 to-blue-550 hover:brightness-110 text-white rounded-[20px] shadow-sm transition flex items-center justify-center gap-1 active:scale-95"
                       >
                         <CheckSquare className="w-3.5 h-3.5" /> Mark Ready
                       </button>
@@ -1333,18 +1333,18 @@ export default function OperatorDashboard({
                     {order.status === 'ready' && (
                       <button
                         onClick={() => handleUpdateStatus(order.id, 'completed')}
-                        className="flex-1 text-xs font-bold font-display uppercase tracking-widest py-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:brightness-110 text-white rounded-xl shadow-sm transition flex items-center justify-center gap-1 active:scale-95"
+                        className="flex-1 text-xs font-bold font-display uppercase tracking-widest py-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:brightness-110 text-white rounded-[20px] shadow-sm transition flex items-center justify-center gap-1 active:scale-95"
                       >
                         ✓ Picked Up
                       </button>
                     )}
 
                     {order.status === 'completed' && (
-                      <div className="flex-grow flex justify-between items-center bg-[#0C0C0C] rounded-lg px-3 py-1.5 border border-zinc-850 text-zinc-500 text-[11px] font-semibold">
+                      <div className="flex-grow flex justify-between items-center bg-[var(--surface-inset)]/75 backdrop-blur-md rounded-lg px-3 py-1.5 border border-[var(--border-subtle)] text-[var(--text-secondary)] text-[11px] font-semibold">
                         <span className="uppercase text-[9px] tracking-wider text-emerald-500">Done &bull; Safe Handed over</span>
                         <button 
                           onClick={() => handleUpdateStatus(order.id, 'queued')}
-                          className="text-xs text-zinc-500 hover:text-amber-500 transition font-bold"
+                          className="text-xs text-[var(--text-secondary)] hover:text-amber-500 transition font-bold"
                           title="Put back in queue"
                         >
                           Requeue
@@ -1357,7 +1357,7 @@ export default function OperatorDashboard({
                   <div className="flex justify-between items-center gap-2 pt-1">
                     <button
                       onClick={() => handleCopyTSVRow(order)}
-                      className={`text-[9px] font-bold text-zinc-500 hover:text-white flex items-center gap-1 rounded-lg border border-zinc-850 py-1 px-2 hover:bg-zinc-900 shadow-3xs transition-all ${
+                      className={`text-[9px] font-bold text-[var(--text-secondary)] hover:text-[var(--text-primary)] flex items-center gap-1 rounded-lg border border-[var(--border-subtle)] py-1 px-2 hover:bg-[var(--surface-inset)]/75 backdrop-blur-md shadow-3xs transition-all ${
                         isTsvCopied ? 'border-emerald-800 text-emerald-400 bg-emerald-950/20' : 'bg-transparent'
                       }`}
                       title="Copy complete row values tab-separated to insert in Excel sheets"
@@ -1368,7 +1368,7 @@ export default function OperatorDashboard({
                     
                     <button
                       onClick={() => handleDeleteOrder(order.id, order.runnerName)}
-                      className="text-[9px] font-bold text-zinc-500 hover:text-red-400 p-1 flex items-center gap-0.5 hover:bg-red-950/10 rounded transition"
+                      className="text-[9px] font-bold text-[var(--text-secondary)] hover:text-red-400 p-1 flex items-center gap-0.5 hover:bg-red-950/10 rounded transition"
                       title="Delete / cancel order"
                     >
                       <Trash2 className="w-2.5 h-2.5" /> Delete
@@ -1384,21 +1384,21 @@ export default function OperatorDashboard({
 
       {/* Footer stats Breakdown by race distance */}
       {!loading && orders.length > 0 && (
-        <div id="distance_aggregate_summary" className="bg-[#141414] border border-zinc-850 rounded-xl p-5 shadow-2xl space-y-4">
-          <h3 className="text-xs font-bold font-display uppercase tracking-widest text-zinc-400 flex items-center gap-1.5 mb-2 border-b border-zinc-850 pb-2.5">
+        <div id="distance_aggregate_summary" className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-subtle)] rounded-[20px] p-5 shadow-2xl space-y-4">
+          <h3 className="text-xs font-bold font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-1.5 mb-2 border-b border-[var(--border-subtle)] pb-2.5">
             <BarChart2 className="w-4 h-4 text-amber-500" />
             Engraving Tally Breakdown by Distance Category
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
             {Object.entries(stats.byDistance).map(([distName, distCount]) => (
-              <div key={distName} className="bg-[#0C0C0C] border border-zinc-900 rounded-xl p-3 text-center">
-                <span className="block text-[10px] font-bold uppercase tracking-wider text-zinc-550 truncate" title={distName}>
+              <div key={distName} className="bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-subtle)] rounded-[20px] p-3 text-center">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] truncate" title={distName}>
                   {distName}
                 </span>
-                <span className="text-lg font-black text-white font-mono block mt-1">
+                <span className="text-lg font-black text-[var(--text-primary)] font-mono block mt-1">
                   {distCount}
                 </span>
-                <span className="text-[9px] text-zinc-650 block mt-0.5 font-medium">
+                <span className="text-[9px] text-[var(--text-muted)] block mt-0.5 font-medium">
                   ({Math.round((distCount / stats.total) * 100)}% of total)
                 </span>
               </div>
@@ -1410,33 +1410,33 @@ export default function OperatorDashboard({
       {/* LightBurn Integration Guide Modal */}
       {showLightBurnModal && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn transition-all">
-          <div className="bg-[#121212] border border-zinc-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+          <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-default)] rounded-[26px] w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
             {/* Modal Header */}
-            <div className="p-5 border-b border-zinc-850 flex items-center justify-between bg-black/40">
+            <div className="p-5 border-b border-[var(--border-subtle)] flex items-center justify-between bg-[var(--surface-inset)]/75 backdrop-blur-md">
               <div className="flex items-center gap-2">
                 <Cpu className="w-5 h-5 text-amber-500 animate-pulse" />
                 <div>
-                  <h2 className="text-md font-black tracking-tight font-display text-white uppercase">LightBurn Variable-Text Integration</h2>
-                  <p className="text-[10px] text-zinc-500 font-mono">AUTOMATED medal ENGRAVING PIPELINE</p>
+                  <h2 className="heading-float text-md font-black tracking-tight font-display text-[var(--text-primary)] uppercase">LightBurn Variable-Text Integration</h2>
+                  <p className="text-[10px] text-[var(--text-secondary)] font-mono">AUTOMATED medal ENGRAVING PIPELINE</p>
                 </div>
               </div>
               <button 
                 onClick={() => setShowLightBurnModal(false)}
-                className="text-zinc-500 hover:text-white transition bg-zinc-900 border border-zinc-800 hover:border-zinc-750 p-2 rounded-xl text-xs font-bold uppercase tracking-wider px-3"
+                className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-default)] hover:border-[var(--border-default)] p-2 rounded-[20px] text-xs font-bold uppercase tracking-wider px-3"
               >
                 ✕ Close
               </button>
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 overflow-y-auto space-y-5 text-zinc-355 text-sm leading-relaxed scrollbar-thin">
-              <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 flex items-start gap-3">
+            <div className="p-6 overflow-y-auto space-y-5 text-[var(--text-primary)] text-sm leading-relaxed scrollbar-thin">
+              <div className="bg-amber-500/5 border border-amber-500/20 rounded-[20px] p-4 flex items-start gap-3">
                 <div className="p-2 bg-amber-500/10 text-amber-500 rounded-lg shrink-0">
                   <Sparkles className="w-4 h-4" />
                 </div>
                 <div>
                   <h4 className="text-xs font-extrabold text-amber-400 uppercase tracking-wider mb-1">Ditch Copy & Paste entirely!</h4>
-                  <p className="text-xs text-zinc-400">
+                  <p className="text-xs text-[var(--text-secondary)]">
                     By combining this web app with LightBurn's native <strong>Variable Text</strong> functionality, your laser machine can read registered athlete data directly from a local CSV spreadsheet file. No typing, no spelling mistakes!
                   </p>
                 </div>
@@ -1444,44 +1444,44 @@ export default function OperatorDashboard({
 
               {/* Step-by-step instructions */}
               <div className="space-y-4">
-                <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-widest border-b border-zinc-850 pb-2">Step-by-step Connection process</h3>
+                <h3 className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-widest border-b border-[var(--border-subtle)] pb-2">Step-by-step Connection process</h3>
                 
                 {/* Step 1 */}
                 <div className="flex gap-3">
-                  <div className="text-xs font-mono font-bold w-5 h-5 bg-zinc-850 text-amber-500 rounded-full flex items-center justify-center shrink-0 border border-zinc-700">1</div>
+                  <div className="text-xs font-mono font-bold w-5 h-5 bg-[var(--surface-hover)] text-amber-500 rounded-full flex items-center justify-center shrink-0 border border-[var(--border-default)]">1</div>
                   <div>
-                    <h5 className="text-xs font-bold text-white uppercase">Export the Data Feed</h5>
-                    <p className="text-xs text-zinc-400 mt-0.5">
-                      Click the <span className="text-amber-500 font-bold font-mono">Export CSV</span> button on the top right of this command panel. Save the <code className="text-[11px] text-zinc-300 font-mono bg-zinc-900 px-1 py-0.5 rounded">racepulse_lightburn_sync.csv</code> on your laser station computer.
+                    <h5 className="text-xs font-bold text-[var(--text-primary)] uppercase">Export the Data Feed</h5>
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                      Click the <span className="text-amber-500 font-bold font-mono">Export CSV</span> button on the top right of this command panel. Save the <code className="text-[11px] text-[var(--text-primary)] font-mono bg-[var(--surface-inset)]/75 backdrop-blur-md px-1 py-0.5 rounded">racepulse_lightburn_sync.csv</code> on your laser station computer.
                     </p>
                   </div>
                 </div>
 
                 {/* Step 2 */}
                 <div className="flex gap-3">
-                  <div className="text-xs font-mono font-bold w-5 h-5 bg-zinc-850 text-amber-500 rounded-full flex items-center justify-center shrink-0 border border-zinc-700">2</div>
+                  <div className="text-xs font-mono font-bold w-5 h-5 bg-[var(--surface-hover)] text-amber-500 rounded-full flex items-center justify-center shrink-0 border border-[var(--border-default)]">2</div>
                   <div>
-                    <h5 className="text-xs font-bold text-white uppercase">Prepare your Laser Inscriptions in LightBurn</h5>
-                    <p className="text-xs text-zinc-400 mt-0.5">
+                    <h5 className="text-xs font-bold text-[var(--text-primary)] uppercase">Prepare your Laser Inscriptions in LightBurn</h5>
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5">
                       Create standard text objects in your medal border template. Set their source format to <strong>"Variable Text"</strong> instead of "Normal" in the top-bar dropdown. Use the respective %-index codes below:
                     </p>
                     <div className="grid grid-cols-2 gap-2 mt-2 font-mono text-[10px]">
-                      <div className="bg-zinc-950 p-2 rounded border border-zinc-900">
+                      <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl p-2 rounded border border-[var(--border-subtle)]">
                         <span className="text-amber-500 font-extrabold">%2</span> &rarr; Runner Name
                       </div>
-                      <div className="bg-zinc-950 p-2 rounded border border-zinc-900">
+                      <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl p-2 rounded border border-[var(--border-subtle)]">
                         <span className="text-amber-500 font-extrabold">%3</span> &rarr; Bib Number
                       </div>
-                      <div className="bg-zinc-950 p-2 rounded border border-zinc-900">
+                      <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl p-2 rounded border border-[var(--border-subtle)]">
                         <span className="text-amber-500 font-extrabold">%4</span> &rarr; Finishing Time
                       </div>
-                      <div className="bg-zinc-950 p-2 rounded border border-zinc-900">
+                      <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl p-2 rounded border border-[var(--border-subtle)]">
                         <span className="text-amber-500 font-extrabold">%5</span> &rarr; Race Distance
                       </div>
-                      <div className="bg-zinc-950 p-2 rounded border border-zinc-900">
+                      <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl p-2 rounded border border-[var(--border-subtle)]">
                         <span className="text-amber-500 font-extrabold">%6</span> &rarr; Rank / Category
                       </div>
-                      <div className="bg-zinc-950 p-2 rounded border border-zinc-900">
+                      <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl p-2 rounded border border-[var(--border-subtle)]">
                         <span className="text-amber-500 font-extrabold">%7</span> &rarr; Custom Inscription
                       </div>
                     </div>
@@ -1490,21 +1490,21 @@ export default function OperatorDashboard({
 
                 {/* Step 3 */}
                 <div className="flex gap-3">
-                  <div className="text-xs font-mono font-bold w-5 h-5 bg-zinc-850 text-amber-500 rounded-full flex items-center justify-center shrink-0 border border-zinc-700">3</div>
+                  <div className="text-xs font-mono font-bold w-5 h-5 bg-[var(--surface-hover)] text-amber-500 rounded-full flex items-center justify-center shrink-0 border border-[var(--border-default)]">3</div>
                   <div>
-                    <h5 className="text-xs font-bold text-white uppercase">Enable Variable Text Toolbar</h5>
-                    <p className="text-xs text-zinc-400 mt-0.5">
-                      Go to the top menu bar in LightBurn: <span className="font-mono text-zinc-305 text-xs bg-zinc-900 px-1 py-0.5 rounded">Window &rarr; Variable Text</span> to display the controls.
+                    <h5 className="text-xs font-bold text-[var(--text-primary)] uppercase">Enable Variable Text Toolbar</h5>
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                      Go to the top menu bar in LightBurn: <span className="font-mono text-[var(--text-primary)] text-xs bg-[var(--surface-inset)]/75 backdrop-blur-md px-1 py-0.5 rounded">Window &rarr; Variable Text</span> to display the controls.
                     </p>
                   </div>
                 </div>
 
                 {/* Step 4 */}
                 <div className="flex gap-3">
-                  <div className="text-xs font-mono font-bold w-5 h-5 bg-zinc-850 text-amber-500 rounded-full flex items-center justify-center shrink-0 border border-zinc-700">4</div>
+                  <div className="text-xs font-mono font-bold w-5 h-5 bg-[var(--surface-hover)] text-amber-500 rounded-full flex items-center justify-center shrink-0 border border-[var(--border-default)]">4</div>
                   <div>
-                    <h5 className="text-xs font-bold text-white uppercase">Link the CSV Document</h5>
-                    <p className="text-xs text-zinc-400 mt-0.5">
+                    <h5 className="text-xs font-bold text-[var(--text-primary)] uppercase">Link the CSV Document</h5>
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5">
                       In the newly opened <strong>Variable Text</strong> panel, click <strong>"Browse"</strong> and select your downloaded CSV file. Look at your canvas; the %-codes will automatically compile into active runner data!
                     </p>
                   </div>
@@ -1512,10 +1512,10 @@ export default function OperatorDashboard({
 
                 {/* Step 5 */}
                 <div className="flex gap-3">
-                  <div className="text-xs font-mono font-bold w-5 h-5 bg-zinc-850 text-amber-500 rounded-full flex items-center justify-center shrink-0 border border-zinc-700">5</div>
+                  <div className="text-xs font-mono font-bold w-5 h-5 bg-[var(--surface-hover)] text-amber-500 rounded-full flex items-center justify-center shrink-0 border border-[var(--border-default)]">5</div>
                   <div>
-                    <h5 className="text-xs font-bold text-white uppercase">Rapid Laser Output Selection</h5>
-                    <p className="text-xs text-zinc-400 mt-0.5">
+                    <h5 className="text-xs font-bold text-[var(--text-primary)] uppercase">Rapid Laser Output Selection</h5>
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5">
                       Toggle the row indices using the <strong>Previous ( &larr; )</strong> and <strong>Next ( &rarr; )</strong> arrow control keys in Lightburn to cycle from athlete to athlete. Lighturn updates the artwork instantly!
                     </p>
                   </div>
@@ -1523,11 +1523,11 @@ export default function OperatorDashboard({
 
                 {/* Step 6 */}
                 <div className="flex gap-3">
-                  <div className="text-xs font-mono font-bold w-5 h-5 bg-zinc-850 text-amber-500 rounded-full flex items-center justify-center shrink-0 border border-zinc-700">6</div>
+                  <div className="text-xs font-mono font-bold w-5 h-5 bg-[var(--surface-hover)] text-amber-500 rounded-full flex items-center justify-center shrink-0 border border-[var(--border-default)]">6</div>
                   <div>
-                    <h5 className="text-xs font-bold text-white uppercase">Live Synchronization Workflow</h5>
-                    <p className="text-xs text-zinc-400 mt-0.5">
-                      As more runners register inside their terminal booth, simply open this browser, click <span className="text-amber-500 font-bold font-mono">Export CSV</span> again, overwrite your previous file in the same folder, and press <span className="text-zinc-200 font-bold font-mono bg-zinc-900 px-1 py-0.5 rounded">Reload</span> inside LightBurn's Variable Text pane. The list updates instantly!
+                    <h5 className="text-xs font-bold text-[var(--text-primary)] uppercase">Live Synchronization Workflow</h5>
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                      As more runners register inside their terminal booth, simply open this browser, click <span className="text-amber-500 font-bold font-mono">Export CSV</span> again, overwrite your previous file in the same folder, and press <span className="text-[var(--text-primary)] font-bold font-mono bg-[var(--surface-inset)]/75 backdrop-blur-md px-1 py-0.5 rounded">Reload</span> inside LightBurn's Variable Text pane. The list updates instantly!
                     </p>
                   </div>
                 </div>
@@ -1535,11 +1535,11 @@ export default function OperatorDashboard({
             </div>
 
             {/* Modal Footer actions */}
-            <div className="p-4 bg-black/60 border-t border-zinc-850 flex justify-between items-center">
-              <span className="text-[10px] text-zinc-550 font-mono tracking-wider">LOUD & CLEAR CUSTOM ENGRAVING APPARATUS</span>
+            <div className="p-4 bg-[var(--surface-inset)]/75 backdrop-blur-md border-t border-[var(--border-subtle)] flex justify-between items-center">
+              <span className="text-[10px] text-[var(--text-secondary)] font-mono tracking-wider">LOUD & CLEAR CUSTOM ENGRAVING APPARATUS</span>
               <button 
                 onClick={handleDownloadCSV}
-                className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold uppercase text-[10px] py-1.5 px-4 rounded-xl tracking-wider transition-all flex items-center gap-1"
+                className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold uppercase text-[10px] py-1.5 px-4 rounded-[20px] tracking-wider transition-all flex items-center gap-1"
               >
                 <FileDown className="w-3.5 h-3.5" /> Download Active CSV
               </button>
@@ -1551,19 +1551,19 @@ export default function OperatorDashboard({
       {/* Change Passcode Modal */}
       {showPasscodeModal && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn transition-all">
-          <div className="bg-[#121316] border border-zinc-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col">
+          <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-default)] rounded-[26px] w-full max-w-md overflow-hidden shadow-2xl flex flex-col">
             {/* Modal Header */}
-            <div className="p-5 border-b border-zinc-850 flex items-center justify-between bg-black/40">
+            <div className="p-5 border-b border-[var(--border-subtle)] flex items-center justify-between bg-[var(--surface-inset)]/75 backdrop-blur-md">
               <div className="flex items-center gap-2">
                 <Lock className="w-5 h-5 text-amber-500 animate-pulse" />
                 <div>
-                  <h2 className="text-md font-black tracking-tight font-display text-white uppercase">Operator Passcode</h2>
-                  <p className="text-[10px] text-zinc-500 font-mono">STATION SECURITY CONTROL</p>
+                  <h2 className="heading-float text-md font-black tracking-tight font-display text-[var(--text-primary)] uppercase">Operator Passcode</h2>
+                  <p className="text-[10px] text-[var(--text-secondary)] font-mono">STATION SECURITY CONTROL</p>
                 </div>
               </div>
               <button 
                 onClick={() => setShowPasscodeModal(false)}
-                className="text-zinc-500 hover:text-white transition bg-zinc-900 border border-zinc-805 hover:border-zinc-750 p-2 rounded-xl text-xs font-bold uppercase tracking-wider px-3"
+                className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-default)] hover:border-[var(--border-default)] p-2 rounded-[20px] text-xs font-bold uppercase tracking-wider px-3"
               >
                 ✕ Close
               </button>
@@ -1571,13 +1571,13 @@ export default function OperatorDashboard({
 
             {/* Modal Body */}
             <form onSubmit={handleSavePasscode} className="p-6 space-y-4">
-              <div className="bg-zinc-950 p-3 rounded-xl border border-zinc-900 text-xs text-zinc-400 leading-relaxed">
-                <span className="text-zinc-400 font-extrabold uppercase block mb-1">Current Passcode Status</span>
+              <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl p-3 rounded-[20px] border border-[var(--border-subtle)] text-xs text-[var(--text-secondary)] leading-relaxed">
+                <span className="text-[var(--text-secondary)] font-extrabold uppercase block mb-1">Current Passcode Status</span>
                 The active passcode is currently <code className="text-amber-500 font-mono font-black">{currentPasscode}</code>. Set a new numerical or text passcode below to restrict dashboard access to authorized operators only.
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-extrabold text-zinc-450 uppercase tracking-widest block font-mono">New Passcode</label>
+                <label className="text-[10px] font-extrabold text-[var(--text-secondary)] uppercase tracking-widest block font-mono">New Passcode</label>
                 <input
                   type="password"
                   placeholder="Enter new dynamic passcode"
@@ -1585,12 +1585,12 @@ export default function OperatorDashboard({
                   maxLength={10}
                   value={newPasscode}
                   onChange={(e) => setNewPasscode(e.target.value)}
-                  className="w-full bg-[#070809] border border-zinc-900 rounded-xl px-4 py-2.5 text-sm font-bold text-white placeholder-zinc-700 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  className="w-full bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-subtle)] rounded-[20px] px-4 py-2.5 text-sm font-bold text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-1 focus:ring-amber-500"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-extrabold text-zinc-450 uppercase tracking-widest block font-mono">Confirm New Passcode</label>
+                <label className="text-[10px] font-extrabold text-[var(--text-secondary)] uppercase tracking-widest block font-mono">Confirm New Passcode</label>
                 <input
                   type="password"
                   placeholder="Re-type brand new passcode"
@@ -1598,18 +1598,18 @@ export default function OperatorDashboard({
                   maxLength={10}
                   value={passcodeConfirm}
                   onChange={(e) => setPasscodeConfirm(e.target.value)}
-                  className="w-full bg-[#070809] border border-zinc-900 rounded-xl px-4 py-2.5 text-sm font-bold text-white placeholder-zinc-700 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  className="w-full bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-subtle)] rounded-[20px] px-4 py-2.5 text-sm font-bold text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-1 focus:ring-amber-500"
                 />
               </div>
 
               {passcodeError && (
-                <div className="text-xs text-red-500 font-semibold p-2.5 bg-red-950/15 border border-red-900/30 rounded-xl text-center">
+                <div className="text-xs text-red-500 font-semibold p-2.5 bg-red-950/15 border border-red-900/30 rounded-[20px] text-center">
                   ⚠️ {passcodeError}
                 </div>
               )}
 
               {passcodeSuccess && (
-                <div className="text-xs text-green-500 font-semibold p-2.5 bg-green-950/15 border border-green-900/30 rounded-xl text-center animate-pulse">
+                <div className="text-xs text-green-500 font-semibold p-2.5 bg-green-950/15 border border-green-900/30 rounded-[20px] text-center animate-pulse">
                   ✅ Passcode updated successfully!
                 </div>
               )}
@@ -1619,14 +1619,14 @@ export default function OperatorDashboard({
                 <button
                   type="button"
                   onClick={() => setShowPasscodeModal(false)}
-                  className="flex-1 text-xs text-zinc-400 hover:text-white border border-zinc-800 hover:bg-zinc-900 font-bold py-2.5 rounded-xl transition uppercase tracking-wider"
+                  className="flex-1 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)]/75 backdrop-blur-md font-bold py-2.5 rounded-[20px] transition uppercase tracking-wider"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={passcodeSuccess}
-                  className="flex-1 text-xs text-black bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-800 disabled:text-zinc-500 font-black py-2.5 rounded-xl shadow-lg transition uppercase tracking-wider"
+                  className="flex-1 text-xs text-black bg-amber-500 hover:bg-amber-400 disabled:bg-[var(--surface-hover)] disabled:text-[var(--text-secondary)] font-black py-2.5 rounded-[20px] shadow-lg transition uppercase tracking-wider"
                 >
                   Save Passcode
                 </button>
@@ -1649,21 +1649,21 @@ export default function OperatorDashboard({
       {/* PDF REPORT GENERATOR MODAL */}
       {showPdfModal && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn transition-all">
-          <div className="bg-[#121316] border border-zinc-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col">
+          <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-default)] rounded-[26px] w-full max-w-md overflow-hidden shadow-2xl flex flex-col">
             {/* Modal Header */}
-            <div className="p-5 border-b border-zinc-850 flex items-center justify-between bg-black/40">
+            <div className="p-5 border-b border-[var(--border-subtle)] flex items-center justify-between bg-[var(--surface-inset)]/75 backdrop-blur-md">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-red-500/15 border border-red-500/30 rounded-xl text-red-400">
+                <div className="p-2 bg-red-500/15 border border-red-500/30 rounded-[20px] text-red-400">
                   <FileText className="w-5 h-5" />
                 </div>
                 <div>
-                  <h2 className="text-md font-black tracking-tight font-display text-white uppercase">Generate PDF Report</h2>
-                  <p className="text-[11px] text-zinc-400">Export race finisher records and laser status</p>
+                  <h2 className="heading-float text-md font-black tracking-tight font-display text-[var(--text-primary)] uppercase">Generate PDF Report</h2>
+                  <p className="text-[11px] text-[var(--text-secondary)]">Export race finisher records and laser status</p>
                 </div>
               </div>
               <button 
                 onClick={() => setShowPdfModal(false)}
-                className="text-zinc-500 hover:text-white p-1.5 rounded-lg hover:bg-zinc-900 transition"
+                className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] p-1.5 rounded-lg hover:bg-[var(--surface-inset)]/75 backdrop-blur-md transition"
               >
                 <BadgeMinus className="w-5 h-5" />
               </button>
@@ -1672,7 +1672,7 @@ export default function OperatorDashboard({
             {/* Modal Body */}
             <div className="p-6 space-y-5">
               <div>
-                <label className="block text-xs font-bold font-display uppercase tracking-wider text-zinc-300 mb-2">
+                <label className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-primary)] mb-2">
                   Race / Event Name
                 </label>
                 <input
@@ -1680,13 +1680,13 @@ export default function OperatorDashboard({
                   value={pdfRaceName}
                   onChange={(e) => setPdfRaceName(e.target.value)}
                   placeholder="e.g. Bukidnon 42K Ultra Run"
-                  className="w-full bg-[#08090A] border border-zinc-800 rounded-xl px-4 py-3 text-sm font-semibold text-white focus:outline-none focus:ring-1 focus:ring-red-400 focus:border-red-400 transition"
+                  className="w-full bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-default)] rounded-[20px] px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-red-400 focus:border-red-400 transition"
                 />
-                <p className="text-[10px] text-zinc-500 mt-1.5">This title will be printed boldly at the top banner of the PDF document.</p>
+                <p className="text-[10px] text-[var(--text-secondary)] mt-1.5">This title will be printed boldly at the top banner of the PDF document.</p>
               </div>
 
               <div>
-                <label className="block text-xs font-bold font-display uppercase tracking-wider text-zinc-300 mb-2">
+                <label className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-primary)] mb-2">
                   Filter Records to Include
                 </label>
                 <div className="grid grid-cols-2 gap-2">
@@ -1700,15 +1700,15 @@ export default function OperatorDashboard({
                       key={item.id}
                       type="button"
                       onClick={() => setPdfReportFilter(item.id as any)}
-                      className={`py-2.5 px-3 rounded-xl border text-left flex items-center justify-between transition ${
+                      className={`py-2.5 px-3 rounded-[20px] border text-left flex items-center justify-between transition ${
                         pdfReportFilter === item.id
-                          ? 'bg-red-500/15 border-red-500 text-white font-bold'
-                          : 'bg-[#08090A] border-zinc-850 text-zinc-400 hover:border-zinc-750'
+                          ? 'bg-red-500/15 border-red-500 text-[var(--text-primary)] font-bold'
+                          : 'bg-[var(--surface-inset)]/75 backdrop-blur-md border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-default)]'
                       }`}
                     >
                       <span className="text-xs">{item.label}</span>
                       <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
-                        pdfReportFilter === item.id ? 'bg-red-500 text-black font-extrabold' : 'bg-zinc-900 text-zinc-500'
+                        pdfReportFilter === item.id ? 'bg-red-500 text-black font-extrabold' : 'bg-[var(--surface-inset)]/75 backdrop-blur-md text-[var(--text-secondary)]'
                       }`}>
                         {item.count}
                       </span>
@@ -1719,18 +1719,18 @@ export default function OperatorDashboard({
             </div>
 
             {/* Modal Footer */}
-            <div className="p-5 border-t border-zinc-850 bg-black/40 flex items-center justify-end gap-3">
+            <div className="p-5 border-t border-[var(--border-subtle)] bg-[var(--surface-inset)]/75 backdrop-blur-md flex items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setShowPdfModal(false)}
-                className="px-4 py-2.5 rounded-xl text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-900 transition"
+                className="px-4 py-2.5 rounded-[20px] text-xs font-bold text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-inset)]/75 backdrop-blur-md transition"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleGeneratePdfReport}
-                className="px-5 py-2.5 rounded-xl text-xs font-extrabold bg-red-500 hover:bg-red-400 text-black uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-red-500/20 transition active:scale-95"
+                className="px-5 py-2.5 rounded-[20px] text-xs font-extrabold bg-red-500 hover:bg-red-400 text-black uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-red-500/20 transition active:scale-95"
               >
                 <FileDown className="w-4 h-4" /> Download PDF
               </button>
@@ -1742,19 +1742,19 @@ export default function OperatorDashboard({
       {/* OFFLINE BACKUP & SYNC MODAL */}
       {showBackupModal && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn transition-all">
-          <div className="bg-[#121316] border border-zinc-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col">
+          <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-default)] rounded-[26px] w-full max-w-md overflow-hidden shadow-2xl flex flex-col">
             {/* Modal Header */}
-            <div className="p-5 border-b border-zinc-850 flex items-center justify-between bg-black/40">
+            <div className="p-5 border-b border-[var(--border-subtle)] flex items-center justify-between bg-[var(--surface-inset)]/75 backdrop-blur-md">
               <div className="flex items-center gap-2">
                 <DownloadCloud className="w-5 h-5 text-green-500" />
                 <div>
-                  <h2 className="text-md font-black tracking-tight font-display text-white uppercase">Offline DB Sync</h2>
-                  <p className="text-[10px] text-zinc-500 font-mono">DUAL-LAPTOP OFFLINE OVER BRIDGE</p>
+                  <h2 className="heading-float text-md font-black tracking-tight font-display text-[var(--text-primary)] uppercase">Offline DB Sync</h2>
+                  <p className="text-[10px] text-[var(--text-secondary)] font-mono">DUAL-LAPTOP OFFLINE OVER BRIDGE</p>
                 </div>
               </div>
               <button 
                 onClick={() => setShowBackupModal(false)}
-                className="text-zinc-500 hover:text-white transition bg-zinc-900 border border-zinc-805 hover:border-zinc-750 p-2 rounded-xl text-xs font-bold uppercase tracking-wider px-3"
+                className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-default)] hover:border-[var(--border-default)] p-2 rounded-[20px] text-xs font-bold uppercase tracking-wider px-3"
               >
                 ✕ Close
               </button>
@@ -1762,10 +1762,10 @@ export default function OperatorDashboard({
 
             {/* Modal Body */}
             <div className="p-6 space-y-6">
-              <div className="bg-zinc-950 p-3.5 rounded-xl border border-zinc-900 text-xs text-zinc-400 leading-relaxed font-sans">
+              <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl p-3.5 rounded-[20px] border border-[var(--border-subtle)] text-xs text-[var(--text-secondary)] leading-relaxed font-sans">
                 <span className="text-green-500 font-extrabold uppercase block mb-1">Dual-Laptop Site Integration</span>
                 When running completely offline on-site:
-                <ol className="list-decimal pl-4 mt-1.5 space-y-1 text-zinc-450">
+                <ol className="list-decimal pl-4 mt-1.5 space-y-1 text-[var(--text-secondary)]">
                   <li>Run the registration form on Laptop A.</li>
                   <li>At intervals, export the database from Laptop A or copy back-ups.</li>
                   <li>Transfer the `.json` backup file via a <strong>USB Flash Drive</strong> to Laptop B (Engraver Station).</li>
@@ -1774,22 +1774,22 @@ export default function OperatorDashboard({
               </div>
 
               {/* Action 1: Export Current Queue */}
-              <div className="space-y-2 p-4 bg-[#0a0b0c] border border-zinc-900 rounded-xl">
-                <h4 className="text-[10px] font-extrabold text-zinc-350 uppercase tracking-widest font-mono">1. Export Active Queue</h4>
-                <p className="text-[10px] text-zinc-500">Download all registered active engraving orders as a backup JSON file.</p>
+              <div className="space-y-2 p-4 bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-subtle)] rounded-[20px]">
+                <h4 className="text-[10px] font-extrabold text-[var(--text-primary)] uppercase tracking-widest font-mono">1. Export Active Queue</h4>
+                <p className="text-[10px] text-[var(--text-secondary)]">Download all registered active engraving orders as a backup JSON file.</p>
                 <button
                   type="button"
                   onClick={handleExportOfflineBackup}
-                  className="w-full flex items-center justify-center gap-1.5 text-xs text-black bg-green-500 hover:bg-green-400 font-black py-2.5 rounded-xl transition uppercase tracking-wider shadow"
+                  className="w-full flex items-center justify-center gap-1.5 text-xs text-black bg-green-500 hover:bg-green-400 font-black py-2.5 rounded-[20px] transition uppercase tracking-wider shadow"
                 >
                   <DownloadCloud className="w-4 h-4" /> Export Queue Backup
                 </button>
               </div>
 
               {/* Action 2: Import Backup JSON */}
-              <div className="space-y-2.5 p-4 bg-[#0a0b0c] border border-zinc-900 rounded-xl">
-                <h4 className="text-[10px] font-extrabold text-zinc-355 uppercase tracking-widest font-mono">2. Import / Restore Queue</h4>
-                <p className="text-[10px] text-zinc-500">Upload a `.json` backup file to merge offline entries into this laptop's local queue.</p>
+              <div className="space-y-2.5 p-4 bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-subtle)] rounded-[20px]">
+                <h4 className="text-[10px] font-extrabold text-[var(--text-primary)] uppercase tracking-widest font-mono">2. Import / Restore Queue</h4>
+                <p className="text-[10px] text-[var(--text-secondary)]">Upload a `.json` backup file to merge offline entries into this laptop's local queue.</p>
                 
                 <input
                   type="file"
@@ -1798,18 +1798,18 @@ export default function OperatorDashboard({
                     const file = e.target.files?.[0];
                     if (file) handleImportOfflineBackup(file);
                   }}
-                  className="w-full text-xs text-zinc-400 font-mono file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[11px] file:font-bold file:bg-zinc-900 file:text-white hover:file:bg-zinc-800"
+                  className="w-full text-xs text-[var(--text-secondary)] font-mono file:mr-3 file:py-2 file:px-4 file:rounded-[20px] file:border-0 file:text-[11px] file:font-bold file:bg-[var(--surface-inset)]/75 backdrop-blur-md file:text-[var(--text-primary)] hover:file:bg-[var(--surface-hover)]"
                 />
               </div>
 
               {backupErrorMessage && (
-                <div className="text-xs text-red-500 font-semibold p-2.5 bg-red-950/15 border border-red-900/30 rounded-xl text-center">
+                <div className="text-xs text-red-500 font-semibold p-2.5 bg-red-950/15 border border-red-900/30 rounded-[20px] text-center">
                   ⚠️ {backupErrorMessage}
                 </div>
               )}
 
               {backupSuccessMessage && (
-                <div className="text-xs text-green-500 font-semibold p-2.5 bg-green-950/15 border border-green-900/30 rounded-xl text-center animate-pulse">
+                <div className="text-xs text-green-500 font-semibold p-2.5 bg-green-950/15 border border-green-900/30 rounded-[20px] text-center animate-pulse">
                   ✅ {backupSuccessMessage}
                 </div>
               )}
@@ -1821,7 +1821,7 @@ export default function OperatorDashboard({
       {/* CUSTOM CONFIRM REGISTRATION DELETION MODAL */}
       {deleteConfirmOrder && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-[#101010] border border-red-500/20 rounded-2xl p-6 sm:p-8 max-w-md w-full text-center space-y-6 shadow-2xl relative animate-slideUp overflow-hidden">
+          <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-red-500/20 rounded-[26px] p-6 sm:p-8 max-w-md w-full text-center space-y-6 shadow-2xl relative animate-slideUp overflow-hidden">
             
             {/* Top red warning border gradient decoration */}
             <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-650 via-red-500 to-amber-500" />
@@ -1831,18 +1831,18 @@ export default function OperatorDashboard({
             </div>
             
             <div className="space-y-1">
-              <h3 className="text-lg font-black font-display text-white uppercase tracking-widest">Delete Registration?</h3>
-              <p className="text-[11px] text-zinc-400 font-medium">
+              <h3 className="heading-float text-lg font-black font-display text-[var(--text-primary)] uppercase tracking-widest">Delete Registration?</h3>
+              <p className="text-[11px] text-[var(--text-secondary)] font-medium">
                 You are about to irreversibly remove this runner's engraving request.
               </p>
             </div>
 
             {/* Premium Interactive Ticket Mockup Summary */}
-            <div className="bg-[#161616] border border-zinc-850 rounded-xl p-4 text-left relative overflow-hidden shadow-inner space-y-3">
+            <div className="bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-subtle)] rounded-[20px] p-4 text-left relative overflow-hidden shadow-inner space-y-3">
               <div className="absolute top-0 right-0 bottom-0 w-1 bg-red-500/40" />
               
               <div className="flex justify-between items-center text-[10px] font-mono font-bold">
-                <span className="bg-zinc-900 border border-zinc-800 text-zinc-400 px-2 py-0.5 rounded uppercase">
+                <span className="bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-default)] text-[var(--text-secondary)] px-2 py-0.5 rounded uppercase">
                   BIB #{deleteConfirmOrder.bibNumber || 'N/A'}
                 </span>
                 <span className="text-amber-500 font-black bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded tracking-wider uppercase">
@@ -1851,31 +1851,31 @@ export default function OperatorDashboard({
               </div>
 
               <div className="space-y-1 pt-1">
-                <span className="block text-[8px] uppercase font-extrabold text-zinc-500 tracking-wider">Runner Name</span>
-                <span className="text-sm font-bold text-white tracking-tight block">
+                <span className="block text-[8px] uppercase font-extrabold text-[var(--text-secondary)] tracking-wider">Runner Name</span>
+                <span className="text-sm font-bold text-[var(--text-primary)] tracking-tight block">
                   {deleteConfirmOrder.runnerName}
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 border-t border-zinc-900 pt-2.5">
+              <div className="grid grid-cols-2 gap-3 border-t border-[var(--border-subtle)] pt-2.5">
                 <div>
-                  <span className="block text-[8px] uppercase font-extrabold text-zinc-500 tracking-wider">Distance</span>
-                  <span className="text-xs font-semibold text-zinc-250 block mt-0.5">
+                  <span className="block text-[8px] uppercase font-extrabold text-[var(--text-secondary)] tracking-wider">Distance</span>
+                  <span className="text-xs font-semibold text-[var(--text-primary)] block mt-0.5">
                     🎽 {deleteConfirmOrder.distance}
                   </span>
                 </div>
                 <div>
-                  <span className="block text-[8px] uppercase font-extrabold text-zinc-500 tracking-wider">Finish Time</span>
-                  <span className="text-xs font-mono font-bold text-zinc-250 block mt-0.5">
+                  <span className="block text-[8px] uppercase font-extrabold text-[var(--text-secondary)] tracking-wider">Finish Time</span>
+                  <span className="text-xs font-mono font-bold text-[var(--text-primary)] block mt-0.5">
                     ⏱️ {deleteConfirmOrder.finishingTime}
                   </span>
                 </div>
               </div>
 
               {deleteConfirmOrder.customInscription && (
-                <div className="border-t border-zinc-905 pt-2">
-                  <span className="block text-[8px] uppercase font-extrabold text-zinc-500 tracking-wider">Engraving Inscription</span>
-                  <span className="text-xs italic text-zinc-400 block mt-1 bg-black/30 border border-zinc-900/40 rounded px-2 py-1 truncate">
+                <div className="border-t border-[var(--border-subtle)] pt-2">
+                  <span className="block text-[8px] uppercase font-extrabold text-[var(--text-secondary)] tracking-wider">Engraving Inscription</span>
+                  <span className="text-xs italic text-[var(--text-secondary)] block mt-1 bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-subtle)]/40 rounded px-2 py-1 truncate">
                     "{deleteConfirmOrder.customInscription}"
                   </span>
                 </div>
@@ -1890,13 +1890,13 @@ export default function OperatorDashboard({
             <div className="grid grid-cols-2 gap-3.5 pt-2">
               <button 
                 onClick={() => setDeleteConfirmOrder(null)}
-                className="w-full bg-[#18181b] hover:bg-zinc-800 text-zinc-300 font-extrabold py-3 px-4 rounded-xl text-[10px] uppercase tracking-widest border border-zinc-800 transition duration-150 active:scale-95"
+                className="w-full bg-[var(--surface-inset)]/75 backdrop-blur-md hover:bg-[var(--surface-hover)] text-[var(--text-primary)] font-extrabold py-3 px-4 rounded-[20px] text-[10px] uppercase tracking-widest border border-[var(--border-default)] transition duration-150 active:scale-95"
               >
                 Abort & Keep
               </button>
               <button 
                 onClick={handleExecuteDeleteOrder}
-                className="w-full bg-gradient-to-r from-red-650 to-red-600 hover:brightness-110 text-white font-extrabold py-3 px-4 rounded-xl text-[10px] uppercase tracking-widest transition duration-150 active:scale-95 shadow-md shadow-red-950/20 flex items-center justify-center gap-1.5"
+                className="w-full bg-gradient-to-r from-red-650 to-red-600 hover:brightness-110 text-white font-extrabold py-3 px-4 rounded-[20px] text-[10px] uppercase tracking-widest transition duration-150 active:scale-95 shadow-md shadow-red-950/20 flex items-center justify-center gap-1.5"
               >
                 <Trash2 className="w-3.5 h-3.5" /> Confirm Delete
               </button>
@@ -1908,30 +1908,30 @@ export default function OperatorDashboard({
       {/* CUSTOM PURGE DATABASE MODAL FOR FRESH START */}
       {showPurgeConfirm && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-[#141414] border border-red-500/30 rounded-2xl p-6 sm:p-8 max-w-md w-full text-center space-y-6 shadow-2xl relative animate-slideUp">
+          <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-red-500/30 rounded-[26px] p-6 sm:p-8 max-w-md w-full text-center space-y-6 shadow-2xl relative animate-slideUp">
             <div className="mx-auto w-14 h-14 bg-red-500/15 text-red-500 rounded-full flex items-center justify-center animate-pulse">
               <AlertTriangle className="w-7 h-7 text-red-500" />
             </div>
 
             <div className="space-y-2">
-              <h3 className="text-xl font-black text-white uppercase tracking-tight font-display">Start Fresh Race?</h3>
-              <p className="text-xs text-zinc-400 leading-normal">
-                This will instantly wipe out <strong className="text-zinc-200">ALL {stats.total} engraving requests</strong> from both the cloud database and any local nodes. Use this to prepare a clean slate for the new race event!
+              <h3 className="heading-float text-xl font-black text-[var(--text-primary)] uppercase tracking-tight font-display">Start Fresh Race?</h3>
+              <p className="text-xs text-[var(--text-secondary)] leading-normal">
+                This will instantly wipe out <strong className="text-[var(--text-primary)]">ALL {stats.total} engraving requests</strong> from both the cloud database and any local nodes. Use this to prepare a clean slate for the new race event!
               </p>
             </div>
 
             {/* Current Summary Statistics block */}
-            <div className="bg-black/60 rounded-xl p-4 border border-zinc-850 text-left space-y-2 font-mono text-[11px] text-zinc-400">
-              <span className="text-[9px] font-extrabold uppercase text-zinc-550 block mb-1 tracking-widest font-sans">Data Purge Estimates:</span>
-              <div className="flex justify-between border-b border-zinc-900 pb-1.5">
+            <div className="bg-[var(--surface-inset)]/75 backdrop-blur-md rounded-[20px] p-4 border border-[var(--border-subtle)] text-left space-y-2 font-mono text-[11px] text-[var(--text-secondary)]">
+              <span className="text-[9px] font-extrabold uppercase text-[var(--text-secondary)] block mb-1 tracking-widest font-sans">Data Purge Estimates:</span>
+              <div className="flex justify-between border-b border-[var(--border-subtle)] pb-1.5">
                 <span>Total Active Entries:</span>
-                <span className="font-extrabold text-white">{stats.total}</span>
+                <span className="font-extrabold text-[var(--text-primary)]">{stats.total}</span>
               </div>
-              <div className="flex justify-between border-b border-zinc-900 pb-1.5">
+              <div className="flex justify-between border-b border-[var(--border-subtle)] pb-1.5">
                 <span>Completed / Handover:</span>
                 <span className="font-extrabold text-emerald-400">{stats.completed}</span>
               </div>
-              <div className="flex justify-between text-zinc-500">
+              <div className="flex justify-between text-[var(--text-secondary)]">
                 <span>Discarded Pending Queue:</span>
                 <span className="font-extrabold text-amber-500">{stats.queued + stats.inprogress + stats.ready}</span>
               </div>
@@ -1944,13 +1944,13 @@ export default function OperatorDashboard({
             <div className="grid grid-cols-2 gap-3.5 pt-2">
               <button 
                 onClick={() => setShowPurgeConfirm(false)}
-                className="w-full bg-[#18181b] hover:bg-zinc-800 text-zinc-300 font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider border border-zinc-800 transition active:scale-95"
+                className="w-full bg-[var(--surface-inset)]/75 backdrop-blur-md hover:bg-[var(--surface-hover)] text-[var(--text-primary)] font-bold py-3 px-4 rounded-[20px] text-xs uppercase tracking-wider border border-[var(--border-default)] transition active:scale-95"
               >
                 Cancel, Keep DB
               </button>
               <button 
                 onClick={handleExecutePurgeDatabase}
-                className="w-full bg-gradient-to-r from-red-600 to-red-500 hover:brightness-110 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider transition active:scale-95 shadow-md shadow-red-900/10"
+                className="w-full bg-gradient-to-r from-red-600 to-red-500 hover:brightness-110 text-white font-bold py-3 px-4 rounded-[20px] text-xs uppercase tracking-wider transition active:scale-95 shadow-md shadow-red-900/10"
               >
                 Yes, Purge and Reset All
               </button>
@@ -2065,19 +2065,19 @@ function QrScannerComponent({
       {/* Hidden container for file decoder */}
       <div id="temporary-file-qr-decoder" className="hidden" />
 
-      <div className="bg-[#121316] border border-zinc-800 rounded-2xl w-full max-w-sm md:max-w-md overflow-hidden shadow-2xl flex flex-col">
+      <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-default)] rounded-[26px] w-full max-w-sm md:max-w-md overflow-hidden shadow-2xl flex flex-col">
         {/* Header */}
-        <div className="p-5 border-b border-zinc-850 flex items-center justify-between bg-black/40">
+        <div className="p-5 border-b border-[var(--border-subtle)] flex items-center justify-between bg-[var(--surface-inset)]/75 backdrop-blur-md">
           <div className="flex items-center gap-2">
             <Camera className="w-5 h-5 text-violet-500" />
             <div>
-              <h2 className="text-md font-black tracking-tight font-display text-white uppercase">Live Ticket QR Reader</h2>
-              <p className="text-[10px] text-zinc-500 font-mono">STANDBY FOR RUNNER TICKET TRANSIT</p>
+              <h2 className="heading-float text-md font-black tracking-tight font-display text-[var(--text-primary)] uppercase">Live Ticket QR Reader</h2>
+              <p className="text-[10px] text-[var(--text-secondary)] font-mono">STANDBY FOR RUNNER TICKET TRANSIT</p>
             </div>
           </div>
           <button 
             onClick={onClose}
-            className="text-zinc-500 hover:text-white transition bg-zinc-900 border border-zinc-805 hover:border-zinc-750 p-2 rounded-xl text-xs font-bold uppercase px-3"
+            className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-default)] hover:border-[var(--border-default)] p-2 rounded-[20px] text-xs font-bold uppercase px-3"
           >
             ✕ Close
           </button>
@@ -2085,33 +2085,33 @@ function QrScannerComponent({
 
         {/* Body */}
         <div className="p-6 flex flex-col items-center justify-center space-y-4">
-          <div className="text-center text-[11px] text-zinc-400 max-w-sm bg-zinc-950 p-3 rounded-xl border border-zinc-900 leading-relaxed font-sans">
+          <div className="text-center text-[11px] text-[var(--text-secondary)] max-w-sm bg-[var(--surface-card)]/72 backdrop-blur-2xl p-3 rounded-[20px] border border-[var(--border-subtle)] leading-relaxed font-sans">
             Point your webcam or laptop camera at the <strong>Offline Live QR Sync Ticket</strong> rendered on the runner's registration screen to transfer details offline immediately.
           </div>
 
           {/* Active Scanning Frame */}
-          <div className="relative w-full aspect-square max-w-[280px] rounded-2xl overflow-hidden border-2 border-dashed border-zinc-805 bg-[#070809] flex items-center justify-center shadow-inner">
+          <div className="relative w-full aspect-square max-w-[280px] rounded-[26px] overflow-hidden border-2 border-dashed border-[var(--border-default)] bg-[var(--surface-inset)]/75 backdrop-blur-md flex items-center justify-center shadow-inner">
             <div id={scannerId} className="w-full h-full" />
             {!cameraActive && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-650 p-5 text-center bg-black/50 backdrop-blur-sm">
-                <div className="relative mb-3 flex items-center justify-center w-12 h-12 bg-zinc-900 rounded-full border border-zinc-800">
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-[var(--text-muted)] p-5 text-center bg-black/50 backdrop-blur-sm">
+                <div className="relative mb-3 flex items-center justify-center w-12 h-12 bg-[var(--surface-inset)]/75 backdrop-blur-md rounded-full border border-[var(--border-default)]">
                   {permissionError ? (
                     <ShieldAlert className="w-6 h-6 text-red-500 animate-pulse" />
                   ) : (
-                    <Camera className="w-6 h-6 text-zinc-600 animate-pulse" />
+                    <Camera className="w-6 h-6 text-[var(--text-muted)] animate-pulse" />
                   )}
                 </div>
                 {permissionError ? (
                   <div className="space-y-1.5">
                     <p className="text-xs font-mono font-black text-rose-500 tracking-wider">🚫 CAMERA ACCESS BLOCKED</p>
-                    <p className="text-[10px] text-zinc-400 leading-relaxed">
-                      Permission was denied. Please click the <strong className="text-white bg-zinc-800 px-1 py-0.5 rounded">Camera Icon/Lock</strong> in your browser's address bar to enable webcam access, or click "Upload QR Image" below to scan a photo of the QR ticket!
+                    <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
+                      Permission was denied. Please click the <strong className="text-[var(--text-primary)] bg-[var(--surface-hover)] px-1 py-0.5 rounded">Camera Icon/Lock</strong> in your browser's address bar to enable webcam access, or click "Upload QR Image" below to scan a photo of the QR ticket!
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-1">
                     <p className="text-xs font-mono select-none">Awaiting Camera Feed...</p>
-                    <p className="text-[10px] text-zinc-500 mt-1 max-w-xs leading-normal">Please allow webcam access inside your browser when prompted.</p>
+                    <p className="text-[10px] text-[var(--text-secondary)] mt-1 max-w-xs leading-normal">Please allow webcam access inside your browser when prompted.</p>
                   </div>
                 )}
               </div>
@@ -2125,12 +2125,12 @@ function QrScannerComponent({
 
           {/* Fallback Image Import Trigger */}
           <div className="w-full max-w-[280px]">
-            <label className="flex flex-col items-center justify-center border border-dashed border-zinc-800 hover:border-zinc-700 bg-zinc-950 p-3 rounded-xl cursor-pointer transition select-none active:scale-95 duration-150">
-              <span className="text-[10px] uppercase font-bold text-zinc-400 flex items-center gap-1.5 font-mono">
+            <label className="flex flex-col items-center justify-center border border-dashed border-[var(--border-default)] hover:border-[var(--border-default)] bg-[var(--surface-card)]/72 backdrop-blur-2xl p-3 rounded-[20px] cursor-pointer transition select-none active:scale-95 duration-150">
+              <span className="text-[10px] uppercase font-bold text-[var(--text-secondary)] flex items-center gap-1.5 font-mono">
                 <UploadCloud className="w-3.5 h-3.5 text-amber-500" />
                 Upload Photo / Screenshot of QR
               </span>
-              <p className="text-[9px] text-zinc-650 mt-1">If webcam is unavailable or blocked</p>
+              <p className="text-[9px] text-[var(--text-muted)] mt-1">If webcam is unavailable or blocked</p>
               <input
                 type="file"
                 accept="image/*"
@@ -2142,27 +2142,27 @@ function QrScannerComponent({
 
           {/* Dynamic Alerts */}
           {successMessage && (
-            <div className="w-full text-xs text-green-400 font-bold p-3 bg-green-955/15 border border-green-900/35 rounded-xl text-center animate-pulse">
+            <div className="w-full text-xs text-green-400 font-bold p-3 bg-green-955/15 border border-green-900/35 rounded-[20px] text-center animate-pulse">
               ✅ {successMessage}
             </div>
           )}
 
           {errorMessage && (
-            <div className="w-full text-xs text-red-400 font-bold p-3 bg-red-955/15 border border-red-900/35 rounded-xl text-center">
+            <div className="w-full text-xs text-red-400 font-bold p-3 bg-red-955/15 border border-red-900/35 rounded-[20px] text-center">
               ⚠️ {errorMessage}
             </div>
           )}
 
           {localFileError && (
-            <div className="w-full text-xs text-amber-500 font-bold p-3 bg-amber-955/15 border border-amber-900/35 rounded-xl text-center">
+            <div className="w-full text-xs text-amber-500 font-bold p-3 bg-amber-955/15 border border-amber-900/35 rounded-[20px] text-center">
               ⚠️ {localFileError}
             </div>
           )}
         </div>
 
         {/* Footer instruction indicator */}
-        <div className="p-4 bg-black/60 border-t border-zinc-850 flex justify-center items-center">
-          <span className="text-[9.5px] text-zinc-550 font-mono text-center tracking-normal leading-relaxed">
+        <div className="p-4 bg-[var(--surface-inset)]/75 backdrop-blur-md border-t border-[var(--border-subtle)] flex justify-center items-center">
+          <span className="text-[9.5px] text-[var(--text-secondary)] font-mono text-center tracking-normal leading-relaxed">
             Hint: You can import screenshots or camera pictures of QR codes directly!
           </span>
         </div>
