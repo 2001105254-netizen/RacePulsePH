@@ -2,9 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { collection, doc, onSnapshot, setDoc, deleteDoc, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { AgeCategory, Gender, Race, RaceDistance, RunnerProfile } from '../types';
-import { groupRunnersForReport } from '../lib/runnerReport';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { generateRunnerRosterPdf } from '../lib/runnerReport';
 import { Flag, Trash2, Plus, Save, Pencil, RefreshCw, Users2, FileDown } from 'lucide-react';
 
 interface CheckpointDraft {
@@ -54,9 +52,15 @@ function formatPriceRange(distances: RaceDistance[] | undefined): string {
   return min === max ? `₱${min.toFixed(0)}` : `₱${min.toFixed(0)}-₱${max.toFixed(0)}`;
 }
 
+interface RaceSetupPanelProps {
+  uid: string;
+  // Admin sees/edits every organizer's races; an Organizer only sees/edits their own.
+  canSeeAllRaces: boolean;
+}
+
 // Shared by both the Admin "Race Setup" tab and the Organizer dashboard - organizers
 // need to be able to stand up a race day-of without waiting on an Admin.
-export default function RaceSetupPanel() {
+export default function RaceSetupPanel({ uid, canSeeAllRaces }: RaceSetupPanelProps) {
   const [races, setRaces] = useState<Race[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -70,14 +74,17 @@ export default function RaceSetupPanel() {
   const [reportBusyRaceId, setReportBusyRaceId] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'races'), (snapshot) => {
+    const racesQuery = canSeeAllRaces
+      ? query(collection(db, 'races'))
+      : query(collection(db, 'races'), where('createdBy', '==', uid));
+    const unsubscribe = onSnapshot(racesQuery, (snapshot) => {
       const list: Race[] = [];
       snapshot.forEach((docSnap) => list.push(docSnap.data() as Race));
       list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setRaces(list);
     }, (err) => console.warn('Races listener failed:', err.message));
     return () => unsubscribe();
-  }, []);
+  }, [canSeeAllRaces, uid]);
 
   const resetForm = () => {
     setEditingId(null);
@@ -146,7 +153,7 @@ export default function RaceSetupPanel() {
         ageCategories: ageCategories.map(draftToAgeCategory),
         distances: [...distances].sort((a, b) => a.km - b.km).map(draftToDistance),
         inclusions: inclusions.map((i) => i.text.trim()).filter(Boolean),
-        createdBy: existing?.createdBy || '',
+        createdBy: existing?.createdBy || uid,
         createdAt: existing?.createdAt || new Date().toISOString(),
       };
       await setDoc(doc(db, 'races', raceId), record);
@@ -175,60 +182,9 @@ export default function RaceSetupPanel() {
       const runners: RunnerProfile[] = [];
       snapshot.forEach((docSnap) => runners.push(docSnap.data() as RunnerProfile));
 
-      if (runners.length === 0) {
+      if (!generateRunnerRosterPdf(race, runners)) {
         alert('No registered runners for this race yet.');
-        return;
       }
-
-      const groups = groupRunnersForReport(runners, race.ageCategories || []);
-      const pdf = new jsPDF();
-
-      pdf.setFillColor(20, 20, 20);
-      pdf.rect(0, 0, 210, 26, 'F');
-      pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(15);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(race.name.toUpperCase(), 14, 12);
-      pdf.setFontSize(8.5);
-      pdf.setTextColor(245, 158, 11);
-      pdf.text(`RUNNER ROSTER BY DISTANCE & AGE CATEGORY  |  ${runners.length} TOTAL RUNNERS  |  GENERATED ${new Date().toLocaleString()}`, 14, 19);
-
-      let cursorY = 34;
-      let currentDistance = '';
-
-      groups.forEach((group) => {
-        if (cursorY > 265) {
-          pdf.addPage();
-          cursorY = 20;
-        }
-        if (group.distance !== currentDistance) {
-          currentDistance = group.distance;
-          pdf.setFontSize(12);
-          pdf.setTextColor(220, 38, 38);
-          pdf.setFont('helvetica', 'bold');
-          pdf.text(`DISTANCE: ${group.distance.toUpperCase()}`, 14, cursorY);
-          cursorY += 6;
-        }
-        pdf.setFontSize(9.5);
-        pdf.setTextColor(80, 80, 80);
-        pdf.setFont('helvetica', 'bolditalic');
-        pdf.text(group.categoryLabel.toUpperCase(), 14, cursorY);
-        cursorY += 2;
-
-        autoTable(pdf, {
-          startY: cursorY,
-          head: [['#', 'Bib', 'Runner Name', 'Gender', 'Age']],
-          body: group.runners.map((r, idx) => [idx + 1, r.bibNumber, r.fullName, r.gender.toUpperCase(), r.age]),
-          styles: { fontSize: 8, cellPadding: 2.5, textColor: [40, 40, 40] },
-          headStyles: { fillColor: [30, 30, 35], textColor: [255, 255, 255], fontStyle: 'bold' },
-          alternateRowStyles: { fillColor: [248, 248, 250] },
-          margin: { left: 14, right: 14 },
-        });
-        cursorY = (pdf as any).lastAutoTable.finalY + 8;
-      });
-
-      const sanitizedName = race.name.trim().replace(/[^a-zA-Z0-9_-]/g, '_') || 'Race';
-      pdf.save(`${sanitizedName}_Runner_Roster.pdf`);
     } catch (err) {
       console.warn('Failed to generate runner report:', err);
       alert('Failed to generate the runner report. Please try again.');
@@ -418,7 +374,7 @@ export default function RaceSetupPanel() {
       </div>
 
       <div className="glass-panel p-5">
-        <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] mb-3">Configured Races</h3>
+        <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] mb-3">{canSeeAllRaces ? 'All Races' : 'Your Races'}</h3>
         <div className="space-y-2">
           {races.length === 0 && <p className="text-xs text-[var(--text-secondary)]">No races yet - create one on the left.</p>}
           {races.map((race) => (

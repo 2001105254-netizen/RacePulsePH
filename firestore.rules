@@ -66,11 +66,13 @@ service cloud.firestore {
     // ========== RACES & CHECKPOINTS ==========
 
     match /races/{raceId} {
+      // Public read so runners can browse/register for every organizer's races.
       allow get: if true;
       allow list: if true;
-      // Organizers can create/edit races (and their checkpoints/age categories) day-of;
-      // deletion is Admin-only to avoid an organizer accidentally wiping race-day data.
-      allow create, update: if isAdmin() || isOrganizer();
+      // Organizers can only create/edit races they themselves created - other organizers
+      // can't see or touch each other's races in their dashboards. Admin can edit any race.
+      allow create: if isAdmin() || (isOrganizer() && request.resource.data.createdBy == request.auth.uid);
+      allow update: if isAdmin() || (isOrganizer() && resource.data.createdBy == request.auth.uid);
       allow delete: if isAdmin();
     }
 

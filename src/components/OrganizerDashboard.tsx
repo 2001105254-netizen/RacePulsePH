@@ -31,8 +31,8 @@ export default function OrganizerDashboard({ profile }: OrganizerDashboardProps)
         </button>
       </div>
 
-      {tab === 'timing' && <TimingConsole uid={profile.uid} />}
-      {tab === 'race' && <RaceSetupPanel />}
+      {tab === 'timing' && <TimingConsole uid={profile.uid} canSeeAllRaces={false} />}
+      {tab === 'race' && <RaceSetupPanel uid={profile.uid} canSeeAllRaces={false} />}
 
       <BottomNav
         items={[

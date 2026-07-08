@@ -36,8 +36,8 @@ export default function AdminDashboard({ profile }: AdminDashboardProps) {
       </div>
 
       {tab === 'engraving' && <OperatorDashboard />}
-      {tab === 'timing' && <TimingConsole uid={profile.uid} />}
-      {tab === 'race' && <RaceSetupPanel />}
+      {tab === 'timing' && <TimingConsole uid={profile.uid} canSeeAllRaces />}
+      {tab === 'race' && <RaceSetupPanel uid={profile.uid} canSeeAllRaces />}
       {tab === 'organizers' && <OrganizersPanel />}
 
       <BottomNav
