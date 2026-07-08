@@ -32,6 +32,8 @@ export interface UserProfile {
   role: UserRole;
   approved: boolean; // admin & runner: always true. organizer: false until an admin approves.
   createdAt: string;
+  nickname?: string;
+  photoURL?: string; // small base64 data URI, resized client-side before saving
 }
 
 export interface Checkpoint {

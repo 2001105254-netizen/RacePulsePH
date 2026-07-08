@@ -1,12 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { collection, doc, getDocs, onSnapshot, query, setDoc, where } from 'firebase/firestore';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { collection, doc, getDocs, onSnapshot, query, setDoc, updateDoc, where } from 'firebase/firestore';
 import { db, signOutUser } from '../firebase';
 import { useDualSync } from '../lib/dualSync';
 import { computeResults } from '../lib/timing';
 import { ChipRead, Gender, Race, RunnerProfile, UserProfile } from '../types';
 import CustomerForm from './CustomerForm';
 import { QRCodeSVG } from 'qrcode.react';
-import { LogOut, User, Hash, MapPin, RefreshCw, Award, ClipboardList, Clock, ArrowLeft, ArrowRight, Flag, Calendar, CheckSquare, Coins, PackageCheck } from 'lucide-react';
+import { LogOut, User, Hash, MapPin, RefreshCw, Award, ClipboardList, Clock, ArrowLeft, ArrowRight, Flag, Calendar, CheckSquare, Coins, PackageCheck, Camera, Trophy, X, Pencil } from 'lucide-react';
 import BottomNav from './BottomNav';
 import RaceList from './RaceList';
 
@@ -23,6 +23,7 @@ function mostRecent(profiles: RunnerProfile[]): RunnerProfile | undefined {
 export default function RunnerDashboard({ profile }: RunnerDashboardProps) {
   const [runnerProfiles, setRunnerProfiles] = useState<RunnerProfile[] | undefined>(undefined); // undefined = loading
   const [tab, setTab] = useState<RunnerTab>('events');
+  const [showProfile, setShowProfile] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(query(collection(db, 'runners'), where('uid', '==', profile.uid)), (snapshot) => {
@@ -46,13 +47,30 @@ export default function RunnerDashboard({ profile }: RunnerDashboardProps) {
           <h1 className="heading-float text-2xl font-black tracking-tight font-display text-[var(--text-primary)] mt-1.5 uppercase">Welcome, {profile.displayName}</h1>
           <p className="text-xs text-[var(--text-secondary)] mt-1">Register for races, track your splits, and personalize your finisher medal.</p>
         </div>
-        <button
-          onClick={() => signOutUser()}
-          className="text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)]/75 backdrop-blur-md hover:text-[var(--text-primary)] font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider self-start"
-        >
-          <LogOut className="w-3.5 h-3.5" /> Sign Out
-        </button>
+        <div className="flex items-center gap-2 self-start">
+          <button
+            onClick={() => setShowProfile(true)}
+            title="My Profile"
+            className="w-10 h-10 rounded-full overflow-hidden glass-inset flex items-center justify-center text-red-500 font-black text-sm hover:border-red-500/40 transition shrink-0"
+          >
+            {profile.photoURL ? (
+              <img src={profile.photoURL} alt="" className="w-full h-full object-cover" />
+            ) : (
+              (profile.nickname || profile.displayName || '?').charAt(0).toUpperCase()
+            )}
+          </button>
+          <button
+            onClick={() => signOutUser()}
+            className="text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)]/75 backdrop-blur-md hover:text-[var(--text-primary)] font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
+          >
+            <LogOut className="w-3.5 h-3.5" /> Sign Out
+          </button>
+        </div>
       </div>
+
+      {showProfile && (
+        <ProfileModal profile={profile} runnerProfiles={runnerProfiles || []} onClose={() => setShowProfile(false)} />
+      )}
 
       {runnerProfiles === undefined && (
         <div className="glass-panel p-8 text-center">
@@ -556,6 +574,211 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
             <span className="text-xl font-mono font-black text-red-500 tracking-widest">#{runnerProfile.bibNumber}</span>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ========== PROFILE ==========
+
+// Center-crops and downsizes an image client-side before it's embedded directly
+// on the user's Firestore doc - keeps it small with zero extra Firebase setup.
+function resizeImageToDataUrl(file: File, size = 200, quality = 0.82): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Failed to read the selected file.'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Failed to load the selected image.'));
+      img.onload = () => {
+        const side = Math.min(img.width, img.height);
+        const sx = (img.width - side) / 2;
+        const sy = (img.height - side) / 2;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Image processing is not supported in this browser.'));
+          return;
+        }
+        ctx.drawImage(img, sx, sy, side, side, 0, 0, size, size);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+interface ProfileModalProps {
+  profile: UserProfile;
+  runnerProfiles: RunnerProfile[];
+  onClose: () => void;
+}
+
+function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
+  const [races, setRaces] = useState<Race[]>([]);
+  const [nickname, setNickname] = useState(profile.nickname || '');
+  const [photoPreview, setPhotoPreview] = useState<string | null>(profile.photoURL || null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'races'), (snapshot) => {
+      const list: Race[] = [];
+      snapshot.forEach((docSnap) => list.push(docSnap.data() as Race));
+      setRaces(list);
+    }, (err) => console.warn('Races listener failed:', err.message));
+    return () => unsubscribe();
+  }, []);
+
+  const raceById = useMemo(() => new Map(races.map((r) => [r.id, r])), [races]);
+  const mostRecentPast = useMemo(() => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    return [...runnerProfiles]
+      .filter((rp) => (raceById.get(rp.raceId)?.date || '9999') < todayStr)
+      .sort((a, b) => (raceById.get(b.raceId)?.date || '').localeCompare(raceById.get(a.raceId)?.date || ''))[0];
+  }, [runnerProfiles, raceById]);
+
+  const [recentResult, setRecentResult] = useState<ReturnType<typeof computeResults>[number] | null | undefined>(undefined);
+
+  useEffect(() => {
+    const race = mostRecentPast ? raceById.get(mostRecentPast.raceId) : undefined;
+    if (!mostRecentPast || !race) {
+      setRecentResult(null);
+      return;
+    }
+    (async () => {
+      try {
+        const snapshot = await getDocs(
+          query(collection(db, 'chipReads'), where('raceId', '==', race.id), where('bibNumber', '==', mostRecentPast.bibNumber))
+        );
+        const chipReads: ChipRead[] = [];
+        snapshot.forEach((docSnap) => chipReads.push(docSnap.data() as ChipRead));
+        const result = computeResults(race.checkpoints, chipReads, [mostRecentPast]).find((r) => r.bibNumber === mostRecentPast.bibNumber);
+        setRecentResult(result || null);
+      } catch (err) {
+        console.warn('Failed to load recent race result:', err);
+        setRecentResult(null);
+      }
+    })();
+  }, [mostRecentPast?.raceId, mostRecentPast?.bibNumber]);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setError('Please select an image file.');
+      return;
+    }
+    setError('');
+    try {
+      const dataUrl = await resizeImageToDataUrl(file);
+      setPhotoPreview(dataUrl);
+    } catch (err: any) {
+      setError(err.message || 'Failed to process the image.');
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      await updateDoc(doc(db, 'users', profile.uid), {
+        nickname: nickname.trim(),
+        ...(photoPreview ? { photoURL: photoPreview } : {}),
+      });
+      onClose();
+    } catch (err: any) {
+      setError(err.message || 'Failed to save your profile.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const recentRace = mostRecentPast ? raceById.get(mostRecentPast.raceId) : undefined;
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn">
+      <div className="glass-panel w-full max-w-md p-6 space-y-5 relative">
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-[var(--text-secondary)] hover:text-[var(--text-primary)] glass-inset p-2 rounded-full transition"
+        >
+          <X className="w-4 h-4" />
+        </button>
+
+        <div className="flex flex-col items-center gap-3 pt-2">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="relative w-24 h-24 rounded-full overflow-hidden glass-inset flex items-center justify-center text-red-500 font-black text-3xl group"
+            title="Change profile picture"
+          >
+            {photoPreview ? (
+              <img src={photoPreview} alt="" className="w-full h-full object-cover" />
+            ) : (
+              (nickname || profile.displayName || '?').charAt(0).toUpperCase()
+            )}
+            <span className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+              <Camera className="w-6 h-6 text-white" />
+            </span>
+          </button>
+          <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
+          <button type="button" onClick={() => fileInputRef.current?.click()} className="text-[10.5px] font-bold text-red-500 hover:text-red-400 flex items-center gap-1 uppercase tracking-wide">
+            <Pencil className="w-3 h-3" /> Change Photo
+          </button>
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Nickname</label>
+          <input
+            type="text"
+            value={nickname}
+            onChange={(e) => setNickname(e.target.value)}
+            placeholder={profile.displayName}
+            maxLength={30}
+            className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+          />
+        </div>
+
+        <div>
+          <h3 className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] mb-2 flex items-center gap-1.5">
+            <Trophy className="w-3.5 h-3.5 text-red-500" /> Most Recent Race
+          </h3>
+          {!mostRecentPast || !recentRace ? (
+            <p className="text-xs text-[var(--text-secondary)] glass-inset px-3 py-2.5">No completed races yet.</p>
+          ) : recentResult === undefined ? (
+            <p className="text-xs text-[var(--text-secondary)] glass-inset px-3 py-2.5 flex items-center gap-1.5"><RefreshCw className="w-3 h-3 animate-spin" /> Loading...</p>
+          ) : (
+            <div className="glass-inset px-4 py-3 space-y-1.5">
+              <p className="text-sm font-bold text-[var(--text-primary)]">{recentRace.name}</p>
+              <p className="text-[10px] text-[var(--text-secondary)]">{recentRace.date} &bull; {mostRecentPast.distance} &bull; #{mostRecentPast.bibNumber}</p>
+              <div className="flex items-center gap-4 pt-1">
+                <div>
+                  <span className="block text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Rank</span>
+                  <span className="text-lg font-mono font-black text-red-500">{recentResult?.rank ? `#${recentResult.rank}` : '—'}</span>
+                </div>
+                <div>
+                  <span className="block text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Finish Time</span>
+                  <span className="text-lg font-mono font-black text-red-500">{recentResult?.finishTime || '—'}</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {error && <p className="text-xs text-red-500 font-semibold">⚠️ {error}</p>}
+
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-black uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-red-900/30 disabled:opacity-60"
+        >
+          {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <User className="w-4 h-4" />} Save Profile
+        </button>
       </div>
     </div>
   );

@@ -6,6 +6,8 @@ import {
   browserLocalPersistence,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
   signOut as firebaseSignOut,
   updateProfile,
   type User,
@@ -54,6 +56,13 @@ export async function signUpWithEmail(email: string, password: string, displayNa
 
 export async function signInWithEmail(email: string, password: string): Promise<User> {
   const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
+  return credential.user;
+}
+
+const googleProvider = new GoogleAuthProvider();
+
+export async function signInWithGoogle(): Promise<User> {
+  const credential = await signInWithPopup(auth, googleProvider);
   return credential.user;
 }
 

@@ -60,7 +60,7 @@ export default function App() {
       </div>
     );
   } else if (!authUser || !profile) {
-    content = <AuthGate />;
+    content = <AuthGate authUser={authUser} />;
   } else if (profile.role === 'admin') {
     content = <AdminDashboard profile={profile} />;
   } else if (profile.role === 'organizer') {
