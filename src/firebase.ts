@@ -1,20 +1,30 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, getDocFromServer, enableIndexedDbPersistence } from 'firebase/firestore';
+import {
+  getAuth,
+  setPersistence,
+  browserLocalPersistence,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut as firebaseSignOut,
+  updateProfile,
+  type User,
+} from 'firebase/auth';
 
-// Configuration from firebase-applet-config.json
+// Configuration for the racepulseph Firebase project
 const firebaseConfig = {
-  apiKey: "AIzaSyDnDiKSfsjlmZiDkVuxLUwpKbvEjaSPz_c",
-  authDomain: "calc-e0ae8.firebaseapp.com",
-  projectId: "calc-e0ae8",
-  storageBucket: "calc-e0ae8.firebasestorage.app",
-  messagingSenderId: "246050071143",
-  appId: "1:246050071143:web:eeefc716a7064d473a2ac2"
+  apiKey: "AIzaSyBDJINSNOpvVOtichvPKWIKixWvxa5pI9s",
+  authDomain: "racepulseph.firebaseapp.com",
+  projectId: "racepulseph",
+  storageBucket: "racepulseph.firebasestorage.app",
+  messagingSenderId: "720035436658",
+  appId: "1:720035436658:web:fb5ffae560bccb70208aeb"
 };
 
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firestore targeting our custom database ID
-export const db = getFirestore(app, "ai-studio-09f7a9a1-4418-49c9-bb24-dff79b29976c");
+// Initialize Firestore on the default database
+export const db = getFirestore(app);
 
 // Enable offline database persistence for resilient offline capabilities
 if (typeof window !== 'undefined') {
@@ -25,6 +35,30 @@ if (typeof window !== 'undefined') {
       console.warn("Firestore offline persistence failed: Browser lacks support.");
     }
   });
+}
+
+// Auth setup - individual accounts for Admin / Organizer / Runner roles
+export const auth = getAuth(app);
+
+if (typeof window !== 'undefined') {
+  setPersistence(auth, browserLocalPersistence).catch((err) => {
+    console.warn('Firebase Auth persistence failed to configure:', err);
+  });
+}
+
+export async function signUpWithEmail(email: string, password: string, displayName: string): Promise<User> {
+  const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+  await updateProfile(credential.user, { displayName: displayName.trim() });
+  return credential.user;
+}
+
+export async function signInWithEmail(email: string, password: string): Promise<User> {
+  const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
+  return credential.user;
+}
+
+export async function signOutUser(): Promise<void> {
+  await firebaseSignOut(auth);
 }
 
 // Error Handling Utilities required by firebase-integration skill

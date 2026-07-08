@@ -1,14 +1,129 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
+
     function isValidId(id) {
       return id is string && id.size() > 0 && id.size() <= 64 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
-    
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function callerDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isAdmin() {
+      return isSignedIn() && callerDoc().data.role == 'admin';
+    }
+
+    function isOrganizer() {
+      return isSignedIn() && callerDoc().data.role == 'organizer';
+    }
+
+    // ========== USERS / ROLES ==========
+
+    function isValidUserCreate(data) {
+      return data.keys().hasAll(['email', 'displayName', 'role', 'approved', 'createdAt'])
+        && data.email is string && data.displayName is string
+        && data.role is string && (data.role == 'admin' || data.role == 'organizer' || data.role == 'runner')
+        && data.approved is bool
+        && data.createdAt is string
+        // Runner accounts are always auto-approved.
+        && (data.role != 'runner' || data.approved == true)
+        // Organizer accounts always start unapproved; only an Admin can flip that later.
+        && (data.role != 'organizer' || data.approved == false)
+        // Admin accounts may only be created via the one-time founding-admin claim below.
+        && (data.role != 'admin' || (
+          !exists(/databases/$(database)/documents/system/meta)
+          || get(/databases/$(database)/documents/system/meta).data.adminClaimed == false
+        ));
+    }
+
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow create: if isSignedIn() && request.auth.uid == uid && isValidUserCreate(request.resource.data);
+      // Self-updates may not change role/approved. Admins may change role/approved on anyone.
+      allow update: if isAdmin() || (
+        isSignedIn() && request.auth.uid == uid
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.approved == resource.data.approved
+      );
+    }
+
+    // ========== SYSTEM / FOUNDING ADMIN BOOTSTRAP ==========
+
+    match /system/meta {
+      allow read: if true;
+      // Allow exactly the one-time false -> true transition when claiming founding admin.
+      allow create: if isSignedIn() && request.resource.data.adminClaimed == true;
+      allow update: if isSignedIn()
+        && resource.data.adminClaimed == false
+        && request.resource.data.adminClaimed == true;
+    }
+
+    // ========== RACES & CHECKPOINTS ==========
+
+    match /races/{raceId} {
+      allow get: if true;
+      allow list: if true;
+      // Organizers can create/edit races (and their checkpoints/age categories) day-of;
+      // deletion is Admin-only to avoid an organizer accidentally wiping race-day data.
+      allow create, update: if isAdmin() || isOrganizer();
+      allow delete: if isAdmin();
+    }
+
+    // ========== RUNNER PROFILES ==========
+
+    function isValidRunnerProfile(data) {
+      return data.keys().hasAll(['uid', 'raceId', 'fullName', 'bibNumber', 'distance', 'gender', 'age', 'createdAt'])
+        && data.uid is string
+        && data.raceId is string
+        && data.fullName is string && data.fullName.size() >= 1 && data.fullName.size() <= 100
+        && data.bibNumber is string && data.bibNumber.size() >= 1 && data.bibNumber.size() <= 20
+        && data.distance is string
+        && data.gender is string && (data.gender == 'male' || data.gender == 'female')
+        && data.age is int && data.age >= 1 && data.age <= 120
+        && data.createdAt is string
+        && (!data.keys().hasAny(['chipId']) || data.chipId is string);
+    }
+
+    // Doc id is {uid}_{raceId} - one entry per registration, so a runner can hold
+    // many concurrent race registrations instead of a single overwritten profile.
+    match /runners/{regId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn()
+        && (request.resource.data.uid == request.auth.uid || isAdmin() || isOrganizer())
+        && isValidRunnerProfile(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    // ========== TIMING CHIP READS ==========
+
+    function isValidChipRead(data) {
+      return data.keys().hasAll(['raceId', 'bibNumber', 'checkpointId', 'timestamp', 'source', 'recordedBy', 'createdAt'])
+        && data.raceId is string
+        && data.bibNumber is string && data.bibNumber.size() >= 1 && data.bibNumber.size() <= 20
+        && data.checkpointId is string
+        && data.timestamp is string
+        && data.source is string && (data.source == 'manual' || data.source == 'rfid-bridge')
+        && data.recordedBy is string
+        && data.createdAt is string
+        && (!data.keys().hasAny(['chipId']) || data.chipId is string);
+    }
+
+    match /chipReads/{readId} {
+      allow read: if isSignedIn();
+      allow create, update: if (isAdmin() || isOrganizer()) && isValidChipRead(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    // ========== MEDAL ENGRAVING ORDERS ==========
+
     function isValidOrder(data) {
       return data.keys().hasAll(['runnerName', 'bibNumber', 'distance', 'finishingTime', 'status', 'createdAt', 'updatedAt'])
-        && data.keys().size() >= 7 && data.keys().size() <= 9
+        && data.keys().size() >= 7 && data.keys().size() <= 10
         && data.runnerName is string && data.runnerName.size() >= 1 && data.runnerName.size() <= 100
         && data.bibNumber is string && data.bibNumber.size() >= 1 && data.bibNumber.size() <= 20
         && data.distance is string && data.distance.size() >= 1 && data.distance.size() <= 50
@@ -17,15 +132,16 @@ service cloud.firestore {
         && data.createdAt is string
         && data.updatedAt is string
         && (!data.keys().hasAny(['rank']) || (data.rank is string && data.rank.size() <= 50))
-        && (!data.keys().hasAny(['customInscription']) || (data.customInscription is string && data.customInscription.size() <= 150));
+        && (!data.keys().hasAny(['customInscription']) || (data.customInscription is string && data.customInscription.size() <= 150))
+        && (!data.keys().hasAny(['ownerUid']) || data.ownerUid is string);
     }
 
     match /orders/{orderId} {
-      allow get: if isValidId(orderId);
-      allow list: if true;
-      allow create: if isValidId(orderId) && isValidOrder(request.resource.data);
-      allow update: if isValidId(orderId) && isValidOrder(request.resource.data);
-      allow delete: if true; // Operators can delete incorrect/canceled entries
+      allow get: if isSignedIn() && isValidId(orderId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(orderId) && isValidOrder(request.resource.data);
+      allow update: if isSignedIn() && isValidId(orderId) && isValidOrder(request.resource.data);
+      allow delete: if isAdmin(); // Only admins can delete incorrect/canceled entries now
     }
   }
 }

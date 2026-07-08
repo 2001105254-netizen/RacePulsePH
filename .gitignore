@@ -6,3 +6,5 @@ coverage/
 *.log
 .env*
 !.env.example
+local_orders.json
+local_chip_reads.json

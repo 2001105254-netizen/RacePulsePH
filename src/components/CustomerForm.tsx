@@ -7,9 +7,19 @@ import { QRCodeSVG } from 'qrcode.react';
 
 interface CustomerFormProps {
   onBackToRoleSelection: () => void;
+  backLabel?: string;
+  ownerUid?: string;
+  initialRunnerName?: string;
+  initialBibNumber?: string;
 }
 
-export default function CustomerForm({ onBackToRoleSelection }: CustomerFormProps) {
+export default function CustomerForm({
+  onBackToRoleSelection,
+  backLabel = '← Exit Terminal',
+  ownerUid,
+  initialRunnerName = '',
+  initialBibNumber = '',
+}: CustomerFormProps) {
   // Navigation / screen states
   const [viewState, setViewState] = useState<'form' | 'confirmed'>('form');
   const [submitting, setSubmitting] = useState(false);
@@ -19,8 +29,8 @@ export default function CustomerForm({ onBackToRoleSelection }: CustomerFormProp
   const [lanConnected, setLanConnected] = useState<boolean | null>(null);
 
   // Form Fields
-  const [runnerName, setRunnerName] = useState('');
-  const [bibNumber, setBibNumber] = useState('');
+  const [runnerName, setRunnerName] = useState(initialRunnerName);
+  const [bibNumber, setBibNumber] = useState(initialBibNumber);
   const [distance, setDistance] = useState('Marathon');
   const [customDistance, setCustomDistance] = useState('');
 
@@ -160,6 +170,9 @@ export default function CustomerForm({ onBackToRoleSelection }: CustomerFormProp
         updatedAt: timestamp,
       };
 
+      if (ownerUid) {
+        newOrder.ownerUid = ownerUid;
+      }
       if (rank.trim()) {
         newOrder.rank = rank.trim();
       }
@@ -275,7 +288,7 @@ export default function CustomerForm({ onBackToRoleSelection }: CustomerFormProp
           onClick={onBackToRoleSelection}
           className="w-full md:w-auto text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] glass-inset hover:bg-[var(--surface-hover)] font-bold px-4 py-3 sm:py-2.5 transition flex items-center justify-center gap-2"
         >
-          ← Exit Terminal
+          {backLabel}
         </button>
       </div>
 
