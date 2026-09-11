@@ -6,7 +6,7 @@ import { resizeImageToDataUrl } from '../lib/image';
 import { ChipRead, Gender, Race, RunnerProfile, UserProfile } from '../types';
 import CustomerForm from './CustomerForm';
 import { QRCodeSVG } from 'qrcode.react';
-import { LogOut, User, Hash, MapPin, RefreshCw, Award, ClipboardList, Clock, ArrowLeft, ArrowRight, Flag, Calendar, CheckSquare, Coins, PackageCheck, Camera, Trophy, X, Pencil } from 'lucide-react';
+import { LogOut, User, Hash, MapPin, RefreshCw, Award, ClipboardList, Clock, ArrowLeft, ArrowRight, Flag, Calendar, CheckSquare, Coins, PackageCheck, Camera, Trophy, X, Pencil, CheckCircle2, Circle, Radio } from 'lucide-react';
 import BottomNav from './BottomNav';
 import RaceList from './RaceList';
 import { isRaceRegistrationOpen } from '../lib/raceRegistration';
@@ -219,6 +219,14 @@ function RaceProfileSection({
         <div className="space-y-2">
           {profiles.map((p) => {
             const race = raceById.get(p.raceId);
+            const today = new Date().toISOString().slice(0, 10);
+            const raceStatus = !race
+              ? 'Registration saved'
+              : race.date < today
+                ? 'Race completed'
+                : race.date === today
+                  ? 'Race day'
+                  : 'Upcoming';
             return (
               <button
                 key={p.raceId}
@@ -230,6 +238,13 @@ function RaceProfileSection({
                   <p className="text-[10px] text-[var(--text-secondary)] flex items-center gap-1.5 mt-0.5">
                     <Calendar className="w-3 h-3 text-red-500" /> {race?.date || '—'} &bull; {p.distance} &bull; #{p.bibNumber}
                   </p>
+                  <span className={`inline-flex mt-2 text-[9px] font-black uppercase tracking-wide px-2 py-1 rounded-full border ${
+                    raceStatus === 'Race completed'
+                      ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'
+                      : raceStatus === 'Race day'
+                        ? 'text-red-500 bg-red-500/10 border-red-500/20'
+                        : 'text-[var(--text-secondary)] bg-[var(--surface-hover)] border-[var(--border-default)]'
+                  }`}>{raceStatus}</span>
                 </div>
                 <ArrowRight className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
               </button>
@@ -536,6 +551,84 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialRaceId, onSaved, onC
 
 // ========== SPLITS / RESULTS FOR ONE REGISTRATION ==========
 
+interface RaceProgressStep {
+  id: string;
+  label: string;
+  detail: string;
+  completed: boolean;
+  timestamp?: string;
+}
+
+function formatScanTime(timestamp?: string): string | undefined {
+  return timestamp ? new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined;
+}
+
+function RunnerRacePass({ race, runnerProfile, result, orderedCheckpoints }: {
+  race: Race;
+  runnerProfile: RunnerProfile;
+  result: ReturnType<typeof computeResults>[number] | undefined;
+  orderedCheckpoints: Race['checkpoints'];
+}) {
+  const splitFor = (checkpointId?: string) => result?.splits.find((split) => split.checkpointId === checkpointId);
+  const checkin = orderedCheckpoints.find((checkpoint, index) => checkpointType(checkpoint, index, orderedCheckpoints.length) === 'checkin');
+  const start = orderedCheckpoints.find((checkpoint, index) => checkpointType(checkpoint, index, orderedCheckpoints.length) === 'start');
+  const finish = orderedCheckpoints.find((checkpoint, index) => checkpointType(checkpoint, index, orderedCheckpoints.length) === 'finish');
+  const checkinSplit = splitFor(checkin?.id);
+  const startSplit = splitFor(start?.id);
+  const finishSplit = splitFor(finish?.id);
+  const steps: RaceProgressStep[] = [
+    { id: 'registered', label: 'Registered', detail: 'Your race slot is confirmed', completed: true, timestamp: runnerProfile.createdAt },
+    { id: 'chip', label: 'Timing chip', detail: runnerProfile.chipId ? `Chip ${runnerProfile.chipId} assigned` : 'To be assigned at kit claim', completed: !!runnerProfile.chipId },
+    ...(checkin ? [{ id: 'checkin', label: 'Checked in', detail: checkin.label, completed: !!checkinSplit, timestamp: checkinSplit?.timestamp }] : []),
+    ...(start ? [{ id: 'start', label: 'Started', detail: start.label, completed: !!startSplit, timestamp: startSplit?.timestamp }] : []),
+    ...(finish ? [{ id: 'finish', label: 'Finished', detail: finish.label, completed: !!finishSplit, timestamp: finishSplit?.timestamp }] : []),
+  ];
+  const currentStep = [...steps].reverse().find((step) => step.completed)?.label || 'Registered';
+
+  return (
+    <div className="lg:col-span-12 glass-panel overflow-hidden animate-fadeIn">
+      <div className="relative p-5 sm:p-6 overflow-hidden">
+        {race.posterImage && <img src={race.posterImage} alt="" className="absolute inset-0 w-full h-full object-cover opacity-[0.12]" />}
+        <div className="absolute inset-0 bg-gradient-to-r from-red-950/60 via-[var(--surface-panel)]/90 to-[var(--surface-panel)]" />
+        <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-5">
+          <div className="min-w-0">
+            <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-red-400 bg-red-500/10 border border-red-500/25 rounded-full px-2.5 py-1"><Radio className="w-3 h-3" /> My Race Pass</span>
+            <h2 className="heading-float text-xl sm:text-2xl font-black font-display uppercase tracking-tight text-[var(--text-primary)] mt-3 truncate">{race.name}</h2>
+            <p className="text-xs text-[var(--text-secondary)] mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1"><span className="inline-flex items-center gap-1"><Calendar className="w-3.5 h-3.5 text-red-500 mr-1.5" />{race.date}</span><span className="inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-red-500 mr-1.5" />{runnerProfile.distance}</span></p>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="glass-inset px-4 py-3 text-center min-w-[104px]">
+              <span className="block text-[9px] font-bold uppercase tracking-widest text-[var(--text-secondary)]">Bib number</span>
+              <span className="block text-xl font-mono font-black tracking-wider text-red-500 mt-0.5">#{runnerProfile.bibNumber}</span>
+            </div>
+            <div className="bg-white p-2 rounded-xl shadow-xl border border-zinc-200" title="Show this QR code at a race checkpoint">
+              <QRCodeSVG value={`RPCHIPv1|${runnerProfile.raceId}|${runnerProfile.bibNumber}`} size={66} level="M" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-5 sm:p-6 border-t border-[var(--border-default)]">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div>
+            <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)]">Race status</h3>
+            <p className="text-xs text-[var(--text-primary)] font-bold mt-1">Current: <span className="text-red-500">{currentStep}</span></p>
+          </div>
+          {result?.finishTime && <span className="text-xs font-mono font-black text-emerald-400 border border-emerald-500/25 bg-emerald-500/10 rounded-full px-3 py-1.5">Official time {result.finishTime}</span>}
+        </div>
+        <ol className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2">
+          {steps.map((step, index) => (
+            <li key={step.id} className={`flex items-center gap-3 rounded-xl border px-3 py-3 ${step.completed ? 'border-red-500/25 bg-red-500/5' : 'border-[var(--border-default)] bg-[var(--surface-inset)]/35'}`}>
+              <span className={step.completed ? 'text-red-500' : 'text-[var(--text-muted)]'}>{step.completed ? <CheckCircle2 className="w-5 h-5" /> : <Circle className="w-5 h-5" />}</span>
+              <span className="min-w-0"><span className="block text-xs font-black text-[var(--text-primary)]">{index + 1}. {step.label}</span><span className="block text-[10px] text-[var(--text-secondary)] truncate">{step.completed && step.timestamp ? formatScanTime(step.timestamp) : step.detail}</span></span>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </div>
+  );
+}
+
 function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
   const [race, setRace] = useState<Race | null | undefined>(undefined);
   const [chipReads, setChipReads] = useState<ChipRead[]>([]);
@@ -575,6 +668,7 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+      {race && <RunnerRacePass race={race} runnerProfile={runnerProfile} result={result} orderedCheckpoints={orderedCheckpoints} />}
       <div className="lg:col-span-7 space-y-6">
         <div className="glass-panel p-5">
           <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2 mb-4">
