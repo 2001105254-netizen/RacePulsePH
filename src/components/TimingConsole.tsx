@@ -3,6 +3,7 @@ import { collection, query, where, doc, setDoc, updateDoc, onSnapshot, writeBatc
 import { db } from '../firebase';
 import { useDualSync } from '../lib/dualSync';
 import { checkpointType, computeResults, getCheckpointByType, getWaveStartTime } from '../lib/timing';
+import { useOfflineScanQueue } from '../lib/offlineScanQueue';
 import { Race, ChipRead, PublicLeaderboardEntry, PublicLiveResults, RunnerProfile, RunnerResult } from '../types';
 import { groupRunnersByDistance, generateRunnerRosterPdf } from '../lib/runnerReport';
 import { Radio, ScanLine, Trophy, Clock, Wifi, WifiOff, QrCode, RefreshCw, ArrowLeft, Cpu, Users2, FileDown, Maximize2, X, ListChecks, CheckCircle2, Circle, PlayCircle, RotateCcw, Timer } from 'lucide-react';
@@ -218,6 +219,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
     getId: (r) => r.id,
     getUpdatedAt: (r) => r.createdAt,
   });
+  const { pendingCount: pendingScanCount, enqueue: enqueueScan } = useOfflineScanQueue(race.id);
 
   const [runnerProfiles, setRunnerProfiles] = useState<RunnerProfile[]>([]);
   const [runnerProfilesError, setRunnerProfilesError] = useState('');
@@ -379,18 +381,13 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         createdAt: nowIso,
       };
 
-      // Non-blocking dual write, matching the app's existing cloud + LAN sync pattern
-      setDoc(doc(db, 'chipReads', readId), record).catch((e) => {
-        console.warn('Cloud Firestore chip read write deferred or offline:', e);
-      });
-      fetch('/api/chip-reads', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(record),
-      }).catch((e) => console.warn('LAN chip read sync skipped:', e));
+      // Persist locally first, then sync in the background. This keeps the
+      // station fast even when mobile data drops or the cloud is unreachable.
+      enqueueScan(record);
 
       lastRecordedScanRef.current = { key: scanKey, at: nowMs };
-      setFeedback({ type: 'success', text: `${scannedChip ? 'RFID ' : ''}Recorded ${matchedRunner.fullName} • bib ${bibNumber} @ ${checkpointLabel(selectedCheckpointId)}${lateForCutoff ? ' • AFTER CUTOFF' : ''}` });
+      const queuedOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+      setFeedback({ type: 'success', text: `${queuedOffline ? 'Saved to device queue' : 'Recorded'} ${matchedRunner.fullName} • bib ${bibNumber} @ ${checkpointLabel(selectedCheckpointId)}${lateForCutoff ? ' • AFTER CUTOFF' : ''}` });
       announceSuccessfulScan();
       setBibInput('');
       scanInputRef.current?.focus();
@@ -434,6 +431,11 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
           <span className={`inline-flex items-center gap-1.5 text-[9px] font-mono font-bold tracking-wider uppercase px-2.5 py-1 rounded-full border ${lanConnected ? 'bg-green-500/10 border-green-500/25 text-green-500' : 'bg-rose-500/10 border-rose-500/25 text-rose-500'}`}>
             {lanConnected ? <><Wifi className="w-3 h-3" /> LAN Sync Linked</> : <><WifiOff className="w-3 h-3" /> Standalone Mode</>}
           </span>
+          {pendingScanCount > 0 && (
+            <span className="inline-flex items-center gap-1.5 text-[9px] font-mono font-bold tracking-wider uppercase px-2.5 py-1 rounded-full border bg-amber-500/10 border-amber-500/30 text-amber-500">
+              <RefreshCw className="w-3 h-3 animate-spin" /> {pendingScanCount} scan{pendingScanCount === 1 ? '' : 's'} queued
+            </span>
+          )}
         </div>
       </div>
 
@@ -532,6 +534,13 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
           <div className={`glass-inset px-4 py-3 text-xs flex flex-wrap items-center justify-between gap-2 ${selectedCheckpoint?.cutoffMinutes ? 'border-amber-500/30' : ''}`}>
             {selectedCheckpointType === 'checkin' && <span className="font-bold text-[var(--text-primary)]">{checkInCount} / {runnerProfiles.length} runners checked in</span>}
             {selectedCheckpoint?.cutoffMinutes && <span className="font-bold text-amber-500">Cutoff: {selectedCheckpoint.cutoffMinutes} min after each runner's distance wave start</span>}
+          </div>
+        )}
+
+        {pendingScanCount > 0 && (
+          <div className="px-4 py-3 rounded-[14px] border border-amber-500/30 bg-amber-500/10 text-xs text-amber-500 flex items-start gap-2">
+            <WifiOff className="w-4 h-4 shrink-0 mt-0.5" />
+            <span><strong>{pendingScanCount} scan{pendingScanCount === 1 ? '' : 's'} safely stored on this device.</strong> Keep scanning—RacePulsePH will automatically sync them when the internet reconnects.</span>
           </div>
         )}
 
