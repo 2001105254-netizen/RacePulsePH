@@ -10,6 +10,7 @@ import { LogOut, User, Hash, MapPin, RefreshCw, Award, ClipboardList, Clock, Arr
 import BottomNav from './BottomNav';
 import RaceList from './RaceList';
 import { isRaceRegistrationOpen } from '../lib/raceRegistration';
+import RunnerReminderCenter from './RunnerReminderCenter';
 
 interface RunnerDashboardProps {
   profile: UserProfile;
@@ -95,16 +96,22 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
       )}
 
       {runnerProfiles !== undefined && tab === 'events' && (
-        <RaceRegistrationForm
-          uid={profile.uid}
-          runnerProfiles={runnerProfiles}
-          initialRaceId={initialRaceId}
-          onSaved={() => setTab('myraces')}
-        />
+        <>
+          <RunnerReminderCenter runnerProfiles={runnerProfiles} />
+          <RaceRegistrationForm
+            uid={profile.uid}
+            runnerProfiles={runnerProfiles}
+            initialRaceId={initialRaceId}
+            onSaved={() => setTab('myraces')}
+          />
+        </>
       )}
 
       {runnerProfiles !== undefined && tab === 'myraces' && (
-        <MyRacesView uid={profile.uid} runnerProfiles={runnerProfiles} onBrowseEvents={() => setTab('events')} />
+        <>
+          <RunnerReminderCenter runnerProfiles={runnerProfiles} />
+          <MyRacesView uid={profile.uid} runnerProfiles={runnerProfiles} onBrowseEvents={() => setTab('events')} />
+        </>
       )}
 
       {runnerProfiles !== undefined && tab === 'engraving' && (
