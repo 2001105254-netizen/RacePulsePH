@@ -93,6 +93,8 @@ export interface Race {
   livestreamUrl?: string;
   routeMapUrl?: string;
   posterImage?: string; // small base64 data URI, resized client-side before saving
+  // Optional visual preview for a shirt, medal, kit, or another race inclusion.
+  inclusionImage?: string;
 }
 
 export interface PublicLeaderboardEntry {

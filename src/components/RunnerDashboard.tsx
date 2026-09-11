@@ -527,6 +527,15 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
           </div>
         )}
 
+        {selectedRace?.inclusionImage && (
+          <div>
+            <h3 className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] mb-2 flex items-center gap-1.5"><PackageCheck className="w-3.5 h-3.5 text-red-500" /> Shirt / Kit Design</h3>
+            <div className="rounded-[16px] overflow-hidden border border-[var(--border-default)] bg-[var(--surface-inset)]">
+              <img src={selectedRace.inclusionImage} alt={`${selectedRace.name} shirt or kit design`} className="w-full max-h-96 object-contain" />
+            </div>
+          </div>
+        )}
+
         <div>
           <h3 className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] mb-2 flex items-center gap-1.5"><CheckSquare className="w-3.5 h-3.5 text-red-500" /> Checkpoints</h3>
           <p className="text-xs text-[var(--text-secondary)]">

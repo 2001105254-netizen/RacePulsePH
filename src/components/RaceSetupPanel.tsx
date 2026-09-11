@@ -78,10 +78,13 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
   const [inclusions, setInclusions] = useState<InclusionDraft[]>([]);
   const [posterImage, setPosterImage] = useState('');
   const [posterUploading, setPosterUploading] = useState(false);
+  const [inclusionImage, setInclusionImage] = useState('');
+  const [inclusionUploading, setInclusionUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [reportBusyRaceId, setReportBusyRaceId] = useState<string | null>(null);
   const posterInputRef = useRef<HTMLInputElement>(null);
+  const inclusionInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const racesQuery = canSeeAllRaces
@@ -107,6 +110,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     setDistances([]);
     setInclusions([]);
     setPosterImage('');
+    setInclusionImage('');
     setError('');
   };
 
@@ -132,6 +136,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     setDistances((race.distances || []).sort((a, b) => a.km - b.km).map((d) => ({ id: d.id, km: d.km, price: d.price || 0 })));
     setInclusions((race.inclusions || []).map((text, idx) => ({ id: `incl_${idx}_${Date.now()}`, text })));
     setPosterImage(race.posterImage || '');
+    setInclusionImage(race.inclusionImage || '');
     setError('');
   };
 
@@ -148,6 +153,21 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
       setError(err.message || 'Failed to process the poster image.');
     } finally {
       setPosterUploading(false);
+    }
+  };
+
+  const handleInclusionImageSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setInclusionUploading(true);
+    setError('');
+    try {
+      setInclusionImage(await resizeImageToDataUrl(file, 640, 640, 0.8));
+    } catch (err: any) {
+      setError(err.message || 'Failed to process the inclusion image.');
+    } finally {
+      setInclusionUploading(false);
     }
   };
 
@@ -223,6 +243,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
         ...(existing?.livestreamUrl ? { livestreamUrl: existing.livestreamUrl } : {}),
         ...(existing?.routeMapUrl ? { routeMapUrl: existing.routeMapUrl } : {}),
         ...(posterImage ? { posterImage } : {}),
+        ...(inclusionImage ? { inclusionImage } : {}),
       };
       await setDoc(doc(db, 'races', raceId), record);
       resetForm();
@@ -464,6 +485,42 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
             <button type="button" onClick={addInclusion} className="mt-2 text-xs font-bold text-red-500 hover:text-red-400 flex items-center gap-1.5">
               <Plus className="w-3.5 h-3.5" /> Add Inclusion
             </button>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Inclusion Design Preview <span className="normal-case font-normal text-[var(--text-muted)]">(optional)</span></label>
+            <p className="text-[10.5px] text-[var(--text-secondary)] mb-2">Upload the shirt, medal, or race-kit design so runners can view it before registering.</p>
+            <input ref={inclusionInputRef} type="file" accept="image/*" onChange={handleInclusionImageSelected} className="hidden" />
+            {inclusionImage ? (
+              <div className="relative rounded-[16px] overflow-hidden border border-[var(--border-default)] bg-[var(--surface-inset)]">
+                <img src={inclusionImage} alt="Race inclusion preview" className="w-full aspect-square object-contain" />
+                <button
+                  type="button"
+                  onClick={() => setInclusionImage('')}
+                  className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center transition"
+                  title="Remove inclusion image"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => inclusionInputRef.current?.click()}
+                  className="absolute bottom-2 right-2 text-[10px] font-black uppercase tracking-wide px-3 py-1.5 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center gap-1.5 transition"
+                >
+                  <ImagePlus className="w-3 h-3" /> Change
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => inclusionInputRef.current?.click()}
+                disabled={inclusionUploading}
+                className="w-full aspect-[16/9] rounded-[16px] border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-2 text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 transition disabled:opacity-60"
+              >
+                {inclusionUploading ? <RefreshCw className="w-6 h-6 animate-spin" /> : <ImagePlus className="w-6 h-6" />}
+                <span className="text-xs font-bold uppercase tracking-wide">{inclusionUploading ? 'Processing...' : 'Upload Shirt / Kit Design'}</span>
+              </button>
+            )}
           </div>
 
           <div>

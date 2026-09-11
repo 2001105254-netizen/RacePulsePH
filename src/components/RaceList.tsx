@@ -85,6 +85,13 @@ export default function RaceList({
                     </p>
                   )}
 
+                  {race.inclusionImage && (
+                    <div className="rounded-xl overflow-hidden border border-[var(--border-default)] bg-[var(--surface-inset)]">
+                      <img src={race.inclusionImage} alt={`${race.name} shirt or kit design`} className="w-full aspect-[16/10] object-contain" />
+                      <p className="px-3 py-2 text-[9px] font-black uppercase tracking-widest text-[var(--text-secondary)]">Shirt / kit design</p>
+                    </div>
+                  )}
+
                   <p className="text-[10.5px] text-[var(--text-muted)]">
                     {race.checkpoints.length} checkpoints &bull; {(race.ageCategories || []).length} age categories
                   </p>
