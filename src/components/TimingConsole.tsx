@@ -883,7 +883,7 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
               <div className="glass-inset px-4 py-3 flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-[var(--text-primary)] truncate">{foundRunner.fullName}</p>
-                  <p className="text-[10px] text-[var(--text-secondary)]">{foundRunner.distance} &bull; #{foundRunner.bibNumber}</p>
+                  <p className="text-[10px] text-[var(--text-secondary)]">{foundRunner.distance} &bull; #{foundRunner.bibNumber} &bull; Shirt {foundRunner.shirtSize || 'not selected'}</p>
                 </div>
                 <div className="flex flex-col items-end gap-1 shrink-0">
                   <span className={`text-[10px] font-black uppercase tracking-wide px-2.5 py-1 rounded-full ${foundRunner.chipId ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/25' : 'bg-amber-500/10 text-amber-500 border border-amber-500/25'}`}>

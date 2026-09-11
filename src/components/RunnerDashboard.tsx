@@ -101,6 +101,7 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
           <RaceRegistrationForm
             uid={profile.uid}
             runnerProfiles={runnerProfiles}
+            initialShirtSize={profile.shirtSize}
             initialRaceId={initialRaceId}
             onSaved={() => setTab('myraces')}
           />
@@ -268,6 +269,7 @@ function RaceProfileSection({
 interface RaceRegistrationFormProps {
   uid: string;
   runnerProfiles: RunnerProfile[];
+  initialShirtSize?: string;
   initialRaceId?: string | null;
   onSaved?: () => void;
   onCancel?: () => void;
@@ -337,6 +339,7 @@ function RegistrationConfirmation({ race, registration, updated, onViewMyRace, o
           <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Race date</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5">{race?.date || 'To be announced'}</span></span>
           <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Distance</span><span className="block text-sm font-bold text-red-500 mt-0.5">{registration.distance}</span></span>
           <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Bib number</span><span className="block text-lg font-mono font-black text-red-500 mt-0.5">#{registration.bibNumber}</span></span>
+          {registration.shirtSize && <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Shirt size</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5">{registration.shirtSize}</span></span>}
         </div>
         <p className="text-[10.5px] text-[var(--text-secondary)]">Your QR race pass and live race status will be available under My Races.</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -348,7 +351,7 @@ function RegistrationConfirmation({ race, registration, updated, onViewMyRace, o
   );
 }
 
-function RaceRegistrationForm({ uid, runnerProfiles, initialRaceId, onSaved, onCancel }: RaceRegistrationFormProps) {
+function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRaceId, onSaved, onCancel }: RaceRegistrationFormProps) {
   const latest = mostRecent(runnerProfiles);
   const [races, setRaces] = useState<Race[]>([]);
   const [raceId, setRaceId] = useState(initialRaceId || '');
@@ -358,6 +361,7 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialRaceId, onSaved, onC
   const [customDistance, setCustomDistance] = useState('');
   const [gender, setGender] = useState<Gender>(latest?.gender || 'male');
   const [age, setAge] = useState(latest?.age ? String(latest.age) : '');
+  const [shirtSize, setShirtSize] = useState(initialShirtSize || latest?.shirtSize || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [confirmation, setConfirmation] = useState<{ registration: RunnerProfile; wasUpdate: boolean } | null>(null);
@@ -383,6 +387,7 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialRaceId, onSaved, onC
       setFullName(existingForRace.fullName);
       setGender(existingForRace.gender);
       setAge(String(existingForRace.age));
+      setShirtSize(existingForRace.shirtSize || initialShirtSize || '');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raceId]);
@@ -425,6 +430,7 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialRaceId, onSaved, onC
         // never erase operational records already set by the kit desk.
         ...(existingForRace?.chipId ? { chipId: existingForRace.chipId } : {}),
         ...(existingForRace?.kitClaimedAt ? { kitClaimedAt: existingForRace.kitClaimedAt } : {}),
+        ...(shirtSize ? { shirtSize } : {}),
       };
       await setDoc(doc(db, 'runners', `${uid}_${raceId}`), record);
       setConfirmation({ registration: record, wasUpdate: !!existingForRace });
@@ -613,6 +619,14 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialRaceId, onSaved, onC
             </div>
           </div>
           <p className="text-[10.5px] text-[var(--text-muted)] -mt-2 pl-1">Used to place you in the correct age category on race reports.</p>
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Shirt Size <span className="normal-case font-normal text-[var(--text-muted)]">(for this race)</span></label>
+            <select value={shirtSize} onChange={(e) => setShirtSize(e.target.value)} className="w-full appearance-none glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50">
+              <option value="">Select shirt size</option>
+              {['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'].map((size) => <option key={size} value={size}>{size}</option>)}
+            </select>
+            <p className="text-[10.5px] text-[var(--text-muted)] mt-1.5 pl-1">The kit desk will see this size when you claim your race kit.</p>
+          </div>
 
           <p className="text-[10.5px] text-[var(--text-secondary)] glass-inset px-3 py-2 flex items-center gap-1.5">
             <Hash className="w-3 h-3 text-red-500 shrink-0" />

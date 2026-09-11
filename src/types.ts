@@ -128,6 +128,9 @@ export interface RunnerProfile {
   // Set by the race-kit desk only after the runner has physically received
   // their kit (bib/shirt/timing chip as applicable).
   kitClaimedAt?: string;
+  // Race-specific apparel choice. A runner can choose a different shirt size
+  // for each event without changing their general account preference.
+  shirtSize?: string;
   distance: string;
   gender: Gender;
   age: number;
