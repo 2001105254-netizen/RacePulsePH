@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, doc, getDocs, onSnapshot, query, runTransaction, setDoc, updateDoc, where } from 'firebase/firestore';
-import { db, signOutUser } from '../firebase';
+import { db, sendPasswordReset, signOutUser, updateAccountDisplayName } from '../firebase';
 import { checkpointType, computeResults, getWaveStartTime } from '../lib/timing';
 import { resizeImageToDataUrl } from '../lib/image';
 import { ChipRead, Gender, Race, RunnerProfile, UserProfile } from '../types';
 import CustomerForm from './CustomerForm';
 import { QRCodeSVG } from 'qrcode.react';
-import { LogOut, User, Hash, MapPin, RefreshCw, Award, ClipboardList, Clock, ArrowLeft, ArrowRight, Flag, Calendar, CheckSquare, Coins, PackageCheck, Camera, Trophy, X, Pencil, CheckCircle2, Circle, Radio } from 'lucide-react';
+import { LogOut, User, Hash, MapPin, RefreshCw, Award, ClipboardList, Clock, ArrowLeft, ArrowRight, Flag, Calendar, CheckSquare, Coins, PackageCheck, Camera, Trophy, X, Pencil, CheckCircle2, Circle, Radio, Phone, HeartPulse, Mail } from 'lucide-react';
 import BottomNav from './BottomNav';
 import RaceList from './RaceList';
 import { isRaceRegistrationOpen } from '../lib/raceRegistration';
@@ -824,10 +824,17 @@ interface ProfileModalProps {
 
 function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
   const [races, setRaces] = useState<Race[]>([]);
+  const [displayName, setDisplayName] = useState(profile.displayName);
   const [nickname, setNickname] = useState(profile.nickname || '');
   const [photoPreview, setPhotoPreview] = useState<string | null>(profile.photoURL || null);
+  const [emergencyContactName, setEmergencyContactName] = useState(profile.emergencyContactName || '');
+  const [emergencyContactPhone, setEmergencyContactPhone] = useState(profile.emergencyContactPhone || '');
+  const [shirtSize, setShirtSize] = useState(profile.shirtSize || '');
+  const [medicalNotes, setMedicalNotes] = useState(profile.medicalNotes || '');
   const [saving, setSaving] = useState(false);
+  const [sendingPasswordReset, setSendingPasswordReset] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -888,11 +895,22 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
   };
 
   const handleSave = async () => {
+    if (!displayName.trim()) {
+      setError('Please enter your full name.');
+      return;
+    }
     setSaving(true);
     setError('');
+    setNotice('');
     try {
+      await updateAccountDisplayName(displayName);
       await updateDoc(doc(db, 'users', profile.uid), {
+        displayName: displayName.trim(),
         nickname: nickname.trim(),
+        emergencyContactName: emergencyContactName.trim(),
+        emergencyContactPhone: emergencyContactPhone.trim(),
+        shirtSize,
+        medicalNotes: medicalNotes.trim(),
         ...(photoPreview ? { photoURL: photoPreview } : {}),
       });
       onClose();
@@ -903,11 +921,25 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
     }
   };
 
+  const handlePasswordReset = async () => {
+    setSendingPasswordReset(true);
+    setError('');
+    setNotice('');
+    try {
+      await sendPasswordReset(profile.email);
+      setNotice(`Password reset link sent to ${profile.email}.`);
+    } catch (err: any) {
+      setError(err.message || 'Could not send the password reset link.');
+    } finally {
+      setSendingPasswordReset(false);
+    }
+  };
+
   const recentRace = mostRecentPast ? raceById.get(mostRecentPast.raceId) : undefined;
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn">
-      <div className="glass-panel w-full max-w-md p-6 space-y-5 relative">
+      <div className="glass-panel w-full max-w-lg max-h-[calc(100vh-2rem)] overflow-y-auto p-6 space-y-5 relative">
         <button
           onClick={onClose}
           className="absolute top-4 right-4 text-[var(--text-secondary)] hover:text-[var(--text-primary)] glass-inset p-2 rounded-full transition"
@@ -937,16 +969,67 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
           </button>
         </div>
 
-        <div>
-          <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Nickname</label>
-          <input
-            type="text"
-            value={nickname}
-            onChange={(e) => setNickname(e.target.value)}
-            placeholder={profile.displayName}
-            maxLength={30}
-            className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
-          />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Full Name</label>
+            <input
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              maxLength={100}
+              className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Nickname</label>
+            <input
+              type="text"
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              placeholder={profile.displayName}
+              maxLength={30}
+              className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Account Email</label>
+            <div className="glass-inset px-4 py-3 text-sm text-[var(--text-secondary)] flex items-center gap-2"><Mail className="w-4 h-4 text-red-500" />{profile.email}</div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <h3 className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-1.5"><PackageCheck className="w-3.5 h-3.5 text-red-500" /> Race preferences</h3>
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Shirt Size</label>
+            <select value={shirtSize} onChange={(e) => setShirtSize(e.target.value)} className="w-full appearance-none glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50">
+              <option value="">Not selected</option>
+              {['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'].map((size) => <option key={size} value={size}>{size}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <h3 className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-1.5"><HeartPulse className="w-3.5 h-3.5 text-red-500" /> Emergency &amp; medical</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Emergency Contact</label>
+              <input type="text" value={emergencyContactName} onChange={(e) => setEmergencyContactName(e.target.value)} maxLength={100} placeholder="Full name" className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Contact Number</label>
+              <div className="relative"><Phone className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" /><input type="tel" value={emergencyContactPhone} onChange={(e) => setEmergencyContactPhone(e.target.value)} maxLength={30} placeholder="09XX XXX XXXX" className="w-full glass-inset pl-10 pr-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" /></div>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Medical Note <span className="normal-case font-normal text-[var(--text-muted)]">(optional)</span></label>
+            <textarea value={medicalNotes} onChange={(e) => setMedicalNotes(e.target.value)} maxLength={600} rows={3} placeholder="Example: allergy, asthma, or other information for race-day emergencies." className="w-full resize-y glass-inset px-4 py-3 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
+            <p className="text-[10px] text-[var(--text-muted)] mt-1">Keep this brief. It is visible only to you and authorized RacePulse staff.</p>
+          </div>
+        </div>
+
+        <div className="glass-inset p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div><p className="text-xs font-black text-[var(--text-primary)]">Password</p><p className="text-[10px] text-[var(--text-secondary)] mt-0.5">We’ll send a secure reset link to your email.</p></div>
+          <button type="button" onClick={() => void handlePasswordReset()} disabled={sendingPasswordReset} className="text-[10px] font-black uppercase tracking-wide px-3 py-2.5 rounded-[14px] bg-red-500/10 text-red-500 border border-red-500/25 hover:bg-red-500 hover:text-white transition disabled:opacity-60">{sendingPasswordReset ? 'Sending...' : 'Reset password'}</button>
         </div>
 
         <div>
@@ -976,13 +1059,14 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
         </div>
 
         {error && <p className="text-xs text-red-500 font-semibold">⚠️ {error}</p>}
+        {notice && <p className="text-xs text-emerald-500 font-semibold">✓ {notice}</p>}
 
         <button
           onClick={handleSave}
           disabled={saving}
           className="w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-black uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-red-900/30 disabled:opacity-60"
         >
-          {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <User className="w-4 h-4" />} Save Profile
+          {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <User className="w-4 h-4" />} Save Settings
         </button>
       </div>
     </div>

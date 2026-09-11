@@ -66,6 +66,11 @@ export async function sendPasswordReset(email: string): Promise<void> {
   await sendPasswordResetEmail(auth, email.trim());
 }
 
+export async function updateAccountDisplayName(displayName: string): Promise<void> {
+  if (!auth.currentUser) throw new Error('You need to sign in again before updating your profile.');
+  await updateProfile(auth.currentUser, { displayName: displayName.trim() });
+}
+
 const googleProvider = new GoogleAuthProvider();
 
 export async function signInWithGoogle(): Promise<User> {

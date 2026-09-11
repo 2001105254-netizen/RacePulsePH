@@ -87,6 +87,15 @@ service cloud.firestore {
         && (data.role != 'superadmin' || canBootstrapSuperAdmin(data));
     }
 
+    function hasSafeProfileDetails(data) {
+      return (!data.keys().hasAny(['nickname']) || (data.nickname is string && data.nickname.size() <= 30))
+        && (!data.keys().hasAny(['photoURL']) || (data.photoURL is string && data.photoURL.size() <= 100000))
+        && (!data.keys().hasAny(['emergencyContactName']) || (data.emergencyContactName is string && data.emergencyContactName.size() <= 100))
+        && (!data.keys().hasAny(['emergencyContactPhone']) || (data.emergencyContactPhone is string && data.emergencyContactPhone.size() <= 30))
+        && (!data.keys().hasAny(['shirtSize']) || (data.shirtSize is string && data.shirtSize.size() <= 20))
+        && (!data.keys().hasAny(['medicalNotes']) || (data.medicalNotes is string && data.medicalNotes.size() <= 600));
+    }
+
     match /users/{uid} {
       allow read: if isSignedIn() && (request.auth.uid == uid || isStaff());
       allow create: if isSignedIn() && request.auth.uid == uid
@@ -101,6 +110,12 @@ service cloud.firestore {
         isSignedIn() && request.auth.uid == uid
         && request.resource.data.role == resource.data.role
         && request.resource.data.approved == resource.data.approved
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() >= 1
+        && request.resource.data.displayName.size() <= 100
+        && hasSafeProfileDetails(request.resource.data)
       );
       allow delete: if isSuperAdmin();
     }

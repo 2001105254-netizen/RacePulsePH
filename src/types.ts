@@ -34,6 +34,10 @@ export interface UserProfile {
   createdAt: string;
   nickname?: string;
   photoURL?: string; // small base64 data URI, resized client-side before saving
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  shirtSize?: string;
+  medicalNotes?: string;
 }
 
 export type CheckpointType = 'checkin' | 'start' | 'intermediate' | 'finish';
