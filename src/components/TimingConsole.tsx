@@ -223,6 +223,16 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
       finishTime: result.finishTime!,
     }))
   ), [race.distances, results]);
+  const publicOfficialResults = useMemo<PublicLeaderboardEntry[]>(() => results
+    .filter((result) => result.finishTime && result.rank)
+    .map((result) => ({
+      bibNumber: result.bibNumber,
+      fullName: result.runnerProfile?.fullName || `Bib ${result.bibNumber}`,
+      distance: result.runnerProfile?.distance || 'Unknown',
+      rank: result.rank!,
+      finishTime: result.finishTime!,
+    }))
+    .sort((a, b) => a.distance.localeCompare(b.distance) || a.rank - b.rank), [results]);
 
   // The operator normally stays on this screen during the race. Publish only
   // this compact, public-safe scoreboard after each scan; raw chip reads stay
@@ -240,13 +250,14 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         totalStarted: new Set(chipReads.filter((read) => read.checkpointId === startCheckpoint?.id).map((read) => read.bibNumber)).size,
         totalFinished: finishedCount,
         leaders: publicLeaders,
+        officialResults: publicOfficialResults,
       };
       setDoc(doc(db, 'liveResults', race.id), summary).catch((error) => {
         console.warn('Public live leaderboard publish skipped:', error.message);
       });
     }, 500);
     return () => window.clearTimeout(timeout);
-  }, [chipReads, finishedCount, publicLeaders, race, runnerProfiles.length, startCheckpoint?.id]);
+  }, [chipReads, finishedCount, publicLeaders, publicOfficialResults, race, runnerProfiles.length, startCheckpoint?.id]);
 
   const actionLabel = selectedCheckpointType === 'checkin'
     ? 'Check In Runner'

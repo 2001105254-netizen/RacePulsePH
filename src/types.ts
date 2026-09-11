@@ -110,6 +110,9 @@ export interface PublicLiveResults {
   totalStarted: number;
   totalFinished: number;
   leaders: PublicLeaderboardEntry[];
+  // Every completed finisher, ordered by distance and official rank. This is
+  // the public result feed; checkpoint scans remain private.
+  officialResults: PublicLeaderboardEntry[];
 }
 
 export interface RunnerProfile {

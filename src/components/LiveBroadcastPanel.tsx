@@ -95,6 +95,16 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
           finishTime: result.finishTime!,
         }))
       );
+      const officialResults: PublicLeaderboardEntry[] = results
+        .filter((result) => result.finishTime && result.rank)
+        .map((result) => ({
+          bibNumber: result.bibNumber,
+          fullName: result.runnerProfile?.fullName || `Bib ${result.bibNumber}`,
+          distance: result.runnerProfile?.distance || 'Unknown',
+          rank: result.rank!,
+          finishTime: result.finishTime!,
+        }))
+        .sort((a, b) => a.distance.localeCompare(b.distance) || a.rank - b.rank);
       const hasWaveStarted = Object.keys(activeRace.waveStartTimes || {}).length > 0 || !!activeRace.gunStartTime;
       const summary: PublicLiveResults = {
         raceId: activeRace.id,
@@ -105,6 +115,7 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
         totalStarted: startedCount,
         totalFinished: finishedCount,
         leaders,
+        officialResults,
       };
       await setDoc(doc(db, 'liveResults', activeRace.id), summary);
       if (!quiet) setMessage('Live leaderboard published. It will update automatically with new scans.');
