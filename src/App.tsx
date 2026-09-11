@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, writeBatch } from 'firebase/firestore';
 import { auth, db, signOutUser } from './firebase';
 import AuthGate from './components/AuthGate';
 import AdminDashboard from './components/AdminDashboard';
 import OrganizerDashboard from './components/OrganizerDashboard';
 import RunnerDashboard from './components/RunnerDashboard';
+import PublicRaceLanding from './components/PublicRaceLanding';
 import { UserProfile } from './types';
-import { Activity, Sun, Moon, RefreshCw, Clock3, LogOut } from 'lucide-react';
+import { isSuperAdminEmail } from './lib/superAdmin';
+import { Sun, Moon, RefreshCw, Clock3, LogOut, LogIn, UserPlus, ArrowLeft, ShieldCheck } from 'lucide-react';
 
 type Theme = 'light' | 'dark';
 
@@ -30,11 +32,32 @@ export default function App() {
   const { theme, toggleTheme } = useTheme();
   const [authUser, setAuthUser] = useState<User | null | undefined>(undefined); // undefined = still checking session
   const [profile, setProfile] = useState<UserProfile | null | undefined>(undefined);
+  const [guestScreen, setGuestScreen] = useState<'landing' | 'login' | 'signup'>('landing');
+  const [pendingRaceId, setPendingRaceId] = useState<string | null>(null);
+  const [runnerSignupIntent, setRunnerSignupIntent] = useState(false);
+
+  // Dashboard navigation lives in React state, so browser history is not a
+  // safe back action. Each signed-in console listens for this event and goes
+  // to its own home screen instead.
+  const handleBack = () => {
+    if (!authUser) {
+      setGuestScreen('landing');
+      setPendingRaceId(null);
+      setRunnerSignupIntent(false);
+      return;
+    }
+    window.dispatchEvent(new Event('racepulse:back'));
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setAuthUser(user);
-      if (!user) setProfile(null);
+      if (!user) {
+        setProfile(null);
+        setGuestScreen('landing');
+        setPendingRaceId(null);
+        setRunnerSignupIntent(false);
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -60,13 +83,30 @@ export default function App() {
       </div>
     );
   } else if (!authUser || !profile) {
-    content = <AuthGate authUser={authUser} />;
-  } else if (profile.role === 'admin') {
+    content = authUser ? (
+      <AuthGate authUser={authUser} signupRoleLocked={runnerSignupIntent} />
+    ) : guestScreen === 'landing' ? (
+      <PublicRaceLanding onRegister={(raceId) => {
+        setPendingRaceId(raceId || null);
+        setRunnerSignupIntent(true);
+        setGuestScreen('signup');
+      }} />
+    ) : (
+      <AuthGate
+        key={guestScreen}
+        initialMode={guestScreen}
+        onBackToRaces={() => setGuestScreen('landing')}
+        signupRoleLocked={runnerSignupIntent}
+      />
+    );
+  } else if (isSuperAdminEmail(profile.email) && profile.role !== 'superadmin') {
+    content = <SuperAdminClaimScreen profile={profile} />;
+  } else if (profile.role === 'admin' || profile.role === 'superadmin') {
     content = <AdminDashboard profile={profile} />;
   } else if (profile.role === 'organizer') {
     content = profile.approved ? <OrganizerDashboard profile={profile} /> : <PendingApprovalScreen displayName={profile.displayName} />;
   } else {
-    content = <RunnerDashboard profile={profile} />;
+    content = <RunnerDashboard profile={profile} initialRaceId={pendingRaceId} onInitialRaceHandled={() => setPendingRaceId(null)} />;
   }
 
   return (
@@ -85,22 +125,53 @@ export default function App() {
       <nav className="sticky top-0 z-40 glass-nav">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-[10px] bg-gradient-to-br from-red-600 to-red-800 flex items-center justify-center shadow-lg shadow-red-900/30">
-              <Activity className="w-4.5 h-4.5 text-white" strokeWidth={2.25} />
+            <button
+              type="button"
+              onClick={handleBack}
+              title="Back"
+              aria-label="Go back"
+              className="w-9 h-9 rounded-full glass-inset flex items-center justify-center text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 transition active:scale-90"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+            <div className="w-9 h-9 rounded-[10px] overflow-hidden bg-[#0a0a0a] flex items-center justify-center shadow-lg shadow-red-900/30 ring-1 ring-white/10">
+              <img
+                src="/assets/racepulse-mark.png"
+                alt="RacePulsePH"
+                className="w-full h-full object-contain"
+              />
             </div>
             <span className="font-display font-black text-sm tracking-tight uppercase">
               RacePulse<span className="text-red-500">PH</span>
             </span>
           </div>
 
-          <button
-            onClick={toggleTheme}
-            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-            aria-label="Toggle color theme"
-            className="w-10 h-10 rounded-full glass-inset flex items-center justify-center text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 transition duration-200 active:scale-90"
-          >
-            {theme === 'dark' ? <Sun className="w-4.5 h-4.5" /> : <Moon className="w-4.5 h-4.5" />}
-          </button>
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {!authUser && guestScreen === 'landing' && (
+              <>
+                <button
+                  onClick={() => { setPendingRaceId(null); setRunnerSignupIntent(false); setGuestScreen('login'); }}
+                  className="h-9 px-3 rounded-[18px] text-[10px] sm:text-xs font-black uppercase tracking-wide text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)] transition flex items-center gap-1.5"
+                >
+                  <LogIn className="w-3.5 h-3.5" /> Log in
+                </button>
+                <button
+                  onClick={() => { setPendingRaceId(null); setRunnerSignupIntent(false); setGuestScreen('signup'); }}
+                  className="h-9 px-3 sm:px-4 rounded-[18px] bg-red-600 hover:bg-red-500 text-white text-[10px] sm:text-xs font-black uppercase tracking-wide shadow-lg shadow-red-900/30 transition flex items-center gap-1.5"
+                >
+                  <UserPlus className="w-3.5 h-3.5" /> Sign up
+                </button>
+              </>
+            )}
+            <button
+              onClick={toggleTheme}
+              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              aria-label="Toggle color theme"
+              className="w-10 h-10 rounded-full glass-inset flex items-center justify-center text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 transition duration-200 active:scale-90"
+            >
+              {theme === 'dark' ? <Sun className="w-4.5 h-4.5" /> : <Moon className="w-4.5 h-4.5" />}
+            </button>
+          </div>
         </div>
       </nav>
 
@@ -127,7 +198,7 @@ function PendingApprovalScreen({ displayName }: { displayName: string }) {
         <Clock3 className="w-10 h-10 text-amber-500 mx-auto" />
         <h2 className="heading-float text-lg font-black font-display uppercase tracking-tight text-[var(--text-primary)]">Awaiting Admin Approval</h2>
         <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-          Hi {displayName}, your Organizer account is registered but still needs to be approved by an Admin before you can record timing splits. Check back shortly.
+          Hi {displayName}, your Organizer account is registered but still needs to be approved by the Super Admin before you can record timing splits. Check back shortly.
         </p>
         <button
           onClick={() => signOutUser()}
@@ -135,6 +206,41 @@ function PendingApprovalScreen({ displayName }: { displayName: string }) {
         >
           <LogOut className="w-3.5 h-3.5" /> Sign Out
         </button>
+      </div>
+    </div>
+  );
+}
+
+function SuperAdminClaimScreen({ profile }: { profile: UserProfile }) {
+  const [claiming, setClaiming] = useState(false);
+  const [error, setError] = useState('');
+
+  const claim = async () => {
+    setClaiming(true);
+    setError('');
+    try {
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'users', profile.uid), { role: 'superadmin', approved: true });
+      batch.set(doc(db, 'system', 'meta'), { superAdminClaimed: true }, { merge: true });
+      await batch.commit();
+    } catch (err: any) {
+      setError(err.message || 'Could not claim the Super Admin role.');
+    } finally {
+      setClaiming(false);
+    }
+  };
+
+  return (
+    <div className="hero-glow flex-grow flex items-center justify-center py-14 px-4 animate-fadeIn">
+      <div className="max-w-md w-full glass-panel p-8 text-center space-y-4">
+        <ShieldCheck className="w-10 h-10 text-amber-500 mx-auto" />
+        <h2 className="heading-float text-lg font-black font-display uppercase tracking-tight text-[var(--text-primary)]">Claim Super Admin</h2>
+        <p className="text-sm text-[var(--text-secondary)] leading-relaxed">This account is configured as the one-time RacePulsePH Super Admin.</p>
+        {error && <p className="text-xs text-red-500 font-semibold">⚠️ {error}</p>}
+        <button onClick={claim} disabled={claiming} className="w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-black uppercase text-xs tracking-widest text-white bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 shadow-xl shadow-amber-900/30 disabled:opacity-60 flex items-center justify-center gap-2">
+          {claiming ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />} Claim Super Admin Access
+        </button>
+        <button onClick={() => signOutUser()} className="text-xs text-[var(--text-secondary)] hover:text-red-500 font-bold">Sign out</button>
       </div>
     </div>
   );

@@ -45,50 +45,56 @@ export default function RaceList({
               <button
                 key={race.id}
                 onClick={() => onSelectRace(race.id)}
-                className={`glass-panel p-5 text-left space-y-3 hover:shadow-2xl hover:shadow-red-950/10 transition duration-300 transform hover:-translate-y-1 relative ${
+                className={`glass-panel p-0 overflow-hidden text-left hover:shadow-2xl hover:shadow-red-950/10 transition duration-300 transform hover:-translate-y-1 relative ${
                   isSelected ? 'border-red-500/60' : 'hover:border-red-500/40'
                 }`}
               >
                 {isSelected && (
-                  <span className="absolute top-3 right-3 text-[9px] font-black uppercase tracking-wide px-2 py-1 rounded-full bg-red-600 text-white flex items-center gap-1">
+                  <span className="absolute top-3 right-3 z-10 text-[9px] font-black uppercase tracking-wide px-2 py-1 rounded-full bg-red-600 text-white flex items-center gap-1">
                     <CheckCircle className="w-3 h-3" /> Active
                   </span>
                 )}
 
-                <div>
-                  <h3 className="text-md font-bold font-display tracking-tight text-[var(--text-primary)] pr-16">{race.name}</h3>
-                  <p className="text-[11px] text-[var(--text-secondary)] mt-1 flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5 text-red-500" /> {race.date}
-                  </p>
-                </div>
+                {race.posterImage && (
+                  <img src={race.posterImage} alt="" className="w-full aspect-video object-cover" />
+                )}
 
-                <div className="flex flex-wrap gap-1.5">
-                  {(race.distances || []).length === 0 ? (
-                    <span className="text-[10px] text-[var(--text-muted)]">Distances not set yet</span>
-                  ) : (
-                    race.distances.map((d) => (
-                      <span key={d.id} className="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-red-500/10 border border-red-500/20 text-red-500">
-                        {d.label}{d.price > 0 && ` · ₱${d.price.toFixed(0)}`}
-                      </span>
-                    ))
+                <div className="p-5 space-y-3">
+                  <div>
+                    <h3 className="text-md font-bold font-display tracking-tight text-[var(--text-primary)] pr-16">{race.name}</h3>
+                    <p className="text-[11px] text-[var(--text-secondary)] mt-1 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-red-500" /> {race.date}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5">
+                    {(race.distances || []).length === 0 ? (
+                      <span className="text-[10px] text-[var(--text-muted)]">Distances not set yet</span>
+                    ) : (
+                      race.distances.map((d) => (
+                        <span key={d.id} className="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-red-500/10 border border-red-500/20 text-red-500">
+                          {d.label}{d.price > 0 && ` · ₱${d.price.toFixed(0)}`}
+                        </span>
+                      ))
+                    )}
+                  </div>
+
+                  {(race.inclusions || []).length > 0 && (
+                    <p className="text-[10.5px] text-[var(--text-secondary)]">
+                      Includes: {race.inclusions.join(', ')}
+                    </p>
+                  )}
+
+                  <p className="text-[10.5px] text-[var(--text-muted)]">
+                    {race.checkpoints.length} checkpoints &bull; {(race.ageCategories || []).length} age categories
+                  </p>
+
+                  {!isSelected && (
+                    <div className="text-xs font-bold text-red-500 flex items-center gap-1 font-display pt-1 uppercase tracking-wide">
+                      {actionLabel} <ArrowRight className="w-3.5 h-3.5" />
+                    </div>
                   )}
                 </div>
-
-                {(race.inclusions || []).length > 0 && (
-                  <p className="text-[10.5px] text-[var(--text-secondary)]">
-                    Includes: {race.inclusions.join(', ')}
-                  </p>
-                )}
-
-                <p className="text-[10.5px] text-[var(--text-muted)]">
-                  {race.checkpoints.length} checkpoints &bull; {(race.ageCategories || []).length} age categories
-                </p>
-
-                {!isSelected && (
-                  <div className="text-xs font-bold text-red-500 flex items-center gap-1 font-display pt-1 uppercase tracking-wide">
-                    {actionLabel} <ArrowRight className="w-3.5 h-3.5" />
-                  </div>
-                )}
               </button>
             );
           })}

@@ -85,6 +85,16 @@ body {
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
+/* iOS Safari auto-zooms in on any <input>/<textarea>/<select> whose computed
+   font-size is under 16px, and in an SPA like this it often never zooms back
+   out on blur - leaving the whole page stuck zoomed. Forcing 16px on mobile
+   viewports (our inputs mostly use text-xs/text-sm) prevents that entirely. */
+@media (max-width: 767px) {
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+}
+
 /* ============================================================
    Design System: Glassmorphism primitives
    Used consistently across every page - cards, modals, tables,

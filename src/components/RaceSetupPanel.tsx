@@ -1,19 +1,23 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { collection, doc, onSnapshot, setDoc, deleteDoc, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
-import { AgeCategory, Gender, Race, RaceDistance, RunnerProfile } from '../types';
+import { resizeImageToDataUrl } from '../lib/image';
+import { AgeCategory, CheckpointType, Gender, Race, RaceDistance, RunnerProfile } from '../types';
 import { generateRunnerRosterPdf } from '../lib/runnerReport';
-import { Flag, Trash2, Plus, Save, Pencil, RefreshCw, Users2, FileDown } from 'lucide-react';
+import { Flag, Trash2, Plus, Save, Pencil, RefreshCw, Users2, FileDown, ImagePlus, X } from 'lucide-react';
 
 interface CheckpointDraft {
   id: string;
   label: string;
+  type: CheckpointType;
+  cutoffMinutes: string;
 }
 
 function emptyCheckpointDrafts(): CheckpointDraft[] {
   return [
-    { id: 'start', label: 'Start' },
-    { id: 'finish', label: 'Finish' },
+    { id: 'checkin', label: 'Check-In', type: 'checkin', cutoffMinutes: '' },
+    { id: 'start', label: 'Start', type: 'start', cutoffMinutes: '' },
+    { id: 'finish', label: 'Finish', type: 'finish', cutoffMinutes: '' },
   ];
 }
 
@@ -56,22 +60,28 @@ interface RaceSetupPanelProps {
   uid: string;
   // Admin sees/edits every organizer's races; an Organizer only sees/edits their own.
   canSeeAllRaces: boolean;
+  canDeleteRaces: boolean;
 }
 
 // Shared by both the Admin "Race Setup" tab and the Organizer dashboard - organizers
 // need to be able to stand up a race day-of without waiting on an Admin.
-export default function RaceSetupPanel({ uid, canSeeAllRaces }: RaceSetupPanelProps) {
+export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: RaceSetupPanelProps) {
   const [races, setRaces] = useState<Race[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [registrationOpen, setRegistrationOpen] = useState(true);
+  const [registrationCloseDate, setRegistrationCloseDate] = useState('');
   const [checkpoints, setCheckpoints] = useState<CheckpointDraft[]>(emptyCheckpointDrafts());
   const [ageCategories, setAgeCategories] = useState<AgeCategoryDraft[]>([]);
   const [distances, setDistances] = useState<DistanceDraft[]>([]);
   const [inclusions, setInclusions] = useState<InclusionDraft[]>([]);
+  const [posterImage, setPosterImage] = useState('');
+  const [posterUploading, setPosterUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [reportBusyRaceId, setReportBusyRaceId] = useState<string | null>(null);
+  const posterInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const racesQuery = canSeeAllRaces
@@ -90,28 +100,61 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces }: RaceSetupPanelPr
     setEditingId(null);
     setName('');
     setDate(new Date().toISOString().slice(0, 10));
+    setRegistrationOpen(true);
+    setRegistrationCloseDate('');
     setCheckpoints(emptyCheckpointDrafts());
     setAgeCategories([]);
     setDistances([]);
     setInclusions([]);
+    setPosterImage('');
     setError('');
   };
+
+  useEffect(() => {
+    window.addEventListener('racepulse:back', resetForm);
+    return () => window.removeEventListener('racepulse:back', resetForm);
+  }, []);
 
   const loadForEdit = (race: Race) => {
     setEditingId(race.id);
     setName(race.name);
     setDate(race.date);
-    setCheckpoints([...race.checkpoints].sort((a, b) => a.order - b.order).map((c) => ({ id: c.id, label: c.label })));
+    setRegistrationOpen(race.registrationOpen !== false);
+    setRegistrationCloseDate(race.registrationCloseDate || '');
+    const ordered = [...race.checkpoints].sort((a, b) => a.order - b.order);
+    setCheckpoints(ordered.map((c, index) => ({
+      id: c.id,
+      label: c.label,
+      type: c.type || (index === 0 ? 'start' : index === ordered.length - 1 ? 'finish' : 'intermediate'),
+      cutoffMinutes: c.cutoffMinutes ? String(c.cutoffMinutes) : '',
+    })));
     setAgeCategories((race.ageCategories || []).map((c) => ({ id: c.id, gender: c.gender, minAge: c.minAge, maxAge: c.maxAge })));
     setDistances((race.distances || []).sort((a, b) => a.km - b.km).map((d) => ({ id: d.id, km: d.km, price: d.price || 0 })));
     setInclusions((race.inclusions || []).map((text, idx) => ({ id: `incl_${idx}_${Date.now()}`, text })));
+    setPosterImage(race.posterImage || '');
     setError('');
   };
 
-  const addCheckpoint = () => setCheckpoints((prev) => [...prev.slice(0, -1), { id: `cp_${Date.now()}`, label: '' }, prev[prev.length - 1]]);
+  const handlePosterSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setPosterUploading(true);
+    setError('');
+    try {
+      const dataUrl = await resizeImageToDataUrl(file, 800, 450, 0.78);
+      setPosterImage(dataUrl);
+    } catch (err: any) {
+      setError(err.message || 'Failed to process the poster image.');
+    } finally {
+      setPosterUploading(false);
+    }
+  };
+
+  const addCheckpoint = () => setCheckpoints((prev) => [...prev.slice(0, -1), { id: `cp_${Date.now()}`, label: '', type: 'intermediate', cutoffMinutes: '' }, prev[prev.length - 1]]);
   const removeCheckpoint = (idx: number) => setCheckpoints((prev) => prev.filter((_, i) => i !== idx));
-  const updateCheckpointLabel = (idx: number, label: string) =>
-    setCheckpoints((prev) => prev.map((c, i) => (i === idx ? { ...c, label } : c)));
+  const updateCheckpoint = (idx: number, patch: Partial<CheckpointDraft>) =>
+    setCheckpoints((prev) => prev.map((c, i) => (i === idx ? { ...c, ...patch } : c)));
 
   const addAgeCategory = () =>
     setAgeCategories((prev) => [...prev, { id: `age_${Date.now()}`, gender: 'male', minAge: 18, maxAge: 29 }]);
@@ -137,9 +180,20 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces }: RaceSetupPanelPr
     if (!name.trim()) return setError('Race name is required.');
     if (checkpoints.length < 2) return setError('At least a Start and Finish checkpoint are required.');
     if (checkpoints.some((c) => !c.label.trim())) return setError('Every checkpoint needs a label.');
+    if (checkpoints.filter((c) => c.type === 'start').length !== 1) return setError('Exactly one Start checkpoint is required.');
+    if (checkpoints.filter((c) => c.type === 'finish').length !== 1) return setError('Exactly one Finish checkpoint is required.');
+    if (checkpoints.filter((c) => c.type === 'checkin').length > 1) return setError('Only one Check-In checkpoint is allowed.');
+    if (checkpoints.some((c) => c.type === 'intermediate' && c.cutoffMinutes && (!Number.isFinite(Number(c.cutoffMinutes)) || Number(c.cutoffMinutes) <= 0))) return setError('Intermediate cutoff minutes must be greater than zero.');
+    const startIndex = checkpoints.findIndex((c) => c.type === 'start');
+    const finishIndex = checkpoints.findIndex((c) => c.type === 'finish');
+    const checkInIndex = checkpoints.findIndex((c) => c.type === 'checkin');
+    if (finishIndex < startIndex) return setError('Finish must come after Start.');
+    if (checkInIndex !== -1 && checkInIndex > startIndex) return setError('Check-In must come before Start.');
+    if (checkpoints.some((checkpoint, index) => checkpoint.type === 'intermediate' && (index < startIndex || index > finishIndex))) return setError('Intermediate checkpoints must be between Start and Finish.');
     if (ageCategories.some((c) => c.minAge > c.maxAge)) return setError('An age category\'s minimum age cannot be greater than its maximum.');
     if (distances.some((d) => !d.km || d.km <= 0)) return setError('Every distance needs a kilometer value greater than 0.');
     if (distances.some((d) => d.price < 0)) return setError('A distance\'s price cannot be negative.');
+    if (registrationCloseDate && registrationCloseDate > date) return setError('Registration closing date cannot be after the race date.');
 
     setSaving(true);
     try {
@@ -149,12 +203,26 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces }: RaceSetupPanelPr
         id: raceId,
         name: name.trim(),
         date,
-        checkpoints: checkpoints.map((c, idx) => ({ id: c.id, label: c.label.trim(), order: idx })),
+        registrationOpen,
+        ...(registrationCloseDate ? { registrationCloseDate } : {}),
+        checkpoints: checkpoints.map((c, idx) => ({
+          id: c.id,
+          label: c.label.trim(),
+          order: idx,
+          type: c.type,
+          ...(c.type === 'intermediate' && c.cutoffMinutes ? { cutoffMinutes: Number(c.cutoffMinutes) } : {}),
+        })),
         ageCategories: ageCategories.map(draftToAgeCategory),
         distances: [...distances].sort((a, b) => a.km - b.km).map(draftToDistance),
         inclusions: inclusions.map((i) => i.text.trim()).filter(Boolean),
         createdBy: existing?.createdBy || uid,
         createdAt: existing?.createdAt || new Date().toISOString(),
+        ...(existing?.gunStartTime ? { gunStartTime: existing.gunStartTime } : {}),
+        ...(existing?.waveStartTimes ? { waveStartTimes: existing.waveStartTimes } : {}),
+        ...(existing?.liveBroadcastEnabled ? { liveBroadcastEnabled: true } : {}),
+        ...(existing?.livestreamUrl ? { livestreamUrl: existing.livestreamUrl } : {}),
+        ...(existing?.routeMapUrl ? { routeMapUrl: existing.routeMapUrl } : {}),
+        ...(posterImage ? { posterImage } : {}),
       };
       await setDoc(doc(db, 'races', raceId), record);
       resetForm();
@@ -212,22 +280,110 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces }: RaceSetupPanelPr
               className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
           </div>
 
+          <div className="glass-inset p-3 space-y-3">
+            <label className="flex items-center justify-between gap-3 cursor-pointer">
+              <span>
+                <span className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">Registration status</span>
+                <span className="block text-[10.5px] text-[var(--text-muted)] mt-0.5">Only open races appear on the public registration page.</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={registrationOpen}
+                onChange={(e) => setRegistrationOpen(e.target.checked)}
+                className="w-4 h-4 accent-red-600 shrink-0"
+              />
+            </label>
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Registration closes on <span className="normal-case font-normal text-[var(--text-muted)]">(optional)</span></label>
+              <input
+                type="date"
+                value={registrationCloseDate}
+                onChange={(e) => setRegistrationCloseDate(e.target.value)}
+                disabled={!registrationOpen}
+                className="w-full glass-inset px-3 py-2.5 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Event Poster</label>
+            <p className="text-[10.5px] text-[var(--text-secondary)] mb-2">Shown on the race card runners see when browsing events - a good poster gets more registrations.</p>
+            <input ref={posterInputRef} type="file" accept="image/*" onChange={handlePosterSelected} className="hidden" />
+            {posterImage ? (
+              <div className="relative rounded-[16px] overflow-hidden border border-[var(--border-default)]">
+                <img src={posterImage} alt="Race poster preview" className="w-full aspect-[16/9] object-cover" />
+                <button
+                  type="button"
+                  onClick={() => setPosterImage('')}
+                  className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center transition"
+                  title="Remove poster"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => posterInputRef.current?.click()}
+                  className="absolute bottom-2 right-2 text-[10px] font-black uppercase tracking-wide px-3 py-1.5 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center gap-1.5 transition"
+                >
+                  <ImagePlus className="w-3 h-3" /> Change
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => posterInputRef.current?.click()}
+                disabled={posterUploading}
+                className="w-full aspect-[16/9] rounded-[16px] border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-2 text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 transition disabled:opacity-60"
+              >
+                {posterUploading ? <RefreshCw className="w-6 h-6 animate-spin" /> : <ImagePlus className="w-6 h-6" />}
+                <span className="text-xs font-bold uppercase tracking-wide">{posterUploading ? 'Processing...' : 'Upload Poster Image'}</span>
+              </button>
+            )}
+          </div>
+
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Checkpoints (in order)</label>
+            <p className="text-[10.5px] text-[var(--text-secondary)] mb-2">Check-In is optional and is never used for finish time. Add cutoffs to intermediate stations as minutes after the official gun start.</p>
             <div className="space-y-2">
               {checkpoints.map((cp, idx) => (
-                <div key={cp.id} className="flex items-center gap-2">
+                <div key={cp.id} className="glass-inset p-2.5 flex flex-wrap items-center gap-2">
                   <span className="text-[10px] font-mono text-[var(--text-muted)] w-5 shrink-0">{idx + 1}.</span>
+                  <select
+                    value={cp.type}
+                    onChange={(e) => updateCheckpoint(idx, { type: e.target.value as CheckpointType, cutoffMinutes: e.target.value === 'intermediate' ? cp.cutoffMinutes : '' })}
+                    className="glass-inset px-2.5 py-2 text-[10px] font-bold uppercase tracking-wide text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                    aria-label="Checkpoint type"
+                  >
+                    <option value="checkin">Check-In</option>
+                    <option value="start">Start</option>
+                    <option value="intermediate">Intermediate</option>
+                    <option value="finish">Finish</option>
+                  </select>
                   <input
                     type="text"
                     required
                     value={cp.label}
-                    onChange={(e) => updateCheckpointLabel(idx, e.target.value)}
-                    placeholder={idx === 0 ? 'Start' : idx === checkpoints.length - 1 ? 'Finish' : `Checkpoint ${idx}`}
-                    className="flex-1 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                    onChange={(e) => updateCheckpoint(idx, { label: e.target.value })}
+                    placeholder={cp.type === 'checkin' ? 'Check-In' : cp.type === 'start' ? 'Start' : cp.type === 'finish' ? 'Finish' : `Checkpoint ${idx}`}
+                    className="min-w-[8rem] flex-1 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
                   />
-                  {checkpoints.length > 2 && (
-                    <button type="button" onClick={() => removeCheckpoint(idx)} className="text-[var(--text-muted)] hover:text-red-500 p-1.5">
+                  {cp.type === 'intermediate' && (
+                    <label className="flex items-center gap-1.5 text-[10px] font-bold text-[var(--text-secondary)] shrink-0">
+                      Cutoff
+                      <input
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={cp.cutoffMinutes}
+                        onChange={(e) => updateCheckpoint(idx, { cutoffMinutes: e.target.value })}
+                        placeholder="min"
+                        className="w-16 glass-inset px-2 py-2 text-xs font-mono font-bold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                      />
+                      min
+                    </label>
+                  )}
+                  {(cp.type === 'checkin' || cp.type === 'intermediate') && (
+                    <button type="button" onClick={() => removeCheckpoint(idx)} className="text-[var(--text-muted)] hover:text-red-500 p-1.5" title="Remove checkpoint">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   )}
@@ -235,7 +391,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces }: RaceSetupPanelPr
               ))}
             </div>
             <button type="button" onClick={addCheckpoint} className="mt-2 text-xs font-bold text-red-500 hover:text-red-400 flex items-center gap-1.5">
-              <Plus className="w-3.5 h-3.5" /> Add Checkpoint
+              <Plus className="w-3.5 h-3.5" /> Add Intermediate Checkpoint
             </button>
           </div>
 
@@ -398,7 +554,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces }: RaceSetupPanelPr
                   {reportBusyRaceId === race.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
                 </button>
                 <button onClick={() => loadForEdit(race)} className="p-2 text-[var(--text-secondary)] hover:text-amber-500 transition" title="Edit race"><Pencil className="w-3.5 h-3.5" /></button>
-                <button onClick={() => handleDelete(race.id)} className="p-2 text-[var(--text-secondary)] hover:text-red-500 transition" title="Delete race"><Trash2 className="w-3.5 h-3.5" /></button>
+                {canDeleteRaces && <button onClick={() => handleDelete(race.id)} className="p-2 text-[var(--text-secondary)] hover:text-red-500 transition" title="Delete race"><Trash2 className="w-3.5 h-3.5" /></button>}
               </div>
             </div>
           ))}

@@ -1,19 +1,32 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { signOutUser } from '../firebase';
 import { UserProfile } from '../types';
 import TimingConsole from './TimingConsole';
 import RaceSetupPanel from './RaceSetupPanel';
+import MyRaceEventsPanel from './MyRaceEventsPanel';
+import LiveBroadcastPanel from './LiveBroadcastPanel';
 import BottomNav from './BottomNav';
-import { LogOut, Radio, Flag } from 'lucide-react';
+import { LogOut, Radio, Flag, LayoutGrid, Tv } from 'lucide-react';
 
 interface OrganizerDashboardProps {
   profile: UserProfile;
 }
 
-type OrganizerTab = 'timing' | 'race';
+type OrganizerTab = 'myevents' | 'timing' | 'race' | 'broadcast';
 
 export default function OrganizerDashboard({ profile }: OrganizerDashboardProps) {
-  const [tab, setTab] = useState<OrganizerTab>('timing');
+  const [tab, setTab] = useState<OrganizerTab>('myevents');
+
+  useEffect(() => {
+    const goHome = () => setTab('myevents');
+    window.addEventListener('racepulse:back', goHome);
+    return () => window.removeEventListener('racepulse:back', goHome);
+  }, []);
+
+  const handleManageRace = (raceId: string) => {
+    localStorage.setItem('racepulse_active_race', raceId);
+    setTab('timing');
+  };
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 py-4 pb-28 space-y-6">
@@ -31,12 +44,16 @@ export default function OrganizerDashboard({ profile }: OrganizerDashboardProps)
         </button>
       </div>
 
+      {tab === 'myevents' && <MyRaceEventsPanel uid={profile.uid} onManageRace={handleManageRace} />}
       {tab === 'timing' && <TimingConsole uid={profile.uid} canSeeAllRaces={false} />}
-      {tab === 'race' && <RaceSetupPanel uid={profile.uid} canSeeAllRaces={false} />}
+      {tab === 'race' && <RaceSetupPanel uid={profile.uid} canSeeAllRaces={false} canDeleteRaces={false} />}
+      {tab === 'broadcast' && <LiveBroadcastPanel uid={profile.uid} />}
 
       <BottomNav
         items={[
+          { key: 'myevents', icon: <LayoutGrid className="w-4 h-4" />, label: 'My Race Events', active: tab === 'myevents', onClick: () => setTab('myevents') },
           { key: 'timing', icon: <Radio className="w-4 h-4" />, label: 'Live Timing', active: tab === 'timing', onClick: () => setTab('timing') },
+          { key: 'broadcast', icon: <Tv className="w-4 h-4" />, label: 'Live Hub', active: tab === 'broadcast', onClick: () => setTab('broadcast') },
           { key: 'race', icon: <Flag className="w-4 h-4" />, label: 'Race Setup', active: tab === 'race', onClick: () => setTab('race') },
         ]}
       />

@@ -1,17 +1,20 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { collection, doc, getDocs, onSnapshot, query, setDoc, updateDoc, where } from 'firebase/firestore';
+import { collection, doc, getDocs, onSnapshot, query, runTransaction, setDoc, updateDoc, where } from 'firebase/firestore';
 import { db, signOutUser } from '../firebase';
-import { useDualSync } from '../lib/dualSync';
-import { computeResults } from '../lib/timing';
+import { checkpointType, computeResults, getWaveStartTime } from '../lib/timing';
+import { resizeImageToDataUrl } from '../lib/image';
 import { ChipRead, Gender, Race, RunnerProfile, UserProfile } from '../types';
 import CustomerForm from './CustomerForm';
 import { QRCodeSVG } from 'qrcode.react';
 import { LogOut, User, Hash, MapPin, RefreshCw, Award, ClipboardList, Clock, ArrowLeft, ArrowRight, Flag, Calendar, CheckSquare, Coins, PackageCheck, Camera, Trophy, X, Pencil } from 'lucide-react';
 import BottomNav from './BottomNav';
 import RaceList from './RaceList';
+import { isRaceRegistrationOpen } from '../lib/raceRegistration';
 
 interface RunnerDashboardProps {
   profile: UserProfile;
+  initialRaceId?: string | null;
+  onInitialRaceHandled?: () => void;
 }
 
 type RunnerTab = 'events' | 'myraces' | 'engraving';
@@ -20,10 +23,23 @@ function mostRecent(profiles: RunnerProfile[]): RunnerProfile | undefined {
   return [...profiles].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
 }
 
-export default function RunnerDashboard({ profile }: RunnerDashboardProps) {
+export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceHandled }: RunnerDashboardProps) {
   const [runnerProfiles, setRunnerProfiles] = useState<RunnerProfile[] | undefined>(undefined); // undefined = loading
   const [tab, setTab] = useState<RunnerTab>('events');
   const [showProfile, setShowProfile] = useState(false);
+
+  useEffect(() => {
+    const goHome = () => {
+      setShowProfile(false);
+      setTab('events');
+    };
+    window.addEventListener('racepulse:back', goHome);
+    return () => window.removeEventListener('racepulse:back', goHome);
+  }, []);
+
+  useEffect(() => {
+    if (initialRaceId) onInitialRaceHandled?.();
+  }, [initialRaceId, onInitialRaceHandled]);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(query(collection(db, 'runners'), where('uid', '==', profile.uid)), (snapshot) => {
@@ -82,6 +98,7 @@ export default function RunnerDashboard({ profile }: RunnerDashboardProps) {
         <RaceRegistrationForm
           uid={profile.uid}
           runnerProfiles={runnerProfiles}
+          initialRaceId={initialRaceId}
           onSaved={() => setTab('myraces')}
         />
       )}
@@ -229,25 +246,33 @@ function RaceProfileSection({
 interface RaceRegistrationFormProps {
   uid: string;
   runnerProfiles: RunnerProfile[];
+  initialRaceId?: string | null;
   onSaved?: () => void;
   onCancel?: () => void;
 }
 
 // Bib numbers are assigned by the system, not typed in: "5-001" is the first
 // runner registered under the 5K category, "5-002" the second, and so on.
+// Uses a transaction against a per-distance counter doc (not a count() query)
+// so two runners registering for the same distance at the same moment can't
+// both land on the same sequence number and collide on one bib.
 async function generateBibNumber(raceId: string, distanceLabel: string, km: number | null): Promise<string> {
-  const snapshot = await getDocs(
-    query(collection(db, 'runners'), where('raceId', '==', raceId), where('distance', '==', distanceLabel))
-  );
-  const sequence = snapshot.size + 1;
+  const counterId = `${raceId}_${distanceLabel}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+  const counterRef = doc(db, 'bibCounters', counterId);
+  const sequence = await runTransaction(db, async (tx) => {
+    const snap = await tx.get(counterRef);
+    const next = (snap.exists() ? (snap.data().count as number) : 0) + 1;
+    tx.set(counterRef, { count: next });
+    return next;
+  });
   const prefix = km !== null ? String(km) : 'CUSTOM';
   return `${prefix}-${String(sequence).padStart(3, '0')}`;
 }
 
-function RaceRegistrationForm({ uid, runnerProfiles, onSaved, onCancel }: RaceRegistrationFormProps) {
+function RaceRegistrationForm({ uid, runnerProfiles, initialRaceId, onSaved, onCancel }: RaceRegistrationFormProps) {
   const latest = mostRecent(runnerProfiles);
   const [races, setRaces] = useState<Race[]>([]);
-  const [raceId, setRaceId] = useState('');
+  const [raceId, setRaceId] = useState(initialRaceId || '');
   const [showForm, setShowForm] = useState(false);
   const [fullName, setFullName] = useState(latest?.fullName || '');
   const [distance, setDistance] = useState('Custom');
@@ -267,7 +292,8 @@ function RaceRegistrationForm({ uid, runnerProfiles, onSaved, onCancel }: RaceRe
     return () => unsubscribe();
   }, []);
 
-  const selectedRace = races.find((r) => r.id === raceId);
+  const openRaces = races.filter((race) => isRaceRegistrationOpen(race));
+  const selectedRace = openRaces.find((r) => r.id === raceId);
   const raceDistances = selectedRace?.distances || [];
   const existingForRace = runnerProfiles.find((rp) => rp.raceId === raceId);
 
@@ -325,7 +351,7 @@ function RaceRegistrationForm({ uid, runnerProfiles, onSaved, onCancel }: RaceRe
     }
   };
 
-  if (!raceId) {
+  if (!raceId || !selectedRace) {
     return (
       <div className="space-y-4">
         {onCancel && (
@@ -338,7 +364,7 @@ function RaceRegistrationForm({ uid, runnerProfiles, onSaved, onCancel }: RaceRe
           </button>
         )}
         <RaceList
-          races={races}
+          races={openRaces}
           onSelectRace={(id) => { setRaceId(id); setShowForm(false); }}
           title="Register for a Race"
           subtitle="Browse what's on offer - pick one to register, or reopen a race you're already in to update your details."
@@ -360,6 +386,10 @@ function RaceRegistrationForm({ uid, runnerProfiles, onSaved, onCancel }: RaceRe
         >
           <ArrowLeft className="w-3.5 h-3.5" /> Back to Race List
         </button>
+
+        {selectedRace?.posterImage && (
+          <img src={selectedRace.posterImage} alt="" className="w-full aspect-video object-cover rounded-[18px] -mt-1" />
+        )}
 
         <div>
           <h2 className="heading-float text-xl font-black font-display uppercase tracking-tight text-[var(--text-primary)]">{selectedRace?.name}</h2>
@@ -445,20 +475,26 @@ function RaceRegistrationForm({ uid, runnerProfiles, onSaved, onCancel }: RaceRe
 
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Race Distance</label>
-            <div className="relative">
-              <MapPin className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
-              <select value={distance} onChange={(e) => setDistance(e.target.value)}
-                className="w-full appearance-none glass-inset pl-10 pr-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50">
-                {raceDistances.map((d) => <option key={d.id} value={d.label}>{d.label}</option>)}
-                <option value="Custom">Custom Distance...</option>
-              </select>
-            </div>
-            {raceDistances.length === 0 && (
+            {existingForRace ? (
+              <div className="glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-red-500" /> {existingForRace.distance}
+              </div>
+            ) : (
+              <div className="relative">
+                <MapPin className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
+                <select value={distance} onChange={(e) => setDistance(e.target.value)}
+                  className="w-full appearance-none glass-inset pl-10 pr-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50">
+                  {raceDistances.map((d) => <option key={d.id} value={d.label}>{d.label}</option>)}
+                  <option value="Custom">Custom Distance...</option>
+                </select>
+              </div>
+            )}
+            {!existingForRace && raceDistances.length === 0 && (
               <p className="text-[10.5px] text-[var(--text-muted)] mt-1.5 pl-1">This race has no preset distances yet - enter your own below.</p>
             )}
           </div>
 
-          {distance === 'Custom' && (
+          {!existingForRace && distance === 'Custom' && (
             <input type="text" required value={customDistance} onChange={(e) => setCustomDistance(e.target.value.toUpperCase())}
               className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" placeholder="EX: 15K TRAIL RUN" />
           )}
@@ -502,6 +538,7 @@ function RaceRegistrationForm({ uid, runnerProfiles, onSaved, onCancel }: RaceRe
 
 function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
   const [race, setRace] = useState<Race | null | undefined>(undefined);
+  const [chipReads, setChipReads] = useState<ChipRead[]>([]);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(doc(db, 'races', runnerProfile.raceId), (docSnap) => {
@@ -510,17 +547,24 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
     return () => unsubscribe();
   }, [runnerProfile.raceId]);
 
-  const { items: chipReads } = useDualSync<ChipRead>({
-    firestoreQuery: query(
+  // Runner results come from the protected Firestore query only. The LAN timing
+  // endpoint is intentionally reserved for race operators and must not send a
+  // full on-site scan feed to every runner's browser.
+  useEffect(() => {
+    const unsubscribe = onSnapshot(query(
       collection(db, 'chipReads'),
       where('raceId', '==', runnerProfile.raceId),
       where('bibNumber', '==', runnerProfile.bibNumber)
-    ),
-    lanEndpoint: '/api/chip-reads',
-    lanResponseKey: 'chipReads',
-    getId: (r) => r.id,
-    getUpdatedAt: (r) => r.createdAt,
-  });
+    ), (snapshot) => {
+      const list: ChipRead[] = [];
+      snapshot.forEach((docSnap) => list.push(docSnap.data() as ChipRead));
+      setChipReads(list);
+    }, (err) => {
+      console.warn('Runner split listener failed:', err.message);
+      setChipReads([]);
+    });
+    return () => unsubscribe();
+  }, [runnerProfile.raceId, runnerProfile.bibNumber]);
 
   const result = useMemo(() => {
     if (!race) return null;
@@ -539,13 +583,25 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
           {!race && <p className="text-xs text-[var(--text-secondary)]">Loading race details...</p>}
           {race && orderedCheckpoints.length === 0 && <p className="text-xs text-[var(--text-secondary)]">This race has no checkpoints configured yet.</p>}
           <div className="space-y-2">
-            {orderedCheckpoints.map((cp) => {
+            {orderedCheckpoints.map((cp, index) => {
               const split = result?.splits.find((s) => s.checkpointId === cp.id);
+              const phase = checkpointType(cp, index, orderedCheckpoints.length);
+              const waveStartTime = getWaveStartTime(race, runnerProfile.distance);
+              const cutoffDeadline = cp.cutoffMinutes && waveStartTime
+                ? new Date(new Date(waveStartTime).getTime() + cp.cutoffMinutes * 60_000)
+                : undefined;
+              const afterCutoff = !!split && !!cutoffDeadline && new Date(split.timestamp).getTime() > cutoffDeadline.getTime();
               return (
                 <div key={cp.id} className="flex items-center justify-between glass-inset px-4 py-3">
-                  <span className="text-sm font-bold text-[var(--text-primary)]">{cp.label}</span>
-                  <span className={`font-mono text-sm font-black ${split ? 'text-red-500' : 'text-[var(--text-muted)]'}`}>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-bold text-[var(--text-primary)]">{cp.label}</span>
+                    <span className="block text-[9px] font-bold uppercase tracking-wide text-[var(--text-muted)] mt-0.5">
+                      {phase === 'checkin' ? 'Check-In' : phase === 'start' ? 'Official Start' : phase === 'finish' ? 'Finish' : cutoffDeadline ? `Cutoff ${cutoffDeadline.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Split'}
+                    </span>
+                  </span>
+                  <span className={`font-mono text-sm font-black shrink-0 text-right ${afterCutoff ? 'text-amber-500' : split ? 'text-red-500' : 'text-[var(--text-muted)]'}`}>
                     {split ? new Date(split.timestamp).toLocaleTimeString() : 'Pending'}
+                    {afterCutoff && <span className="block text-[9px] font-sans uppercase tracking-wide">After cutoff</span>}
                   </span>
                 </div>
               );
@@ -580,36 +636,6 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
 }
 
 // ========== PROFILE ==========
-
-// Center-crops and downsizes an image client-side before it's embedded directly
-// on the user's Firestore doc - keeps it small with zero extra Firebase setup.
-function resizeImageToDataUrl(file: File, size = 200, quality = 0.82): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Failed to read the selected file.'));
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = () => reject(new Error('Failed to load the selected image.'));
-      img.onload = () => {
-        const side = Math.min(img.width, img.height);
-        const sx = (img.width - side) / 2;
-        const sy = (img.height - side) / 2;
-        const canvas = document.createElement('canvas');
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          reject(new Error('Image processing is not supported in this browser.'));
-          return;
-        }
-        ctx.drawImage(img, sx, sy, side, side, 0, 0, size, size);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      };
-      img.src = reader.result as string;
-    };
-    reader.readAsDataURL(file);
-  });
-}
 
 interface ProfileModalProps {
   profile: UserProfile;
@@ -675,7 +701,7 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
     }
     setError('');
     try {
-      const dataUrl = await resizeImageToDataUrl(file);
+      const dataUrl = await resizeImageToDataUrl(file, 200, 200);
       setPhotoPreview(dataUrl);
     } catch (err: any) {
       setError(err.message || 'Failed to process the image.');

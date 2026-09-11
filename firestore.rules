@@ -18,8 +18,57 @@ service cloud.firestore {
       return isSignedIn() && callerDoc().data.role == 'admin';
     }
 
+    function isSuperAdmin() {
+      return isSignedIn() && callerDoc().data.role == 'superadmin';
+    }
+
+    // Admins retain operational access; irreversible and account-management
+    // actions are reserved for the Super Admin account alone.
+    function isStaff() {
+      return isAdmin() || isSuperAdmin();
+    }
+
+    function isSuperAdminEmail() {
+      return isSignedIn() && request.auth.token.email == 'kiahzeh@gmail.com';
+    }
+
+    function superAdminAlreadyClaimed() {
+      return exists(/databases/$(database)/documents/system/meta)
+        && get(/databases/$(database)/documents/system/meta).data.keys().hasAll(['superAdminClaimed'])
+        && get(/databases/$(database)/documents/system/meta).data.superAdminClaimed == true;
+    }
+
+    function canBootstrapSuperAdmin(data) {
+      return isSuperAdminEmail()
+        && !superAdminAlreadyClaimed()
+        && data.role == 'superadmin'
+        && data.approved == true;
+    }
+
     function isOrganizer() {
       return isSignedIn() && callerDoc().data.role == 'organizer';
+    }
+
+    // An organizer may operate only on registrations belonging to a race they
+    // created. The race lookup is also what makes a per-race client query safe.
+    function managesRace(raceId) {
+      return isOrganizer()
+        && exists(/databases/$(database)/documents/races/$(raceId))
+        && get(/databases/$(database)/documents/races/$(raceId)).data.createdBy == request.auth.uid;
+    }
+
+    function hasValidRegistrationId(regId, data) {
+      return regId == data.uid + '_' + data.raceId;
+    }
+
+    function isRemovedAccount(uid) {
+      return exists(/databases/$(database)/documents/removedAccounts/$(uid));
+    }
+
+    function ownsRecordedSplit(raceId, bibNumber) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/runners/$(request.auth.uid + '_' + raceId))
+        && get(/databases/$(database)/documents/runners/$(request.auth.uid + '_' + raceId)).data.bibNumber == bibNumber;
     }
 
     // ========== USERS / ROLES ==========
@@ -27,40 +76,50 @@ service cloud.firestore {
     function isValidUserCreate(data) {
       return data.keys().hasAll(['email', 'displayName', 'role', 'approved', 'createdAt'])
         && data.email is string && data.displayName is string
-        && data.role is string && (data.role == 'admin' || data.role == 'organizer' || data.role == 'runner')
+        && data.role is string && (data.role == 'superadmin' || data.role == 'admin' || data.role == 'organizer' || data.role == 'runner')
         && data.approved is bool
         && data.createdAt is string
         // Runner accounts are always auto-approved.
         && (data.role != 'runner' || data.approved == true)
-        // Organizer accounts always start unapproved; only an Admin can flip that later.
+        // Organizer accounts always start unapproved; only a Super Admin can flip that later.
         && (data.role != 'organizer' || data.approved == false)
-        // Admin accounts may only be created via the one-time founding-admin claim below.
-        && (data.role != 'admin' || (
-          !exists(/databases/$(database)/documents/system/meta)
-          || get(/databases/$(database)/documents/system/meta).data.adminClaimed == false
-        ));
+        // The one-time Super Admin bootstrap is restricted to the owner email.
+        && (data.role != 'superadmin' || canBootstrapSuperAdmin(data));
     }
 
     match /users/{uid} {
-      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
-      allow create: if isSignedIn() && request.auth.uid == uid && isValidUserCreate(request.resource.data);
-      // Self-updates may not change role/approved. Admins may change role/approved on anyone.
-      allow update: if isAdmin() || (
+      allow read: if isSignedIn() && (request.auth.uid == uid || isStaff());
+      allow create: if isSignedIn() && request.auth.uid == uid
+        && !isRemovedAccount(uid)
+        && isValidUserCreate(request.resource.data);
+      // Self-updates may not change role/approved. Only Super Admins may
+      // approve organizers or manage other accounts. The owner email gets one
+      // strictly constrained bootstrap transition into Super Admin.
+      allow update: if isSuperAdmin()
+        || canBootstrapSuperAdmin(request.resource.data)
+        || (
         isSignedIn() && request.auth.uid == uid
         && request.resource.data.role == resource.data.role
         && request.resource.data.approved == resource.data.approved
       );
+      allow delete: if isSuperAdmin();
     }
 
-    // ========== SYSTEM / FOUNDING ADMIN BOOTSTRAP ==========
+    // A tombstone prevents a removed Firebase login from recreating a profile
+    // in the app. Full Firebase Auth deletion additionally requires a trusted
+    // Firebase Admin backend, never browser code.
+    match /removedAccounts/{uid} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    // ========== SYSTEM / SUPER ADMIN BOOTSTRAP ==========
 
     match /system/meta {
       allow read: if true;
-      // Allow exactly the one-time false -> true transition when claiming founding admin.
-      allow create: if isSignedIn() && request.resource.data.adminClaimed == true;
-      allow update: if isSignedIn()
-        && resource.data.adminClaimed == false
-        && request.resource.data.adminClaimed == true;
+      // Only the configured owner email can mark the one-time claim complete.
+      allow create, update: if isSuperAdminEmail()
+        && !superAdminAlreadyClaimed()
+        && request.resource.data.superAdminClaimed == true;
     }
 
     // ========== RACES & CHECKPOINTS ==========
@@ -71,9 +130,9 @@ service cloud.firestore {
       allow list: if true;
       // Organizers can only create/edit races they themselves created - other organizers
       // can't see or touch each other's races in their dashboards. Admin can edit any race.
-      allow create: if isAdmin() || (isOrganizer() && request.resource.data.createdBy == request.auth.uid);
-      allow update: if isAdmin() || (isOrganizer() && resource.data.createdBy == request.auth.uid);
-      allow delete: if isAdmin();
+      allow create: if isStaff() || (isOrganizer() && request.resource.data.createdBy == request.auth.uid);
+      allow update: if isStaff() || (isOrganizer() && resource.data.createdBy == request.auth.uid);
+      allow delete: if isSuperAdmin();
     }
 
     // ========== RUNNER PROFILES ==========
@@ -94,11 +153,37 @@ service cloud.firestore {
     // Doc id is {uid}_{raceId} - one entry per registration, so a runner can hold
     // many concurrent race registrations instead of a single overwritten profile.
     match /runners/{regId} {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn()
-        && (request.resource.data.uid == request.auth.uid || isAdmin() || isOrganizer())
-        && isValidRunnerProfile(request.resource.data);
-      allow delete: if isAdmin();
+      // Runners see only their own registrations; organizers see registrations
+      // only for events they created; admins retain full event oversight.
+      allow read: if isStaff()
+        || (isSignedIn() && resource.data.uid == request.auth.uid)
+        || managesRace(resource.data.raceId);
+
+      allow create: if isValidRunnerProfile(request.resource.data)
+        && hasValidRegistrationId(regId, request.resource.data)
+        && (isStaff()
+          || (isSignedIn() && request.resource.data.uid == request.auth.uid)
+          || managesRace(request.resource.data.raceId));
+
+      // A runner cannot transfer a registration to another account/race. An
+      // organizer can edit only a registration in their own race.
+      allow update: if isValidRunnerProfile(request.resource.data)
+        && hasValidRegistrationId(regId, request.resource.data)
+        && (isStaff()
+          || (isSignedIn()
+            && resource.data.uid == request.auth.uid
+            && request.resource.data.uid == resource.data.uid
+            && request.resource.data.raceId == resource.data.raceId)
+          || (managesRace(resource.data.raceId)
+            && request.resource.data.raceId == resource.data.raceId));
+      allow delete: if isSuperAdmin();
+    }
+
+    // Per race+distance sequence counters, incremented transactionally when a
+    // runner registers so two simultaneous registrations can't land on the
+    // same bib number. No PII - just an integer, same trust level as chipReads.
+    match /bibCounters/{counterId} {
+      allow read, write: if isSignedIn();
     }
 
     // ========== TIMING CHIP READS ==========
@@ -116,9 +201,24 @@ service cloud.firestore {
     }
 
     match /chipReads/{readId} {
-      allow read: if isSignedIn();
-      allow create, update: if (isAdmin() || isOrganizer()) && isValidChipRead(request.resource.data);
-      allow delete: if isAdmin();
+      // A runner can only access splits tied to their own race registration.
+      // Race operators are constrained to races they created.
+      allow read: if isStaff()
+        || managesRace(resource.data.raceId)
+        || ownsRecordedSplit(resource.data.raceId, resource.data.bibNumber);
+      allow create, update: if isValidChipRead(request.resource.data)
+        && (isStaff() || managesRace(request.resource.data.raceId));
+      allow delete: if isSuperAdmin();
+    }
+
+    // A compact, organizer-published scoreboard for spectators. Raw timing
+    // scans never become public: only the owner of the race (or an admin) can
+    // write this collection, while anyone may read its non-sensitive summary.
+    match /liveResults/{raceId} {
+      allow read: if true;
+      allow create, update: if request.resource.data.raceId == raceId
+        && (isStaff() || managesRace(raceId));
+      allow delete: if isSuperAdmin() || managesRace(raceId);
     }
 
     // ========== MEDAL ENGRAVING ORDERS ==========
@@ -143,7 +243,7 @@ service cloud.firestore {
       allow list: if isSignedIn();
       allow create: if isSignedIn() && isValidId(orderId) && isValidOrder(request.resource.data);
       allow update: if isSignedIn() && isValidId(orderId) && isValidOrder(request.resource.data);
-      allow delete: if isAdmin(); // Only admins can delete incorrect/canceled entries now
+      allow delete: if isSuperAdmin();
     }
   }
 }

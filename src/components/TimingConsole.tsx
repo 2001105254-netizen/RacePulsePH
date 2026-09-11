@@ -1,13 +1,84 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { collection, query, where, doc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, doc, setDoc, updateDoc, onSnapshot, writeBatch, deleteField, runTransaction } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useDualSync } from '../lib/dualSync';
-import { computeResults } from '../lib/timing';
-import { Race, ChipRead, RunnerProfile } from '../types';
+import { checkpointType, computeResults, getCheckpointByType, getWaveStartTime } from '../lib/timing';
+import { Race, ChipRead, PublicLeaderboardEntry, PublicLiveResults, RunnerProfile, RunnerResult } from '../types';
 import { groupRunnersByDistance, generateRunnerRosterPdf } from '../lib/runnerReport';
-import { Radio, ScanLine, Trophy, Clock, Wifi, WifiOff, QrCode, RefreshCw, ArrowLeft, Cpu, Users2, FileDown } from 'lucide-react';
+import { Radio, ScanLine, Trophy, Clock, Wifi, WifiOff, QrCode, RefreshCw, ArrowLeft, Cpu, Users2, FileDown, Maximize2, X, ListChecks, CheckCircle2, Circle, PlayCircle, RotateCcw, Timer } from 'lucide-react';
 import QrScannerModal from './QrScannerModal';
 import RaceList from './RaceList';
+
+// Ticks every second so any component reading it re-renders live - backs the
+// gun clock and the wall-clock readout without each caller managing its own timer.
+function useNow(intervalMs = 1000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return now;
+}
+
+function formatClockElapsed(totalMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(totalMs / 1000));
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  return [h, m, s].map((n) => String(n).padStart(2, '0')).join(':');
+}
+
+// RFID readers commonly send an EPC as keyboard text. Normalising both the
+// scanner value and saved IDs keeps matching reliable when a reader switches
+// between lowercase and uppercase hexadecimal output.
+function normalizeScanValue(value: string): string {
+  return value.trim().toUpperCase();
+}
+
+interface LiveClockProps {
+  gunStartTime?: string;
+  size?: 'compact' | 'large' | 'header';
+}
+
+// Gun-time clock: counts up from the moment the race-in-charge fires the
+// official start (race.gunStartTime), independent of any individual chip read.
+function LiveClock({ gunStartTime, size = 'compact' }: LiveClockProps) {
+  const now = useNow(1000);
+  const wallClock = new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  if (size === 'large') {
+    return (
+      <div className="text-center">
+        <p className="text-[10px] sm:text-xs font-black uppercase tracking-[0.25em] text-[var(--text-muted)]">{gunStartTime ? 'Gun Time' : 'Current Time'}</p>
+        <p className="font-mono font-black text-4xl sm:text-6xl text-[var(--text-primary)] tabular-nums">
+          {gunStartTime ? formatClockElapsed(now - new Date(gunStartTime).getTime()) : wallClock}
+        </p>
+      </div>
+    );
+  }
+
+  if (size === 'header') {
+    return (
+      <div className="text-right shrink-0">
+        <p className="text-[9px] sm:text-[11px] font-black uppercase tracking-widest text-white/40">{gunStartTime ? 'Gun Time' : 'Current Time'}</p>
+        <p className="font-mono font-black text-lg sm:text-2xl text-white tabular-nums">
+          {gunStartTime ? formatClockElapsed(now - new Date(gunStartTime).getTime()) : wallClock}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 shrink-0">
+      <Timer className="w-3.5 h-3.5 text-red-500" />
+      {gunStartTime ? (
+        <span className="font-mono font-black text-sm text-[var(--text-primary)] tabular-nums">{formatClockElapsed(now - new Date(gunStartTime).getTime())}</span>
+      ) : (
+        <span className="font-mono font-bold text-sm text-[var(--text-secondary)] tabular-nums">{wallClock}</span>
+      )}
+    </div>
+  );
+}
 
 interface TimingConsoleProps {
   uid: string;
@@ -22,6 +93,15 @@ interface TimingConsoleProps {
 export default function TimingConsole({ uid, canSeeAllRaces }: TimingConsoleProps) {
   const [races, setRaces] = useState<Race[]>([]);
   const [activeRaceId, setActiveRaceId] = useState<string>(() => localStorage.getItem('racepulse_active_race') || '');
+
+  useEffect(() => {
+    const goBackToRaceList = () => {
+      localStorage.removeItem('racepulse_active_race');
+      setActiveRaceId('');
+    };
+    window.addEventListener('racepulse:back', goBackToRaceList);
+    return () => window.removeEventListener('racepulse:back', goBackToRaceList);
+  }, []);
 
   useEffect(() => {
     const q = canSeeAllRaces
@@ -63,7 +143,10 @@ export default function TimingConsole({ uid, canSeeAllRaces }: TimingConsoleProp
     <div className="space-y-6">
       <button
         type="button"
-        onClick={() => setActiveRaceId('')}
+        onClick={() => {
+          localStorage.removeItem('racepulse_active_race');
+          setActiveRaceId('');
+        }}
         className="text-xs font-bold text-[var(--text-secondary)] hover:text-red-500 flex items-center gap-1.5 transition"
       >
         <ArrowLeft className="w-3.5 h-3.5" /> Choose a different race
@@ -79,13 +162,23 @@ interface TimingConsoleForRaceProps {
 }
 
 function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
-  const [mode, setMode] = useState<'record' | 'assign' | 'roster'>('record');
+  const [mode, setMode] = useState<'record' | 'assign' | 'roster' | 'rankings' | 'rollcall'>('record');
   const orderedCheckpoints = useMemo(() => [...race.checkpoints].sort((a, b) => a.order - b.order), [race.checkpoints]);
   const [selectedCheckpointId, setSelectedCheckpointId] = useState(orderedCheckpoints[0]?.id || '');
   const [bibInput, setBibInput] = useState('');
   const [recording, setRecording] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showScanModal, setShowScanModal] = useState(false);
+  const scanInputRef = useRef<HTMLInputElement>(null);
+  const lastRecordedScanRef = useRef<{ key: string; at: number } | null>(null);
+  const selectedCheckpoint = orderedCheckpoints.find((checkpoint) => checkpoint.id === selectedCheckpointId);
+  const selectedCheckpointIndex = selectedCheckpoint ? orderedCheckpoints.findIndex((checkpoint) => checkpoint.id === selectedCheckpoint.id) : -1;
+  const selectedCheckpointType = selectedCheckpoint && selectedCheckpointIndex >= 0
+    ? checkpointType(selectedCheckpoint, selectedCheckpointIndex, orderedCheckpoints.length)
+    : 'intermediate';
+  const checkInCheckpoint = getCheckpointByType(orderedCheckpoints, 'checkin');
+  const startCheckpoint = getCheckpointByType(orderedCheckpoints, 'start') || orderedCheckpoints[0];
+  const finishCheckpoint = getCheckpointByType(orderedCheckpoints, 'finish') || orderedCheckpoints[orderedCheckpoints.length - 1];
 
   const { items: chipReads, lanConnected } = useDualSync<ChipRead>({
     firestoreQuery: query(collection(db, 'chipReads'), where('raceId', '==', race.id)),
@@ -96,13 +189,18 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   });
 
   const [runnerProfiles, setRunnerProfiles] = useState<RunnerProfile[]>([]);
+  const [runnerProfilesError, setRunnerProfilesError] = useState('');
   useEffect(() => {
     const q = query(collection(db, 'runners'), where('raceId', '==', race.id));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const list: RunnerProfile[] = [];
       snapshot.forEach((docSnap) => list.push(docSnap.data() as RunnerProfile));
       setRunnerProfiles(list);
-    }, (error) => console.warn('Runner profiles listener failed:', error.message));
+      setRunnerProfilesError('');
+    }, (error) => {
+      console.warn('Runner profiles listener failed:', error.message);
+      setRunnerProfilesError(error.message);
+    });
     return () => unsubscribe();
   }, [race.id]);
 
@@ -112,15 +210,100 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   );
 
   const checkpointLabel = (id: string) => orderedCheckpoints.find((c) => c.id === id)?.label || id;
+  const checkInCount = checkInCheckpoint ? new Set(chipReads.filter((read) => read.checkpointId === checkInCheckpoint.id).map((read) => read.bibNumber)).size : 0;
+  const finishedCount = results.filter((result) => !!result.finishTime).length;
+  const publicLeaders = useMemo<PublicLeaderboardEntry[]>(() => race.distances.flatMap((distance) => results
+    .filter((result) => result.runnerProfile?.distance === distance.label && result.finishTime && result.rank)
+    .slice(0, 5)
+    .map((result) => ({
+      bibNumber: result.bibNumber,
+      fullName: result.runnerProfile?.fullName || `Bib ${result.bibNumber}`,
+      distance: distance.label,
+      rank: result.rank!,
+      finishTime: result.finishTime!,
+    }))
+  ), [race.distances, results]);
 
-  const submitRead = async (bibRaw: string, overrideTimestamp?: string) => {
-    if (!selectedCheckpointId) {
+  // The operator normally stays on this screen during the race. Publish only
+  // this compact, public-safe scoreboard after each scan; raw chip reads stay
+  // inside their protected collection and are never queried by spectators.
+  useEffect(() => {
+    if (!race.liveBroadcastEnabled) return;
+    const timeout = window.setTimeout(() => {
+      const hasWaveStarted = Object.keys(race.waveStartTimes || {}).length > 0 || !!race.gunStartTime;
+      const summary: PublicLiveResults = {
+        raceId: race.id,
+        raceName: race.name,
+        updatedAt: new Date().toISOString(),
+        status: finishedCount > 0 && finishedCount === runnerProfiles.length ? 'completed' : hasWaveStarted ? 'live' : 'upcoming',
+        totalRegistered: runnerProfiles.length,
+        totalStarted: new Set(chipReads.filter((read) => read.checkpointId === startCheckpoint?.id).map((read) => read.bibNumber)).size,
+        totalFinished: finishedCount,
+        leaders: publicLeaders,
+      };
+      setDoc(doc(db, 'liveResults', race.id), summary).catch((error) => {
+        console.warn('Public live leaderboard publish skipped:', error.message);
+      });
+    }, 500);
+    return () => window.clearTimeout(timeout);
+  }, [chipReads, finishedCount, publicLeaders, race, runnerProfiles.length, startCheckpoint?.id]);
+
+  const actionLabel = selectedCheckpointType === 'checkin'
+    ? 'Check In Runner'
+    : selectedCheckpointType === 'start'
+      ? 'Record Start'
+      : selectedCheckpointType === 'finish'
+        ? 'Record Finish'
+        : 'Record Split';
+
+  // Keep a keyboard-wedge RFID reader ready after every scan. This also makes
+  // the manual fallback quick: operators can simply type a known bib and Enter.
+  useEffect(() => {
+    if (mode === 'record') scanInputRef.current?.focus();
+  }, [mode, selectedCheckpointId]);
+
+  const submitRead = async (scanRaw: string, overrideTimestamp?: string) => {
+    if (!selectedCheckpointId || !selectedCheckpoint) {
       setFeedback({ type: 'error', text: 'Select a checkpoint first.' });
       return false;
     }
-    const bibNumber = bibRaw.trim().toUpperCase();
-    if (!bibNumber) {
-      setFeedback({ type: 'error', text: 'Enter or scan a bib number.' });
+    const scannedValue = normalizeScanValue(scanRaw);
+    if (!scannedValue) {
+      setFeedback({ type: 'error', text: 'Scan an RFID chip or enter a bib number.' });
+      return false;
+    }
+
+    // A scan can be either the tag EPC/chip ID (normal race-day path) or a
+    // registered bib number (safe manual fallback). Unknown IDs are rejected
+    // rather than creating a result for the wrong runner.
+    const matchedRunner = runnerProfiles.find((runner) =>
+      normalizeScanValue(runner.chipId || '') === scannedValue
+      || normalizeScanValue(runner.bibNumber) === scannedValue
+    );
+    if (!matchedRunner) {
+      setFeedback({ type: 'error', text: `No assigned runner matches "${scannedValue}". Assign the chip first, or check the bib.` });
+      setBibInput('');
+      scanInputRef.current?.focus();
+      return false;
+    }
+
+    const scannedChip = !!matchedRunner.chipId && normalizeScanValue(matchedRunner.chipId) === scannedValue;
+    const bibNumber = matchedRunner.bibNumber;
+    // Each distance may leave at a different time. A legacy/shared gun time
+    // remains the fallback so older races still work exactly as before.
+    const waveStartTime = getWaveStartTime(race, matchedRunner.distance);
+    const cutoffDeadline = selectedCheckpoint.cutoffMinutes && waveStartTime
+      ? new Date(new Date(waveStartTime).getTime() + selectedCheckpoint.cutoffMinutes * 60_000)
+      : undefined;
+    const scanKey = `${bibNumber}_${selectedCheckpointId}`;
+    const nowMs = Date.now();
+    const lastScan = lastRecordedScanRef.current;
+    // UHF readers can report the same tag several times while it remains in
+    // range. Ignore immediate repeats, but allow legitimate later lap reads.
+    if (lastScan?.key === scanKey && nowMs - lastScan.at < 4000) {
+      setFeedback({ type: 'error', text: `Duplicate scan ignored for bib ${bibNumber}.` });
+      setBibInput('');
+      scanInputRef.current?.focus();
       return false;
     }
 
@@ -128,14 +311,17 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
     setFeedback(null);
     try {
       const nowIso = new Date().toISOString();
+      const recordedTimestamp = overrideTimestamp || nowIso;
+      const lateForCutoff = !!cutoffDeadline && new Date(recordedTimestamp).getTime() > cutoffDeadline.getTime();
       const readId = `${race.id}_${bibNumber}_${selectedCheckpointId}_${Date.now()}`;
       const record: ChipRead = {
         id: readId,
         raceId: race.id,
         bibNumber,
+        ...(scannedChip ? { chipId: matchedRunner.chipId } : {}),
         checkpointId: selectedCheckpointId,
-        timestamp: overrideTimestamp || nowIso,
-        source: 'manual',
+        timestamp: recordedTimestamp,
+        source: scannedChip ? 'rfid-bridge' : 'manual',
         recordedBy: uid,
         createdAt: nowIso,
       };
@@ -150,8 +336,10 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         body: JSON.stringify(record),
       }).catch((e) => console.warn('LAN chip read sync skipped:', e));
 
-      setFeedback({ type: 'success', text: `Recorded bib ${bibNumber} @ ${checkpointLabel(selectedCheckpointId)}` });
+      lastRecordedScanRef.current = { key: scanKey, at: nowMs };
+      setFeedback({ type: 'success', text: `${scannedChip ? 'RFID ' : ''}Recorded ${matchedRunner.fullName} • bib ${bibNumber} @ ${checkpointLabel(selectedCheckpointId)}${lateForCutoff ? ' • AFTER CUTOFF' : ''}` });
       setBibInput('');
+      scanInputRef.current?.focus();
       return true;
     } finally {
       setRecording(false);
@@ -182,15 +370,24 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   return (
     <div className="space-y-6">
       {/* Status bar */}
-      <div className="flex items-center justify-between glass-panel px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 glass-panel px-4 py-3">
         <div>
           <span className="text-[10px] tracking-widest font-extrabold text-red-500 font-display uppercase">{race.name}</span>
           <p className="text-xs text-[var(--text-secondary)] mt-0.5">{orderedCheckpoints.length} checkpoints &bull; {results.length} runners with recorded splits</p>
         </div>
-        <span className={`inline-flex items-center gap-1.5 text-[9px] font-mono font-bold tracking-wider uppercase px-2.5 py-1 rounded-full border ${lanConnected ? 'bg-green-500/10 border-green-500/25 text-green-500' : 'bg-rose-500/10 border-rose-500/25 text-rose-500'}`}>
-          {lanConnected ? <><Wifi className="w-3 h-3" /> LAN Sync Linked</> : <><WifiOff className="w-3 h-3" /> Standalone Mode</>}
-        </span>
+        <div className="flex items-center gap-3">
+          <LiveClock gunStartTime={race.gunStartTime} />
+          <span className={`inline-flex items-center gap-1.5 text-[9px] font-mono font-bold tracking-wider uppercase px-2.5 py-1 rounded-full border ${lanConnected ? 'bg-green-500/10 border-green-500/25 text-green-500' : 'bg-rose-500/10 border-rose-500/25 text-rose-500'}`}>
+            {lanConnected ? <><Wifi className="w-3 h-3" /> LAN Sync Linked</> : <><WifiOff className="w-3 h-3" /> Standalone Mode</>}
+          </span>
+        </div>
       </div>
+
+      {runnerProfilesError && (
+        <p className="text-xs font-semibold text-red-500 glass-inset px-4 py-2.5">
+          ⚠️ Couldn't load registered runners: {runnerProfilesError}
+        </p>
+      )}
 
       {/* Mode toggle */}
       <div className="flex gap-2 glass-inset p-1.5 w-max max-w-full">
@@ -212,40 +409,88 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         >
           <Users2 className="w-3.5 h-3.5" /> Roster
         </button>
+        <button
+          onClick={() => setMode('rankings')}
+          className={`flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide px-4 py-2.5 rounded-[16px] transition ${mode === 'rankings' ? 'bg-red-600 text-white shadow-lg shadow-red-900/30' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+        >
+          <Trophy className="w-3.5 h-3.5" /> Rankings
+        </button>
+        <button
+          onClick={() => setMode('rollcall')}
+          className={`flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide px-4 py-2.5 rounded-[16px] transition ${mode === 'rollcall' ? 'bg-red-600 text-white shadow-lg shadow-red-900/30' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+        >
+          <ListChecks className="w-3.5 h-3.5" /> Start Roll Call
+        </button>
       </div>
 
-      {mode === 'assign' && <ChipAssignmentPanel race={race} runnerProfiles={runnerProfiles} />}
+      {mode === 'assign' && <ChipAssignmentPanel race={race} runnerProfiles={runnerProfiles} chipReads={chipReads} />}
       {mode === 'roster' && <RunnerRosterPanel race={race} runnerProfiles={runnerProfiles} />}
+      {mode === 'rankings' && <RaceRankingsPanel race={race} results={results} />}
+      {mode === 'rollcall' && (
+        <StartRollCallPanel
+          race={race}
+          runnerProfiles={runnerProfiles}
+          chipReads={chipReads}
+          startCheckpointId={startCheckpoint?.id}
+        />
+      )}
 
       {mode === 'record' && (
       <>
       {/* Recording console */}
       <div className="glass-panel p-5 space-y-4">
-        <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2">
-          <Radio className="w-4 h-4 text-red-500" /> Record a Checkpoint Split
-        </h3>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2">
+              <Radio className="w-4 h-4 text-red-500" /> {selectedCheckpointType === 'checkin' ? 'Runner Check-In' : 'Live RFID Checkpoint'}
+            </h3>
+            <p className="text-xs text-[var(--text-secondary)] mt-1">
+              {selectedCheckpointType === 'checkin'
+                ? 'Check in every runner before the gun. Check-in records attendance only and does not start their race time.'
+                : 'Scan an assigned RFID chip. Typing a registered bib remains available as backup.'}
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-1.5 text-[9px] font-mono font-black tracking-widest uppercase px-2.5 py-1.5 rounded-full border bg-emerald-500/10 border-emerald-500/25 text-emerald-500">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Ready to Scan
+          </span>
+        </div>
 
         <div>
-          <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Checkpoint</label>
+          <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Race Day Station</label>
           <div className="flex flex-wrap gap-2">
-            {orderedCheckpoints.map((cp) => (
+            {orderedCheckpoints.map((cp, index) => {
+              const phase = checkpointType(cp, index, orderedCheckpoints.length);
+              const phaseLabel = phase === 'checkin' ? 'Check-In' : phase === 'start' ? 'Start' : phase === 'finish' ? 'Finish' : cp.cutoffMinutes ? `Cutoff ${cp.cutoffMinutes}m` : 'Split';
+              return (
               <button
                 key={cp.id}
-                onClick={() => setSelectedCheckpointId(cp.id)}
+                onClick={() => { setSelectedCheckpointId(cp.id); setFeedback(null); }}
                 className={`text-xs font-bold uppercase tracking-wide px-3.5 py-2 rounded-[16px] border transition ${selectedCheckpointId === cp.id ? 'bg-red-600 border-red-600 text-white shadow-lg shadow-red-900/30' : 'glass-inset border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
               >
-                {cp.label}
+                <span>{cp.label}</span><span className="opacity-70 text-[9px] ml-1">{phaseLabel}</span>
               </button>
-            ))}
+              );
+            })}
           </div>
         </div>
 
+        {(selectedCheckpointType === 'checkin' || selectedCheckpoint?.cutoffMinutes) && (
+          <div className={`glass-inset px-4 py-3 text-xs flex flex-wrap items-center justify-between gap-2 ${selectedCheckpoint?.cutoffMinutes ? 'border-amber-500/30' : ''}`}>
+            {selectedCheckpointType === 'checkin' && <span className="font-bold text-[var(--text-primary)]">{checkInCount} / {runnerProfiles.length} runners checked in</span>}
+            {selectedCheckpoint?.cutoffMinutes && <span className="font-bold text-amber-500">Cutoff: {selectedCheckpoint.cutoffMinutes} min after each runner's distance wave start</span>}
+          </div>
+        )}
+
         <form onSubmit={handleManualSubmit} className="flex flex-col sm:flex-row gap-2">
           <input
+            ref={scanInputRef}
             type="text"
-            placeholder="TYPE BIB NUMBER"
+            placeholder="SCAN RFID CHIP OR TYPE BIB"
             value={bibInput}
             onChange={(e) => setBibInput(e.target.value.toUpperCase())}
+            autoComplete="off"
+            autoCapitalize="characters"
+            aria-label="RFID chip or runner bib scan input"
             className="flex-1 glass-inset px-4 py-3 text-sm font-bold font-mono tracking-wider text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
           />
           <button
@@ -253,7 +498,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
             disabled={recording}
             className="text-xs font-black uppercase tracking-widest px-5 py-3 rounded-[var(--radius-control)] text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 flex items-center justify-center gap-2 transition disabled:opacity-60"
           >
-            {recording ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Clock className="w-4 h-4" />} Record Now
+            {recording ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Clock className="w-4 h-4" />} {actionLabel}
           </button>
           <button
             type="button"
@@ -283,7 +528,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
             )}
             {recentReads.map((r) => (
               <div key={r.id} className="flex items-center justify-between glass-inset px-3 py-2 text-xs">
-                <span className="font-mono font-bold text-[var(--text-primary)]">#{r.bibNumber}</span>
+                <span className="font-mono font-bold text-[var(--text-primary)] flex items-center gap-1.5"><span>#{r.bibNumber}</span>{r.source === 'rfid-bridge' && <Cpu className="w-3 h-3 text-emerald-500" aria-label="RFID scan" />}</span>
                 <span className="text-[var(--text-secondary)]">{checkpointLabel(r.checkpointId)}</span>
                 <span className="font-mono text-[var(--text-muted)]">{new Date(r.timestamp).toLocaleTimeString()}</span>
               </div>
@@ -335,17 +580,24 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
 interface ChipAssignmentPanelProps {
   race: Race;
   runnerProfiles: RunnerProfile[];
+  chipReads: ChipRead[];
 }
 
-function ChipAssignmentPanel({ race, runnerProfiles }: ChipAssignmentPanelProps) {
+function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignmentPanelProps) {
   const [bibInput, setBibInput] = useState('');
   const [chipInput, setChipInput] = useState('');
+  const [rosterSearch, setRosterSearch] = useState('');
+  const [rosterFilter, setRosterFilter] = useState<'unassigned' | 'assigned' | 'all'>('unassigned');
+  const [editingBib, setEditingBib] = useState(false);
+  const [nextBib, setNextBib] = useState('');
+  const [showBibScanner, setShowBibScanner] = useState(false);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const bibInputRef = useRef<HTMLInputElement>(null);
   const chipInputRef = useRef<HTMLInputElement>(null);
 
   const foundRunner = useMemo(
-    () => runnerProfiles.find((r) => r.bibNumber.toUpperCase() === bibInput.trim().toUpperCase()),
+    () => runnerProfiles.find((r) => normalizeScanValue(r.bibNumber) === normalizeScanValue(bibInput)),
     [runnerProfiles, bibInput]
   );
 
@@ -353,7 +605,26 @@ function ChipAssignmentPanel({ race, runnerProfiles }: ChipAssignmentPanelProps)
     if (foundRunner) chipInputRef.current?.focus();
   }, [foundRunner]);
 
+  const selectRunner = (r: RunnerProfile) => {
+    setFeedback(null);
+    setChipInput('');
+    setBibInput(r.bibNumber);
+    setNextBib(r.bibNumber);
+    setEditingBib(false);
+  };
+
   const assignedCount = runnerProfiles.filter((r) => r.chipId).length;
+  const selectedHasReads = !!foundRunner && chipReads.some((read) => read.bibNumber === foundRunner.bibNumber);
+
+  const filteredRoster = useMemo(() => {
+    const term = rosterSearch.trim().toUpperCase();
+    const sorted = [...runnerProfiles].sort((a, b) => a.bibNumber.localeCompare(b.bibNumber, undefined, { numeric: true }));
+    return sorted.filter((r) => {
+      const matchesSearch = !term || r.bibNumber.toUpperCase().includes(term) || r.fullName.toUpperCase().includes(term);
+      const matchesFilter = rosterFilter === 'all' || (rosterFilter === 'assigned' ? !!r.chipId : !r.chipId);
+      return matchesSearch && matchesFilter;
+    });
+  }, [runnerProfiles, rosterSearch, rosterFilter]);
 
   const handleAssign = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -361,13 +632,18 @@ function ChipAssignmentPanel({ race, runnerProfiles }: ChipAssignmentPanelProps)
       setFeedback({ type: 'error', text: 'No runner found with that bib number.' });
       return;
     }
-    const chipId = chipInput.trim();
+    const chipId = normalizeScanValue(chipInput);
     if (!chipId) {
       setFeedback({ type: 'error', text: 'Scan or type a chip ID.' });
       return;
     }
 
-    const conflict = runnerProfiles.find((r) => r.chipId === chipId && r.bibNumber !== foundRunner.bibNumber);
+    if (normalizeScanValue(foundRunner.chipId || '') === chipId) {
+      setFeedback({ type: 'success', text: `Chip "${chipId}" is already assigned to bib #${foundRunner.bibNumber}.` });
+      return;
+    }
+
+    const conflict = runnerProfiles.find((r) => normalizeScanValue(r.chipId || '') === chipId && r.bibNumber !== foundRunner.bibNumber);
     if (conflict && !window.confirm(`Chip "${chipId}" is already assigned to bib #${conflict.bibNumber} (${conflict.fullName}). Reassign it to bib #${foundRunner.bibNumber} instead?`)) {
       return;
     }
@@ -375,10 +651,19 @@ function ChipAssignmentPanel({ race, runnerProfiles }: ChipAssignmentPanelProps)
     setSaving(true);
     setFeedback(null);
     try {
-      await updateDoc(doc(db, 'runners', `${foundRunner.uid}_${race.id}`), { chipId });
-      setFeedback({ type: 'success', text: `Chip "${chipId}" assigned to bib #${foundRunner.bibNumber} (${foundRunner.fullName}).` });
-      setBibInput('');
+      // Reassignment must be atomic: clearing the old runner and assigning the
+      // new runner in one batch prevents one timing chip from mapping to two bibs.
+      const batch = writeBatch(db);
+      if (conflict) {
+        batch.update(doc(db, 'runners', `${conflict.uid}_${race.id}`), { chipId: deleteField() });
+      }
+      batch.update(doc(db, 'runners', `${foundRunner.uid}_${race.id}`), { chipId });
+      await batch.commit();
+      setFeedback({ type: 'success', text: conflict
+        ? `Chip "${chipId}" moved from bib #${conflict.bibNumber} to #${foundRunner.bibNumber}.`
+        : `Chip "${chipId}" assigned to bib #${foundRunner.bibNumber} (${foundRunner.fullName}).` });
       setChipInput('');
+      chipInputRef.current?.focus();
     } catch (err: any) {
       setFeedback({ type: 'error', text: err.message || 'Failed to assign chip.' });
     } finally {
@@ -386,24 +671,128 @@ function ChipAssignmentPanel({ race, runnerProfiles }: ChipAssignmentPanelProps)
     }
   };
 
+  const handleUnassign = async () => {
+    if (!foundRunner?.chipId) return;
+    if (!window.confirm(`Remove chip "${foundRunner.chipId}" from bib #${foundRunner.bibNumber}?`)) return;
+    setSaving(true);
+    try {
+      await updateDoc(doc(db, 'runners', `${foundRunner.uid}_${race.id}`), { chipId: deleteField() });
+      setChipInput('');
+      setFeedback({ type: 'success', text: `Chip removed from bib #${foundRunner.bibNumber}.` });
+    } catch (err: any) {
+      setFeedback({ type: 'error', text: err.message || 'Failed to remove chip.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleBibUpdate = async () => {
+    if (!foundRunner) return;
+    const newBib = normalizeScanValue(nextBib);
+    if (!/^[A-Z0-9][A-Z0-9_-]{0,19}$/.test(newBib)) {
+      setFeedback({ type: 'error', text: 'Use 1–20 letters, numbers, hyphens, or underscores for the bib.' });
+      return;
+    }
+    if (newBib === foundRunner.bibNumber) {
+      setEditingBib(false);
+      return;
+    }
+    if (selectedHasReads) {
+      setFeedback({ type: 'error', text: 'Bib numbers are locked once this runner has timing reads. Correct the read first instead.' });
+      return;
+    }
+    const conflict = runnerProfiles.find((runner) => normalizeScanValue(runner.bibNumber) === newBib && runner.uid !== foundRunner.uid);
+    if (conflict) {
+      setFeedback({ type: 'error', text: `Bib #${newBib} is already assigned to ${conflict.fullName}.` });
+      return;
+    }
+    if (!window.confirm(`Change ${foundRunner.fullName}'s bib from #${foundRunner.bibNumber} to #${newBib}?`)) return;
+
+    setSaving(true);
+    try {
+      // If an operator corrects a bib to a future generated number (for example
+      // 5-999), advance that distance's counter in the same transaction. This
+      // keeps the next online registration from receiving the same physical bib.
+      const distanceKm = race.distances.find((distance) => distance.label === foundRunner.distance)?.km;
+      const generatedPrefix = distanceKm === undefined ? null : String(distanceKm);
+      const generatedMatch = generatedPrefix
+        ? new RegExp(`^${generatedPrefix.replace('.', '\\.')}-([0-9]+)$`).exec(newBib)
+        : null;
+
+      await runTransaction(db, async (transaction) => {
+        transaction.update(doc(db, 'runners', `${foundRunner.uid}_${race.id}`), { bibNumber: newBib });
+
+        if (generatedMatch) {
+          const counterId = `${race.id}_${foundRunner.distance}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+          const counterRef = doc(db, 'bibCounters', counterId);
+          const counterSnap = await transaction.get(counterRef);
+          const currentCount = counterSnap.exists() ? Number(counterSnap.data().count || 0) : 0;
+          const correctedSequence = Number(generatedMatch[1]);
+          if (correctedSequence > currentCount) {
+            transaction.set(counterRef, { count: correctedSequence }, { merge: true });
+          }
+        }
+      });
+      setBibInput(newBib);
+      setNextBib(newBib);
+      setEditingBib(false);
+      setFeedback({ type: 'success', text: `Race bib updated to #${newBib}.` });
+    } catch (err: any) {
+      setFeedback({ type: 'error', text: err.message || 'Failed to update race bib.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleBibScan = async (value: string): Promise<boolean> => {
+    const parts = value.trim().split('|');
+    if (parts[0] === 'RPCHIPv1') {
+      if (parts[1] !== race.id) {
+        setFeedback({ type: 'error', text: 'This bib QR belongs to a different race.' });
+        return false;
+      }
+      setBibInput((parts[2] || '').toUpperCase());
+    } else {
+      setBibInput(value.trim().toUpperCase());
+    }
+    setFeedback(null);
+    setShowBibScanner(false);
+    return true;
+  };
+
   return (
     <div className="space-y-6">
       <div className="glass-panel p-5 space-y-4">
-        <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2">
-          <Cpu className="w-4 h-4 text-red-500" /> Assign RFID Chip to Runner
-        </h3>
-        <p className="text-xs text-[var(--text-secondary)]">Type a bib number to find the runner, then scan (or type) their chip ID. Works with any USB scanner that types like a keyboard - no special setup needed.</p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2">
+              <Cpu className="w-4 h-4 text-red-500" /> Race Kit Assignment
+            </h3>
+            <p className="text-xs text-[var(--text-secondary)] mt-1">Select the race bib, scan its timing chip, then verify the runner before handing out the kit.</p>
+          </div>
+          <span className="text-[10px] font-mono font-bold text-[var(--text-secondary)] shrink-0">{assignedCount} / {runnerProfiles.length} chips assigned</span>
+        </div>
+
+        <div className="h-2 rounded-full bg-[var(--surface-inset)] overflow-hidden">
+          <div className="h-full rounded-full bg-gradient-to-r from-red-600 to-emerald-500 transition-all" style={{ width: `${runnerProfiles.length ? (assignedCount / runnerProfiles.length) * 100 : 0}%` }} />
+        </div>
 
         <form onSubmit={handleAssign} className="space-y-3">
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Bib Number</label>
-            <input
-              type="text"
-              placeholder="TYPE BIB NUMBER"
-              value={bibInput}
-              onChange={(e) => setBibInput(e.target.value.toUpperCase())}
-              className="w-full glass-inset px-4 py-3 text-sm font-bold font-mono tracking-wider text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
-            />
+            <div className="flex gap-2">
+              <input
+                ref={bibInputRef}
+                type="text"
+                placeholder="TYPE OR SCAN BIB"
+                value={bibInput}
+                onChange={(e) => { setBibInput(e.target.value.toUpperCase()); setFeedback(null); }}
+                className="min-w-0 flex-1 glass-inset px-4 py-3 text-sm font-bold font-mono tracking-wider text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+              />
+              <button type="button" onClick={() => setShowBibScanner(true)} className="w-12 rounded-[var(--radius-control)] bg-violet-600 hover:bg-violet-500 text-white flex items-center justify-center transition" title="Scan race bib QR">
+                <QrCode className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           {bibInput.trim() && (
@@ -429,7 +818,9 @@ function ChipAssignmentPanel({ race, runnerProfiles }: ChipAssignmentPanelProps)
               type="text"
               placeholder="SCAN OR TYPE CHIP ID"
               value={chipInput}
-              onChange={(e) => setChipInput(e.target.value)}
+              onChange={(e) => setChipInput(e.target.value.toUpperCase())}
+              autoComplete="off"
+              autoCapitalize="characters"
               disabled={!foundRunner}
               className="w-full glass-inset px-4 py-3 text-sm font-bold font-mono tracking-wider text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50"
             />
@@ -444,6 +835,31 @@ function ChipAssignmentPanel({ race, runnerProfiles }: ChipAssignmentPanelProps)
           </button>
         </form>
 
+        {foundRunner && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+            {editingBib ? (
+              <div className="sm:col-span-2 glass-inset p-3 space-y-2">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Correct race bib</label>
+                <div className="flex gap-2">
+                  <input value={nextBib} onChange={(e) => setNextBib(e.target.value.toUpperCase())} className="min-w-0 flex-1 glass-inset px-3 py-2 text-xs font-bold font-mono text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
+                  <button type="button" onClick={handleBibUpdate} disabled={saving} className="px-3 rounded-[14px] bg-red-600 text-white text-[10px] font-black uppercase tracking-wide disabled:opacity-60">Save</button>
+                  <button type="button" onClick={() => { setEditingBib(false); setNextBib(foundRunner.bibNumber); }} className="px-3 rounded-[14px] glass-inset text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)]">Cancel</button>
+                </div>
+                {selectedHasReads && <p className="text-[10px] text-amber-500">Bib is locked because timing reads already exist.</p>}
+              </div>
+            ) : (
+              <button type="button" onClick={() => setEditingBib(true)} disabled={selectedHasReads} className="glass-inset px-3 py-2.5 text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)] hover:text-red-500 disabled:opacity-50 transition">
+                {selectedHasReads ? 'Bib locked after timing' : 'Correct race bib'}
+              </button>
+            )}
+            {foundRunner.chipId && !editingBib && (
+              <button type="button" onClick={handleUnassign} disabled={saving} className="glass-inset px-3 py-2.5 text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)] hover:text-red-500 disabled:opacity-50 transition">
+                Remove assigned chip
+              </button>
+            )}
+          </div>
+        )}
+
         {feedback && (
           <p className={`text-xs font-semibold ${feedback.type === 'success' ? 'text-emerald-500' : 'text-red-500'}`}>
             {feedback.type === 'success' ? '✅' : '⚠️'} {feedback.text}
@@ -456,18 +872,218 @@ function ChipAssignmentPanel({ race, runnerProfiles }: ChipAssignmentPanelProps)
           <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)]">Chip Assignment Roster</h3>
           <span className="text-[10px] font-mono font-bold text-[var(--text-secondary)]">{assignedCount} / {runnerProfiles.length} assigned</span>
         </div>
+        <p className="text-[10.5px] text-[var(--text-secondary)] mb-3">Unassigned runners show first. Tap one to hand out or correct a race kit.</p>
+        <div className="flex gap-1.5 mb-3">
+          {(['unassigned', 'assigned', 'all'] as const).map((filter) => (
+            <button key={filter} type="button" onClick={() => setRosterFilter(filter)} className={`text-[10px] font-black uppercase tracking-wide px-3 py-1.5 rounded-full transition ${rosterFilter === filter ? 'bg-red-600 text-white' : 'glass-inset text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}>
+              {filter}
+            </button>
+          ))}
+        </div>
+        {runnerProfiles.length > 0 && (
+          <input
+            type="text"
+            placeholder="SEARCH BY NAME OR BIB"
+            value={rosterSearch}
+            onChange={(e) => setRosterSearch(e.target.value)}
+            className="w-full glass-inset px-4 py-2.5 mb-3 text-xs font-bold font-mono tracking-wider text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+          />
+        )}
         <div className="space-y-1.5 max-h-96 overflow-y-auto">
           {runnerProfiles.length === 0 && <p className="text-xs text-[var(--text-secondary)]">No runners registered yet.</p>}
-          {[...runnerProfiles].sort((a, b) => a.bibNumber.localeCompare(b.bibNumber)).map((r) => (
-            <div key={r.bibNumber} className="flex items-center justify-between glass-inset px-3 py-2 text-xs gap-2">
+          {runnerProfiles.length > 0 && filteredRoster.length === 0 && (
+            <p className="text-xs text-[var(--text-secondary)]">No runners match "{rosterSearch}".</p>
+          )}
+          {filteredRoster.map((r) => (
+            <button
+              key={r.uid}
+              type="button"
+              onClick={() => selectRunner(r)}
+              className={`w-full flex items-center justify-between px-3 py-2 text-xs gap-2 rounded-[14px] border transition text-left ${
+                r.bibNumber.toUpperCase() === bibInput.trim().toUpperCase()
+                  ? 'bg-red-500/10 border-red-500/40'
+                  : 'glass-inset border-transparent hover:border-red-500/30'
+              }`}
+            >
               <span className="font-mono font-bold text-[var(--text-primary)] w-16 shrink-0">#{r.bibNumber}</span>
               <span className="flex-1 truncate text-[var(--text-secondary)]">{r.fullName}</span>
               <span className={`font-mono text-[10px] font-bold shrink-0 ${r.chipId ? 'text-emerald-500' : 'text-[var(--text-muted)]'}`}>
                 {r.chipId || 'UNASSIGNED'}
               </span>
-            </div>
+            </button>
           ))}
         </div>
+      </div>
+
+      {showBibScanner && (
+        <QrScannerModal
+          onClose={() => setShowBibScanner(false)}
+          onScanSuccess={handleBibScan}
+          successMessage=""
+          errorMessage={feedback?.type === 'error' ? feedback.text : ''}
+          title="Select Runner by Bib"
+          subtitle="SCAN THE RUNNER'S RACE BIB QR"
+          instructions="Scan a RacePulsePH bib QR code to select its runner for kit assignment."
+        />
+      )}
+    </div>
+  );
+}
+
+// ========== START ROLL CALL ==========
+
+interface StartRollCallPanelProps {
+  race: Race;
+  runnerProfiles: RunnerProfile[];
+  chipReads: ChipRead[];
+  startCheckpointId?: string;
+}
+
+// Roster checklist for the gun start: every registered runner ticks green the
+// instant their chip crosses the start mat, so the race-in-charge can spot at
+// a glance who the reader missed and needs a manual re-scan.
+function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId }: StartRollCallPanelProps) {
+  const [settingDistance, setSettingDistance] = useState<string | null>(null);
+
+  const startedBibs = useMemo(() => {
+    if (!startCheckpointId) return new Set<string>();
+    return new Set(chipReads.filter((r) => r.checkpointId === startCheckpointId).map((r) => r.bibNumber));
+  }, [chipReads, startCheckpointId]);
+
+  const distanceGroups = useMemo(() => groupRunnersByDistance(runnerProfiles), [runnerProfiles]);
+  const startedCount = runnerProfiles.filter((r) => startedBibs.has(r.bibNumber)).length;
+
+  const handleStartWave = async (distance: string) => {
+    if (!window.confirm(`Fire the gun for ${distance} now? This starts the official ${distance} race clock.`)) return;
+    setSettingDistance(distance);
+    try {
+      const raceRef = doc(db, 'races', race.id);
+      const startedAt = new Date().toISOString();
+      await runTransaction(db, async (tx) => {
+        const currentSnapshot = await tx.get(raceRef);
+        const currentRace = currentSnapshot.data() as Race | undefined;
+        const waveStartTimes = { ...(currentRace?.waveStartTimes || {}), [distance]: startedAt };
+        // Keep gunStartTime as a first-wave fallback for old screens/races.
+        tx.update(raceRef, {
+          waveStartTimes,
+          gunStartTime: currentRace?.gunStartTime || startedAt,
+        });
+      });
+    } catch (err: any) {
+      alert(err.message || `Failed to start the ${distance} clock.`);
+    } finally {
+      setSettingDistance(null);
+    }
+  };
+
+  const handleResetWave = async (distance: string) => {
+    if (!window.confirm(`Reset the ${distance} gun time? Only do this before runners leave the start line.`)) return;
+    setSettingDistance(distance);
+    try {
+      const raceRef = doc(db, 'races', race.id);
+      await runTransaction(db, async (tx) => {
+        const currentSnapshot = await tx.get(raceRef);
+        const currentRace = currentSnapshot.data() as Race | undefined;
+        const waveStartTimes = { ...(currentRace?.waveStartTimes || {}) };
+        delete waveStartTimes[distance];
+        tx.update(raceRef, {
+          waveStartTimes,
+          // A blank map means no active wave clock. Otherwise the map is the
+          // source of truth and gunStartTime is only retained for old clients.
+          ...(Object.keys(waveStartTimes).length === 0 ? { gunStartTime: '' } : {}),
+        });
+      });
+    } catch (err: any) {
+      alert(err.message || `Failed to reset the ${distance} clock.`);
+    } finally {
+      setSettingDistance(null);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="glass-panel p-5">
+        <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2">
+          <PlayCircle className="w-4 h-4 text-red-500" /> Distance Wave Starts
+        </h3>
+        <p className="text-xs text-[var(--text-secondary)] mt-1">Fire each distance when it leaves the line. Cutoffs use that distance's own gun time.</p>
+        {distanceGroups.length === 0 && <p className="text-xs text-[var(--text-secondary)] mt-4">Wave controls appear once runners are registered.</p>}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
+          {distanceGroups.map((group) => {
+            const waveStartTime = getWaveStartTime(race, group.distance);
+            const settingThisWave = settingDistance === group.distance;
+            return (
+              <div key={group.distance} className="glass-inset px-4 py-3 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-black font-display text-[var(--text-primary)]">{group.distance}</span>
+                  {waveStartTime ? <LiveClock gunStartTime={waveStartTime} /> : <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Not started</span>}
+                </div>
+                {waveStartTime ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-bold text-emerald-500">Gun: {new Date(waveStartTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                    <button
+                      onClick={() => handleResetWave(group.distance)}
+                      disabled={!!settingDistance}
+                      className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-secondary)] hover:text-red-500 disabled:opacity-50 flex items-center gap-1 transition"
+                    >
+                      {settingThisWave ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />} Reset
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => handleStartWave(group.distance)}
+                    disabled={!!settingDistance}
+                    className="w-full text-xs font-black uppercase tracking-widest px-4 py-2.5 rounded-[var(--radius-control)] text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 flex items-center justify-center gap-2 transition disabled:opacity-60"
+                  >
+                    {settingThisWave ? <RefreshCw className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />} Fire {group.distance} Gun
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="glass-panel p-5">
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2">
+            <ListChecks className="w-4 h-4 text-red-500" /> Who's In The Race
+          </h3>
+          <span className="text-[10px] font-mono font-bold text-[var(--text-secondary)]">{startedCount} / {runnerProfiles.length} started</span>
+        </div>
+        <p className="text-xs text-[var(--text-secondary)] mb-4">Ticks green the instant a runner's chip is read at the start checkpoint - use it to catch anyone the sensor missed.</p>
+
+        {!startCheckpointId ? (
+          <p className="text-xs text-red-500">This race has no checkpoints configured yet - add a "Start" checkpoint in Race Setup first.</p>
+        ) : distanceGroups.length === 0 ? (
+          <p className="text-xs text-[var(--text-secondary)]">No runners registered yet.</p>
+        ) : (
+          <div className="space-y-5">
+            {distanceGroups.map((group) => {
+              const groupStarted = group.runners.filter((r) => startedBibs.has(r.bibNumber)).length;
+              return (
+                <div key={group.distance}>
+                  <h4 className="text-[10px] font-black uppercase tracking-widest text-red-500 mb-2">{group.distance} &bull; {groupStarted}/{group.runners.length} started</h4>
+                  <div className="space-y-1.5">
+                    {group.runners.map((r) => {
+                      const started = startedBibs.has(r.bibNumber);
+                      return (
+                        <div key={r.uid} className={`flex items-center justify-between px-3 py-2 text-xs gap-2 rounded-[14px] ${started ? 'bg-emerald-500/10 border border-emerald-500/25' : 'glass-inset'}`}>
+                          {started ? <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" /> : <Circle className="w-4 h-4 text-[var(--text-muted)] shrink-0" />}
+                          <span className="font-mono font-bold text-[var(--text-primary)] w-16 shrink-0">#{r.bibNumber}</span>
+                          <span className="flex-1 truncate text-[var(--text-secondary)]">{r.fullName}</span>
+                          <span className={`text-[10px] font-black uppercase tracking-wide shrink-0 ${started ? 'text-emerald-500' : 'text-[var(--text-muted)]'}`}>
+                            {started ? 'Started' : 'Pending'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -515,7 +1131,7 @@ function RunnerRosterPanel({ race, runnerProfiles }: RunnerRosterPanelProps) {
               <h4 className="text-[10px] font-black uppercase tracking-widest text-red-500 mb-2">{group.distance} &bull; {group.runners.length} runners</h4>
               <div className="space-y-1.5">
                 {group.runners.map((r) => (
-                  <div key={r.bibNumber} className="flex items-center justify-between glass-inset px-3 py-2 text-xs gap-2">
+                  <div key={r.uid} className="flex items-center justify-between glass-inset px-3 py-2 text-xs gap-2">
                     <span className="font-mono font-bold text-[var(--text-primary)] w-16 shrink-0">#{r.bibNumber}</span>
                     <span className="flex-1 truncate text-[var(--text-primary)] font-semibold">{r.fullName}</span>
                     <span className="text-[var(--text-secondary)] shrink-0">{r.gender === 'male' ? 'M' : 'F'} &bull; {r.age}</span>
@@ -526,6 +1142,183 @@ function RunnerRosterPanel({ race, runnerProfiles }: RunnerRosterPanelProps) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ========== LIVE RANKINGS / BIG-SCREEN DISPLAY ==========
+
+interface DistanceRanking {
+  distance: string;
+  results: RunnerResult[];
+}
+
+function groupResultsByDistance(results: RunnerResult[]): DistanceRanking[] {
+  const groups = new Map<string, RunnerResult[]>();
+  for (const r of results) {
+    if (r.rank === undefined) continue; // only finished runners are ranked
+    const distance = r.runnerProfile?.distance || 'Unknown';
+    const list = groups.get(distance) ?? [];
+    list.push(r);
+    groups.set(distance, list);
+  }
+  return Array.from(groups.entries())
+    .map(([distance, list]) => ({ distance, results: list.sort((a, b) => a.rank! - b.rank!) }))
+    .sort((a, b) => a.distance.localeCompare(b.distance));
+}
+
+interface RaceRankingsPanelProps {
+  race: Race;
+  results: RunnerResult[];
+}
+
+function RaceRankingsPanel({ race, results }: RaceRankingsPanelProps) {
+  const [presenting, setPresenting] = useState(false);
+  const distanceGroups = useMemo(() => groupResultsByDistance(results), [results]);
+  const totalFinishers = distanceGroups.reduce((sum, g) => sum + g.results.length, 0);
+
+  if (presenting) {
+    return <RaceRankingsPresentation race={race} distanceGroups={distanceGroups} onClose={() => setPresenting(false)} />;
+  }
+
+  return (
+    <div className="glass-panel p-5 space-y-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2">
+            <Trophy className="w-4 h-4 text-red-500" /> Live Rankings by Distance
+          </h3>
+          <p className="text-xs text-[var(--text-secondary)] mt-0.5">{totalFinishers} finisher{totalFinishers === 1 ? '' : 's'} ranked so far</p>
+        </div>
+        <button
+          onClick={() => setPresenting(true)}
+          className="text-xs font-black uppercase tracking-widest px-4 py-2.5 rounded-[var(--radius-control)] text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 flex items-center justify-center gap-2 transition shrink-0"
+        >
+          <Maximize2 className="w-4 h-4" /> Present on Screen
+        </button>
+      </div>
+
+      {distanceGroups.length === 0 ? (
+        <p className="text-xs text-[var(--text-secondary)]">No finish times recorded yet. Rankings appear once runners cross both the start and finish checkpoints.</p>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {distanceGroups.map((group) => (
+            <div key={group.distance} className="glass-inset p-4">
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-red-500 mb-3">{group.distance} &bull; {group.results.length} finished</h4>
+              <div className="space-y-1.5 max-h-80 overflow-y-auto">
+                {group.results.map((r) => (
+                  <div key={r.bibNumber} className="flex items-center justify-between px-3 py-2 rounded-[14px] bg-[var(--surface-inset)]/40 text-xs gap-2">
+                    <span className={`font-mono font-black w-9 shrink-0 ${r.rank === 1 ? 'text-amber-500' : r.rank === 2 ? 'text-slate-400' : r.rank === 3 ? 'text-orange-600' : 'text-red-500'}`}>#{r.rank}</span>
+                    <span className="flex-1 truncate">
+                      <span className="font-bold text-[var(--text-primary)]">{r.runnerProfile?.fullName || `Bib ${r.bibNumber}`}</span>
+                      <span className="text-[var(--text-muted)]"> &bull; #{r.bibNumber}</span>
+                    </span>
+                    <span className="font-mono font-bold text-[var(--text-primary)] shrink-0">{r.finishTime}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface RaceRankingsPresentationProps {
+  race: Race;
+  distanceGroups: DistanceRanking[];
+  onClose: () => void;
+}
+
+// Full-viewport, big-screen-friendly leaderboard meant to be projected at the
+// venue. Cycles through distances automatically when there's more than one so
+// the race-in-charge doesn't have to babysit a laptop between announcements.
+function RaceRankingsPresentation({ race, distanceGroups, onClose }: RaceRankingsPresentationProps) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    containerRef.current?.requestFullscreen?.().catch(() => {});
+    return () => {
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    };
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  useEffect(() => {
+    if (distanceGroups.length <= 1) return;
+    const interval = setInterval(() => setActiveIndex((i) => (i + 1) % distanceGroups.length), 10000);
+    return () => clearInterval(interval);
+  }, [distanceGroups.length]);
+
+  const active = distanceGroups[activeIndex] || distanceGroups[0];
+
+  return (
+    <div ref={containerRef} className="fixed inset-0 z-[100] bg-[#0a0a0c] text-white flex flex-col p-8 sm:p-12 overflow-hidden">
+      <div className="absolute -top-32 -left-24 w-[32rem] h-[32rem] bg-red-600/15 rounded-full blur-[140px] pointer-events-none" />
+      <div className="absolute bottom-0 right-0 w-[28rem] h-[28rem] bg-red-900/10 rounded-full blur-[140px] pointer-events-none" />
+
+      <div className="relative flex items-center justify-between shrink-0">
+        <div>
+          <span className="text-xs sm:text-sm tracking-[0.3em] font-black text-red-500 uppercase">{race.name}</span>
+          <h1 className="text-3xl sm:text-5xl font-black font-display uppercase tracking-tight mt-1 flex items-center gap-3">
+            <Trophy className="w-8 h-8 sm:w-10 sm:h-10 text-amber-500" /> Live Rankings
+          </h1>
+        </div>
+        <div className="flex items-center gap-4 sm:gap-6 shrink-0">
+          <LiveClock gunStartTime={race.gunStartTime} size="header" />
+          <button onClick={onClose} className="w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition shrink-0">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+
+      {!active ? (
+        <div className="relative flex-1 flex items-center justify-center">
+          <p className="text-lg text-white/50 uppercase tracking-widest font-bold">Waiting for finishers...</p>
+        </div>
+      ) : (
+        <div className="relative flex-1 flex flex-col mt-6 sm:mt-10 min-h-0">
+          <div className="flex items-center justify-between mb-4 shrink-0">
+            <h2 className="text-2xl sm:text-4xl font-black font-display uppercase tracking-wide text-red-500">{active.distance}</h2>
+            {distanceGroups.length > 1 && (
+              <div className="flex gap-2">
+                {distanceGroups.map((g, idx) => (
+                  <button
+                    key={g.distance}
+                    onClick={() => setActiveIndex(idx)}
+                    className={`w-2.5 h-2.5 rounded-full transition ${idx === activeIndex ? 'bg-red-500' : 'bg-white/20'}`}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="flex-1 overflow-y-auto space-y-2 pr-2">
+            {active.results.map((r) => (
+              <div key={r.bibNumber} className={`flex items-center gap-4 sm:gap-6 px-5 sm:px-7 py-3.5 sm:py-4 rounded-[20px] ${r.rank! <= 3 ? 'bg-white/10 border border-white/10' : 'bg-white/5'}`}>
+                <span className={`font-mono font-black text-2xl sm:text-4xl w-14 sm:w-20 shrink-0 ${r.rank === 1 ? 'text-amber-400' : r.rank === 2 ? 'text-slate-300' : r.rank === 3 ? 'text-orange-500' : 'text-white/70'}`}>
+                  {r.rank}
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-lg sm:text-2xl font-bold truncate">{r.runnerProfile?.fullName || `Bib ${r.bibNumber}`}</span>
+                  <span className="block text-xs sm:text-sm text-white/40 font-mono uppercase tracking-wide">Bib #{r.bibNumber}</span>
+                </span>
+                <span className="font-mono font-black text-xl sm:text-3xl shrink-0 text-white">{r.finishTime}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <p className="relative shrink-0 text-center text-[10px] sm:text-xs text-white/30 font-mono uppercase tracking-widest mt-6">
+        Updates live &bull; Press Esc to exit
+      </p>
     </div>
   );
 }

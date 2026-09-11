@@ -23,23 +23,30 @@ export interface EngravingStats {
   byDistance: Record<string, number>;
 }
 
-export type UserRole = 'admin' | 'organizer' | 'runner';
+export type UserRole = 'superadmin' | 'admin' | 'organizer' | 'runner';
 
 export interface UserProfile {
   uid: string;
   email: string;
   displayName: string;
   role: UserRole;
-  approved: boolean; // admin & runner: always true. organizer: false until an admin approves.
+  approved: boolean; // superadmin, admin & runner: true. organizer needs Super Admin approval.
   createdAt: string;
   nickname?: string;
   photoURL?: string; // small base64 data URI, resized client-side before saving
 }
 
+export type CheckpointType = 'checkin' | 'start' | 'intermediate' | 'finish';
+
 export interface Checkpoint {
   id: string; // e.g. 'start', '5k', '10k', 'finish'
   label: string;
   order: number;
+  // Legacy checkpoints without a type use their first/last position as Start/Finish.
+  type?: CheckpointType;
+  // Optional hard cutoff, measured from the runner's distance wave start. Only
+  // applies to intermediate checkpoints; late scans remain recorded for auditability.
+  cutoffMinutes?: number;
 }
 
 export type Gender = 'male' | 'female';
@@ -69,6 +76,40 @@ export interface Race {
   inclusions: string[];
   createdBy: string;
   createdAt: string;
+  // Legacy races without this field remain open until their race date.
+  registrationOpen?: boolean;
+  registrationCloseDate?: string; // YYYY-MM-DD; defaults to the race date
+  gunStartTime?: string; // RFC3339, set when the race-in-charge fires the official start
+  // RFC3339 start time per distance label (e.g. "10K", "5K"). Falls back to
+  // gunStartTime for legacy races and races with one shared start.
+  waveStartTimes?: Record<string, string>;
+  // Public live-race presentation. The video and route remain optional so an
+  // organizer can enable a live leaderboard even without a stream provider.
+  liveBroadcastEnabled?: boolean;
+  livestreamUrl?: string;
+  routeMapUrl?: string;
+  posterImage?: string; // small base64 data URI, resized client-side before saving
+}
+
+export interface PublicLeaderboardEntry {
+  bibNumber: string;
+  fullName: string;
+  distance: string;
+  rank: number;
+  finishTime: string;
+}
+
+// Deliberately contains only publishable result data. Raw chip reads remain
+// private to operators and each individual runner under Firestore rules.
+export interface PublicLiveResults {
+  raceId: string;
+  raceName: string;
+  updatedAt: string;
+  status: 'upcoming' | 'live' | 'completed';
+  totalRegistered: number;
+  totalStarted: number;
+  totalFinished: number;
+  leaders: PublicLeaderboardEntry[];
 }
 
 export interface RunnerProfile {

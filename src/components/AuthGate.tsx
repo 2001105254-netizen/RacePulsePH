@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, setDoc, writeBatch } from 'firebase/firestore';
-import { db, signUpWithEmail, signInWithEmail, signInWithGoogle, signOutUser } from '../firebase';
+import { doc, setDoc, writeBatch } from 'firebase/firestore';
+import { db, signUpWithEmail, signInWithEmail, signInWithGoogle, signOutUser, sendPasswordReset } from '../firebase';
+import { isSuperAdminEmail } from '../lib/superAdmin';
 import { UserProfile } from '../types';
 import type { User } from 'firebase/auth';
-import { Activity, PersonStanding, Mail, Lock, User as UserIcon, ShieldCheck, RefreshCw, AlertTriangle, LogOut } from 'lucide-react';
+import { Mail, Lock, User as UserIcon, RefreshCw, AlertTriangle, LogOut, Eye, EyeOff } from 'lucide-react';
 
 type Mode = 'login' | 'signup';
-type SignupRole = 'runner' | 'organizer' | 'admin';
+type SignupRole = 'runner' | 'organizer' | 'superadmin';
 
 function GoogleIcon({ className }: { className?: string }) {
   return (
@@ -23,33 +24,25 @@ function GoogleIcon({ className }: { className?: string }) {
 // Google), applying the same role/approval rules and one-time admin claim
 // regardless of which auth method they used.
 async function createUserProfileForRole(user: User, role: SignupRole, displayNameOverride?: string): Promise<void> {
+  const assignedRole: SignupRole = isSuperAdminEmail(user.email) ? 'superadmin' : role;
   const profile: UserProfile = {
     uid: user.uid,
     email: user.email || '',
     displayName: displayNameOverride?.trim() || user.displayName || 'Runner',
-    role,
-    approved: role !== 'organizer',
+    role: assignedRole,
+    approved: assignedRole !== 'organizer',
     createdAt: new Date().toISOString(),
   };
 
-  if (role === 'admin') {
-    // Claim the one-time founding-admin slot and mark it taken, atomically.
+  if (assignedRole === 'superadmin') {
+    // The Firestore rule verifies this exact signed-in email and permits this
+    // one-time claim only while the Super Admin slot is unclaimed.
     const batch = writeBatch(db);
     batch.set(doc(db, 'users', user.uid), profile);
-    batch.set(doc(db, 'system', 'meta'), { adminClaimed: true });
+    batch.set(doc(db, 'system', 'meta'), { superAdminClaimed: true }, { merge: true });
     await batch.commit();
   } else {
     await setDoc(doc(db, 'users', user.uid), profile);
-  }
-}
-
-async function checkAdminAvailable(): Promise<boolean> {
-  try {
-    const metaSnap = await getDoc(doc(db, 'system', 'meta'));
-    return !metaSnap.exists() || metaSnap.data()?.adminClaimed === false;
-  } catch (e) {
-    console.warn('Could not check founding admin availability:', e);
-    return false;
   }
 }
 
@@ -57,26 +50,26 @@ interface AuthGateProps {
   // Set when Firebase Auth already has a signed-in user (e.g. just completed
   // a Google popup) but no Firestore profile exists for them yet.
   authUser?: User | null;
+  initialMode?: Mode;
+  onBackToRaces?: () => void;
+  signupRoleLocked?: boolean;
 }
 
-export default function AuthGate({ authUser }: AuthGateProps) {
-  const [mode, setMode] = useState<Mode>('login');
+export default function AuthGate({ authUser, initialMode = 'login', onBackToRaces, signupRoleLocked = false }: AuthGateProps) {
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [signupRole, setSignupRole] = useState<SignupRole>('runner');
-  const [adminAvailable, setAdminAvailable] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [submitting, setSubmitting] = useState(false);
-
-  // Check once whether the founding-admin slot is still open
-  useEffect(() => {
-    checkAdminAvailable().then(setAdminAvailable);
-  }, []);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setNotice('');
     setSubmitting(true);
     try {
       await signInWithEmail(email, password);
@@ -87,9 +80,28 @@ export default function AuthGate({ authUser }: AuthGateProps) {
     }
   };
 
+  const handleForgotPassword = async () => {
+    setError('');
+    setNotice('');
+    if (!email.trim()) {
+      setError('Enter your email address first, then tap Forgot password.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await sendPasswordReset(email);
+      setNotice('If this email has a RacePulsePH account, a password reset link has been sent.');
+    } catch (err: any) {
+      setError(err.message?.replace('Firebase: ', '') || 'Could not send the password reset email.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setNotice('');
     if (!displayName.trim()) {
       setError('Please enter your full name.');
       return;
@@ -126,7 +138,7 @@ export default function AuthGate({ authUser }: AuthGateProps) {
   };
 
   if (authUser) {
-    return <CompleteProfileForm user={authUser} adminAvailable={adminAvailable} />;
+    return <CompleteProfileForm user={authUser} signupRoleLocked={signupRoleLocked} />;
   }
 
   return (
@@ -135,17 +147,26 @@ export default function AuthGate({ authUser }: AuthGateProps) {
 
         {/* Logo area */}
         <div className="flex flex-col items-center space-y-5">
-          <div className="w-20 h-20 bg-gradient-to-tr from-red-700 to-red-500 rounded-[22px] flex items-center justify-center text-white shadow-xl shadow-red-950/25 rotate-3 hover:rotate-0 duration-300 transform relative overflow-hidden">
-            <Activity className="w-14 h-14 stroke-[1.5] text-red-950/40 absolute animate-pulse" />
-            <PersonStanding className="w-10 h-10 stroke-[2] -rotate-12 skew-x-6 relative text-white translate-x-1" />
+          <div className="w-full max-w-[15.5rem] rounded-[26px] bg-[#0a0a0a] p-3 shadow-2xl shadow-red-950/30 ring-1 ring-white/10">
+            <img
+              src="/assets/racepulse-logo.png"
+              alt="RacePulsePH"
+              className="w-full h-auto"
+            />
           </div>
           <div>
-            <h1 className="heading-float text-4xl sm:text-5xl font-black tracking-tight font-display text-[var(--text-primary)] uppercase">
-              RacePulse<span className="text-red-500 font-light font-bold">PH</span>
-            </h1>
             <p className="text-sm text-[var(--text-secondary)] mt-3 max-w-md mx-auto leading-relaxed">
-              Sign in to continue as Runner, Organizer, or Admin.
+              Sign in to continue as Runner or Organizer.
             </p>
+            {onBackToRaces && (
+              <button
+                type="button"
+                onClick={onBackToRaces}
+                className="mt-3 text-[11px] font-bold uppercase tracking-wide text-red-500 hover:text-red-400 transition"
+              >
+                ← Browse race events
+              </button>
+            )}
           </div>
         </div>
 
@@ -193,11 +214,17 @@ export default function AuthGate({ authUser }: AuthGateProps) {
                 </div>
               </div>
               <div>
-                <label htmlFor="loginPassword" className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Password</label>
+                <div className="flex items-center justify-between gap-3 mb-1.5">
+                  <label htmlFor="loginPassword" className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-secondary)]">Password</label>
+                  <button type="button" onClick={handleForgotPassword} disabled={submitting} className="text-[11px] font-bold text-red-500 hover:text-red-400 disabled:opacity-50">Forgot password?</button>
+                </div>
                 <div className="relative">
                   <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
-                  <input id="loginPassword" type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
-                    className="w-full glass-inset pl-10 pr-4 py-3.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/60 transition" />
+                  <input id="loginPassword" type={showPassword ? 'text' : 'password'} required value={password} onChange={(e) => setPassword(e.target.value)}
+                    className="w-full glass-inset pl-10 pr-11 py-3.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/60 transition" />
+                  <button type="button" onClick={() => setShowPassword((current) => !current)} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-[var(--text-muted)] hover:text-red-500 transition" aria-label={showPassword ? 'Hide password' : 'Show password'}>
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 
@@ -206,6 +233,7 @@ export default function AuthGate({ authUser }: AuthGateProps) {
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {error}
                 </p>
               )}
+              {notice && <p className="text-xs text-emerald-500 font-semibold">✅ {notice}</p>}
 
               <button type="submit" disabled={submitting}
                 className={`w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-black uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 ${submitting ? 'bg-[var(--surface-hover)] text-[var(--text-secondary)] cursor-not-allowed' : 'text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-red-900/30'}`}>
@@ -234,12 +262,19 @@ export default function AuthGate({ authUser }: AuthGateProps) {
                 <label htmlFor="signupPassword" className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Password</label>
                 <div className="relative">
                   <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
-                  <input id="signupPassword" type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)}
-                    className="w-full glass-inset pl-10 pr-4 py-3.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/60 transition" />
+                  <input id="signupPassword" type={showPassword ? 'text' : 'password'} required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)}
+                    className="w-full glass-inset pl-10 pr-11 py-3.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/60 transition" />
+                  <button type="button" onClick={() => setShowPassword((current) => !current)} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-[var(--text-muted)] hover:text-red-500 transition" aria-label={showPassword ? 'Hide password' : 'Show password'}>
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 
-              <RoleSelector role={signupRole} onChange={setSignupRole} adminAvailable={adminAvailable} />
+              {signupRoleLocked ? (
+                <p className="text-[10.5px] text-[var(--text-secondary)] glass-inset px-3 py-2">You’re creating a Runner account so you can register for a race.</p>
+              ) : (
+                <RoleSelector role={signupRole} onChange={setSignupRole} />
+              )}
 
               {error && (
                 <p className="text-xs text-red-500 font-semibold flex items-center gap-1.5" role="alert">
@@ -259,11 +294,11 @@ export default function AuthGate({ authUser }: AuthGateProps) {
   );
 }
 
-function RoleSelector({ role, onChange, adminAvailable }: { role: SignupRole; onChange: (r: SignupRole) => void; adminAvailable: boolean }) {
+function RoleSelector({ role, onChange }: { role: SignupRole; onChange: (r: SignupRole) => void }) {
   return (
     <div>
       <label className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">I am signing up as</label>
-      <div className={`grid ${adminAvailable ? 'grid-cols-3' : 'grid-cols-2'} gap-2`}>
+      <div className="grid grid-cols-2 gap-2">
         <button type="button" onClick={() => onChange('runner')}
           className={`text-xs font-bold uppercase tracking-wide py-2.5 rounded-[16px] border transition ${role === 'runner' ? 'bg-red-500/10 border-red-500/40 text-red-500' : 'glass-inset border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}>
           Runner
@@ -272,18 +307,9 @@ function RoleSelector({ role, onChange, adminAvailable }: { role: SignupRole; on
           className={`text-xs font-bold uppercase tracking-wide py-2.5 rounded-[16px] border transition ${role === 'organizer' ? 'bg-red-500/10 border-red-500/40 text-red-500' : 'glass-inset border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}>
           Organizer
         </button>
-        {adminAvailable && (
-          <button type="button" onClick={() => onChange('admin')}
-            className={`text-xs font-bold uppercase tracking-wide py-2.5 rounded-[16px] border transition flex items-center justify-center gap-1 ${role === 'admin' ? 'bg-amber-500/10 border-amber-500/40 text-amber-500' : 'glass-inset border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}>
-            <ShieldCheck className="w-3.5 h-3.5" /> Admin
-          </button>
-        )}
       </div>
       {role === 'organizer' && (
-        <p className="text-[10.5px] text-[var(--text-muted)] mt-1.5 pl-1">An Admin needs to approve your Organizer account before you can log in and record times.</p>
-      )}
-      {role === 'admin' && (
-        <p className="text-[10.5px] text-amber-500 mt-1.5 pl-1">This claims the one-time founding Admin role for this event. Only available while no Admin exists yet.</p>
+        <p className="text-[10.5px] text-[var(--text-muted)] mt-1.5 pl-1">A Super Admin needs to approve your Organizer account before you can record times.</p>
       )}
     </div>
   );
@@ -291,7 +317,7 @@ function RoleSelector({ role, onChange, adminAvailable }: { role: SignupRole; on
 
 // Shown right after a first-time Google sign-in: the Firebase Auth session
 // already exists, but there's no Firestore profile/role for it yet.
-function CompleteProfileForm({ user, adminAvailable }: { user: User; adminAvailable: boolean }) {
+function CompleteProfileForm({ user, signupRoleLocked = false }: { user: User; signupRoleLocked?: boolean }) {
   const [role, setRole] = useState<SignupRole>('runner');
   const [displayName, setDisplayName] = useState(user.displayName || '');
   const [error, setError] = useState('');
@@ -319,9 +345,12 @@ function CompleteProfileForm({ user, adminAvailable }: { user: User; adminAvaila
     <div className="hero-glow flex-grow flex items-center justify-center py-14 px-4 animate-fadeIn">
       <div className="w-full max-w-md space-y-8 text-center">
         <div className="flex flex-col items-center space-y-5">
-          <div className="w-20 h-20 bg-gradient-to-tr from-red-700 to-red-500 rounded-[22px] flex items-center justify-center text-white shadow-xl shadow-red-950/25 rotate-3 hover:rotate-0 duration-300 transform relative overflow-hidden">
-            <Activity className="w-14 h-14 stroke-[1.5] text-red-950/40 absolute animate-pulse" />
-            <PersonStanding className="w-10 h-10 stroke-[2] -rotate-12 skew-x-6 relative text-white translate-x-1" />
+          <div className="w-20 h-20 rounded-[22px] overflow-hidden bg-[#0a0a0a] shadow-xl shadow-red-950/25 ring-1 ring-white/10">
+            <img
+              src="/assets/racepulse-mark.png"
+              alt="RacePulsePH"
+              className="w-full h-full object-contain"
+            />
           </div>
           <div>
             <h1 className="heading-float text-3xl sm:text-4xl font-black tracking-tight font-display text-[var(--text-primary)] uppercase">One Last Step</h1>
@@ -341,7 +370,11 @@ function CompleteProfileForm({ user, adminAvailable }: { user: User; adminAvaila
             </div>
           </div>
 
-          <RoleSelector role={role} onChange={setRole} adminAvailable={adminAvailable} />
+          {signupRoleLocked ? (
+            <p className="text-[10.5px] text-[var(--text-secondary)] glass-inset px-3 py-2">Your Runner account will be used for race registration and timing results.</p>
+          ) : (
+            <RoleSelector role={role} onChange={setRole} />
+          )}
 
           {error && (
             <p className="text-xs text-red-500 font-semibold flex items-center gap-1.5" role="alert">

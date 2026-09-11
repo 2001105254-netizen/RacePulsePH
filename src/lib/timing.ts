@@ -1,4 +1,24 @@
-import { Checkpoint, ChipRead, RunnerProfile, RunnerResult, RunnerSplit } from '../types';
+import { Checkpoint, CheckpointType, ChipRead, Race, RunnerProfile, RunnerResult, RunnerSplit } from '../types';
+
+// A staggered race stores one gun time for each distance. When no wave has
+// been started yet, retain the old single gun time behavior for legacy races.
+export function getWaveStartTime(race: Pick<Race, 'gunStartTime' | 'waveStartTimes'>, distance: string): string | undefined {
+  const waveStartTimes = race.waveStartTimes;
+  if (waveStartTimes && Object.keys(waveStartTimes).length > 0) {
+    return waveStartTimes[distance];
+  }
+  return race.gunStartTime || undefined;
+}
+
+export function checkpointType(checkpoint: Checkpoint, index: number, total: number): CheckpointType {
+  if (checkpoint.type) return checkpoint.type;
+  return index === 0 ? 'start' : index === total - 1 ? 'finish' : 'intermediate';
+}
+
+export function getCheckpointByType(checkpoints: Checkpoint[], type: CheckpointType): Checkpoint | undefined {
+  const ordered = [...checkpoints].sort((a, b) => a.order - b.order);
+  return ordered.find((checkpoint, index) => checkpointType(checkpoint, index, ordered.length) === type);
+}
 
 function formatElapsed(totalSeconds: number): string {
   const h = Math.floor(totalSeconds / 3600);
@@ -16,8 +36,10 @@ export function computeResults(
   runnerProfiles: RunnerProfile[]
 ): RunnerResult[] {
   const orderedCheckpoints = [...checkpoints].sort((a, b) => a.order - b.order);
-  const startCheckpoint = orderedCheckpoints[0];
-  const finishCheckpoint = orderedCheckpoints[orderedCheckpoints.length - 1];
+  // Check-in is operational only. It must never become the timing start just
+  // because it appears first in the configured checkpoint sequence.
+  const startCheckpoint = getCheckpointByType(orderedCheckpoints, 'start') || orderedCheckpoints[0];
+  const finishCheckpoint = getCheckpointByType(orderedCheckpoints, 'finish') || orderedCheckpoints[orderedCheckpoints.length - 1];
 
   const profileByBib = new Map(runnerProfiles.map((r) => [r.bibNumber, r]));
 
