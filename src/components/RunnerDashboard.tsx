@@ -284,6 +284,63 @@ async function generateBibNumber(raceId: string, distanceLabel: string, km: numb
   return `${prefix}-${String(sequence).padStart(3, '0')}`;
 }
 
+function RegistrationProgress({ currentStep }: { currentStep: 1 | 2 | 3 }) {
+  const steps = ['Choose race', 'Runner details', 'Confirmed'];
+  return (
+    <ol className="grid grid-cols-3 gap-1.5 max-w-xl mx-auto" aria-label="Registration progress">
+      {steps.map((label, index) => {
+        const step = (index + 1) as 1 | 2 | 3;
+        const complete = step < currentStep;
+        const active = step === currentStep;
+        return (
+          <li key={label} className={`rounded-xl border px-2 py-2 text-center transition ${complete || active ? 'border-red-500/30 bg-red-500/10 text-red-500' : 'border-[var(--border-default)] bg-[var(--surface-inset)]/40 text-[var(--text-muted)]'}`}>
+            <span className="flex items-center justify-center gap-1.5 text-[9px] sm:text-[10px] font-black uppercase tracking-wide">
+              {complete ? <CheckCircle2 className="w-3.5 h-3.5" /> : <span className={`w-4 h-4 rounded-full border flex items-center justify-center text-[8px] ${active ? 'border-red-500' : 'border-current'}`}>{step}</span>}
+              <span className="hidden sm:inline">{label}</span><span className="sm:hidden">{step === 1 ? 'Race' : step === 2 ? 'Details' : 'Done'}</span>
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function RegistrationConfirmation({ race, registration, updated, onViewMyRace, onRegisterAnother }: {
+  race?: Race;
+  registration: RunnerProfile;
+  updated: boolean;
+  onViewMyRace: () => void;
+  onRegisterAnother: () => void;
+}) {
+  return (
+    <div className="max-w-xl mx-auto space-y-5 animate-fadeIn">
+      <RegistrationProgress currentStep={3} />
+      <div className="glass-panel p-7 text-center space-y-5 overflow-hidden relative">
+        <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-red-600 via-emerald-500 to-red-600" />
+        <div className="w-14 h-14 rounded-full mx-auto bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-emerald-500">
+          <CheckCircle2 className="w-8 h-8" />
+        </div>
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-500">{updated ? 'Registration updated' : 'Registration confirmed'}</p>
+          <h2 className="heading-float text-xl font-black font-display uppercase tracking-tight text-[var(--text-primary)] mt-2">You’re in!</h2>
+          <p className="text-xs text-[var(--text-secondary)] mt-2">Your race registration is saved under your account.</p>
+        </div>
+        <div className="glass-inset p-4 text-left grid grid-cols-2 gap-y-3 gap-x-4">
+          <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Race</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5 truncate">{race?.name || 'Race event'}</span></span>
+          <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Race date</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5">{race?.date || 'To be announced'}</span></span>
+          <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Distance</span><span className="block text-sm font-bold text-red-500 mt-0.5">{registration.distance}</span></span>
+          <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Bib number</span><span className="block text-lg font-mono font-black text-red-500 mt-0.5">#{registration.bibNumber}</span></span>
+        </div>
+        <p className="text-[10.5px] text-[var(--text-secondary)]">Your QR race pass and live race status will be available under My Races.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <button type="button" onClick={onViewMyRace} className="py-3 px-4 rounded-[var(--radius-control)] font-display font-black uppercase text-[10px] tracking-widest text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 transition">View My Race Pass</button>
+          <button type="button" onClick={onRegisterAnother} className="py-3 px-4 rounded-[var(--radius-control)] font-display font-black uppercase text-[10px] tracking-widest glass-inset text-[var(--text-secondary)] hover:text-red-500 transition">Register another race</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RaceRegistrationForm({ uid, runnerProfiles, initialRaceId, onSaved, onCancel }: RaceRegistrationFormProps) {
   const latest = mostRecent(runnerProfiles);
   const [races, setRaces] = useState<Race[]>([]);
@@ -296,6 +353,7 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialRaceId, onSaved, onC
   const [age, setAge] = useState(latest?.age ? String(latest.age) : '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [confirmation, setConfirmation] = useState<{ registration: RunnerProfile; wasUpdate: boolean } | null>(null);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'races'), (snapshot) => {
@@ -362,7 +420,7 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialRaceId, onSaved, onC
         ...(existingForRace?.kitClaimedAt ? { kitClaimedAt: existingForRace.kitClaimedAt } : {}),
       };
       await setDoc(doc(db, 'runners', `${uid}_${raceId}`), record);
-      onSaved?.();
+      setConfirmation({ registration: record, wasUpdate: !!existingForRace });
     } catch (err: any) {
       setError(err.message || 'Failed to save your race profile.');
     } finally {
@@ -370,9 +428,21 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialRaceId, onSaved, onC
     }
   };
 
+  if (confirmation) {
+    const confirmedRace = races.find((race) => race.id === confirmation.registration.raceId);
+    return <RegistrationConfirmation
+      race={confirmedRace}
+      registration={confirmation.registration}
+      updated={confirmation.wasUpdate}
+      onViewMyRace={() => onSaved?.()}
+      onRegisterAnother={() => { setConfirmation(null); setRaceId(''); setShowForm(false); setError(''); }}
+    />;
+  }
+
   if (!raceId || !selectedRace) {
     return (
       <div className="space-y-4">
+        <RegistrationProgress currentStep={1} />
         {onCancel && (
           <button
             type="button"
@@ -398,6 +468,7 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialRaceId, onSaved, onC
   if (!showForm) {
     return (
       <div className="max-w-2xl mx-auto glass-panel p-6 space-y-5 animate-fadeIn">
+        <RegistrationProgress currentStep={1} />
         <button
           type="button"
           onClick={() => setRaceId('')}
@@ -459,7 +530,7 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialRaceId, onSaved, onC
           onClick={() => setShowForm(true)}
           className="w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-black uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-red-900/30"
         >
-          <ClipboardList className="w-4 h-4" /> {existingForRace ? 'Update My Registration' : 'Register for This Race'}
+          <ArrowRight className="w-4 h-4" /> {existingForRace ? 'Continue to Update Details' : 'Continue to Runner Details'}
         </button>
       </div>
     );
@@ -467,6 +538,7 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialRaceId, onSaved, onC
 
   return (
     <div className="max-w-xl mx-auto glass-panel p-6 space-y-5 animate-fadeIn">
+      <RegistrationProgress currentStep={2} />
       <button
         type="button"
         onClick={() => setShowForm(false)}
