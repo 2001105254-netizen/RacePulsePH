@@ -35,6 +35,37 @@ function normalizeScanValue(value: string): string {
   return value.trim().toUpperCase();
 }
 
+type ScanFeedback = { type: 'success' | 'error' | 'warning'; text: string };
+
+// The race-day desk needs a hands-free confirmation. This uses browser-native
+// haptics when available and a very short generated tone, so it works without
+// bundling or downloading an audio asset.
+function announceSuccessfulScan(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if ('vibrate' in navigator) navigator.vibrate?.([35, 30, 65]);
+    const AudioContextClass = window.AudioContext;
+    if (!AudioContextClass) return;
+    const audio = new AudioContextClass();
+    const tone = audio.createOscillator();
+    const gain = audio.createGain();
+    tone.type = 'sine';
+    tone.frequency.setValueAtTime(880, audio.currentTime);
+    tone.frequency.setValueAtTime(1175, audio.currentTime + 0.07);
+    gain.gain.setValueAtTime(0.0001, audio.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.12, audio.currentTime + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.16);
+    tone.connect(gain);
+    gain.connect(audio.destination);
+    tone.start();
+    tone.stop(audio.currentTime + 0.17);
+    tone.addEventListener('ended', () => { void audio.close(); }, { once: true });
+  } catch {
+    // Sound/haptics are a convenience; recording must still work on browsers
+    // that block audio before an explicit user gesture.
+  }
+}
+
 interface LiveClockProps {
   gunStartTime?: string;
   size?: 'compact' | 'large' | 'header';
@@ -167,7 +198,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   const [selectedCheckpointId, setSelectedCheckpointId] = useState(orderedCheckpoints[0]?.id || '');
   const [bibInput, setBibInput] = useState('');
   const [recording, setRecording] = useState(false);
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [feedback, setFeedback] = useState<ScanFeedback | null>(null);
   const [showScanModal, setShowScanModal] = useState(false);
   const scanInputRef = useRef<HTMLInputElement>(null);
   const lastRecordedScanRef = useRef<{ key: string; at: number } | null>(null);
@@ -312,7 +343,18 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
     // UHF readers can report the same tag several times while it remains in
     // range. Ignore immediate repeats, but allow legitimate later lap reads.
     if (lastScan?.key === scanKey && nowMs - lastScan.at < 4000) {
-      setFeedback({ type: 'error', text: `Duplicate scan ignored for bib ${bibNumber}.` });
+      setFeedback({ type: 'warning', text: `Duplicate scan: bib #${bibNumber} was just recorded at ${checkpointLabel(selectedCheckpointId)}. No new read was saved.` });
+      setBibInput('');
+      scanInputRef.current?.focus();
+      return false;
+    }
+
+    // Check-in, Start and Finish are one-time stations. Unlike intermediate
+    // lap splits, a later duplicate here would only create operator confusion,
+    // so stop it and show exactly when the first valid read was recorded.
+    const priorRead = chipReads.find((read) => read.bibNumber === bibNumber && read.checkpointId === selectedCheckpointId);
+    if (priorRead && ['checkin', 'start', 'finish'].includes(selectedCheckpointType)) {
+      setFeedback({ type: 'warning', text: `Duplicate scan: bib #${bibNumber} already has a ${checkpointLabel(selectedCheckpointId)} record at ${new Date(priorRead.timestamp).toLocaleTimeString()}. No new read was saved.` });
       setBibInput('');
       scanInputRef.current?.focus();
       return false;
@@ -349,6 +391,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
 
       lastRecordedScanRef.current = { key: scanKey, at: nowMs };
       setFeedback({ type: 'success', text: `${scannedChip ? 'RFID ' : ''}Recorded ${matchedRunner.fullName} • bib ${bibNumber} @ ${checkpointLabel(selectedCheckpointId)}${lateForCutoff ? ' • AFTER CUTOFF' : ''}` });
+      announceSuccessfulScan();
       setBibInput('');
       scanInputRef.current?.focus();
       return true;
@@ -492,7 +535,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
           </div>
         )}
 
-        <form onSubmit={handleManualSubmit} className="flex flex-col sm:flex-row gap-2">
+        <form onSubmit={handleManualSubmit} className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto_auto] gap-2">
           <input
             ref={scanInputRef}
             type="text"
@@ -502,27 +545,27 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
             autoComplete="off"
             autoCapitalize="characters"
             aria-label="RFID chip or runner bib scan input"
-            className="flex-1 glass-inset px-4 py-3 text-sm font-bold font-mono tracking-wider text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+            className="min-h-[68px] glass-inset px-5 py-4 text-base sm:text-lg font-black font-mono tracking-wider text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
           />
           <button
             type="submit"
             disabled={recording}
-            className="text-xs font-black uppercase tracking-widest px-5 py-3 rounded-[var(--radius-control)] text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 flex items-center justify-center gap-2 transition disabled:opacity-60"
+            className="min-h-[68px] text-sm font-black uppercase tracking-widest px-7 py-4 rounded-[var(--radius-control)] text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-xl shadow-red-900/40 flex items-center justify-center gap-2 transition active:scale-[0.98] disabled:opacity-60"
           >
-            {recording ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Clock className="w-4 h-4" />} {actionLabel}
+            {recording ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Clock className="w-5 h-5" />} {actionLabel}
           </button>
           <button
             type="button"
             onClick={() => { setFeedback(null); setShowScanModal(true); }}
-            className="text-xs font-black uppercase tracking-widest px-5 py-3 rounded-[var(--radius-control)] bg-violet-600 hover:bg-violet-500 text-white flex items-center justify-center gap-2 transition"
+            className="min-h-[68px] text-sm font-black uppercase tracking-widest px-7 py-4 rounded-[var(--radius-control)] bg-violet-600 hover:bg-violet-500 text-white shadow-xl shadow-violet-950/30 flex items-center justify-center gap-2 transition active:scale-[0.98]"
           >
-            <QrCode className="w-4 h-4" /> Scan
+            <QrCode className="w-5 h-5" /> Camera Scan
           </button>
         </form>
 
         {feedback && (
-          <p className={`text-xs font-semibold ${feedback.type === 'success' ? 'text-emerald-500' : 'text-red-500'}`}>
-            {feedback.type === 'success' ? '✅' : '⚠️'} {feedback.text}
+          <p role="status" className={`text-xs sm:text-sm font-bold px-4 py-3 rounded-[14px] border ${feedback.type === 'success' ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/25' : feedback.type === 'warning' ? 'text-amber-500 bg-amber-500/10 border-amber-500/30' : 'text-red-500 bg-red-500/10 border-red-500/25'}`}>
+            {feedback.type === 'success' ? '✓ Scan saved' : feedback.type === 'warning' ? '⚠ Duplicate warning' : '⚠ Scan issue'} <span className="font-medium">— {feedback.text}</span>
           </p>
         )}
       </div>
