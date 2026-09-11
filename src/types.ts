@@ -121,6 +121,9 @@ export interface RunnerProfile {
   fullName: string;
   bibNumber: string;
   chipId?: string; // RFID tag UID, once real hardware is assigned
+  // Set by the race-kit desk only after the runner has physically received
+  // their kit (bib/shirt/timing chip as applicable).
+  kitClaimedAt?: string;
   distance: string;
   gender: Gender;
   age: number;

@@ -625,6 +625,7 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
   };
 
   const assignedCount = runnerProfiles.filter((r) => r.chipId).length;
+  const kitClaimedCount = runnerProfiles.filter((r) => r.kitClaimedAt).length;
   const selectedHasReads = !!foundRunner && chipReads.some((read) => read.bibNumber === foundRunner.bibNumber);
 
   const filteredRoster = useMemo(() => {
@@ -692,6 +693,25 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
       setFeedback({ type: 'success', text: `Chip removed from bib #${foundRunner.bibNumber}.` });
     } catch (err: any) {
       setFeedback({ type: 'error', text: err.message || 'Failed to remove chip.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleKitClaim = async () => {
+    if (!foundRunner) return;
+    const alreadyClaimed = !!foundRunner.kitClaimedAt;
+    if (alreadyClaimed && !window.confirm(`Mark the kit for ${foundRunner.fullName} (bib #${foundRunner.bibNumber}) as not claimed?`)) return;
+    setSaving(true);
+    try {
+      await updateDoc(doc(db, 'runners', `${foundRunner.uid}_${race.id}`), {
+        kitClaimedAt: alreadyClaimed ? deleteField() : new Date().toISOString(),
+      });
+      setFeedback({ type: 'success', text: alreadyClaimed
+        ? `Kit claim removed for bib #${foundRunner.bibNumber}.`
+        : `Kit claimed by ${foundRunner.fullName} • bib #${foundRunner.bibNumber}.` });
+    } catch (err: any) {
+      setFeedback({ type: 'error', text: err.message || 'Failed to update kit claim.' });
     } finally {
       setSaving(false);
     }
@@ -781,7 +801,7 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
             </h3>
             <p className="text-xs text-[var(--text-secondary)] mt-1">Select the race bib, scan its timing chip, then verify the runner before handing out the kit.</p>
           </div>
-          <span className="text-[10px] font-mono font-bold text-[var(--text-secondary)] shrink-0">{assignedCount} / {runnerProfiles.length} chips assigned</span>
+          <span className="text-[10px] font-mono font-bold text-[var(--text-secondary)] shrink-0">{kitClaimedCount} kits claimed &bull; {assignedCount} chips assigned</span>
         </div>
 
         <div className="h-2 rounded-full bg-[var(--surface-inset)] overflow-hidden">
@@ -813,9 +833,14 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
                   <p className="text-sm font-bold text-[var(--text-primary)] truncate">{foundRunner.fullName}</p>
                   <p className="text-[10px] text-[var(--text-secondary)]">{foundRunner.distance} &bull; #{foundRunner.bibNumber}</p>
                 </div>
-                <span className={`text-[10px] font-black uppercase tracking-wide px-2.5 py-1 rounded-full shrink-0 ${foundRunner.chipId ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/25' : 'bg-amber-500/10 text-amber-500 border border-amber-500/25'}`}>
-                  {foundRunner.chipId ? `Chip: ${foundRunner.chipId}` : 'No Chip Yet'}
-                </span>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <span className={`text-[10px] font-black uppercase tracking-wide px-2.5 py-1 rounded-full ${foundRunner.chipId ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/25' : 'bg-amber-500/10 text-amber-500 border border-amber-500/25'}`}>
+                    {foundRunner.chipId ? `Chip: ${foundRunner.chipId}` : 'No Chip Yet'}
+                  </span>
+                  <span className={`text-[9px] font-black uppercase tracking-wide ${foundRunner.kitClaimedAt ? 'text-emerald-500' : 'text-[var(--text-muted)]'}`}>
+                    {foundRunner.kitClaimedAt ? 'Kit claimed' : 'Kit not claimed'}
+                  </span>
+                </div>
               </div>
             ) : (
               <p className="text-xs text-red-500">No runner found with that bib number.</p>
@@ -868,6 +893,11 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
                 Remove assigned chip
               </button>
             )}
+            {!editingBib && (
+              <button type="button" onClick={handleKitClaim} disabled={saving} className={`glass-inset px-3 py-2.5 text-[10px] font-black uppercase tracking-wide disabled:opacity-50 transition ${foundRunner.kitClaimedAt ? 'text-emerald-500 hover:text-red-500' : 'text-[var(--text-secondary)] hover:text-emerald-500'}`}>
+                {foundRunner.kitClaimedAt ? 'Undo kit claimed' : 'Mark kit claimed'}
+              </button>
+            )}
           </div>
         )}
 
@@ -881,7 +911,7 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
       <div className="glass-panel p-5">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)]">Chip Assignment Roster</h3>
-          <span className="text-[10px] font-mono font-bold text-[var(--text-secondary)]">{assignedCount} / {runnerProfiles.length} assigned</span>
+          <span className="text-[10px] font-mono font-bold text-[var(--text-secondary)]">{kitClaimedCount} / {runnerProfiles.length} kits claimed</span>
         </div>
         <p className="text-[10.5px] text-[var(--text-secondary)] mb-3">Unassigned runners show first. Tap one to hand out or correct a race kit.</p>
         <div className="flex gap-1.5 mb-3">
@@ -918,8 +948,8 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
             >
               <span className="font-mono font-bold text-[var(--text-primary)] w-16 shrink-0">#{r.bibNumber}</span>
               <span className="flex-1 truncate text-[var(--text-secondary)]">{r.fullName}</span>
-              <span className={`font-mono text-[10px] font-bold shrink-0 ${r.chipId ? 'text-emerald-500' : 'text-[var(--text-muted)]'}`}>
-                {r.chipId || 'UNASSIGNED'}
+              <span className={`font-mono text-[10px] font-bold shrink-0 ${r.kitClaimedAt ? 'text-emerald-500' : r.chipId ? 'text-amber-500' : 'text-[var(--text-muted)]'}`}>
+                {r.kitClaimedAt ? 'KIT CLAIMED' : r.chipId || 'UNASSIGNED'}
               </span>
             </button>
           ))}

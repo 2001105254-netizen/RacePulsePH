@@ -356,6 +356,10 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialRaceId, onSaved, onC
         gender,
         age: parsedAge,
         createdAt: existingForRace?.createdAt || new Date().toISOString(),
+        // A runner may correct their profile before race day, but that must
+        // never erase operational records already set by the kit desk.
+        ...(existingForRace?.chipId ? { chipId: existingForRace.chipId } : {}),
+        ...(existingForRace?.kitClaimedAt ? { kitClaimedAt: existingForRace.kitClaimedAt } : {}),
       };
       await setDoc(doc(db, 'runners', `${uid}_${raceId}`), record);
       onSaved?.();
@@ -576,12 +580,14 @@ function RunnerRacePass({ race, runnerProfile, result, orderedCheckpoints }: {
   const checkinSplit = splitFor(checkin?.id);
   const startSplit = splitFor(start?.id);
   const finishSplit = splitFor(finish?.id);
+  const hasOfficialResult = !!result?.finishTime && !!result.rank;
   const steps: RaceProgressStep[] = [
     { id: 'registered', label: 'Registered', detail: 'Your race slot is confirmed', completed: true, timestamp: runnerProfile.createdAt },
-    { id: 'chip', label: 'Timing chip', detail: runnerProfile.chipId ? `Chip ${runnerProfile.chipId} assigned` : 'To be assigned at kit claim', completed: !!runnerProfile.chipId },
+    { id: 'kit', label: 'Kit claimed', detail: runnerProfile.kitClaimedAt ? 'Race kit released to runner' : 'Claim from the race-kit desk', completed: !!runnerProfile.kitClaimedAt, timestamp: runnerProfile.kitClaimedAt },
     ...(checkin ? [{ id: 'checkin', label: 'Checked in', detail: checkin.label, completed: !!checkinSplit, timestamp: checkinSplit?.timestamp }] : []),
     ...(start ? [{ id: 'start', label: 'Started', detail: start.label, completed: !!startSplit, timestamp: startSplit?.timestamp }] : []),
     ...(finish ? [{ id: 'finish', label: 'Finished', detail: finish.label, completed: !!finishSplit, timestamp: finishSplit?.timestamp }] : []),
+    { id: 'result', label: 'Official result', detail: hasOfficialResult ? `Rank #${result!.rank} • ${result!.finishTime}` : 'Available after your finish is recorded', completed: hasOfficialResult, timestamp: hasOfficialResult ? finishSplit?.timestamp : undefined },
   ];
   const currentStep = [...steps].reverse().find((step) => step.completed)?.label || 'Registered';
 
@@ -616,7 +622,7 @@ function RunnerRacePass({ race, runnerProfile, result, orderedCheckpoints }: {
           </div>
           {result?.finishTime && <span className="text-xs font-mono font-black text-emerald-400 border border-emerald-500/25 bg-emerald-500/10 rounded-full px-3 py-1.5">Official time {result.finishTime}</span>}
         </div>
-        <ol className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2">
+        <ol className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-2">
           {steps.map((step, index) => (
             <li key={step.id} className={`flex items-center gap-3 rounded-xl border px-3 py-3 ${step.completed ? 'border-red-500/25 bg-red-500/5' : 'border-[var(--border-default)] bg-[var(--surface-inset)]/35'}`}>
               <span className={step.completed ? 'text-red-500' : 'text-[var(--text-muted)]'}>{step.completed ? <CheckCircle2 className="w-5 h-5" /> : <Circle className="w-5 h-5" />}</span>

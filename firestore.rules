@@ -147,7 +147,8 @@ service cloud.firestore {
         && data.gender is string && (data.gender == 'male' || data.gender == 'female')
         && data.age is int && data.age >= 1 && data.age <= 120
         && data.createdAt is string
-        && (!data.keys().hasAny(['chipId']) || data.chipId is string);
+        && (!data.keys().hasAny(['chipId']) || data.chipId is string)
+        && (!data.keys().hasAny(['kitClaimedAt']) || data.kitClaimedAt is string);
     }
 
     // Doc id is {uid}_{raceId} - one entry per registration, so a runner can hold
