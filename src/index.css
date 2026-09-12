@@ -221,3 +221,69 @@ body {
   }
 }
 
+/* Short branded opening moment. It runs before the app becomes interactive,
+   then gets out of the way quickly so race-day workflows stay fast. */
+@keyframes opening-logo-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.68) rotate(-8deg);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.06) rotate(0deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes opening-ring-out {
+  0% {
+    opacity: 0;
+    transform: scale(0.76);
+  }
+  30% {
+    opacity: 0.72;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.55);
+  }
+}
+
+@keyframes opening-copy-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.app-opening-logo {
+  animation: opening-logo-in 620ms cubic-bezier(0.2, 0.85, 0.25, 1) both;
+}
+
+.app-opening-ring {
+  animation: opening-ring-out 1050ms cubic-bezier(0.2, 0.7, 0.25, 1) 190ms infinite;
+}
+
+.app-opening-title {
+  animation: opening-copy-in 420ms ease-out 320ms both;
+}
+
+.app-opening-tagline {
+  animation: opening-copy-in 420ms ease-out 430ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-opening-logo,
+  .app-opening-ring,
+  .app-opening-title,
+  .app-opening-tagline {
+    animation: none;
+  }
+}

@@ -35,6 +35,17 @@ export default function App() {
   const [guestScreen, setGuestScreen] = useState<'landing' | 'login' | 'signup'>('landing');
   const [pendingRaceId, setPendingRaceId] = useState<string | null>(null);
   const [runnerSignupIntent, setRunnerSignupIntent] = useState(false);
+  const [openingPhase, setOpeningPhase] = useState<'showing' | 'leaving' | 'done'>('showing');
+
+  useEffect(() => {
+    const leaveTimer = window.setTimeout(() => setOpeningPhase('leaving'), 900);
+    const doneTimer = window.setTimeout(() => setOpeningPhase('done'), 1250);
+
+    return () => {
+      window.clearTimeout(leaveTimer);
+      window.clearTimeout(doneTimer);
+    };
+  }, []);
 
   // Dashboard navigation lives in React state, so browser history is not a
   // safe back action. Each signed-in console listens for this event and goes
@@ -187,6 +198,33 @@ export default function App() {
         </div>
       </footer>
 
+      {openingPhase !== 'done' && <OpeningSplash leaving={openingPhase === 'leaving'} />}
+
+    </div>
+  );
+}
+
+function OpeningSplash({ leaving }: { leaving: boolean }) {
+  return (
+    <div
+      className={`app-opening-splash fixed inset-0 z-[2000] flex items-center justify-center overflow-hidden bg-[#070707] px-6 transition-[opacity,transform] duration-[350ms] ease-out ${leaving ? 'pointer-events-none scale-[1.02] opacity-0' : 'opacity-100'}`}
+      aria-label="Opening RacePulsePH"
+      role="status"
+    >
+      <div className="absolute -left-24 -top-24 h-80 w-80 rounded-full bg-red-600/30 blur-[110px]" />
+      <div className="absolute -bottom-32 -right-20 h-72 w-72 rounded-full bg-red-900/35 blur-[120px]" />
+      <div className="relative flex flex-col items-center text-center">
+        <div className="app-opening-ring absolute top-0 h-28 w-28 rounded-[30px] border border-red-500/60" />
+        <div className="app-opening-logo relative flex h-28 w-28 items-center justify-center overflow-hidden rounded-[30px] bg-[#0a0a0a] shadow-[0_0_45px_rgba(239,68,68,0.4)] ring-1 ring-white/15">
+          <img src="/assets/racepulse-mark.png" alt="" className="h-full w-full object-contain" />
+        </div>
+        <p className="app-opening-title mt-6 font-display text-2xl font-black uppercase tracking-tight text-white sm:text-3xl">
+          RacePulse<span className="text-red-500">PH</span>
+        </p>
+        <p className="app-opening-tagline mt-2 font-mono text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400">
+          Ready. Set. Run.
+        </p>
+      </div>
     </div>
   );
 }
