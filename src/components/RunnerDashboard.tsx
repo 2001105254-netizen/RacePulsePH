@@ -35,6 +35,44 @@ const raceBibCanvasFontFamilies: Record<RaceBibFont, string> = {
   condensed: 'Impact, Arial Narrow Bold, sans-serif',
 };
 
+const standardShirtSizes = ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL', '6XL'];
+
+function ShirtSizePicker({ value, onChange, emptyLabel }: { value: string; onChange: (value: string) => void; emptyLabel: string }) {
+  const [customMode, setCustomMode] = useState(() => Boolean(value && !standardShirtSizes.includes(value)));
+  const usesCustomSize = customMode || Boolean(value && !standardShirtSizes.includes(value));
+  return (
+    <div className="space-y-2">
+      <select
+        value={usesCustomSize ? '__other__' : value}
+        onChange={(e) => {
+          if (e.target.value === '__other__') {
+            setCustomMode(true);
+            onChange('');
+          } else {
+            setCustomMode(false);
+            onChange(e.target.value);
+          }
+        }}
+        className="w-full appearance-none glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+      >
+        <option value="">{emptyLabel}</option>
+        {standardShirtSizes.map((size) => <option key={size} value={size}>{size}</option>)}
+        <option value="__other__">Other size (type it below)</option>
+      </select>
+      {usesCustomSize && (
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value.toUpperCase())}
+          maxLength={20}
+          placeholder="EX: 7XL, 3XS, CUSTOM"
+          className="w-full glass-inset px-4 py-3 text-sm font-semibold uppercase text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+        />
+      )}
+    </div>
+  );
+}
+
 function loadDataImage(source: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new Image();
@@ -693,10 +731,7 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
           <p className="text-[10.5px] text-[var(--text-muted)] -mt-2 pl-1">Used to place you in the correct age category on race reports.</p>
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Shirt Size <span className="normal-case font-normal text-[var(--text-muted)]">(for this race)</span></label>
-            <select value={shirtSize} onChange={(e) => setShirtSize(e.target.value)} className="w-full appearance-none glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50">
-              <option value="">Select shirt size</option>
-              {['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'].map((size) => <option key={size} value={size}>{size}</option>)}
-            </select>
+            <ShirtSizePicker key={`${raceId}_${existingForRace?.shirtSize || initialShirtSize || ''}`} value={shirtSize} onChange={setShirtSize} emptyLabel="Select shirt size" />
             <p className="text-[10.5px] text-[var(--text-muted)] mt-1.5 pl-1">The kit desk will see this size when you claim your race kit.</p>
           </div>
 
@@ -1162,10 +1197,7 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
           <h3 className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-1.5"><PackageCheck className="w-3.5 h-3.5 text-red-500" /> Race preferences</h3>
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Shirt Size</label>
-            <select value={shirtSize} onChange={(e) => setShirtSize(e.target.value)} className="w-full appearance-none glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50">
-              <option value="">Not selected</option>
-              {['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'].map((size) => <option key={size} value={size}>{size}</option>)}
-            </select>
+            <ShirtSizePicker value={shirtSize} onChange={setShirtSize} emptyLabel="Not selected" />
           </div>
         </div>
 
