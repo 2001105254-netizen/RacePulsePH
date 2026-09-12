@@ -7,7 +7,7 @@ import { resizeImageToDataUrl } from '../lib/image';
 import { ChipRead, Gender, Race, RaceBibFont, RunnerProfile, UserProfile } from '../types';
 import CustomerForm from './CustomerForm';
 import { QRCodeSVG } from 'qrcode.react';
-import { LogOut, User, Hash, MapPin, RefreshCw, Award, ClipboardList, Clock, ArrowLeft, ArrowRight, Flag, Calendar, CheckSquare, Coins, PackageCheck, Camera, Trophy, X, Pencil, CheckCircle2, Circle, Radio, Phone, HeartPulse, Mail, FileDown } from 'lucide-react';
+import { LogOut, User, Hash, MapPin, RefreshCw, Award, ClipboardList, Clock, ArrowLeft, ArrowRight, Flag, Calendar, CheckSquare, Coins, PackageCheck, Camera, Trophy, X, Pencil, CheckCircle2, Circle, Radio, Phone, HeartPulse, Mail, FileDown, Maximize2 } from 'lucide-react';
 import BottomNav from './BottomNav';
 import RaceList from './RaceList';
 import { isRaceRegistrationOpen } from '../lib/raceRegistration';
@@ -463,6 +463,7 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
   const [gender, setGender] = useState<Gender>(latest?.gender || 'male');
   const [age, setAge] = useState(latest?.age ? String(latest.age) : '');
   const [shirtSize, setShirtSize] = useState(initialShirtSize || latest?.shirtSize || '');
+  const [showInclusionImage, setShowInclusionImage] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [confirmation, setConfirmation] = useState<{ registration: RunnerProfile; wasUpdate: boolean } | null>(null);
@@ -631,9 +632,10 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
         {selectedRace?.inclusionImage && (
           <div>
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] mb-2 flex items-center gap-1.5"><PackageCheck className="w-3.5 h-3.5 text-red-500" /> Shirt / Kit Design</h3>
-            <div className="rounded-[16px] overflow-hidden border border-[var(--border-default)] bg-[var(--surface-inset)]">
+            <button type="button" onClick={() => setShowInclusionImage(true)} className="group relative w-full rounded-[16px] overflow-hidden border border-[var(--border-default)] bg-[var(--surface-inset)] text-left focus:outline-none focus:ring-2 focus:ring-red-500/50">
               <img src={selectedRace.inclusionImage} alt={`${selectedRace.name} shirt or kit design`} className="w-full max-h-96 object-contain" />
-            </div>
+              <span className="absolute right-3 bottom-3 inline-flex items-center gap-1.5 rounded-full bg-black/70 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-white opacity-0 group-hover:opacity-100 group-focus:opacity-100 transition"><Maximize2 className="w-3.5 h-3.5" /> Full screen</span>
+            </button>
           </div>
         )}
 
@@ -655,6 +657,15 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
         >
           <ArrowRight className="w-4 h-4" /> {existingForRace ? 'Continue to Update Details' : 'Continue to Runner Details'}
         </button>
+
+        {showInclusionImage && selectedRace?.inclusionImage && (
+          <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm p-4 sm:p-8 flex items-center justify-center animate-fadeIn" role="dialog" aria-modal="true" aria-label="Shirt or kit design preview" onClick={() => setShowInclusionImage(false)}>
+            <div className="relative max-w-6xl max-h-full" onClick={(e) => e.stopPropagation()}>
+              <img src={selectedRace.inclusionImage} alt={`${selectedRace.name} shirt or kit design`} className="block max-w-full max-h-[calc(100vh-4rem)] object-contain rounded-xl shadow-2xl" />
+              <button type="button" onClick={() => setShowInclusionImage(false)} className="absolute -top-3 -right-3 w-10 h-10 rounded-full bg-white text-zinc-950 hover:bg-red-500 hover:text-white shadow-xl flex items-center justify-center transition" aria-label="Close full-screen image"><X className="w-5 h-5" /></button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
