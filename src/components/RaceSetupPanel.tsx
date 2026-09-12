@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { collection, doc, onSnapshot, setDoc, deleteDoc, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
-import { resizeImageToDataUrl } from '../lib/image';
+import { resizeImageToDataUrl, resizeImageToDataUrlContain } from '../lib/image';
 import { AgeCategory, CheckpointType, Gender, Race, RaceBibFont, RaceDistance, RunnerProfile } from '../types';
 import { generateRunnerRosterPdf } from '../lib/runnerReport';
 import { Flag, Trash2, Plus, Save, Pencil, RefreshCw, Users2, FileDown, ImagePlus, X } from 'lucide-react';
@@ -205,7 +205,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     setInclusionUploading(true);
     setError('');
     try {
-      setInclusionImage(await resizeImageToDataUrl(file, 640, 640, 0.8));
+      setInclusionImage(await resizeImageToDataUrlContain(file, 1000, 1000, 0.82));
     } catch (err: any) {
       setError(err.message || 'Failed to process the inclusion image.');
     } finally {

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { collection, doc, getDocs, onSnapshot, query, runTransaction, setDoc, updateDoc, where } from 'firebase/firestore';
 import { db, sendPasswordReset, signOutUser, updateAccountDisplayName } from '../firebase';
 import { checkpointType, computeResults, getWaveStartTime } from '../lib/timing';
@@ -658,13 +659,14 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
           <ArrowRight className="w-4 h-4" /> {existingForRace ? 'Continue to Update Details' : 'Continue to Runner Details'}
         </button>
 
-        {showInclusionImage && selectedRace?.inclusionImage && (
-          <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm p-4 sm:p-8 flex items-center justify-center animate-fadeIn" role="dialog" aria-modal="true" aria-label="Shirt or kit design preview" onClick={() => setShowInclusionImage(false)}>
+        {showInclusionImage && selectedRace?.inclusionImage && createPortal(
+          <div className="fixed inset-0 z-[1000] bg-black/90 backdrop-blur-sm p-4 sm:p-8 flex items-center justify-center animate-fadeIn" role="dialog" aria-modal="true" aria-label="Shirt or kit design preview" onClick={() => setShowInclusionImage(false)}>
             <div className="relative max-w-6xl max-h-full" onClick={(e) => e.stopPropagation()}>
               <img src={selectedRace.inclusionImage} alt={`${selectedRace.name} shirt or kit design`} className="block max-w-full max-h-[calc(100vh-4rem)] object-contain rounded-xl shadow-2xl" />
               <button type="button" onClick={() => setShowInclusionImage(false)} className="absolute -top-3 -right-3 w-10 h-10 rounded-full bg-white text-zinc-950 hover:bg-red-500 hover:text-white shadow-xl flex items-center justify-center transition" aria-label="Close full-screen image"><X className="w-5 h-5" /></button>
             </div>
-          </div>
+          </div>,
+          document.body,
         )}
       </div>
     );
