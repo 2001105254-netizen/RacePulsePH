@@ -86,6 +86,10 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
   const [bibNumberY, setBibNumberY] = useState(48);
   const [runnerNameX, setRunnerNameX] = useState(50);
   const [runnerNameY, setRunnerNameY] = useState(70);
+  const [bibNumberSize, setBibNumberSize] = useState(12);
+  const [runnerNameSize, setRunnerNameSize] = useState(5);
+  const [bibNumberColor, setBibNumberColor] = useState('#FFFFFF');
+  const [runnerNameColor, setRunnerNameColor] = useState('#FFFFFF');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [reportBusyRaceId, setReportBusyRaceId] = useState<string | null>(null);
@@ -123,6 +127,10 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     setBibNumberY(48);
     setRunnerNameX(50);
     setRunnerNameY(70);
+    setBibNumberSize(12);
+    setRunnerNameSize(5);
+    setBibNumberColor('#FFFFFF');
+    setRunnerNameColor('#FFFFFF');
     setError('');
   };
 
@@ -154,6 +162,10 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     setBibNumberY(race.raceBibLayout?.bibNumberY ?? 48);
     setRunnerNameX(race.raceBibLayout?.runnerNameX ?? 50);
     setRunnerNameY(race.raceBibLayout?.runnerNameY ?? 70);
+    setBibNumberSize(race.raceBibLayout?.bibNumberSize ?? 12);
+    setRunnerNameSize(race.raceBibLayout?.runnerNameSize ?? 5);
+    setBibNumberColor(race.raceBibLayout?.bibNumberColor ?? '#FFFFFF');
+    setRunnerNameColor(race.raceBibLayout?.runnerNameColor ?? '#FFFFFF');
     setError('');
   };
 
@@ -278,7 +290,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
         ...(inclusionImage ? { inclusionImage } : {}),
         ...(raceBibTemplateImage ? {
           raceBibTemplateImage,
-          raceBibLayout: { bibNumberX, bibNumberY, runnerNameX, runnerNameY },
+          raceBibLayout: { bibNumberX, bibNumberY, runnerNameX, runnerNameY, bibNumberSize, runnerNameSize, bibNumberColor, runnerNameColor },
         } : {}),
       };
       await setDoc(doc(db, 'races', raceId), record);
@@ -404,10 +416,10 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
             <input ref={raceBibInputRef} type="file" accept="image/*" onChange={handleRaceBibTemplateSelected} className="hidden" />
             {raceBibTemplateImage ? (
               <div className="space-y-3">
-                <div className="relative rounded-[16px] overflow-hidden border border-[var(--border-default)] bg-[var(--surface-inset)]">
+                <div className="relative rounded-[16px] overflow-hidden border border-[var(--border-default)] bg-[var(--surface-inset)]" style={{ containerType: 'inline-size' }}>
                   <img src={raceBibTemplateImage} alt="Race bib template preview" className="w-full aspect-[3/2] object-cover" />
-                  <span className="absolute -translate-x-1/2 -translate-y-1/2 text-[clamp(18px,5vw,42px)] leading-none font-black font-mono tracking-tight text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)]" style={{ left: `${bibNumberX}%`, top: `${bibNumberY}%` }}>10-001</span>
-                  <span className="absolute -translate-x-1/2 -translate-y-1/2 text-[clamp(10px,2.5vw,22px)] leading-none font-black tracking-wide text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${runnerNameX}%`, top: `${runnerNameY}%` }}>RUNNER NAME</span>
+                  <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black font-mono tracking-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)]" style={{ left: `${bibNumberX}%`, top: `${bibNumberY}%`, fontSize: `${bibNumberSize}cqw`, color: bibNumberColor }}>10-001</span>
+                  <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-wide drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${runnerNameX}%`, top: `${runnerNameY}%`, fontSize: `${runnerNameSize}cqw`, color: runnerNameColor }}>RUNNER NAME</span>
                   <button type="button" onClick={() => setRaceBibTemplateImage('')} className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center transition" title="Remove race bib template"><X className="w-4 h-4" /></button>
                   <button type="button" onClick={() => raceBibInputRef.current?.click()} className="absolute bottom-2 right-2 text-[10px] font-black uppercase tracking-wide px-3 py-1.5 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center gap-1.5 transition"><ImagePlus className="w-3 h-3" /> Change</button>
                 </div>
@@ -416,11 +428,15 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
                     <p className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)] mb-2">Bib number position</p>
                     <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)]">X <input type="range" min="5" max="95" value={bibNumberX} onChange={(e) => setBibNumberX(Number(e.target.value))} className="flex-1 accent-red-600" /> {bibNumberX}%</label>
                     <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Y <input type="range" min="5" max="95" value={bibNumberY} onChange={(e) => setBibNumberY(Number(e.target.value))} className="flex-1 accent-red-600" /> {bibNumberY}%</label>
+                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Size <input type="range" min="5" max="24" value={bibNumberSize} onChange={(e) => setBibNumberSize(Number(e.target.value))} className="flex-1 accent-red-600" /> {bibNumberSize}</label>
+                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Color <input type="color" value={bibNumberColor} onChange={(e) => setBibNumberColor(e.target.value)} className="w-7 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" /> <span className="font-mono">{bibNumberColor}</span></label>
                   </div>
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)] mb-2">Runner name position</p>
                     <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)]">X <input type="range" min="5" max="95" value={runnerNameX} onChange={(e) => setRunnerNameX(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameX}%</label>
                     <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Y <input type="range" min="5" max="95" value={runnerNameY} onChange={(e) => setRunnerNameY(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameY}%</label>
+                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Size <input type="range" min="3" max="14" value={runnerNameSize} onChange={(e) => setRunnerNameSize(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameSize}</label>
+                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Color <input type="color" value={runnerNameColor} onChange={(e) => setRunnerNameColor(e.target.value)} className="w-7 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" /> <span className="font-mono">{runnerNameColor}</span></label>
                   </div>
                 </div>
               </div>

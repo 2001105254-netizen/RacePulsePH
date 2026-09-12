@@ -75,6 +75,12 @@ export interface RaceBibLayout {
   bibNumberY: number;
   runnerNameX: number;
   runnerNameY: number;
+  // Sizes use container-width units (cqw), so the same layout scales neatly
+  // in the organizer preview, runner PWA, and downloaded bib image.
+  bibNumberSize?: number;
+  runnerNameSize?: number;
+  bibNumberColor?: string;
+  runnerNameColor?: string;
 }
 
 export interface Race {
