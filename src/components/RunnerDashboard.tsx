@@ -28,6 +28,61 @@ const raceBibFontFamilies: Record<RaceBibFont, string> = {
   condensed: 'Impact, "Arial Narrow Bold", sans-serif',
 };
 
+const raceBibCanvasFontFamilies: Record<RaceBibFont, string> = {
+  display: 'Space Grotesk, sans-serif',
+  sans: 'Inter, sans-serif',
+  mono: 'JetBrains Mono, monospace',
+  condensed: 'Impact, Arial Narrow Bold, sans-serif',
+};
+
+function loadDataImage(source: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Unable to load the race bib template.'));
+    image.src = source;
+  });
+}
+
+// The download is drawn directly onto the original bib artwork rather than
+// screenshotting the responsive preview. This keeps the output crisp and
+// makes long names shrink-to-fit instead of being cropped on a phone screen.
+function drawFittedRaceBibText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  width: number,
+  height: number,
+  xPercent: number,
+  yPercent: number,
+  sizePercent: number,
+  color: string,
+  font: RaceBibFont,
+): void {
+  let fontSize = Math.max(12, (width * sizePercent) / 100);
+  const maxWidth = width * 0.9;
+  const fontFamily = raceBibCanvasFontFamilies[font];
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  do {
+    ctx.font = `900 ${fontSize}px ${fontFamily}`;
+    if (ctx.measureText(text).width <= maxWidth || fontSize <= 12) break;
+    fontSize -= 1;
+  } while (fontSize > 12);
+
+  const x = Math.min(width * 0.95, Math.max(width * 0.05, (width * xPercent) / 100));
+  const safeHalfHeight = fontSize * 0.62;
+  const y = Math.min(height - safeHalfHeight - 6, Math.max(safeHalfHeight + 6, (height * yPercent) / 100));
+  ctx.fillStyle = color;
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+  ctx.shadowBlur = Math.max(1.5, fontSize * 0.035);
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = Math.max(1, fontSize * 0.025);
+  ctx.fillText(text, x, y);
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+}
+
 function mostRecent(profiles: RunnerProfile[]): RunnerProfile | undefined {
   return [...profiles].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
 }
@@ -752,12 +807,28 @@ function DigitalRaceBib({ race, runnerProfile }: { race: Race; runnerProfile: Ru
   const layout = race.raceBibLayout || { bibNumberX: 50, bibNumberY: 48, runnerNameX: 50, runnerNameY: 70 };
 
   const handleDownload = async () => {
-    if (!bibRef.current) return;
+    if (!race.raceBibTemplateImage) return;
     setDownloading(true);
     setDownloadError('');
     try {
-      const { default: html2canvas } = await import('html2canvas');
-      const canvas = await html2canvas(bibRef.current, { backgroundColor: null, scale: 3, useCORS: true });
+      await document.fonts?.ready;
+      const template = await loadDataImage(race.raceBibTemplateImage);
+      const canvas = document.createElement('canvas');
+      canvas.width = template.naturalWidth;
+      canvas.height = template.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas rendering is not supported by this browser.');
+      ctx.drawImage(template, 0, 0, canvas.width, canvas.height);
+      drawFittedRaceBibText(
+        ctx, runnerProfile.bibNumber, canvas.width, canvas.height,
+        layout.bibNumberX, layout.bibNumberY, layout.bibNumberSize ?? 12,
+        layout.bibNumberColor ?? '#FFFFFF', layout.bibNumberFont ?? 'mono',
+      );
+      drawFittedRaceBibText(
+        ctx, runnerProfile.fullName, canvas.width, canvas.height,
+        layout.runnerNameX, layout.runnerNameY, layout.runnerNameSize ?? 5,
+        layout.runnerNameColor ?? '#FFFFFF', layout.runnerNameFont ?? 'display',
+      );
       const link = document.createElement('a');
       const safeRaceName = race.name.trim().replace(/[^a-zA-Z0-9_-]/g, '_') || 'RacePulsePH';
       link.download = `${safeRaceName}_${runnerProfile.bibNumber}_Race-Bib.png`;
