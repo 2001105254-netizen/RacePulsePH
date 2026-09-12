@@ -2,11 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, doc, getDocs, onSnapshot, query, runTransaction, setDoc, updateDoc, where } from 'firebase/firestore';
 import { db, sendPasswordReset, signOutUser, updateAccountDisplayName } from '../firebase';
 import { checkpointType, computeResults, getWaveStartTime } from '../lib/timing';
+import { downloadFinisherCertificate } from '../lib/finisherCertificate';
 import { resizeImageToDataUrl } from '../lib/image';
 import { ChipRead, Gender, Race, RunnerProfile, UserProfile } from '../types';
 import CustomerForm from './CustomerForm';
 import { QRCodeSVG } from 'qrcode.react';
-import { LogOut, User, Hash, MapPin, RefreshCw, Award, ClipboardList, Clock, ArrowLeft, ArrowRight, Flag, Calendar, CheckSquare, Coins, PackageCheck, Camera, Trophy, X, Pencil, CheckCircle2, Circle, Radio, Phone, HeartPulse, Mail } from 'lucide-react';
+import { LogOut, User, Hash, MapPin, RefreshCw, Award, ClipboardList, Clock, ArrowLeft, ArrowRight, Flag, Calendar, CheckSquare, Coins, PackageCheck, Camera, Trophy, X, Pencil, CheckCircle2, Circle, Radio, Phone, HeartPulse, Mail, FileDown } from 'lucide-react';
 import BottomNav from './BottomNav';
 import RaceList from './RaceList';
 import { isRaceRegistrationOpen } from '../lib/raceRegistration';
@@ -815,6 +816,15 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
               <p className="text-[10px] uppercase font-bold tracking-widest text-emerald-500">Finish Time</p>
               <p className="text-2xl font-mono font-black text-emerald-400 mt-1">{result.finishTime}</p>
               {result.rank && <p className="text-xs text-emerald-500 mt-1">Rank #{result.rank} in {runnerProfile.distance}</p>}
+              {race && (
+                <button
+                  type="button"
+                  onClick={() => downloadFinisherCertificate(race, runnerProfile, result)}
+                  className="mt-4 w-full sm:w-auto px-4 py-2.5 rounded-[var(--radius-control)] font-display font-black uppercase text-[10px] tracking-widest text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 transition inline-flex items-center justify-center gap-2"
+                >
+                  <FileDown className="w-4 h-4" /> Download E-Certificate
+                </button>
+              )}
             </div>
           )}
         </div>
