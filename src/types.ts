@@ -70,6 +70,13 @@ export interface RaceDistance {
   price: number; // registration fee in pesos, set independently per distance
 }
 
+export interface RaceBibLayout {
+  bibNumberX: number;
+  bibNumberY: number;
+  runnerNameX: number;
+  runnerNameY: number;
+}
+
 export interface Race {
   id: string;
   name: string;
@@ -95,6 +102,10 @@ export interface Race {
   posterImage?: string; // small base64 data URI, resized client-side before saving
   // Optional visual preview for a shirt, medal, kit, or another race inclusion.
   inclusionImage?: string;
+  // Optional blank race-bib artwork. The runner's name and bib number are
+  // overlaid on this template using the organizer-configured positions.
+  raceBibTemplateImage?: string;
+  raceBibLayout?: RaceBibLayout;
 }
 
 export interface PublicLeaderboardEntry {

@@ -80,11 +80,18 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
   const [posterUploading, setPosterUploading] = useState(false);
   const [inclusionImage, setInclusionImage] = useState('');
   const [inclusionUploading, setInclusionUploading] = useState(false);
+  const [raceBibTemplateImage, setRaceBibTemplateImage] = useState('');
+  const [raceBibUploading, setRaceBibUploading] = useState(false);
+  const [bibNumberX, setBibNumberX] = useState(50);
+  const [bibNumberY, setBibNumberY] = useState(48);
+  const [runnerNameX, setRunnerNameX] = useState(50);
+  const [runnerNameY, setRunnerNameY] = useState(70);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [reportBusyRaceId, setReportBusyRaceId] = useState<string | null>(null);
   const posterInputRef = useRef<HTMLInputElement>(null);
   const inclusionInputRef = useRef<HTMLInputElement>(null);
+  const raceBibInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const racesQuery = canSeeAllRaces
@@ -111,6 +118,11 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     setInclusions([]);
     setPosterImage('');
     setInclusionImage('');
+    setRaceBibTemplateImage('');
+    setBibNumberX(50);
+    setBibNumberY(48);
+    setRunnerNameX(50);
+    setRunnerNameY(70);
     setError('');
   };
 
@@ -137,6 +149,11 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     setInclusions((race.inclusions || []).map((text, idx) => ({ id: `incl_${idx}_${Date.now()}`, text })));
     setPosterImage(race.posterImage || '');
     setInclusionImage(race.inclusionImage || '');
+    setRaceBibTemplateImage(race.raceBibTemplateImage || '');
+    setBibNumberX(race.raceBibLayout?.bibNumberX ?? 50);
+    setBibNumberY(race.raceBibLayout?.bibNumberY ?? 48);
+    setRunnerNameX(race.raceBibLayout?.runnerNameX ?? 50);
+    setRunnerNameY(race.raceBibLayout?.runnerNameY ?? 70);
     setError('');
   };
 
@@ -168,6 +185,21 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
       setError(err.message || 'Failed to process the inclusion image.');
     } finally {
       setInclusionUploading(false);
+    }
+  };
+
+  const handleRaceBibTemplateSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setRaceBibUploading(true);
+    setError('');
+    try {
+      setRaceBibTemplateImage(await resizeImageToDataUrl(file, 1000, 667, 0.82));
+    } catch (err: any) {
+      setError(err.message || 'Failed to process the race bib template.');
+    } finally {
+      setRaceBibUploading(false);
     }
   };
 
@@ -244,6 +276,10 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
         ...(existing?.routeMapUrl ? { routeMapUrl: existing.routeMapUrl } : {}),
         ...(posterImage ? { posterImage } : {}),
         ...(inclusionImage ? { inclusionImage } : {}),
+        ...(raceBibTemplateImage ? {
+          raceBibTemplateImage,
+          raceBibLayout: { bibNumberX, bibNumberY, runnerNameX, runnerNameY },
+        } : {}),
       };
       await setDoc(doc(db, 'races', raceId), record);
       resetForm();
@@ -358,6 +394,40 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
               >
                 {posterUploading ? <RefreshCw className="w-6 h-6 animate-spin" /> : <ImagePlus className="w-6 h-6" />}
                 <span className="text-xs font-bold uppercase tracking-wide">{posterUploading ? 'Processing...' : 'Upload Poster Image'}</span>
+              </button>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Personalized Race Bib Template <span className="normal-case font-normal text-[var(--text-muted)]">(optional)</span></label>
+            <p className="text-[10.5px] text-[var(--text-secondary)] mb-2">Upload your blank bib layout. RacePulse automatically adds each runner’s name and bib number after registration.</p>
+            <input ref={raceBibInputRef} type="file" accept="image/*" onChange={handleRaceBibTemplateSelected} className="hidden" />
+            {raceBibTemplateImage ? (
+              <div className="space-y-3">
+                <div className="relative rounded-[16px] overflow-hidden border border-[var(--border-default)] bg-[var(--surface-inset)]">
+                  <img src={raceBibTemplateImage} alt="Race bib template preview" className="w-full aspect-[3/2] object-cover" />
+                  <span className="absolute -translate-x-1/2 -translate-y-1/2 text-[clamp(18px,5vw,42px)] leading-none font-black font-mono tracking-tight text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)]" style={{ left: `${bibNumberX}%`, top: `${bibNumberY}%` }}>10-001</span>
+                  <span className="absolute -translate-x-1/2 -translate-y-1/2 text-[clamp(10px,2.5vw,22px)] leading-none font-black tracking-wide text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${runnerNameX}%`, top: `${runnerNameY}%` }}>RUNNER NAME</span>
+                  <button type="button" onClick={() => setRaceBibTemplateImage('')} className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center transition" title="Remove race bib template"><X className="w-4 h-4" /></button>
+                  <button type="button" onClick={() => raceBibInputRef.current?.click()} className="absolute bottom-2 right-2 text-[10px] font-black uppercase tracking-wide px-3 py-1.5 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center gap-1.5 transition"><ImagePlus className="w-3 h-3" /> Change</button>
+                </div>
+                <div className="glass-inset p-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)] mb-2">Bib number position</p>
+                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)]">X <input type="range" min="5" max="95" value={bibNumberX} onChange={(e) => setBibNumberX(Number(e.target.value))} className="flex-1 accent-red-600" /> {bibNumberX}%</label>
+                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Y <input type="range" min="5" max="95" value={bibNumberY} onChange={(e) => setBibNumberY(Number(e.target.value))} className="flex-1 accent-red-600" /> {bibNumberY}%</label>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)] mb-2">Runner name position</p>
+                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)]">X <input type="range" min="5" max="95" value={runnerNameX} onChange={(e) => setRunnerNameX(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameX}%</label>
+                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Y <input type="range" min="5" max="95" value={runnerNameY} onChange={(e) => setRunnerNameY(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameY}%</label>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <button type="button" onClick={() => raceBibInputRef.current?.click()} disabled={raceBibUploading} className="w-full aspect-[3/2] rounded-[16px] border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-2 text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 transition disabled:opacity-60">
+                {raceBibUploading ? <RefreshCw className="w-6 h-6 animate-spin" /> : <ImagePlus className="w-6 h-6" />}
+                <span className="text-xs font-bold uppercase tracking-wide">{raceBibUploading ? 'Processing...' : 'Upload Blank Race Bib Layout'}</span>
               </button>
             )}
           </div>

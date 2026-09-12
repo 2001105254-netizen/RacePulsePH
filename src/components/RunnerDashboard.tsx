@@ -738,6 +738,55 @@ function RunnerRacePass({ race, runnerProfile, result, orderedCheckpoints }: {
   );
 }
 
+function DigitalRaceBib({ race, runnerProfile }: { race: Race; runnerProfile: RunnerProfile }) {
+  const bibRef = useRef<HTMLDivElement>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState('');
+  const layout = race.raceBibLayout || { bibNumberX: 50, bibNumberY: 48, runnerNameX: 50, runnerNameY: 70 };
+
+  const handleDownload = async () => {
+    if (!bibRef.current) return;
+    setDownloading(true);
+    setDownloadError('');
+    try {
+      const { default: html2canvas } = await import('html2canvas');
+      const canvas = await html2canvas(bibRef.current, { backgroundColor: null, scale: 3, useCORS: true });
+      const link = document.createElement('a');
+      const safeRaceName = race.name.trim().replace(/[^a-zA-Z0-9_-]/g, '_') || 'RacePulsePH';
+      link.download = `${safeRaceName}_${runnerProfile.bibNumber}_Race-Bib.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch (err) {
+      console.warn('Failed to download race bib:', err);
+      setDownloadError('Could not prepare the bib image. Please try again.');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  if (!race.raceBibTemplateImage) return null;
+
+  return (
+    <div className="glass-panel p-5 space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2"><Hash className="w-4 h-4 text-red-500" /> Your Digital Race Bib</h3>
+          <p className="text-[10.5px] text-[var(--text-secondary)] mt-1">Your name and official bib number are ready for this race.</p>
+        </div>
+      </div>
+      <div ref={bibRef} className="relative w-full aspect-[3/2] overflow-hidden rounded-xl bg-[var(--surface-inset)] select-none">
+        <img src={race.raceBibTemplateImage} alt={`${race.name} personalized race bib`} className="absolute inset-0 w-full h-full object-cover" />
+        <span className="absolute -translate-x-1/2 -translate-y-1/2 text-[clamp(22px,7vw,54px)] leading-none font-black font-mono tracking-tight text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)]" style={{ left: `${layout.bibNumberX}%`, top: `${layout.bibNumberY}%` }}>{runnerProfile.bibNumber}</span>
+        <span className="absolute -translate-x-1/2 -translate-y-1/2 text-[clamp(10px,3vw,24px)] leading-none font-black tracking-wide text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap max-w-[90%] truncate" style={{ left: `${layout.runnerNameX}%`, top: `${layout.runnerNameY}%` }}>{runnerProfile.fullName}</span>
+      </div>
+      <button type="button" onClick={handleDownload} disabled={downloading} className="w-full py-2.5 px-4 rounded-[var(--radius-control)] font-display font-black uppercase text-[10px] tracking-widest text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 transition disabled:opacity-60 flex items-center justify-center gap-2">
+        {downloading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />} {downloading ? 'Preparing Bib...' : 'Download Race Bib'}
+      </button>
+      {downloadError && <p className="text-[10.5px] text-red-500 text-center">{downloadError}</p>}
+    </div>
+  );
+}
+
 function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
   const [race, setRace] = useState<Race | null | undefined>(undefined);
   const [chipReads, setChipReads] = useState<ChipRead[]>([]);
@@ -830,7 +879,7 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
         </div>
       </div>
 
-      <div className="lg:col-span-5">
+      <div className="lg:col-span-5 space-y-6">
         <div className="glass-panel p-5 text-center space-y-4">
           <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)]">Your Checkpoint Bib QR</h3>
           <p className="text-[11px] text-[var(--text-secondary)]">Show this to organizers at each checkpoint to scan-and-record your time.</p>
@@ -842,6 +891,7 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
             <span className="text-xl font-mono font-black text-red-500 tracking-widest">#{runnerProfile.bibNumber}</span>
           </div>
         </div>
+        {race && <DigitalRaceBib race={race} runnerProfile={runnerProfile} />}
       </div>
     </div>
   );
