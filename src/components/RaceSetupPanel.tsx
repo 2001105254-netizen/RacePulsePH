@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { collection, doc, onSnapshot, setDoc, deleteDoc, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { resizeImageToDataUrl } from '../lib/image';
-import { AgeCategory, CheckpointType, Gender, Race, RaceDistance, RunnerProfile } from '../types';
+import { AgeCategory, CheckpointType, Gender, Race, RaceBibFont, RaceDistance, RunnerProfile } from '../types';
 import { generateRunnerRosterPdf } from '../lib/runnerReport';
 import { Flag, Trash2, Plus, Save, Pencil, RefreshCw, Users2, FileDown, ImagePlus, X } from 'lucide-react';
 
@@ -48,6 +48,13 @@ interface InclusionDraft {
   text: string;
 }
 
+const raceBibFontFamilies: Record<RaceBibFont, string> = {
+  display: '"Space Grotesk", sans-serif',
+  sans: 'Inter, sans-serif',
+  mono: '"JetBrains Mono", monospace',
+  condensed: 'Impact, "Arial Narrow Bold", sans-serif',
+};
+
 function formatPriceRange(distances: RaceDistance[] | undefined): string {
   if (!distances || distances.length === 0) return 'No pricing set';
   const prices = distances.map((d) => d.price || 0);
@@ -90,6 +97,8 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
   const [runnerNameSize, setRunnerNameSize] = useState(5);
   const [bibNumberColor, setBibNumberColor] = useState('#FFFFFF');
   const [runnerNameColor, setRunnerNameColor] = useState('#FFFFFF');
+  const [bibNumberFont, setBibNumberFont] = useState<RaceBibFont>('mono');
+  const [runnerNameFont, setRunnerNameFont] = useState<RaceBibFont>('display');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [reportBusyRaceId, setReportBusyRaceId] = useState<string | null>(null);
@@ -131,6 +140,8 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     setRunnerNameSize(5);
     setBibNumberColor('#FFFFFF');
     setRunnerNameColor('#FFFFFF');
+    setBibNumberFont('mono');
+    setRunnerNameFont('display');
     setError('');
   };
 
@@ -166,6 +177,8 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     setRunnerNameSize(race.raceBibLayout?.runnerNameSize ?? 5);
     setBibNumberColor(race.raceBibLayout?.bibNumberColor ?? '#FFFFFF');
     setRunnerNameColor(race.raceBibLayout?.runnerNameColor ?? '#FFFFFF');
+    setBibNumberFont(race.raceBibLayout?.bibNumberFont ?? 'mono');
+    setRunnerNameFont(race.raceBibLayout?.runnerNameFont ?? 'display');
     setError('');
   };
 
@@ -290,7 +303,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
         ...(inclusionImage ? { inclusionImage } : {}),
         ...(raceBibTemplateImage ? {
           raceBibTemplateImage,
-          raceBibLayout: { bibNumberX, bibNumberY, runnerNameX, runnerNameY, bibNumberSize, runnerNameSize, bibNumberColor, runnerNameColor },
+          raceBibLayout: { bibNumberX, bibNumberY, runnerNameX, runnerNameY, bibNumberSize, runnerNameSize, bibNumberColor, runnerNameColor, bibNumberFont, runnerNameFont },
         } : {}),
       };
       await setDoc(doc(db, 'races', raceId), record);
@@ -418,8 +431,8 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
               <div className="space-y-3">
                 <div className="relative rounded-[16px] overflow-hidden border border-[var(--border-default)] bg-[var(--surface-inset)]" style={{ containerType: 'inline-size' }}>
                   <img src={raceBibTemplateImage} alt="Race bib template preview" className="w-full aspect-[3/2] object-cover" />
-                  <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black font-mono tracking-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${bibNumberX}%`, top: `${bibNumberY}%`, fontSize: `${bibNumberSize}cqw`, color: bibNumberColor }}>10-001</span>
-                  <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-wide drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${runnerNameX}%`, top: `${runnerNameY}%`, fontSize: `${runnerNameSize}cqw`, color: runnerNameColor }}>RUNNER NAME</span>
+                  <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${bibNumberX}%`, top: `${bibNumberY}%`, fontSize: `${bibNumberSize}cqw`, color: bibNumberColor, fontFamily: raceBibFontFamilies[bibNumberFont] }}>10-001</span>
+                  <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-wide drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${runnerNameX}%`, top: `${runnerNameY}%`, fontSize: `${runnerNameSize}cqw`, color: runnerNameColor, fontFamily: raceBibFontFamilies[runnerNameFont] }}>RUNNER NAME</span>
                   <button type="button" onClick={() => setRaceBibTemplateImage('')} className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center transition" title="Remove race bib template"><X className="w-4 h-4" /></button>
                   <button type="button" onClick={() => raceBibInputRef.current?.click()} className="absolute bottom-2 right-2 text-[10px] font-black uppercase tracking-wide px-3 py-1.5 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center gap-1.5 transition"><ImagePlus className="w-3 h-3" /> Change</button>
                 </div>
@@ -430,6 +443,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
                     <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Y <input type="range" min="5" max="95" value={bibNumberY} onChange={(e) => setBibNumberY(Number(e.target.value))} className="flex-1 accent-red-600" /> {bibNumberY}%</label>
                     <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Size <input type="range" min="5" max="24" value={bibNumberSize} onChange={(e) => setBibNumberSize(Number(e.target.value))} className="flex-1 accent-red-600" /> {bibNumberSize}</label>
                     <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Color <input type="color" value={bibNumberColor} onChange={(e) => setBibNumberColor(e.target.value)} className="w-7 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" /> <span className="font-mono">{bibNumberColor}</span></label>
+                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Font <select value={bibNumberFont} onChange={(e) => setBibNumberFont(e.target.value as RaceBibFont)} className="flex-1 glass-inset px-2 py-1 text-[10px] font-bold text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-red-500/50"><option value="mono">Timing Mono</option><option value="display">Racing Bold</option><option value="condensed">Condensed</option><option value="sans">Clean Sans</option></select></label>
                   </div>
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)] mb-2">Runner name position</p>
@@ -437,6 +451,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
                     <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Y <input type="range" min="5" max="95" value={runnerNameY} onChange={(e) => setRunnerNameY(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameY}%</label>
                     <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Size <input type="range" min="3" max="14" value={runnerNameSize} onChange={(e) => setRunnerNameSize(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameSize}</label>
                     <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Color <input type="color" value={runnerNameColor} onChange={(e) => setRunnerNameColor(e.target.value)} className="w-7 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" /> <span className="font-mono">{runnerNameColor}</span></label>
+                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Font <select value={runnerNameFont} onChange={(e) => setRunnerNameFont(e.target.value as RaceBibFont)} className="flex-1 glass-inset px-2 py-1 text-[10px] font-bold text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-red-500/50"><option value="display">Racing Bold</option><option value="sans">Clean Sans</option><option value="mono">Timing Mono</option><option value="condensed">Condensed</option></select></label>
                   </div>
                 </div>
               </div>

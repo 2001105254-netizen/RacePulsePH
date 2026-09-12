@@ -4,7 +4,7 @@ import { db, sendPasswordReset, signOutUser, updateAccountDisplayName } from '..
 import { checkpointType, computeResults, getWaveStartTime } from '../lib/timing';
 import { downloadFinisherCertificate } from '../lib/finisherCertificate';
 import { resizeImageToDataUrl } from '../lib/image';
-import { ChipRead, Gender, Race, RunnerProfile, UserProfile } from '../types';
+import { ChipRead, Gender, Race, RaceBibFont, RunnerProfile, UserProfile } from '../types';
 import CustomerForm from './CustomerForm';
 import { QRCodeSVG } from 'qrcode.react';
 import { LogOut, User, Hash, MapPin, RefreshCw, Award, ClipboardList, Clock, ArrowLeft, ArrowRight, Flag, Calendar, CheckSquare, Coins, PackageCheck, Camera, Trophy, X, Pencil, CheckCircle2, Circle, Radio, Phone, HeartPulse, Mail, FileDown } from 'lucide-react';
@@ -20,6 +20,13 @@ interface RunnerDashboardProps {
 }
 
 type RunnerTab = 'events' | 'myraces' | 'engraving';
+
+const raceBibFontFamilies: Record<RaceBibFont, string> = {
+  display: '"Space Grotesk", sans-serif',
+  sans: 'Inter, sans-serif',
+  mono: '"JetBrains Mono", monospace',
+  condensed: 'Impact, "Arial Narrow Bold", sans-serif',
+};
 
 function mostRecent(profiles: RunnerProfile[]): RunnerProfile | undefined {
   return [...profiles].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
@@ -776,8 +783,8 @@ function DigitalRaceBib({ race, runnerProfile }: { race: Race; runnerProfile: Ru
       </div>
       <div ref={bibRef} className="relative w-full aspect-[3/2] overflow-hidden rounded-xl bg-[var(--surface-inset)] select-none" style={{ containerType: 'inline-size' }}>
         <img src={race.raceBibTemplateImage} alt={`${race.name} personalized race bib`} className="absolute inset-0 w-full h-full object-cover" />
-        <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black font-mono tracking-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${layout.bibNumberX}%`, top: `${layout.bibNumberY}%`, fontSize: `${layout.bibNumberSize ?? 12}cqw`, color: layout.bibNumberColor ?? '#FFFFFF' }}>{runnerProfile.bibNumber}</span>
-        <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-wide drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap max-w-[90%] truncate" style={{ left: `${layout.runnerNameX}%`, top: `${layout.runnerNameY}%`, fontSize: `${layout.runnerNameSize ?? 5}cqw`, color: layout.runnerNameColor ?? '#FFFFFF' }}>{runnerProfile.fullName}</span>
+        <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${layout.bibNumberX}%`, top: `${layout.bibNumberY}%`, fontSize: `${layout.bibNumberSize ?? 12}cqw`, color: layout.bibNumberColor ?? '#FFFFFF', fontFamily: raceBibFontFamilies[layout.bibNumberFont ?? 'mono'] }}>{runnerProfile.bibNumber}</span>
+        <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-wide drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap max-w-[90%] truncate" style={{ left: `${layout.runnerNameX}%`, top: `${layout.runnerNameY}%`, fontSize: `${layout.runnerNameSize ?? 5}cqw`, color: layout.runnerNameColor ?? '#FFFFFF', fontFamily: raceBibFontFamilies[layout.runnerNameFont ?? 'display'] }}>{runnerProfile.fullName}</span>
       </div>
       <button type="button" onClick={handleDownload} disabled={downloading} className="w-full py-2.5 px-4 rounded-[var(--radius-control)] font-display font-black uppercase text-[10px] tracking-widest text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 transition disabled:opacity-60 flex items-center justify-center gap-2">
         {downloading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />} {downloading ? 'Preparing Bib...' : 'Download Race Bib'}

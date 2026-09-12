@@ -70,6 +70,8 @@ export interface RaceDistance {
   price: number; // registration fee in pesos, set independently per distance
 }
 
+export type RaceBibFont = 'display' | 'sans' | 'mono' | 'condensed';
+
 export interface RaceBibLayout {
   bibNumberX: number;
   bibNumberY: number;
@@ -81,6 +83,8 @@ export interface RaceBibLayout {
   runnerNameSize?: number;
   bibNumberColor?: string;
   runnerNameColor?: string;
+  bibNumberFont?: RaceBibFont;
+  runnerNameFont?: RaceBibFont;
 }
 
 export interface Race {
