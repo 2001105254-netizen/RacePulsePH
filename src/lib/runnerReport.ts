@@ -43,6 +43,17 @@ export interface DistanceGroup {
   runners: RunnerProfile[];
 }
 
+const shirtSizeColumns = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'] as const;
+
+function shirtInventoryRow(distance: string, runners: RunnerProfile[]): (string | number)[] {
+  const counts = new Map<string, number>();
+  runners.forEach((runner) => {
+    const size = runner.shirtSize || 'No size';
+    counts.set(size, (counts.get(size) || 0) + 1);
+  });
+  return [distance, runners.length, ...shirtSizeColumns.map((size) => counts.get(size) || 0), counts.get('No size') || 0];
+}
+
 // Simple distance-only bucketing for the on-screen roster (the PDF report
 // further splits each of these by age category - see groupRunnersForReport).
 export function groupRunnersByDistance(runners: RunnerProfile[]): DistanceGroup[] {
@@ -60,8 +71,8 @@ export function groupRunnersByDistance(runners: RunnerProfile[]): DistanceGroup[
     .sort((a, b) => a.distance.localeCompare(b.distance));
 }
 
-// Renders and downloads the runner roster PDF (grouped by distance, then age
-// category). Returns false if there were no runners to report on.
+// Renders the kit inventory first (runner totals by distance and shirt size),
+// followed by the full roster grouped by distance and age category.
 export function generateRunnerRosterPdf(race: Race, runners: RunnerProfile[]): boolean {
   if (runners.length === 0) return false;
 
@@ -76,9 +87,28 @@ export function generateRunnerRosterPdf(race: Race, runners: RunnerProfile[]): b
   pdf.text(race.name.toUpperCase(), 14, 12);
   pdf.setFontSize(8.5);
   pdf.setTextColor(245, 158, 11);
-  pdf.text(`RUNNER ROSTER BY DISTANCE & AGE CATEGORY  |  ${runners.length} TOTAL RUNNERS  |  GENERATED ${new Date().toLocaleString()}`, 14, 19);
+  pdf.text(`RUNNER ROSTER & KIT INVENTORY  |  ${runners.length} TOTAL RUNNERS  |  GENERATED ${new Date().toLocaleString()}`, 14, 19);
 
-  let cursorY = 34;
+  const distanceGroups = groupRunnersByDistance(runners);
+  pdf.setFontSize(11);
+  pdf.setTextColor(220, 38, 38);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('KIT INVENTORY BY DISTANCE & SHIRT SIZE', 14, 34);
+  autoTable(pdf, {
+    startY: 38,
+    head: [['Distance', 'Runners', ...shirtSizeColumns, 'No size']],
+    body: [
+      ...distanceGroups.map((group) => shirtInventoryRow(group.distance, group.runners)),
+      shirtInventoryRow('TOTAL', runners),
+    ],
+    styles: { fontSize: 7, cellPadding: 2, textColor: [40, 40, 40], halign: 'center' },
+    headStyles: { fillColor: [30, 30, 35], textColor: [255, 255, 255], fontStyle: 'bold' },
+    columnStyles: { 0: { halign: 'left', fontStyle: 'bold' } },
+    alternateRowStyles: { fillColor: [248, 248, 250] },
+    margin: { left: 14, right: 14 },
+  });
+
+  let cursorY = (pdf as any).lastAutoTable.finalY + 12;
   let currentDistance = '';
 
   groups.forEach((group) => {
@@ -102,8 +132,8 @@ export function generateRunnerRosterPdf(race: Race, runners: RunnerProfile[]): b
 
     autoTable(pdf, {
       startY: cursorY,
-      head: [['#', 'Bib', 'Runner Name', 'Gender', 'Age']],
-      body: group.runners.map((r, idx) => [idx + 1, r.bibNumber, r.fullName, r.gender.toUpperCase(), r.age]),
+      head: [['#', 'Bib', 'Runner Name', 'Gender', 'Age', 'Shirt']],
+      body: group.runners.map((r, idx) => [idx + 1, r.bibNumber, r.fullName, r.gender.toUpperCase(), r.age, r.shirtSize || 'Not selected']),
       styles: { fontSize: 8, cellPadding: 2.5, textColor: [40, 40, 40] },
       headStyles: { fillColor: [30, 30, 35], textColor: [255, 255, 255], fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [248, 248, 250] },

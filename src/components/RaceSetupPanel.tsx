@@ -707,7 +707,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
                   onClick={() => handleGenerateRunnerReport(race)}
                   disabled={reportBusyRaceId === race.id}
                   className="p-2 text-[var(--text-secondary)] hover:text-emerald-500 transition disabled:opacity-50"
-                  title="Download runner roster PDF (by distance & age category)"
+                  title="Download runner roster and shirt-size inventory PDF"
                 >
                   {reportBusyRaceId === race.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
                 </button>
@@ -719,7 +719,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
         </div>
         <div className="mt-4 pt-4 border-t border-[var(--border-subtle)] flex items-start gap-2 text-[10.5px] text-[var(--text-muted)]">
           <Users2 className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-          The roster PDF groups registered runners by distance, then by the age category their age/gender falls into.
+          The PDF starts with runner totals per distance and shirt size, then lists every runner by distance and age category.
         </div>
       </div>
     </div>
