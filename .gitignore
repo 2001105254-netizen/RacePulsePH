@@ -9,3 +9,7 @@ coverage/
 !.env.example
 local_orders.json
 local_chip_reads.json
+local_rfid_events.json
+rfid-bridge/vendor/*.dll
+rfid-bridge/bin/
+rfid-bridge/obj/

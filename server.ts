@@ -28,9 +28,21 @@ interface ChipRead {
   createdAt: string;
 }
 
+// A raw EPC sighting sent by the Windows RFID bridge.  It deliberately does
+// not contain a race, bib, or user ID: the authenticated Timing Console owns
+// that matching and persists the final checkpoint result.
+interface RfidBridgeEvent {
+  id: string;
+  epc: string;
+  antenna: number;
+  timestamp: string;
+  receivedAt: string;
+}
+
 const PORT = 3000;
 const DB_FILE = path.join(process.cwd(), "local_orders.json");
 const CHIP_READS_DB_FILE = path.join(process.cwd(), "local_chip_reads.json");
+const RFID_EVENTS_DB_FILE = path.join(process.cwd(), "local_rfid_events.json");
 
 // Load initial orders from a local JSON db file (handles on-site server restarts)
 let orders: Record<string, EngravingOrder> = {};
@@ -71,6 +83,43 @@ function saveChipReadsDB() {
     fs.writeFileSync(CHIP_READS_DB_FILE, JSON.stringify(chipReads, null, 2), "utf-8");
   } catch (err) {
     console.error("[Local Server DB] Chip reads write failed:", err);
+  }
+}
+
+// Keep a small, durable hand-off queue between the Windows reader process and
+// the signed-in browser.  Events are pruned regularly so old race-day traffic
+// cannot be replayed on a later race.
+let rfidEvents: Record<string, RfidBridgeEvent> = {};
+try {
+  if (fs.existsSync(RFID_EVENTS_DB_FILE)) {
+    const raw = fs.readFileSync(RFID_EVENTS_DB_FILE, "utf-8");
+    rfidEvents = JSON.parse(raw);
+    console.log(`[RFID Bridge] Loaded ${Object.keys(rfidEvents).length} pending RFID events.`);
+  }
+} catch (e) {
+  console.warn("[RFID Bridge] Failed to parse local RFID event store, starting fresh:", e);
+  rfidEvents = {};
+}
+
+function pruneRfidEvents(): void {
+  const oldestAllowed = Date.now() - 12 * 60 * 60 * 1000;
+  for (const [id, event] of Object.entries(rfidEvents)) {
+    if (Number.isNaN(Date.parse(event.receivedAt)) || Date.parse(event.receivedAt) < oldestAllowed) {
+      delete rfidEvents[id];
+    }
+  }
+
+  const newestFirst = Object.values(rfidEvents)
+    .sort((a, b) => Date.parse(b.receivedAt) - Date.parse(a.receivedAt));
+  for (const event of newestFirst.slice(2_000)) delete rfidEvents[event.id];
+}
+
+function saveRfidEventsDB(): void {
+  try {
+    pruneRfidEvents();
+    fs.writeFileSync(RFID_EVENTS_DB_FILE, JSON.stringify(rfidEvents, null, 2), "utf-8");
+  } catch (err) {
+    console.error("[RFID Bridge] Event queue write failed:", err);
   }
 }
 
@@ -209,6 +258,46 @@ async function startServer() {
     saveChipReadsDB();
     console.log("[Local Server DB] Chip reads completely reset by administrator.");
     res.json({ success: true, message: "Local chip reads completely cleared." });
+  });
+
+  // ========== RAW RFID BRIDGE HAND-OFF ==========
+  // The VF-787P Windows bridge is the only process that POSTs here.  The web
+  // app polls this queue while the operator is in Record Splits mode, then
+  // applies its normal runner/chip validation and offline-safe persistence.
+  app.get("/api/rfid-events", (req, res) => {
+    pruneRfidEvents();
+    const afterRaw = typeof req.query.after === 'string' ? req.query.after : '';
+    const after = Date.parse(afterRaw);
+    const events = Object.values(rfidEvents)
+      .filter((event) => Number.isNaN(after) || Date.parse(event.receivedAt) >= after)
+      .sort((a, b) => Date.parse(a.receivedAt) - Date.parse(b.receivedAt) || a.id.localeCompare(b.id))
+      .slice(-500);
+    res.json({ events });
+  });
+
+  app.post("/api/rfid-events", (req, res) => {
+    const eventData = req.body as Partial<RfidBridgeEvent>;
+    const id = typeof eventData.id === 'string' ? eventData.id.trim() : '';
+    const epc = typeof eventData.epc === 'string' ? eventData.epc.trim().toUpperCase() : '';
+    const antenna = Number(eventData.antenna);
+    const timestamp = typeof eventData.timestamp === 'string' ? eventData.timestamp : '';
+
+    if (!id || !/^[0-9A-F]{8,128}$/.test(epc) || !Number.isInteger(antenna) || antenna < 1 || antenna > 8 || Number.isNaN(Date.parse(timestamp))) {
+      res.status(400).json({ error: 'Expected id, hexadecimal EPC, antenna (1-8), and ISO timestamp.' });
+      return;
+    }
+
+    const event: RfidBridgeEvent = {
+      id,
+      epc,
+      antenna,
+      timestamp,
+      receivedAt: new Date().toISOString(),
+    };
+    rfidEvents[id] = event;
+    saveRfidEventsDB();
+    console.log(`[RFID Bridge] EPC ${epc} received from ANT${antenna}.`);
+    res.status(201).json({ success: true, event });
   });
 
   // ========== VITE / STATIC WEB FILES SERVING ==========

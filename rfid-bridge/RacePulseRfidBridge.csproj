@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>RacePulseRfidBridge</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    These files come from the VF-787P vendor SDK and are intentionally not
+    committed to RacePulse. Copy them into rfid-bridge/vendor before building.
+  -->
+  <ItemGroup>
+    <Reference Include="Vup">
+      <HintPath>vendor\Vup.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="vendor\rfid.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="vendor\rfid_core.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="bridge.config.example.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

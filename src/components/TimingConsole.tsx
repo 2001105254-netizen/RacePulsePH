@@ -38,6 +38,14 @@ function normalizeScanValue(value: string): string {
 
 type ScanFeedback = { type: 'success' | 'error' | 'warning'; text: string };
 
+interface RfidBridgeEvent {
+  id: string;
+  epc: string;
+  antenna: number;
+  timestamp: string;
+  receivedAt: string;
+}
+
 // The race-day desk needs a hands-free confirmation. This uses browser-native
 // haptics when available and a very short generated tone, so it works without
 // bundling or downloading an audio asset.
@@ -119,9 +127,8 @@ interface TimingConsoleProps {
 }
 
 // Live checkpoint recording + results, shared by the Organizer and Admin dashboards.
-// Every read written here has source: 'manual' - a future RFID reader bridge will POST
-// into the exact same /api/chip-reads + chipReads collection with source: 'rfid-bridge',
-// so nothing in this component needs to change when real hardware arrives.
+// The operator's browser validates and saves reads.  A local Windows bridge can
+// feed it live EPC sightings from a VF-787P reader through /api/rfid-events.
 export default function TimingConsole({ uid, canSeeAllRaces }: TimingConsoleProps) {
   const [races, setRaces] = useState<Race[]>([]);
   const [activeRaceId, setActiveRaceId] = useState<string>(() => localStorage.getItem('racepulse_active_race') || '');
@@ -203,6 +210,9 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   const [showScanModal, setShowScanModal] = useState(false);
   const scanInputRef = useRef<HTMLInputElement>(null);
   const lastRecordedScanRef = useRef<{ key: string; at: number } | null>(null);
+  const submitReadRef = useRef<(scanRaw: string, overrideTimestamp?: string) => Promise<boolean>>(async () => false);
+  const processedBridgeEventsRef = useRef(new Set<string>());
+  const [bridgeEndpointReady, setBridgeEndpointReady] = useState(false);
   const selectedCheckpoint = orderedCheckpoints.find((checkpoint) => checkpoint.id === selectedCheckpointId);
   const selectedCheckpointIndex = selectedCheckpoint ? orderedCheckpoints.findIndex((checkpoint) => checkpoint.id === selectedCheckpoint.id) : -1;
   const selectedCheckpointType = selectedCheckpoint && selectedCheckpointIndex >= 0
@@ -397,6 +407,56 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
     }
   };
 
+  // The reader bridge sends raw EPC sightings to the local RacePulse server.
+  // Start from "now" each time the operator opens or changes a station, so a
+  // tag seen while another station was selected is never recorded incorrectly.
+  useEffect(() => {
+    submitReadRef.current = submitRead;
+  }, [submitRead]);
+
+  useEffect(() => {
+    if (mode !== 'record' || !selectedCheckpointId) {
+      setBridgeEndpointReady(false);
+      return;
+    }
+
+    let active = true;
+    let polling = false;
+    let after = new Date().toISOString();
+    setBridgeEndpointReady(false);
+
+    const pollBridge = async () => {
+      if (polling) return;
+      polling = true;
+      try {
+        const response = await fetch(`/api/rfid-events?after=${encodeURIComponent(after)}`, { cache: 'no-store' });
+        if (!response.ok) return;
+        const payload = await response.json() as { events?: RfidBridgeEvent[] };
+        if (!active) return;
+        setBridgeEndpointReady(true);
+
+        for (const event of payload.events || []) {
+          const cursor = event.receivedAt || event.timestamp;
+          if (cursor && Date.parse(cursor) >= Date.parse(after)) after = cursor;
+          if (processedBridgeEventsRef.current.has(event.id)) continue;
+          processedBridgeEventsRef.current.add(event.id);
+          await submitReadRef.current(event.epc, event.timestamp);
+        }
+      } catch {
+        if (active) setBridgeEndpointReady(false);
+      } finally {
+        polling = false;
+      }
+    };
+
+    void pollBridge();
+    const interval = window.setInterval(() => { void pollBridge(); }, 450);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [mode, selectedCheckpointId]);
+
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     submitRead(bibInput);
@@ -431,6 +491,11 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
           <span className={`inline-flex items-center gap-1.5 text-[9px] font-mono font-bold tracking-wider uppercase px-2.5 py-1 rounded-full border ${lanConnected ? 'bg-green-500/10 border-green-500/25 text-green-500' : 'bg-rose-500/10 border-rose-500/25 text-rose-500'}`}>
             {lanConnected ? <><Wifi className="w-3 h-3" /> LAN Sync Linked</> : <><WifiOff className="w-3 h-3" /> Standalone Mode</>}
           </span>
+          {mode === 'record' && bridgeEndpointReady && (
+            <span className="inline-flex items-center gap-1.5 text-[9px] font-mono font-bold tracking-wider uppercase px-2.5 py-1 rounded-full border bg-cyan-500/10 border-cyan-500/25 text-cyan-400">
+              <Radio className="w-3 h-3" /> RFID Bridge Ready
+            </span>
+          )}
           {pendingScanCount > 0 && (
             <span className="inline-flex items-center gap-1.5 text-[9px] font-mono font-bold tracking-wider uppercase px-2.5 py-1 rounded-full border bg-amber-500/10 border-amber-500/30 text-amber-500">
               <RefreshCw className="w-3 h-3 animate-spin" /> {pendingScanCount} scan{pendingScanCount === 1 ? '' : 's'} queued
