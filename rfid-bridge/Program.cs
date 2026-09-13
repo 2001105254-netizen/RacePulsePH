@@ -73,28 +73,38 @@ namespace RacePulseRfidBridge
 
                 _reader = new NetVupReader(_config.ReaderIp, _config.ReaderPort, transport_protocol.tcp);
                 var connectionResult = _reader.Connect();
-                if (connectionResult != 0)
+                if (!connectionResult.Success)
                 {
-                    Console.Error.WriteLine("Could not connect to the VF-787P. SDK error code: " + connectionResult);
+                    Console.Error.WriteLine("Could not connect to the VF-787P: " + connectionResult.Message);
                     return 2;
                 }
 
-                _reader.SetWorkMode(work_mode.command_mode);
-                var antennaResult = _reader.SetInventoryAnts(_config.Antennas);
-                if (antennaResult != 0)
+                var commandModeResult = _reader.SetWorkMode(work_mode.command_mode);
+                if (!commandModeResult.Success)
                 {
-                    Console.Error.WriteLine("Could not select antennas. SDK error code: " + antennaResult);
+                    Console.Error.WriteLine("Could not enter command mode: " + commandModeResult.Message);
                     return 3;
                 }
-
-                var modeResult = _reader.SetWorkMode(work_mode.auto_mode);
-                if (modeResult != 0)
+                var antennaResult = _reader.SetInventoryAnts(_config.Antennas);
+                if (!antennaResult.Success)
                 {
-                    Console.Error.WriteLine("Could not enter inventory mode. SDK error code: " + modeResult);
+                    Console.Error.WriteLine("Could not select antennas: " + antennaResult.Message);
                     return 4;
                 }
 
-                _reader.ListenAutoOutput(item => OnTagRead(item.Epc, item.Ant));
+                var modeResult = _reader.SetWorkMode(work_mode.auto_mode);
+                if (!modeResult.Success)
+                {
+                    Console.Error.WriteLine("Could not enter inventory mode: " + modeResult.Message);
+                    return 5;
+                }
+
+                var listenerResult = _reader.ListenAutoOutput(item => OnTagRead(item.Epc, item.Ant));
+                if (!listenerResult.Success)
+                {
+                    Console.Error.WriteLine("Could not listen for reader output: " + listenerResult.Message);
+                    return 6;
+                }
                 var senderTask = Task.Run(() => SendLoop());
                 Console.WriteLine("Listening. EPC reads will appear below. Press Ctrl+C to stop safely.");
 
