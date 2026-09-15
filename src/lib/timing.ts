@@ -1,4 +1,5 @@
 import { Checkpoint, CheckpointType, ChipRead, Race, RunnerProfile, RunnerResult, RunnerSplit } from '../types';
+import { runnerDivisionLabel } from './raceEntry';
 
 // A staggered race stores one gun time for each distance. When no wave has
 // been started yet, retain the old single gun time behavior for legacy races.
@@ -82,15 +83,16 @@ export function computeResults(
     results.push({ bibNumber, runnerProfile: profileByBib.get(bibNumber), splits, finishTime, finishSeconds });
   }
 
-  // Rank within each distance category - only runners with a recorded finish get a rank
-  const byDistance = new Map<string, RunnerResult[]>();
+  // Rank within each distance + entry category. A 10K Duo team must never
+  // compete in the same official rank list as a 10K Solo runner.
+  const byDivision = new Map<string, RunnerResult[]>();
   for (const result of results) {
-    const distance = result.runnerProfile?.distance || 'Unknown';
-    const list = byDistance.get(distance) ?? [];
+    const division = runnerDivisionLabel(result.runnerProfile);
+    const list = byDivision.get(division) ?? [];
     list.push(result);
-    byDistance.set(distance, list);
+    byDivision.set(division, list);
   }
-  for (const list of byDistance.values()) {
+  for (const list of byDivision.values()) {
     list
       .filter((r) => r.finishSeconds !== undefined)
       .sort((a, b) => a.finishSeconds! - b.finishSeconds!)

@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { AgeCategory, Gender, Race, RunnerProfile } from '../types';
+import { runnerDivisionLabel } from './raceEntry';
 
 export function findAgeCategory(ageCategories: AgeCategory[], gender: Gender, age: number): AgeCategory | undefined {
   return ageCategories.find((c) => c.gender === gender && age >= c.minAge && age <= c.maxAge);
@@ -20,7 +21,7 @@ export function groupRunnersForReport(runners: RunnerProfile[], ageCategories: A
   for (const runner of runners) {
     const category = findAgeCategory(ageCategories, runner.gender, runner.age);
     const categoryLabel = category?.label || 'Unclassified';
-    const key = `${runner.distance}|||${categoryLabel}`;
+    const key = `${runnerDivisionLabel(runner)}|||${categoryLabel}`;
     const list = groups.get(key) ?? [];
     list.push(runner);
     groups.set(key, list);
@@ -59,9 +60,10 @@ function shirtInventoryRow(distance: string, runners: RunnerProfile[]): (string 
 export function groupRunnersByDistance(runners: RunnerProfile[]): DistanceGroup[] {
   const groups = new Map<string, RunnerProfile[]>();
   for (const runner of runners) {
-    const list = groups.get(runner.distance) ?? [];
+    const division = runnerDivisionLabel(runner);
+    const list = groups.get(division) ?? [];
     list.push(runner);
-    groups.set(runner.distance, list);
+    groups.set(division, list);
   }
   return Array.from(groups.entries())
     .map(([distance, groupRunners]) => ({

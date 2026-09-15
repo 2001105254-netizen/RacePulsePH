@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, query, where, doc, setDoc, updateDoc, onSnapshot, writeBatch, deleteField, runTransaction } from 'firebase/firestore';
+import * as XLSX from 'xlsx';
 import { db } from '../firebase';
 import { useDualSync } from '../lib/dualSync';
 import { checkpointType, computeResults, getCheckpointByType, getWaveStartTime } from '../lib/timing';
 import { useOfflineScanQueue } from '../lib/offlineScanQueue';
-import { Race, ChipRead, PublicLeaderboardEntry, PublicLiveResults, RunnerProfile, RunnerResult } from '../types';
+import { Race, ChipRead, PublicLeaderboardEntry, PublicLiveResults, RaceEntryCategory, RunnerProfile, RunnerResult } from '../types';
 import { groupRunnersByDistance, generateRunnerRosterPdf } from '../lib/runnerReport';
-import { Radio, ScanLine, Trophy, Clock, Wifi, WifiOff, QrCode, RefreshCw, ArrowLeft, Cpu, Users2, FileDown, Maximize2, X, ListChecks, CheckCircle2, Circle, PlayCircle, RotateCcw, Timer } from 'lucide-react';
+import { runnerDivisionLabel } from '../lib/raceEntry';
+import { Radio, ScanLine, Trophy, Clock, Wifi, WifiOff, QrCode, RefreshCw, ArrowLeft, Cpu, Users2, FileDown, FileUp, Maximize2, X, ListChecks, CheckCircle2, Circle, PlayCircle, RotateCcw, Timer } from 'lucide-react';
 import QrScannerModal from './QrScannerModal';
 import RaceList from './RaceList';
 
@@ -208,6 +210,10 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   const [recording, setRecording] = useState(false);
   const [feedback, setFeedback] = useState<ScanFeedback | null>(null);
   const [showScanModal, setShowScanModal] = useState(false);
+  // Live reader input is deliberately opt-in. A reader may continue to see
+  // nearby chips before the gun, so selecting a station alone must never arm
+  // automatic timing.
+  const [scannerArmed, setScannerArmed] = useState(false);
   const scanInputRef = useRef<HTMLInputElement>(null);
   const lastRecordedScanRef = useRef<{ key: string; at: number } | null>(null);
   const submitReadRef = useRef<(scanRaw: string, overrideTimestamp?: string) => Promise<boolean>>(async () => false);
@@ -255,23 +261,25 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   const checkpointLabel = (id: string) => orderedCheckpoints.find((c) => c.id === id)?.label || id;
   const checkInCount = checkInCheckpoint ? new Set(chipReads.filter((read) => read.checkpointId === checkInCheckpoint.id).map((read) => read.bibNumber)).size : 0;
   const finishedCount = results.filter((result) => !!result.finishTime).length;
-  const publicLeaders = useMemo<PublicLeaderboardEntry[]>(() => race.distances.flatMap((distance) => results
-    .filter((result) => result.runnerProfile?.distance === distance.label && result.finishTime && result.rank)
-    .slice(0, 5)
-    .map((result) => ({
-      bibNumber: result.bibNumber,
-      fullName: result.runnerProfile?.fullName || `Bib ${result.bibNumber}`,
-      distance: distance.label,
-      rank: result.rank!,
-      finishTime: result.finishTime!,
-    }))
-  ), [race.distances, results]);
+  const publicLeaders = useMemo<PublicLeaderboardEntry[]>(() => {
+    const divisions = [...new Set(results.filter((result) => result.finishTime && result.rank).map((result) => runnerDivisionLabel(result.runnerProfile)))];
+    return divisions.flatMap((division) => results
+      .filter((result) => runnerDivisionLabel(result.runnerProfile) === division && result.finishTime && result.rank)
+      .slice(0, 5)
+      .map((result) => ({
+        bibNumber: result.bibNumber,
+        fullName: result.runnerProfile?.fullName || `Bib ${result.bibNumber}`,
+        distance: division,
+        rank: result.rank!,
+        finishTime: result.finishTime!,
+      })));
+  }, [results]);
   const publicOfficialResults = useMemo<PublicLeaderboardEntry[]>(() => results
     .filter((result) => result.finishTime && result.rank)
     .map((result) => ({
       bibNumber: result.bibNumber,
       fullName: result.runnerProfile?.fullName || `Bib ${result.bibNumber}`,
-      distance: result.runnerProfile?.distance || 'Unknown',
+      distance: runnerDivisionLabel(result.runnerProfile),
       rank: result.rank!,
       finishTime: result.finishTime!,
     }))
@@ -309,6 +317,33 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
       : selectedCheckpointType === 'finish'
         ? 'Record Finish'
         : 'Record Split';
+  const stationName = selectedCheckpointType === 'checkin'
+    ? 'Check-in'
+    : selectedCheckpointType === 'start'
+      ? 'Start'
+      : selectedCheckpointType === 'finish'
+        ? 'Finish'
+        : checkpointLabel(selectedCheckpointId);
+  const requiresArmingConfirmation = selectedCheckpointType === 'start' || selectedCheckpointType === 'finish';
+
+  const armAutomaticScanner = () => {
+    if (requiresArmingConfirmation && !window.confirm(`Arm RFID ${stationName}? Any assigned tag read from this moment will be recorded as ${stationName}.`)) {
+      return;
+    }
+    setScannerArmed(true);
+    setFeedback({ type: 'success', text: `RFID ${stationName} scanner armed. Assigned chips will now record automatically.` });
+  };
+
+  const pauseAutomaticScanner = () => {
+    setScannerArmed(false);
+    setFeedback({ type: 'warning', text: `RFID ${stationName} scanner paused. Manual bib entry and camera scanning remain available.` });
+  };
+
+  // Moving to another station always pauses automatic RFID input. This makes
+  // an operator explicitly arm the next station at the intended race moment.
+  useEffect(() => {
+    setScannerArmed(false);
+  }, [mode, selectedCheckpointId]);
 
   // Keep a keyboard-wedge RFID reader ready after every scan. This also makes
   // the manual fallback quick: operators can simply type a known bib and Enter.
@@ -415,7 +450,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   }, [submitRead]);
 
   useEffect(() => {
-    if (mode !== 'record' || !selectedCheckpointId) {
+    if (mode !== 'record' || !selectedCheckpointId || !scannerArmed) {
       setBridgeEndpointReady(false);
       return;
     }
@@ -455,7 +490,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
       active = false;
       window.clearInterval(interval);
     };
-  }, [mode, selectedCheckpointId]);
+  }, [mode, selectedCheckpointId, scannerArmed]);
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -571,8 +606,8 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
                 : 'Scan an assigned RFID chip. Typing a registered bib remains available as backup.'}
             </p>
           </div>
-          <span className="inline-flex items-center gap-1.5 text-[9px] font-mono font-black tracking-widest uppercase px-2.5 py-1.5 rounded-full border bg-emerald-500/10 border-emerald-500/25 text-emerald-500">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Ready to Scan
+          <span className={`inline-flex items-center gap-1.5 text-[9px] font-mono font-black tracking-widest uppercase px-2.5 py-1.5 rounded-full border ${scannerArmed ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-500' : 'bg-amber-500/10 border-amber-500/30 text-amber-500'}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${scannerArmed ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} /> {scannerArmed ? 'RFID Scanner Armed' : 'RFID Scanner Paused'}
           </span>
         </div>
 
@@ -585,7 +620,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
               return (
               <button
                 key={cp.id}
-                onClick={() => { setSelectedCheckpointId(cp.id); setFeedback(null); }}
+                onClick={() => { setSelectedCheckpointId(cp.id); setScannerArmed(false); setFeedback(null); }}
                 className={`text-xs font-bold uppercase tracking-wide px-3.5 py-2 rounded-[16px] border transition ${selectedCheckpointId === cp.id ? 'bg-red-600 border-red-600 text-white shadow-lg shadow-red-900/30' : 'glass-inset border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
               >
                 <span>{cp.label}</span><span className="opacity-70 text-[9px] ml-1">{phaseLabel}</span>
@@ -601,6 +636,29 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
             {selectedCheckpoint?.cutoffMinutes && <span className="font-bold text-amber-500">Cutoff: {selectedCheckpoint.cutoffMinutes} min after each runner's distance wave start</span>}
           </div>
         )}
+
+        <div className={`rounded-[16px] border px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${scannerArmed ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/10'}`}>
+          <div className="flex items-start gap-2.5">
+            {scannerArmed ? <Radio className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" /> : <Circle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />}
+            <div>
+              <p className={`text-xs font-black uppercase tracking-wide ${scannerArmed ? 'text-emerald-500' : 'text-amber-500'}`}>
+                {scannerArmed ? `RFID ${stationName} is armed` : `RFID ${stationName} is paused`}
+              </p>
+              <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                {scannerArmed
+                  ? 'Live tag reads from the bridge will record at this station. Pause it before changing station or moving the carpet.'
+                  : 'Nearby chips are ignored until you arm this station. Manual bib entry and camera scan still work.'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={scannerArmed ? pauseAutomaticScanner : armAutomaticScanner}
+            className={`min-h-11 shrink-0 px-5 py-3 rounded-[14px] text-xs font-black uppercase tracking-widest transition active:scale-[0.98] ${scannerArmed ? 'bg-amber-500 hover:bg-amber-400 text-black' : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-950/25'}`}
+          >
+            {scannerArmed ? 'Pause RFID Scanner' : `Arm ${stationName}`}
+          </button>
+        </div>
 
         {pendingScanCount > 0 && (
           <div className="px-4 py-3 rounded-[14px] border border-amber-500/30 bg-amber-500/10 text-xs text-amber-500 flex items-start gap-2">
@@ -704,6 +762,311 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
 }
 
 // ========== CHIP ASSIGNMENT ==========
+
+type ImportedRunner = Pick<RunnerProfile, 'fullName' | 'bibNumber' | 'distance' | 'gender' | 'age' | 'shirtSize' | 'entryCategory' | 'teamMembers'> & {
+  source: string;
+  sourceRows: number[];
+};
+
+interface RosterImportPreview {
+  fileName: string;
+  detectedSheets: string[];
+  runners: ImportedRunner[];
+  skipped: string[];
+  combinedTeams: number;
+}
+
+function spreadsheetText(value: unknown): string {
+  if (value instanceof Date) return value.toISOString();
+  return String(value ?? '').trim();
+}
+
+function spreadsheetHeader(value: unknown): string {
+  return spreadsheetText(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function headerIndex(headers: unknown[], candidates: string[]): number {
+  const normalized = headers.map(spreadsheetHeader);
+  return normalized.findIndex((header) => candidates.some((candidate) => header === candidate || header.includes(candidate)));
+}
+
+function normalizeImportBib(value: unknown): string {
+  return spreadsheetText(value).replace(/^#\s*/, '').replace(/\s+/g, '').toUpperCase();
+}
+
+function importGender(value: unknown): RunnerProfile['gender'] | null {
+  const normalized = spreadsheetText(value).toLowerCase();
+  if (normalized.startsWith('m')) return 'male';
+  if (normalized.startsWith('f')) return 'female';
+  return null;
+}
+
+function importEntryCategory(value: unknown): RaceEntryCategory {
+  const category = spreadsheetText(value).toLowerCase();
+  if (category.includes('trio')) return 'trio';
+  if (category.includes('duo') || category.includes('pair')) return 'duo';
+  return 'solo';
+}
+
+function ageFromSpreadsheetValue(value: unknown): number | null {
+  const text = spreadsheetText(value);
+  const directAge = Number.parseInt(text, 10);
+  // Do not let an invalid numeric age such as 0 turn into a JavaScript date.
+  if (/^\d{1,3}$/.test(text)) return directAge >= 1 && directAge <= 120 ? directAge : null;
+
+  const birthDate = value instanceof Date ? value : new Date(text);
+  if (Number.isNaN(birthDate.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const birthdayThisYear = new Date(today.getFullYear(), birthDate.getMonth(), birthDate.getDate());
+  if (today < birthdayThisYear) age -= 1;
+  return age >= 1 && age <= 120 ? age : null;
+}
+
+function matchImportDistance(value: unknown, race: Race): string | null {
+  const source = spreadsheetText(value).toUpperCase().replace(/\s+/g, '');
+  if (!source) return null;
+  const exact = race.distances.find((distance) => distance.label.toUpperCase().replace(/\s+/g, '') === source);
+  if (exact) return exact.label;
+
+  const numeric = Number.parseFloat(source.replace(/[^0-9.]/g, ''));
+  if (!Number.isFinite(numeric)) return null;
+  const matchingKm = race.distances.find((distance) => Math.abs(distance.km - numeric) < 0.15);
+  return matchingKm?.label || null;
+}
+
+function parseRosterWorkbook(workbook: XLSX.WorkBook, fileName: string, race: Race): RosterImportPreview {
+  const rowsByBib = new Map<string, ImportedRunner>();
+  const detectedSheets: string[] = [];
+  const skipped: string[] = [];
+  let combinedTeams = 0;
+
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', raw: false });
+    const headers = rows[0] || [];
+    const nameColumn = headerIndex(headers, ['fullname', 'runnername', 'participantname', 'name']);
+    const bibColumn = headerIndex(headers, ['racebibnumber', 'bibnumber', 'racebib', 'bib']);
+    const distanceColumn = headerIndex(headers, ['distance', 'racedistance', 'categorydistance']);
+    const categoryColumn = headerIndex(headers, ['entrycategory', 'teamcategory', 'category']);
+    const genderColumn = headerIndex(headers, ['sex', 'gender']);
+    const ageColumn = headerIndex(headers, ['age']);
+    const dateOfBirthColumn = headerIndex(headers, ['dateofbirth', 'birthdate', 'dob']);
+    const shirtSizeColumn = headerIndex(headers, ['shirtsize', 'shirttsize', 'apparelsize', 'size']);
+
+    // We intentionally use only the already-prepared "bib assignment" tabs.
+    // A raw Google Form export can contain several participant columns but no
+    // physical bibs yet, so importing it directly would create unsafe records.
+    if (nameColumn < 0 || bibColumn < 0 || distanceColumn < 0) continue;
+    detectedSheets.push(sheetName);
+
+    rows.slice(1).forEach((row, index) => {
+      const sourceRow = index + 2;
+      const fullName = spreadsheetText(row[nameColumn]);
+      const bibNumber = normalizeImportBib(row[bibColumn]);
+      const distance = matchImportDistance(row[distanceColumn], race);
+      const entryCategory = importEntryCategory(categoryColumn >= 0 ? row[categoryColumn] : '');
+      const gender = importGender(genderColumn >= 0 ? row[genderColumn] : '');
+      const age = ageFromSpreadsheetValue(ageColumn >= 0 ? row[ageColumn] : '')
+        ?? ageFromSpreadsheetValue(dateOfBirthColumn >= 0 ? row[dateOfBirthColumn] : '');
+      const shirtSize = shirtSizeColumn >= 0 ? spreadsheetText(row[shirtSizeColumn]).toUpperCase() : '';
+
+      if (!fullName && !bibNumber) return;
+      if (!fullName || !bibNumber || !distance || !gender || age === null) {
+        const missing = [
+          !fullName && 'name',
+          !bibNumber && 'bib',
+          !distance && 'a matching race distance',
+          !gender && 'sex/gender',
+          age === null && 'valid age or date of birth',
+        ].filter(Boolean).join(', ');
+        skipped.push(`${sheetName} row ${sourceRow}: missing ${missing}`);
+        return;
+      }
+
+      const key = `${distance}|${bibNumber}`;
+      const existing = rowsByBib.get(key);
+      if (existing) {
+        // Duo/team sheets have two people under one physical bib. RacePulse
+        // needs exactly one timing record per chip/bib, so retain one entry
+        // with both names rather than introducing an ambiguous duplicate.
+        const names = existing.fullName.split(' & ');
+        if (!names.includes(fullName)) existing.fullName = `${existing.fullName} & ${fullName}`;
+        existing.teamMembers = [...(existing.teamMembers || names), fullName].filter((name, memberIndex, list) => list.indexOf(name) === memberIndex);
+        existing.sourceRows.push(sourceRow);
+        combinedTeams += 1;
+        return;
+      }
+
+      rowsByBib.set(key, {
+        fullName,
+        bibNumber,
+        distance,
+        entryCategory,
+        gender,
+        age,
+        ...(entryCategory !== 'solo' ? { teamMembers: [fullName] } : {}),
+        ...(shirtSize ? { shirtSize } : {}),
+        source: sheetName,
+        sourceRows: [sourceRow],
+      });
+    });
+  }
+
+  return {
+    fileName,
+    detectedSheets,
+    runners: [...rowsByBib.values()].sort((a, b) => a.bibNumber.localeCompare(b.bibNumber, undefined, { numeric: true })),
+    skipped,
+    combinedTeams,
+  };
+}
+
+function importedRunnerUid(): string {
+  const randomPart = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID().replace(/-/g, '')
+    : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+  return `import_${randomPart}`;
+}
+
+interface RosterImportPanelProps {
+  race: Race;
+  runnerProfiles: RunnerProfile[];
+}
+
+function RosterImportPanel({ race, runnerProfiles }: RosterImportPanelProps) {
+  const [preview, setPreview] = useState<RosterImportPreview | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setFeedback(null);
+    setPreview(null);
+
+    const supported = /\.(xlsx|xls|csv)$/i.test(file.name);
+    if (!supported) {
+      setFeedback({ type: 'error', text: 'Choose an Excel (.xlsx/.xls) or CSV file.' });
+      return;
+    }
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+      const parsed = parseRosterWorkbook(workbook, file.name, race);
+      if (parsed.detectedSheets.length === 0) {
+        setFeedback({ type: 'error', text: 'No importable roster tab found. The file needs Full name, Race bib number, Distance, Sex/Gender, and Age or Date of birth columns.' });
+        return;
+      }
+      if (parsed.runners.length === 0) {
+        setFeedback({ type: 'error', text: `No complete runners found. Check the ${parsed.skipped.length} rows flagged by the importer.` });
+      }
+      setPreview(parsed);
+    } catch (error: any) {
+      setFeedback({ type: 'error', text: error.message || 'Could not read this file.' });
+    }
+  };
+
+  const handleImport = async () => {
+    if (!preview || preview.runners.length === 0) return;
+    const existingByBib = new Map(runnerProfiles.map((runner) => [normalizeImportBib(runner.bibNumber), runner]));
+    const existingCount = preview.runners.filter((runner) => existingByBib.has(normalizeImportBib(runner.bibNumber))).length;
+    const newCount = preview.runners.length - existingCount;
+    if (!window.confirm(`Import ${preview.runners.length} roster entries into ${race.name}?\n\n${newCount} new runner${newCount === 1 ? '' : 's'} will be created and ${existingCount} matching bib${existingCount === 1 ? '' : 's'} will be updated. This does not create login accounts.`)) return;
+
+    setImporting(true);
+    setFeedback(null);
+    try {
+      const now = new Date().toISOString();
+      let created = 0;
+      let updated = 0;
+
+      // Firestore accepts at most 500 writes per batch. Keeping this at 400
+      // leaves a safe margin for larger race-day imports.
+      for (let start = 0; start < preview.runners.length; start += 400) {
+        const batch = writeBatch(db);
+        for (const imported of preview.runners.slice(start, start + 400)) {
+          const existing = existingByBib.get(normalizeImportBib(imported.bibNumber));
+          const uid = existing?.uid || importedRunnerUid();
+          const record: RunnerProfile = {
+            uid,
+            raceId: race.id,
+            fullName: imported.fullName.trim().toUpperCase(),
+            bibNumber: imported.bibNumber,
+            distance: imported.distance,
+            ...(imported.entryCategory ? { entryCategory: imported.entryCategory } : {}),
+            gender: imported.gender,
+            age: imported.age,
+            createdAt: existing?.createdAt || now,
+            ...(imported.shirtSize ? { shirtSize: imported.shirtSize } : {}),
+            ...(imported.teamMembers && imported.teamMembers.length >= (imported.entryCategory === 'trio' ? 3 : 2) ? { teamMembers: imported.teamMembers } : {}),
+          };
+          batch.set(doc(db, 'runners', `${uid}_${race.id}`), record, { merge: true });
+          if (existing) updated += 1;
+          else created += 1;
+        }
+        await batch.commit();
+      }
+      setFeedback({ type: 'success', text: `Import complete — ${created} created, ${updated} updated. Open the roster below to assign timing chips.` });
+    } catch (error: any) {
+      setFeedback({ type: 'error', text: error.message || 'Could not import the runner roster.' });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <div className="glass-panel p-5 space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+        <div>
+          <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2">
+            <FileUp className="w-4 h-4 text-red-500" /> Import Runner Roster
+          </h3>
+          <p className="text-xs text-[var(--text-secondary)] mt-1">Upload a prepared bib-assignment Excel or CSV file. We import only roster fields, never payment links or proof-of-payment files.</p>
+        </div>
+        <button type="button" onClick={() => fileInputRef.current?.click()} className="shrink-0 px-4 py-2.5 rounded-[var(--radius-control)] bg-red-600 hover:bg-red-500 text-white text-[10px] font-black uppercase tracking-widest transition flex items-center justify-center gap-2">
+          <FileUp className="w-4 h-4" /> Choose File
+        </button>
+        <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFile} />
+      </div>
+
+      <div className="rounded-[14px] border border-amber-500/20 bg-amber-500/5 px-3 py-2.5 text-[10.5px] text-[var(--text-secondary)] leading-relaxed">
+        Required columns: <strong className="text-[var(--text-primary)]">Full name, Race bib number, Distance, Sex/Gender</strong>, and <strong className="text-[var(--text-primary)]">Age or Date of birth</strong>. The distance must already exist in this race. For a duo/team sharing one bib, the names are combined into one timing entry.
+      </div>
+
+      {preview && (
+        <div className="glass-inset p-3.5 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-xs font-bold text-[var(--text-primary)] truncate max-w-[18rem]">{preview.fileName}</p>
+              <p className="text-[10px] text-[var(--text-secondary)] mt-0.5">Tabs: {preview.detectedSheets.join(', ')}</p>
+            </div>
+            <span className="text-[10px] font-mono font-black text-emerald-500">{preview.runners.length} READY</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+            <div className="rounded-xl bg-[var(--surface-hover)] px-2 py-2"><p className="text-lg font-display font-black text-[var(--text-primary)]">{preview.runners.length}</p><p className="text-[9px] font-bold uppercase text-[var(--text-secondary)]">Runners</p></div>
+            <div className="rounded-xl bg-[var(--surface-hover)] px-2 py-2"><p className="text-lg font-display font-black text-[var(--text-primary)]">{preview.combinedTeams}</p><p className="text-[9px] font-bold uppercase text-[var(--text-secondary)]">Team rows combined</p></div>
+            <div className="rounded-xl bg-[var(--surface-hover)] px-2 py-2"><p className="text-lg font-display font-black text-[var(--text-primary)]">{preview.skipped.length}</p><p className="text-[9px] font-bold uppercase text-[var(--text-secondary)]">Rows skipped</p></div>
+            <div className="rounded-xl bg-[var(--surface-hover)] px-2 py-2"><p className="text-lg font-display font-black text-[var(--text-primary)]">{runnerProfiles.length}</p><p className="text-[9px] font-bold uppercase text-[var(--text-secondary)]">Already in roster</p></div>
+          </div>
+          {preview.skipped.length > 0 && <p className="text-[10px] text-amber-500">Review required: {preview.skipped.slice(0, 3).join(' • ')}{preview.skipped.length > 3 ? ` • +${preview.skipped.length - 3} more` : ''}</p>}
+          <div className="max-h-32 overflow-y-auto space-y-1 pr-1">
+            {preview.runners.slice(0, 10).map((runner) => <div key={`${runner.distance}-${runner.bibNumber}`} className="flex items-center gap-2 text-[10px] text-[var(--text-secondary)]"><span className="font-mono font-bold text-[var(--text-primary)] w-16">#{runner.bibNumber}</span><span className="truncate flex-1">{runner.fullName}</span><span>{runner.distance}</span></div>)}
+            {preview.runners.length > 10 && <p className="text-[10px] text-[var(--text-muted)]">+ {preview.runners.length - 10} more runners</p>}
+          </div>
+          <button type="button" onClick={handleImport} disabled={importing || preview.runners.length === 0} className="w-full text-xs font-black uppercase tracking-widest px-5 py-3 rounded-[var(--radius-control)] text-white bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 flex items-center justify-center gap-2 transition disabled:opacity-60">
+            {importing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Users2 className="w-4 h-4" />} {importing ? 'Importing roster…' : `Import ${preview.runners.length} runners`}
+          </button>
+        </div>
+      )}
+
+      {feedback && <p className={`text-xs font-semibold ${feedback.type === 'success' ? 'text-emerald-500' : 'text-red-500'}`}>{feedback.type === 'success' ? '✅' : '⚠️'} {feedback.text}</p>}
+    </div>
+  );
+}
 
 interface ChipAssignmentPanelProps {
   race: Race;
@@ -910,6 +1273,8 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
 
   return (
     <div className="space-y-6">
+      <RosterImportPanel race={race} runnerProfiles={runnerProfiles} />
+
       <div className="glass-panel p-5 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
@@ -1315,7 +1680,7 @@ function groupResultsByDistance(results: RunnerResult[]): DistanceRanking[] {
   const groups = new Map<string, RunnerResult[]>();
   for (const r of results) {
     if (r.rank === undefined) continue; // only finished runners are ranked
-    const distance = r.runnerProfile?.distance || 'Unknown';
+    const distance = runnerDivisionLabel(r.runnerProfile);
     const list = groups.get(distance) ?? [];
     list.push(r);
     groups.set(distance, list);

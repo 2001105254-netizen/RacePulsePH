@@ -32,6 +32,9 @@ export interface UserProfile {
   role: UserRole;
   approved: boolean; // superadmin, admin & runner: true. organizer needs Super Admin approval.
   createdAt: string;
+  // A unique, lowercase sign-in handle. Legacy accounts may not have one yet
+  // and can continue using their email until they add it in Profile settings.
+  username?: string;
   nickname?: string;
   photoURL?: string; // small base64 data URI, resized client-side before saving
   emergencyContactName?: string;
@@ -70,6 +73,10 @@ export interface RaceDistance {
   price: number; // registration fee in pesos, set independently per distance
 }
 
+// A team category shares one bib/chip and produces one official result. Old
+// races without this setting remain Solo-only for full backward compatibility.
+export type RaceEntryCategory = 'solo' | 'duo' | 'trio';
+
 export type RaceBibFont = 'display' | 'sans' | 'mono' | 'condensed';
 
 export interface RaceBibLayout {
@@ -94,6 +101,7 @@ export interface Race {
   checkpoints: Checkpoint[];
   ageCategories: AgeCategory[];
   distances: RaceDistance[];
+  entryCategories?: RaceEntryCategory[];
   inclusions: string[];
   createdBy: string;
   createdAt: string;
@@ -155,6 +163,9 @@ export interface RunnerProfile {
   // for each event without changing their general account preference.
   shirtSize?: string;
   distance: string;
+  entryCategory?: RaceEntryCategory;
+  teamName?: string;
+  teamMembers?: string[];
   gender: Gender;
   age: number;
   createdAt: string;

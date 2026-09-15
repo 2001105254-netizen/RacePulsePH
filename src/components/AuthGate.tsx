@@ -1,13 +1,38 @@
 import React, { useState, useEffect } from 'react';
-import { doc, setDoc, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, runTransaction } from 'firebase/firestore';
 import { db, signUpWithEmail, signInWithEmail, signInWithGoogle, signOutUser, sendPasswordReset } from '../firebase';
 import { isSuperAdminEmail } from '../lib/superAdmin';
 import { UserProfile } from '../types';
 import type { User } from 'firebase/auth';
+import { deleteUser } from 'firebase/auth';
 import { Mail, Lock, User as UserIcon, RefreshCw, AlertTriangle, LogOut, Eye, EyeOff } from 'lucide-react';
 
 type Mode = 'login' | 'signup';
 type SignupRole = 'runner' | 'organizer' | 'superadmin';
+
+const USERNAME_PATTERN = /^[a-z0-9][a-z0-9_.-]{2,23}$/;
+
+function normalizeUsername(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function usernameError(value: string): string | null {
+  const username = normalizeUsername(value);
+  if (!USERNAME_PATTERN.test(username)) return 'Username must be 3–24 characters: letters, numbers, dot, underscore, or hyphen.';
+  return null;
+}
+
+async function resolveLoginEmail(identifier: string): Promise<string> {
+  const value = identifier.trim();
+  if (value.includes('@')) return value;
+
+  const invalid = usernameError(value);
+  if (invalid) throw new Error(invalid);
+  const usernameDoc = await getDoc(doc(db, 'usernameIndex', normalizeUsername(value)));
+  const accountEmail = usernameDoc.exists() ? String(usernameDoc.data().email || '').trim() : '';
+  if (!accountEmail) throw new Error('No account found for that username. Try your email address instead.');
+  return accountEmail;
+}
 
 function GoogleIcon({ className }: { className?: string }) {
   return (
@@ -23,27 +48,42 @@ function GoogleIcon({ className }: { className?: string }) {
 // Creates the Firestore profile doc for a brand-new user (email/password or
 // Google), applying the same role/approval rules and one-time admin claim
 // regardless of which auth method they used.
-async function createUserProfileForRole(user: User, role: SignupRole, displayNameOverride?: string): Promise<void> {
+async function createUserProfileForRole(user: User, role: SignupRole, displayNameOverride: string | undefined, usernameInput: string): Promise<void> {
+  const username = normalizeUsername(usernameInput);
+  const invalidUsername = usernameError(username);
+  if (invalidUsername) throw new Error(invalidUsername);
   const assignedRole: SignupRole = isSuperAdminEmail(user.email) ? 'superadmin' : role;
   const profile: UserProfile = {
     uid: user.uid,
     email: user.email || '',
     displayName: displayNameOverride?.trim() || user.displayName || 'Runner',
+    username,
     role: assignedRole,
     approved: assignedRole !== 'organizer',
     createdAt: new Date().toISOString(),
   };
 
-  if (assignedRole === 'superadmin') {
-    // The Firestore rule verifies this exact signed-in email and permits this
-    // one-time claim only while the Super Admin slot is unclaimed.
-    const batch = writeBatch(db);
-    batch.set(doc(db, 'users', user.uid), profile);
-    batch.set(doc(db, 'system', 'meta'), { superAdminClaimed: true }, { merge: true });
-    await batch.commit();
-  } else {
-    await setDoc(doc(db, 'users', user.uid), profile);
-  }
+  // The index has one immutable document per normalized username. The
+  // transaction makes the "username available" check and profile creation one
+  // operation, so two people cannot successfully claim the same username.
+  await runTransaction(db, async (transaction) => {
+    const usernameRef = doc(db, 'usernameIndex', username);
+    const existingUsername = await transaction.get(usernameRef);
+    if (existingUsername.exists()) throw new Error('That username is already taken. Please choose another one.');
+
+    transaction.set(doc(db, 'users', user.uid), profile);
+    transaction.set(usernameRef, {
+      username,
+      uid: user.uid,
+      email: user.email || '',
+      createdAt: profile.createdAt,
+    });
+    if (assignedRole === 'superadmin') {
+      // The Firestore rule verifies this exact signed-in email and permits this
+      // one-time claim only while the Super Admin slot is unclaimed.
+      transaction.set(doc(db, 'system', 'meta'), { superAdminClaimed: true }, { merge: true });
+    }
+  });
 }
 
 interface AuthGateProps {
@@ -60,6 +100,7 @@ export default function AuthGate({ authUser, initialMode = 'login', onBackToRace
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [username, setUsername] = useState('');
   const [signupRole, setSignupRole] = useState<SignupRole>('runner');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -72,7 +113,8 @@ export default function AuthGate({ authUser, initialMode = 'login', onBackToRace
     setNotice('');
     setSubmitting(true);
     try {
-      await signInWithEmail(email, password);
+      const accountEmail = await resolveLoginEmail(email);
+      await signInWithEmail(accountEmail, password);
     } catch (err: any) {
       setError(err.message?.replace('Firebase: ', '') || 'Failed to sign in.');
     } finally {
@@ -84,12 +126,12 @@ export default function AuthGate({ authUser, initialMode = 'login', onBackToRace
     setError('');
     setNotice('');
     if (!email.trim()) {
-      setError('Enter your email address first, then tap Forgot password.');
+      setError('Enter your email or username first, then tap Forgot password.');
       return;
     }
     setSubmitting(true);
     try {
-      await sendPasswordReset(email);
+      await sendPasswordReset(await resolveLoginEmail(email));
       setNotice('If this email has a RacePulsePH account, a password reset link has been sent.');
     } catch (err: any) {
       setError(err.message?.replace('Firebase: ', '') || 'Could not send the password reset email.');
@@ -106,17 +148,29 @@ export default function AuthGate({ authUser, initialMode = 'login', onBackToRace
       setError('Please enter your full name.');
       return;
     }
+    const invalidUsername = usernameError(username);
+    if (invalidUsername) {
+      setError(invalidUsername);
+      return;
+    }
     if (password.length < 6) {
       setError('Password must be at least 6 characters.');
       return;
     }
 
     setSubmitting(true);
+    let newUser: User | null = null;
     try {
-      const user = await signUpWithEmail(email, password, displayName);
-      await createUserProfileForRole(user, signupRole, displayName);
+      newUser = await signUpWithEmail(email, password, displayName);
+      await createUserProfileForRole(newUser, signupRole, displayName, username);
       // onAuthStateChanged in App.tsx picks up the new session and routes by role.
     } catch (err: any) {
+      // A duplicate username can only be detected after Firebase Auth creates
+      // the email account. Remove that just-created account so the email can
+      // immediately be retried with a different username.
+      if (newUser) {
+        try { await deleteUser(newUser); } catch { /* preserve the original error */ }
+      }
       setError(err.message?.replace('Firebase: ', '') || 'Failed to create account.');
     } finally {
       setSubmitting(false);
@@ -206,10 +260,10 @@ export default function AuthGate({ authUser, initialMode = 'login', onBackToRace
           {mode === 'login' ? (
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
-                <label htmlFor="loginEmail" className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Email</label>
+                <label htmlFor="loginEmail" className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Email or Username</label>
                 <div className="relative">
-                  <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
-                  <input id="loginEmail" type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+                  <UserIcon className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
+                  <input id="loginEmail" type="text" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@email.com or your.username"
                     className="w-full glass-inset pl-10 pr-4 py-3.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/60 transition" />
                 </div>
               </div>
@@ -249,6 +303,15 @@ export default function AuthGate({ authUser, initialMode = 'login', onBackToRace
                   <input id="signupName" type="text" required value={displayName} onChange={(e) => setDisplayName(e.target.value)}
                     className="w-full glass-inset pl-10 pr-4 py-3.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/60 transition" />
                 </div>
+              </div>
+              <div>
+                <label htmlFor="signupUsername" className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Username</label>
+                <div className="relative">
+                  <UserIcon className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
+                  <input id="signupUsername" type="text" required value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} autoCapitalize="none" autoCorrect="off" maxLength={24} placeholder="e.g. juan.runner"
+                    className="w-full glass-inset pl-10 pr-4 py-3.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/60 transition" />
+                </div>
+                <p className="mt-1.5 text-[10px] text-[var(--text-muted)]">3–24 characters: letters, numbers, dots, underscores, or hyphens.</p>
               </div>
               <div>
                 <label htmlFor="signupEmail" className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Email</label>
@@ -320,6 +383,7 @@ function RoleSelector({ role, onChange }: { role: SignupRole; onChange: (r: Sign
 function CompleteProfileForm({ user, signupRoleLocked = false }: { user: User; signupRoleLocked?: boolean }) {
   const [role, setRole] = useState<SignupRole>('runner');
   const [displayName, setDisplayName] = useState(user.displayName || '');
+  const [username, setUsername] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -330,9 +394,14 @@ function CompleteProfileForm({ user, signupRoleLocked = false }: { user: User; s
       setError('Please enter your full name.');
       return;
     }
+    const invalidUsername = usernameError(username);
+    if (invalidUsername) {
+      setError(invalidUsername);
+      return;
+    }
     setSubmitting(true);
     try {
-      await createUserProfileForRole(user, role, displayName);
+      await createUserProfileForRole(user, role, displayName, username);
       // onAuthStateChanged's profile listener in App.tsx picks this up and routes by role.
     } catch (err: any) {
       setError(err.message?.replace('Firebase: ', '') || 'Failed to finish setting up your account.');
@@ -368,6 +437,15 @@ function CompleteProfileForm({ user, signupRoleLocked = false }: { user: User; s
               <input id="completeName" type="text" required value={displayName} onChange={(e) => setDisplayName(e.target.value)}
                 className="w-full glass-inset pl-10 pr-4 py-3.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/60 transition" />
             </div>
+          </div>
+          <div>
+            <label htmlFor="completeUsername" className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Username</label>
+            <div className="relative">
+              <UserIcon className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
+              <input id="completeUsername" type="text" required value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} autoCapitalize="none" autoCorrect="off" maxLength={24} placeholder="e.g. juan.runner"
+                className="w-full glass-inset pl-10 pr-4 py-3.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/60 transition" />
+            </div>
+            <p className="mt-1.5 text-[10px] text-[var(--text-muted)]">This will be your sign-in username.</p>
           </div>
 
           {signupRoleLocked ? (

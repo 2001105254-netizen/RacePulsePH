@@ -5,13 +5,14 @@ import { db, sendPasswordReset, signOutUser, updateAccountDisplayName } from '..
 import { checkpointType, computeResults, getWaveStartTime } from '../lib/timing';
 import { downloadFinisherCertificate } from '../lib/finisherCertificate';
 import { resizeImageToDataUrl } from '../lib/image';
-import { ChipRead, Gender, Race, RaceBibFont, RunnerProfile, UserProfile } from '../types';
+import { ChipRead, Gender, Race, RaceBibFont, RaceEntryCategory, RunnerProfile, UserProfile } from '../types';
 import CustomerForm from './CustomerForm';
 import { QRCodeSVG } from 'qrcode.react';
-import { LogOut, User, Hash, MapPin, RefreshCw, Award, ClipboardList, Clock, ArrowLeft, ArrowRight, Flag, Calendar, CheckSquare, Coins, PackageCheck, Camera, Trophy, X, Pencil, CheckCircle2, Circle, Radio, Phone, HeartPulse, Mail, FileDown, Maximize2 } from 'lucide-react';
+import { LogOut, User, Hash, MapPin, RefreshCw, Award, ClipboardList, Clock, ArrowLeft, ArrowRight, Flag, Calendar, CheckSquare, Coins, PackageCheck, Camera, Trophy, X, Pencil, CheckCircle2, Circle, Radio, Phone, HeartPulse, Mail, FileDown, Maximize2, Users2 } from 'lucide-react';
 import BottomNav from './BottomNav';
 import RaceList from './RaceList';
 import { isRaceRegistrationOpen } from '../lib/raceRegistration';
+import { entryCategoryLabels, entryMemberCount, raceEntryCategories, runnerDivisionLabel, runnerEntryCategory } from '../lib/raceEntry';
 import RunnerReminderCenter from './RunnerReminderCenter';
 
 interface RunnerDashboardProps {
@@ -37,6 +38,11 @@ const raceBibCanvasFontFamilies: Record<RaceBibFont, string> = {
 };
 
 const standardShirtSizes = ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL', '6XL'];
+const usernamePattern = /^[a-z0-9][a-z0-9_.-]{2,23}$/;
+
+function normalizedUsername(value: string): string {
+  return value.trim().toLowerCase();
+}
 
 function ShirtSizePicker({ value, onChange, emptyLabel }: { value: string; onChange: (value: string) => void; emptyLabel: string }) {
   const [customMode, setCustomMode] = useState(() => Boolean(value && !standardShirtSizes.includes(value)));
@@ -378,12 +384,12 @@ interface RaceRegistrationFormProps {
 }
 
 // Bib numbers are assigned by the system, not typed in: "5-001" is the first
-// runner registered under the 5K category, "5-002" the second, and so on.
+// runner registered under the 5K Solo category, "5-002" the second, and so on.
 // Uses a transaction against a per-distance counter doc (not a count() query)
 // so two runners registering for the same distance at the same moment can't
 // both land on the same sequence number and collide on one bib.
-async function generateBibNumber(raceId: string, distanceLabel: string, km: number | null): Promise<string> {
-  const counterId = `${raceId}_${distanceLabel}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+async function generateBibNumber(raceId: string, distanceLabel: string, km: number | null, entryCategory: RaceEntryCategory): Promise<string> {
+  const counterId = `${raceId}_${distanceLabel}_${entryCategory}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
   const counterRef = doc(db, 'bibCounters', counterId);
   const sequence = await runTransaction(db, async (tx) => {
     const snap = await tx.get(counterRef);
@@ -391,7 +397,8 @@ async function generateBibNumber(raceId: string, distanceLabel: string, km: numb
     tx.set(counterRef, { count: next });
     return next;
   });
-  const prefix = km !== null ? String(km) : 'CUSTOM';
+  const basePrefix = km !== null ? String(km) : 'CUSTOM';
+  const prefix = entryCategory === 'solo' ? basePrefix : `${basePrefix}-${entryCategory === 'duo' ? 'D' : 'T'}`;
   return `${prefix}-${String(sequence).padStart(3, '0')}`;
 }
 
@@ -461,6 +468,9 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
   const [fullName, setFullName] = useState(latest?.fullName || '');
   const [distance, setDistance] = useState('Custom');
   const [customDistance, setCustomDistance] = useState('');
+  const [entryCategory, setEntryCategory] = useState<RaceEntryCategory>('solo');
+  const [teamName, setTeamName] = useState('');
+  const [teamMembers, setTeamMembers] = useState<string[]>(['', '']);
   const [gender, setGender] = useState<Gender>(latest?.gender || 'male');
   const [age, setAge] = useState(latest?.age ? String(latest.age) : '');
   const [shirtSize, setShirtSize] = useState(initialShirtSize || latest?.shirtSize || '');
@@ -482,6 +492,7 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
   const openRaces = races.filter((race) => isRaceRegistrationOpen(race));
   const selectedRace = openRaces.find((r) => r.id === raceId);
   const raceDistances = selectedRace?.distances || [];
+  const availableEntryCategories: RaceEntryCategory[] = selectedRace ? raceEntryCategories(selectedRace) : ['solo'];
   const existingForRace = runnerProfiles.find((rp) => rp.raceId === raceId);
 
   // Already registered for this specific race? Load those details for editing.
@@ -491,6 +502,9 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
       setGender(existingForRace.gender);
       setAge(String(existingForRace.age));
       setShirtSize(existingForRace.shirtSize || initialShirtSize || '');
+      setEntryCategory(runnerEntryCategory(existingForRace));
+      setTeamName(existingForRace.teamName || '');
+      setTeamMembers(existingForRace.teamMembers || [existingForRace.fullName, '']);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raceId]);
@@ -507,6 +521,10 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raceId, raceDistances.length]);
 
+  useEffect(() => {
+    if (!availableEntryCategories.includes(entryCategory)) setEntryCategory(availableEntryCategories[0] || 'solo');
+  }, [availableEntryCategories, entryCategory]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -518,14 +536,21 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
     setSaving(true);
     try {
       const finalDistance = distance === 'Custom' ? (customDistance || 'Custom Run') : distance;
+      const memberCount = entryMemberCount[entryCategory];
+      const normalizedMembers = entryCategory === 'solo'
+        ? [fullName.trim()]
+        : [fullName.trim(), ...teamMembers.slice(1, memberCount).map((member) => member.trim())];
+      if (entryCategory !== 'solo' && !teamName.trim()) return setError('Please enter your team name.');
+      if (normalizedMembers.some((member) => !member)) return setError(`Enter all ${memberCount} ${entryCategory === 'duo' ? 'Duo' : 'Trio'} member names.`);
       const selectedDistanceKm = raceDistances.find((d) => d.label === distance)?.km ?? null;
-      const bibNumber = existingForRace ? existingForRace.bibNumber : await generateBibNumber(raceId, finalDistance, selectedDistanceKm);
+      const bibNumber = existingForRace ? existingForRace.bibNumber : await generateBibNumber(raceId, finalDistance, selectedDistanceKm, entryCategory);
       const record: RunnerProfile = {
         uid,
         raceId,
-        fullName: fullName.trim().toUpperCase(),
+        fullName: entryCategory === 'solo' ? fullName.trim().toUpperCase() : teamName.trim().toUpperCase(),
         bibNumber,
         distance: finalDistance,
+        entryCategory,
         gender,
         age: parsedAge,
         createdAt: existingForRace?.createdAt || new Date().toISOString(),
@@ -534,6 +559,7 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
         ...(existingForRace?.chipId ? { chipId: existingForRace.chipId } : {}),
         ...(existingForRace?.kitClaimedAt ? { kitClaimedAt: existingForRace.kitClaimedAt } : {}),
         ...(shirtSize ? { shirtSize } : {}),
+        ...(entryCategory !== 'solo' ? { teamName: teamName.trim().toUpperCase(), teamMembers: normalizedMembers.map((member) => member.toUpperCase()) } : {}),
       };
       await setDoc(doc(db, 'runners', `${uid}_${raceId}`), record);
       setConfirmation({ registration: record, wasUpdate: !!existingForRace });
@@ -724,6 +750,37 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
           {!existingForRace && distance === 'Custom' && (
             <input type="text" required value={customDistance} onChange={(e) => setCustomDistance(e.target.value.toUpperCase())}
               className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" placeholder="EX: 15K TRAIL RUN" />
+          )}
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Entry Category</label>
+            {existingForRace ? (
+              <div className="glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2"><Users2 className="w-4 h-4 text-red-500" /> {entryCategoryLabels[runnerEntryCategory(existingForRace)]}</div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {availableEntryCategories.map((category) => <button key={category} type="button" onClick={() => setEntryCategory(category)} className={`rounded-xl border px-2 py-2.5 text-[10px] font-black uppercase tracking-wide transition ${entryCategory === category ? 'border-red-500/45 bg-red-500/10 text-red-500' : 'border-[var(--border-default)] glass-inset text-[var(--text-secondary)]'}`}>{entryCategoryLabels[category]}</button>)}
+              </div>
+            )}
+          </div>
+
+          {entryCategory !== 'solo' && (
+            <div className="glass-inset p-3 space-y-3">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">{entryCategoryLabels[entryCategory]} Team Name</label>
+                <input type="text" required value={teamName} onChange={(e) => setTeamName(e.target.value.toUpperCase())} className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" placeholder="EX: TEAM RACEPULSE" />
+              </div>
+              {Array.from({ length: entryMemberCount[entryCategory] }).map((_, index) => (
+                <div key={index}>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Member {index + 1}{index === 0 ? ' / Team Captain' : ''}</label>
+                  <input type="text" required value={index === 0 ? fullName : (teamMembers[index] || '')} onChange={(e) => {
+                    const value = e.target.value.toUpperCase();
+                    if (index === 0) setFullName(value);
+                    else setTeamMembers((current) => { const next = [...current]; next[index] = value; return next; });
+                  }} className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" placeholder={`FULL NAME OF MEMBER ${index + 1}`} />
+                </div>
+              ))}
+              <p className="text-[10px] text-[var(--text-muted)]">One shared bib and timing chip will be assigned to this team. Their result is ranked against other {entryCategoryLabels[entryCategory]} teams only.</p>
+            </div>
           )}
 
           <div className="grid grid-cols-2 gap-4">
@@ -990,7 +1047,7 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
             <div className="mt-4 bg-emerald-950/20 border border-emerald-800/40 p-4 rounded-2xl text-center">
               <p className="text-[10px] uppercase font-bold tracking-widest text-emerald-500">Finish Time</p>
               <p className="text-2xl font-mono font-black text-emerald-400 mt-1">{result.finishTime}</p>
-              {result.rank && <p className="text-xs text-emerald-500 mt-1">Rank #{result.rank} in {runnerProfile.distance}</p>}
+              {result.rank && <p className="text-xs text-emerald-500 mt-1">Rank #{result.rank} in {runnerDivisionLabel(runnerProfile)}</p>}
               {race && (
                 <button
                   type="button"
@@ -1034,6 +1091,7 @@ interface ProfileModalProps {
 function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
   const [races, setRaces] = useState<Race[]>([]);
   const [displayName, setDisplayName] = useState(profile.displayName);
+  const [username, setUsername] = useState(profile.username || '');
   const [nickname, setNickname] = useState(profile.nickname || '');
   const [photoPreview, setPhotoPreview] = useState<string | null>(profile.photoURL || null);
   const [emergencyContactName, setEmergencyContactName] = useState(profile.emergencyContactName || '');
@@ -1108,12 +1166,21 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
       setError('Please enter your full name.');
       return;
     }
+    const nextUsername = normalizedUsername(username);
+    if (nextUsername && !usernamePattern.test(nextUsername)) {
+      setError('Username must be 3–24 characters: letters, numbers, dot, underscore, or hyphen.');
+      return;
+    }
+    if (profile.username && nextUsername !== profile.username) {
+      setError('Your username is permanent once set.');
+      return;
+    }
     setSaving(true);
     setError('');
     setNotice('');
     try {
       await updateAccountDisplayName(displayName);
-      await updateDoc(doc(db, 'users', profile.uid), {
+      const profileUpdate = {
         displayName: displayName.trim(),
         nickname: nickname.trim(),
         emergencyContactName: emergencyContactName.trim(),
@@ -1121,7 +1188,24 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
         shirtSize,
         medicalNotes: medicalNotes.trim(),
         ...(photoPreview ? { photoURL: photoPreview } : {}),
-      });
+      };
+
+      if (!profile.username && nextUsername) {
+        await runTransaction(db, async (transaction) => {
+          const usernameRef = doc(db, 'usernameIndex', nextUsername);
+          const usernameSnap = await transaction.get(usernameRef);
+          if (usernameSnap.exists()) throw new Error('That username is already taken. Please choose another one.');
+          transaction.update(doc(db, 'users', profile.uid), { ...profileUpdate, username: nextUsername });
+          transaction.set(usernameRef, {
+            username: nextUsername,
+            uid: profile.uid,
+            email: profile.email,
+            createdAt: new Date().toISOString(),
+          });
+        });
+      } else {
+        await updateDoc(doc(db, 'users', profile.uid), profileUpdate);
+      }
       onClose();
     } catch (err: any) {
       setError(err.message || 'Failed to save your profile.');
@@ -1203,6 +1287,17 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Account Email</label>
             <div className="glass-inset px-4 py-3 text-sm text-[var(--text-secondary)] flex items-center gap-2"><Mail className="w-4 h-4 text-red-500" />{profile.email}</div>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Sign-in Username</label>
+            {profile.username ? (
+              <div className="glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2"><User className="w-4 h-4 text-red-500" />{profile.username}</div>
+            ) : (
+              <>
+                <input type="text" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} autoCapitalize="none" autoCorrect="off" maxLength={24} placeholder="e.g. juan.runner" className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
+                <p className="mt-1.5 text-[10px] text-[var(--text-muted)]">Optional for existing accounts. Once saved, you can sign in using this username and it cannot be changed.</p>
+              </>
+            )}
           </div>
         </div>
 

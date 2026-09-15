@@ -73,6 +73,24 @@ service cloud.firestore {
 
     // ========== USERS / ROLES ==========
 
+    function isValidUsername(username) {
+      return username is string
+        && username.size() >= 3 && username.size() <= 24
+        && username.matches('^[a-z0-9][a-z0-9_.-]*$');
+    }
+
+    // When a username exists on a profile, it must be backed by the immutable
+    // index document in the same transaction/batch. This prevents a profile
+    // from claiming a username that resolves to someone else's login.
+    function hasValidUsernameBinding(uid, data) {
+      return !data.keys().hasAny(['username']) || (
+        isValidUsername(data.username)
+        && existsAfter(/databases/$(database)/documents/usernameIndex/$(data.username))
+        && getAfter(/databases/$(database)/documents/usernameIndex/$(data.username)).data.uid == uid
+        && getAfter(/databases/$(database)/documents/usernameIndex/$(data.username)).data.email == data.email
+      );
+    }
+
     function isValidUserCreate(data) {
       return data.keys().hasAll(['email', 'displayName', 'role', 'approved', 'createdAt'])
         && data.email is string && data.displayName is string
@@ -84,7 +102,8 @@ service cloud.firestore {
         // Organizer accounts always start unapproved; only a Super Admin can flip that later.
         && (data.role != 'organizer' || data.approved == false)
         // The one-time Super Admin bootstrap is restricted to the owner email.
-        && (data.role != 'superadmin' || canBootstrapSuperAdmin(data));
+        && (data.role != 'superadmin' || canBootstrapSuperAdmin(data))
+        && hasValidUsernameBinding(data.uid, data);
     }
 
     function hasSafeProfileDetails(data) {
@@ -93,7 +112,8 @@ service cloud.firestore {
         && (!data.keys().hasAny(['emergencyContactName']) || (data.emergencyContactName is string && data.emergencyContactName.size() <= 100))
         && (!data.keys().hasAny(['emergencyContactPhone']) || (data.emergencyContactPhone is string && data.emergencyContactPhone.size() <= 30))
         && (!data.keys().hasAny(['shirtSize']) || (data.shirtSize is string && data.shirtSize.size() <= 20))
-        && (!data.keys().hasAny(['medicalNotes']) || (data.medicalNotes is string && data.medicalNotes.size() <= 600));
+        && (!data.keys().hasAny(['medicalNotes']) || (data.medicalNotes is string && data.medicalNotes.size() <= 600))
+        && (!data.keys().hasAny(['username']) || isValidUsername(data.username));
     }
 
     match /users/{uid} {
@@ -116,8 +136,26 @@ service cloud.firestore {
         && request.resource.data.displayName.size() >= 1
         && request.resource.data.displayName.size() <= 100
         && hasSafeProfileDetails(request.resource.data)
+        && hasValidUsernameBinding(uid, request.resource.data)
       );
       allow delete: if isSuperAdmin();
+    }
+
+    // Firebase Auth uses email/password internally. This immutable directory
+    // lets the sign-in form resolve an exact username without exposing the
+    // private user profile collection. Only direct document gets are public;
+    // username enumeration/listing is blocked.
+    match /usernameIndex/{username} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if isSignedIn()
+        && username == request.resource.data.username
+        && isValidUsername(username)
+        && request.resource.data.keys().hasOnly(['username', 'uid', 'email', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.createdAt is string;
+      allow update, delete: if false;
     }
 
     // A tombstone prevents a removed Firebase login from recreating a profile
@@ -164,7 +202,10 @@ service cloud.firestore {
         && data.createdAt is string
         && (!data.keys().hasAny(['chipId']) || data.chipId is string)
         && (!data.keys().hasAny(['kitClaimedAt']) || data.kitClaimedAt is string)
-        && (!data.keys().hasAny(['shirtSize']) || (data.shirtSize is string && data.shirtSize.size() <= 20));
+        && (!data.keys().hasAny(['shirtSize']) || (data.shirtSize is string && data.shirtSize.size() <= 20))
+        && (!data.keys().hasAny(['entryCategory']) || (data.entryCategory is string && (data.entryCategory == 'solo' || data.entryCategory == 'duo' || data.entryCategory == 'trio')))
+        && (!data.keys().hasAny(['teamName']) || (data.teamName is string && data.teamName.size() >= 1 && data.teamName.size() <= 100))
+        && (!data.keys().hasAny(['teamMembers']) || (data.teamMembers is list && data.teamMembers.size() >= 2 && data.teamMembers.size() <= 3));
     }
 
     // Doc id is {uid}_{raceId} - one entry per registration, so a runner can hold

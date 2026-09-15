@@ -3,9 +3,9 @@ import { collection, onSnapshot } from 'firebase/firestore';
 import { Flag, UserPlus } from 'lucide-react';
 import { db } from '../firebase';
 import { Race } from '../types';
-import { isRaceRegistrationOpen } from '../lib/raceRegistration';
 import RaceList from './RaceList';
 import PublicLiveRaceHub from './PublicLiveRaceHub';
+import PublicRaceResults from './PublicRaceResults';
 
 interface PublicRaceLandingProps {
   onRegister: (raceId?: string) => void;
@@ -15,6 +15,7 @@ interface PublicRaceLandingProps {
 // Registration itself remains behind Firebase Auth and starts only after Sign Up.
 export default function PublicRaceLanding({ onRegister }: PublicRaceLandingProps) {
   const [races, setRaces] = useState<Race[]>([]);
+  const [selectedRaceId, setSelectedRaceId] = useState('');
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'races'), (snapshot) => {
@@ -29,8 +30,15 @@ export default function PublicRaceLanding({ onRegister }: PublicRaceLandingProps
     return () => unsubscribe();
   }, []);
 
-  const openRaces = races.filter((race) => isRaceRegistrationOpen(race));
   const liveRaces = races.filter((race) => race.liveBroadcastEnabled);
+  // A race moves into the public archive the day after its scheduled date.
+  // Keeping today's event in the active section means spectators can still
+  // follow live timing while the race is under way.
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const doneRaces = races.filter((race) => race.date < today);
+  const activeRaces = races.filter((race) => race.date >= today);
+  const selectedRace = races.find((race) => race.id === selectedRaceId);
 
   return (
     <main className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12 pb-16 space-y-9 animate-fadeIn">
@@ -61,14 +69,36 @@ export default function PublicRaceLanding({ onRegister }: PublicRaceLandingProps
       {liveRaces.length > 0 && <PublicLiveRaceHub races={liveRaces} />}
 
       <RaceList
-        races={openRaces}
-        onSelectRace={onRegister}
-        title="Open race events"
-        subtitle="Choose a race to begin registration. You’ll be asked to sign up or log in before submitting your details."
-        actionLabel="Sign Up to Register"
-        emptyTitle="No races are open for registration yet"
+        races={activeRaces}
+        onSelectRace={(raceId) => {
+          setSelectedRaceId(raceId);
+          requestAnimationFrame(() => document.getElementById('public-race-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+        }}
+        selectedRaceId={selectedRaceId}
+        title="Upcoming & Active Races"
+        subtitle="Choose a race to view details, live standings, and official results. Registration remains available for open races."
+        actionLabel="View Race & Results"
+        emptyTitle="No upcoming races published yet"
         emptyDescription="Check back soon for the next RacePulsePH event."
       />
+
+      {doneRaces.length > 0 && (
+        <RaceList
+          races={doneRaces}
+          onSelectRace={(raceId) => {
+            setSelectedRaceId(raceId);
+            requestAnimationFrame(() => document.getElementById('public-race-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+          }}
+          selectedRaceId={selectedRaceId}
+          title="Done Races"
+          subtitle="Browse completed events, official rankings, finish times, and digital certificates."
+          actionLabel="View Official Results"
+          emptyTitle="No completed races yet"
+          emptyDescription="Official results will be archived here after each race."
+        />
+      )}
+
+      {selectedRace && <div id="public-race-results"><PublicRaceResults race={selectedRace} onRegister={onRegister} /></div>}
     </main>
   );
 }

@@ -1,6 +1,11 @@
 import { jsPDF } from 'jspdf';
 import { Race, RunnerProfile, RunnerResult } from '../types';
 
+// A public result contains only the fields printed on the certificate. Keeping
+// this narrow lets an official finisher download the same verified record from
+// the public results page without exposing private runner profile data.
+type CertificateRunner = Pick<RunnerProfile, 'fullName' | 'bibNumber' | 'distance'>;
+
 function safeFilename(value: string): string {
   return value.trim().replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_') || 'RacePulsePH';
 }
@@ -8,7 +13,7 @@ function safeFilename(value: string): string {
 // Creates the certificate on the runner's own device. No additional personal
 // data is stored: the certified details are the official result already shown
 // in the runner's private My Races view.
-export function downloadFinisherCertificate(race: Race, runner: RunnerProfile, result: RunnerResult): void {
+export function downloadFinisherCertificate(race: Race, runner: CertificateRunner, result: RunnerResult): void {
   if (!result.finishTime) return;
 
   const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });

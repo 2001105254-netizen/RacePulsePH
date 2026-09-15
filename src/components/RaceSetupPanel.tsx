@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { collection, doc, onSnapshot, setDoc, deleteDoc, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { resizeImageToDataUrl, resizeImageToDataUrlContain } from '../lib/image';
-import { AgeCategory, CheckpointType, Gender, Race, RaceBibFont, RaceDistance, RunnerProfile } from '../types';
+import { AgeCategory, CheckpointType, Gender, Race, RaceBibFont, RaceDistance, RaceEntryCategory, RunnerProfile } from '../types';
+import { entryCategoryLabels, raceEntryCategories } from '../lib/raceEntry';
 import { generateRunnerRosterPdf } from '../lib/runnerReport';
 import { Flag, Trash2, Plus, Save, Pencil, RefreshCw, Users2, FileDown, ImagePlus, X } from 'lucide-react';
 
@@ -82,6 +83,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
   const [checkpoints, setCheckpoints] = useState<CheckpointDraft[]>(emptyCheckpointDrafts());
   const [ageCategories, setAgeCategories] = useState<AgeCategoryDraft[]>([]);
   const [distances, setDistances] = useState<DistanceDraft[]>([]);
+  const [entryCategories, setEntryCategories] = useState<RaceEntryCategory[]>(['solo']);
   const [inclusions, setInclusions] = useState<InclusionDraft[]>([]);
   const [posterImage, setPosterImage] = useState('');
   const [posterUploading, setPosterUploading] = useState(false);
@@ -128,6 +130,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     setCheckpoints(emptyCheckpointDrafts());
     setAgeCategories([]);
     setDistances([]);
+    setEntryCategories(['solo']);
     setInclusions([]);
     setPosterImage('');
     setInclusionImage('');
@@ -165,6 +168,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     })));
     setAgeCategories((race.ageCategories || []).map((c) => ({ id: c.id, gender: c.gender, minAge: c.minAge, maxAge: c.maxAge })));
     setDistances((race.distances || []).sort((a, b) => a.km - b.km).map((d) => ({ id: d.id, km: d.km, price: d.price || 0 })));
+    setEntryCategories(raceEntryCategories(race));
     setInclusions((race.inclusions || []).map((text, idx) => ({ id: `incl_${idx}_${Date.now()}`, text })));
     setPosterImage(race.posterImage || '');
     setInclusionImage(race.inclusionImage || '');
@@ -270,6 +274,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     if (ageCategories.some((c) => c.minAge > c.maxAge)) return setError('An age category\'s minimum age cannot be greater than its maximum.');
     if (distances.some((d) => !d.km || d.km <= 0)) return setError('Every distance needs a kilometer value greater than 0.');
     if (distances.some((d) => d.price < 0)) return setError('A distance\'s price cannot be negative.');
+    if (entryCategories.length === 0) return setError('Choose at least one entry category.');
     if (registrationCloseDate && registrationCloseDate > date) return setError('Registration closing date cannot be after the race date.');
 
     setSaving(true);
@@ -291,6 +296,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
         })),
         ageCategories: ageCategories.map(draftToAgeCategory),
         distances: [...distances].sort((a, b) => a.km - b.km).map(draftToDistance),
+        entryCategories,
         inclusions: inclusions.map((i) => i.text.trim()).filter(Boolean),
         createdBy: existing?.createdBy || uid,
         createdAt: existing?.createdAt || new Date().toISOString(),
@@ -559,6 +565,21 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
             <button type="button" onClick={addDistance} className="mt-2 text-xs font-bold text-red-500 hover:text-red-400 flex items-center gap-1.5">
               <Plus className="w-3.5 h-3.5" /> Add Distance
             </button>
+          </div>
+
+          <div className="glass-inset p-3 space-y-2">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">Road Run Entry Categories</label>
+              <p className="text-[10.5px] text-[var(--text-muted)] mt-0.5">Duo and Trio share one race bib/chip and receive one team result.</p>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {(['solo', 'duo', 'trio'] as RaceEntryCategory[]).map((category) => (
+                <label key={category} className={`cursor-pointer rounded-xl border px-2 py-2 text-center text-[10px] font-black uppercase tracking-wide transition ${entryCategories.includes(category) ? 'border-red-500/45 bg-red-500/10 text-red-500' : 'border-[var(--border-default)] text-[var(--text-secondary)]'}`}>
+                  <input type="checkbox" className="sr-only" checked={entryCategories.includes(category)} onChange={(event) => setEntryCategories((current) => event.target.checked ? [...current, category] : current.filter((item) => item !== category))} />
+                  {entryCategoryLabels[category]}
+                </label>
+              ))}
+            </div>
           </div>
 
           <div>
