@@ -1,4 +1,4 @@
-import { Checkpoint, CheckpointType, ChipRead, Race, RunnerProfile, RunnerResult, RunnerSplit } from '../types';
+import { AgeCategory, Checkpoint, CheckpointType, ChipRead, Race, RunnerProfile, RunnerResult, RunnerSplit } from '../types';
 import { runnerDivisionLabel } from './raceEntry';
 
 // A staggered race stores one gun time for each distance. When no wave has
@@ -34,7 +34,8 @@ function formatElapsed(totalSeconds: number): string {
 export function computeResults(
   checkpoints: Checkpoint[],
   chipReads: ChipRead[],
-  runnerProfiles: RunnerProfile[]
+  runnerProfiles: RunnerProfile[],
+  ageCategories: AgeCategory[] = []
 ): RunnerResult[] {
   const orderedCheckpoints = [...checkpoints].sort((a, b) => a.order - b.order);
   // Check-in is operational only. It must never become the timing start just
@@ -83,8 +84,8 @@ export function computeResults(
     results.push({ bibNumber, runnerProfile: profileByBib.get(bibNumber), splits, finishTime, finishSeconds });
   }
 
-  // Rank within each distance + entry category. A 10K Duo team must never
-  // compete in the same official rank list as a 10K Solo runner.
+  // Overall rank is within each distance + entry category. A 10K Duo team
+  // must never compete in the same official list as a 10K Solo runner.
   const byDivision = new Map<string, RunnerResult[]>();
   for (const result of results) {
     const division = runnerDivisionLabel(result.runnerProfile);
@@ -95,9 +96,36 @@ export function computeResults(
   for (const list of byDivision.values()) {
     list
       .filter((r) => r.finishSeconds !== undefined)
-      .sort((a, b) => a.finishSeconds! - b.finishSeconds!)
+      .sort((a, b) => a.finishSeconds! - b.finishSeconds! || a.bibNumber.localeCompare(b.bibNumber))
       .forEach((r, idx) => {
+        r.overallRank = idx + 1;
         r.rank = idx + 1;
+      });
+  }
+
+  // Age-category places are only calculated when the organizer configured
+  // categories for this race. The category remains inside the same official
+  // distance/entry division, so a 5K runner can never rank against a 10K one.
+  const byAgeCategory = new Map<string, RunnerResult[]>();
+  for (const result of results) {
+    if (result.finishSeconds === undefined || !result.runnerProfile) continue;
+    const category = ageCategories.find((item) =>
+      item.gender === result.runnerProfile!.gender
+      && result.runnerProfile!.age >= item.minAge
+      && result.runnerProfile!.age <= item.maxAge
+    );
+    if (!category) continue;
+    result.categoryLabel = category.label;
+    const key = `${runnerDivisionLabel(result.runnerProfile)}|${category.id}`;
+    const list = byAgeCategory.get(key) ?? [];
+    list.push(result);
+    byAgeCategory.set(key, list);
+  }
+  for (const list of byAgeCategory.values()) {
+    list
+      .sort((a, b) => a.finishSeconds! - b.finishSeconds! || a.bibNumber.localeCompare(b.bibNumber))
+      .forEach((result, index) => {
+        result.categoryRank = index + 1;
       });
   }
 
@@ -113,7 +141,8 @@ export function getResultForBib(
   checkpoints: Checkpoint[],
   chipReads: ChipRead[],
   runnerProfiles: RunnerProfile[],
-  bibNumber: string
+  bibNumber: string,
+  ageCategories: AgeCategory[] = []
 ): RunnerResult | undefined {
-  return computeResults(checkpoints, chipReads, runnerProfiles).find((r) => r.bibNumber === bibNumber);
+  return computeResults(checkpoints, chipReads, runnerProfiles, ageCategories).find((r) => r.bibNumber === bibNumber);
 }

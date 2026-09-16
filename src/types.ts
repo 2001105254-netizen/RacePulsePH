@@ -130,7 +130,12 @@ export interface PublicLeaderboardEntry {
   bibNumber: string;
   fullName: string;
   distance: string;
+  // `rank` stays for backwards compatibility with already-published result
+  // documents. It is the official overall rank for this race division.
   rank: number;
+  overallRank?: number;
+  categoryRank?: number;
+  categoryLabel?: string;
   finishTime: string;
 }
 
@@ -196,5 +201,11 @@ export interface RunnerResult {
   splits: RunnerSplit[];
   finishTime?: string; // formatted HH:MM:SS elapsed from 'start' checkpoint to 'finish'
   finishSeconds?: number;
+  // `rank` remains the legacy/display alias for overallRank. Overall rank is
+  // within the same distance and Solo/Duo/Trio division; category rank is
+  // within the organizer-configured gender/age bracket of that division.
   rank?: number;
+  overallRank?: number;
+  categoryRank?: number;
+  categoryLabel?: string;
 }

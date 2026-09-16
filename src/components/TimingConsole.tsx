@@ -7,7 +7,7 @@ import { checkpointType, computeResults, getCheckpointByType, getWaveStartTime }
 import { useOfflineScanQueue } from '../lib/offlineScanQueue';
 import { Race, ChipRead, PublicLeaderboardEntry, PublicLiveResults, RaceEntryCategory, RunnerProfile, RunnerResult } from '../types';
 import { groupRunnersByDistance, generateRunnerRosterPdf } from '../lib/runnerReport';
-import { runnerDivisionLabel } from '../lib/raceEntry';
+import { entryCategoryLabels, entryMemberCount, raceEntryCategories, runnerDivisionLabel } from '../lib/raceEntry';
 import { Radio, ScanLine, Trophy, Clock, Wifi, WifiOff, QrCode, RefreshCw, ArrowLeft, Cpu, Users2, FileDown, FileUp, Maximize2, X, ListChecks, CheckCircle2, Circle, PlayCircle, RotateCcw, Timer } from 'lucide-react';
 import QrScannerModal from './QrScannerModal';
 import RaceList from './RaceList';
@@ -214,6 +214,10 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   // nearby chips before the gun, so selecting a station alone must never arm
   // automatic timing.
   const [scannerArmed, setScannerArmed] = useState(false);
+  // Used by the one-tap gun-start flow. The normal station-change safety
+  // effect pauses RFID first, then this flag arms only the Start station once
+  // the console is visibly on the correct screen.
+  const [armStartOnEnter, setArmStartOnEnter] = useState(false);
   const scanInputRef = useRef<HTMLInputElement>(null);
   const lastRecordedScanRef = useRef<{ key: string; at: number } | null>(null);
   const submitReadRef = useRef<(scanRaw: string, overrideTimestamp?: string) => Promise<boolean>>(async () => false);
@@ -254,8 +258,8 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   }, [race.id]);
 
   const results = useMemo(
-    () => computeResults(race.checkpoints, chipReads, runnerProfiles),
-    [race.checkpoints, chipReads, runnerProfiles]
+    () => computeResults(race.checkpoints, chipReads, runnerProfiles, race.ageCategories || []),
+    [race.ageCategories, race.checkpoints, chipReads, runnerProfiles]
   );
 
   const checkpointLabel = (id: string) => orderedCheckpoints.find((c) => c.id === id)?.label || id;
@@ -271,6 +275,9 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         fullName: result.runnerProfile?.fullName || `Bib ${result.bibNumber}`,
         distance: division,
         rank: result.rank!,
+        overallRank: result.overallRank ?? result.rank,
+        ...(result.categoryRank ? { categoryRank: result.categoryRank } : {}),
+        ...(result.categoryLabel ? { categoryLabel: result.categoryLabel } : {}),
         finishTime: result.finishTime!,
       })));
   }, [results]);
@@ -279,9 +286,12 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
     .map((result) => ({
       bibNumber: result.bibNumber,
       fullName: result.runnerProfile?.fullName || `Bib ${result.bibNumber}`,
-      distance: runnerDivisionLabel(result.runnerProfile),
-      rank: result.rank!,
-      finishTime: result.finishTime!,
+        distance: runnerDivisionLabel(result.runnerProfile),
+        rank: result.rank!,
+        overallRank: result.overallRank ?? result.rank,
+        ...(result.categoryRank ? { categoryRank: result.categoryRank } : {}),
+        ...(result.categoryLabel ? { categoryLabel: result.categoryLabel } : {}),
+        finishTime: result.finishTime!,
     }))
     .sort((a, b) => a.distance.localeCompare(b.distance) || a.rank - b.rank), [results]);
 
@@ -345,11 +355,30 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
     setScannerArmed(false);
   }, [mode, selectedCheckpointId]);
 
+  useEffect(() => {
+    if (!armStartOnEnter || mode !== 'record' || selectedCheckpointType !== 'start') return;
+    setScannerArmed(true);
+    setArmStartOnEnter(false);
+    setFeedback({ type: 'success', text: 'Official gun time saved. Start RFID scanner is armed and ready for runner chips.' });
+  }, [armStartOnEnter, mode, selectedCheckpointType]);
+
   // Keep a keyboard-wedge RFID reader ready after every scan. This also makes
   // the manual fallback quick: operators can simply type a known bib and Enter.
   useEffect(() => {
     if (mode === 'record') scanInputRef.current?.focus();
   }, [mode, selectedCheckpointId]);
+
+  const openStartScanner = (distance: string) => {
+    if (!startCheckpoint) {
+      setFeedback({ type: 'error', text: 'This race has no Start checkpoint configured yet.' });
+      return;
+    }
+    setBibInput('');
+    setArmStartOnEnter(true);
+    setSelectedCheckpointId(startCheckpoint.id);
+    setMode('record');
+    setFeedback({ type: 'success', text: `${distance} gun started. Opening and arming the Start RFID station…` });
+  };
 
   const submitRead = async (scanRaw: string, overrideTimestamp?: string) => {
     if (!selectedCheckpointId || !selectedCheckpoint) {
@@ -588,6 +617,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
           runnerProfiles={runnerProfiles}
           chipReads={chipReads}
           startCheckpointId={startCheckpoint?.id}
+          onOpenStartScanner={openStartScanner}
         />
       )}
 
@@ -927,6 +957,184 @@ function importedRunnerUid(): string {
     ? crypto.randomUUID().replace(/-/g, '')
     : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
   return `import_${randomPart}`;
+}
+
+interface ManualRunnerPanelProps {
+  race: Race;
+  runnerProfiles: RunnerProfile[];
+}
+
+// A small desk-registration form for late entries, corrections from paper
+// forms, and runners who were not included in the uploaded roster. These are
+// timing-only registrations: they deliberately do not create Firebase Auth
+// accounts or send login emails.
+function ManualRunnerPanel({ race, runnerProfiles }: ManualRunnerPanelProps) {
+  const categories = raceEntryCategories(race);
+  const [fullName, setFullName] = useState('');
+  const [bibNumber, setBibNumber] = useState('');
+  const [distance, setDistance] = useState(race.distances[0]?.label || '');
+  const [entryCategory, setEntryCategory] = useState<RaceEntryCategory>(categories[0] || 'solo');
+  const [gender, setGender] = useState<RunnerProfile['gender']>('male');
+  const [age, setAge] = useState('');
+  const [shirtSize, setShirtSize] = useState('');
+  const [teamName, setTeamName] = useState('');
+  const [teamMembers, setTeamMembers] = useState<string[]>(['', '', '']);
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!categories.includes(entryCategory)) setEntryCategory(categories[0] || 'solo');
+  }, [categories, entryCategory]);
+
+  const memberCount = entryMemberCount[entryCategory];
+
+  const updateMember = (index: number, value: string) => {
+    setTeamMembers((current) => current.map((member, memberIndex) => memberIndex === index ? value : member));
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const normalizedBib = normalizeImportBib(bibNumber);
+    const normalizedName = fullName.trim().toUpperCase();
+    const parsedAge = Number.parseInt(age, 10);
+
+    if (!normalizedBib || !/^[A-Z0-9][A-Z0-9_-]{0,19}$/.test(normalizedBib)) {
+      setFeedback({ type: 'error', text: 'Use a bib with 1–20 letters, numbers, hyphens, or underscores.' });
+      return;
+    }
+    if (!distance) {
+      setFeedback({ type: 'error', text: 'Choose a race distance.' });
+      return;
+    }
+    if (!normalizedName || normalizedName.length > 100) {
+      setFeedback({ type: 'error', text: 'Enter the runner name (up to 100 characters).' });
+      return;
+    }
+    if (!Number.isInteger(parsedAge) || parsedAge < 1 || parsedAge > 120) {
+      setFeedback({ type: 'error', text: 'Enter a valid age from 1 to 120.' });
+      return;
+    }
+    if (runnerProfiles.some((runner) => normalizeImportBib(runner.bibNumber) === normalizedBib)) {
+      setFeedback({ type: 'error', text: `Bib #${normalizedBib} is already in this race roster.` });
+      return;
+    }
+
+    const normalizedTeamName = teamName.trim().toUpperCase();
+    const normalizedMembers = [normalizedName, ...teamMembers.slice(1, memberCount).map((member) => member.trim().toUpperCase())];
+    if (entryCategory !== 'solo' && !normalizedTeamName) {
+      setFeedback({ type: 'error', text: 'Enter the team name for a Duo or Trio.' });
+      return;
+    }
+    if (entryCategory !== 'solo' && normalizedMembers.some((member) => !member || member.length > 100)) {
+      setFeedback({ type: 'error', text: `Enter all ${memberCount} team member names.` });
+      return;
+    }
+
+    setSaving(true);
+    setFeedback(null);
+    try {
+      const uid = importedRunnerUid();
+      const record: RunnerProfile = {
+        uid,
+        raceId: race.id,
+        // For a shared bib, the team name is the display name used in the
+        // roster and official timing result; individual names stay in
+        // teamMembers for the organizer's reference.
+        fullName: entryCategory === 'solo' ? normalizedName : normalizedTeamName,
+        bibNumber: normalizedBib,
+        distance,
+        entryCategory,
+        gender,
+        age: parsedAge,
+        createdAt: new Date().toISOString(),
+        ...(shirtSize.trim() ? { shirtSize: shirtSize.trim().toUpperCase() } : {}),
+        ...(entryCategory !== 'solo' ? { teamName: normalizedTeamName, teamMembers: normalizedMembers } : {}),
+      };
+      await setDoc(doc(db, 'runners', `${uid}_${race.id}`), record);
+      setFeedback({ type: 'success', text: `${entryCategory === 'solo' ? normalizedName : normalizedTeamName} added to ${distance} ${entryCategoryLabels[entryCategory]} with bib #${normalizedBib}.` });
+      setFullName('');
+      setBibNumber('');
+      setAge('');
+      setShirtSize('');
+      setTeamName('');
+      setTeamMembers(['', '', '']);
+    } catch (error: any) {
+      setFeedback({ type: 'error', text: error.message || 'Could not add the runner.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="glass-panel p-5 space-y-4">
+      <div>
+        <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2">
+          <Users2 className="w-4 h-4 text-red-500" /> Add Runner Manually
+        </h3>
+        <p className="text-xs text-[var(--text-secondary)] mt-1">For late registrations or paper-form entries. This adds a race roster entry only—no login account is created.</p>
+      </div>
+
+      <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="sm:col-span-2">
+          <label className="block text-[10px] font-black uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">{entryCategory === 'solo' ? 'Runner name' : 'Team representative / member 1'}</label>
+          <input required value={fullName} onChange={(event) => setFullName(event.target.value.toUpperCase())} placeholder="FULL NAME" className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
+        </div>
+        <div>
+          <label className="block text-[10px] font-black uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Race bib number</label>
+          <input required value={bibNumber} onChange={(event) => setBibNumber(event.target.value.toUpperCase())} placeholder="EX: 10-001" className="w-full glass-inset px-4 py-3 text-sm font-bold font-mono text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
+        </div>
+        <div>
+          <label className="block text-[10px] font-black uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Distance</label>
+          <select value={distance} onChange={(event) => setDistance(event.target.value)} className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50">
+            {race.distances.map((raceDistance) => <option key={raceDistance.id} value={raceDistance.label}>{raceDistance.label}</option>)}
+          </select>
+        </div>
+        {categories.length > 1 && (
+          <div>
+            <label className="block text-[10px] font-black uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Entry category</label>
+            <select value={entryCategory} onChange={(event) => setEntryCategory(event.target.value as RaceEntryCategory)} className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50">
+              {categories.map((category) => <option key={category} value={category}>{entryCategoryLabels[category]}</option>)}
+            </select>
+          </div>
+        )}
+        <div>
+          <label className="block text-[10px] font-black uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Gender</label>
+          <select value={gender} onChange={(event) => setGender(event.target.value as RunnerProfile['gender'])} className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50">
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-[10px] font-black uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Age</label>
+          <input required type="number" min="1" max="120" value={age} onChange={(event) => setAge(event.target.value)} placeholder="AGE" className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
+        </div>
+        <div>
+          <label className="block text-[10px] font-black uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Shirt size <span className="normal-case font-medium">(optional)</span></label>
+          <input value={shirtSize} onChange={(event) => setShirtSize(event.target.value.toUpperCase())} placeholder="EX: M, 2XL" className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
+        </div>
+
+        {entryCategory !== 'solo' && (
+          <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-[14px] border border-violet-500/20 bg-violet-500/5 p-3">
+            <div className="sm:col-span-2">
+              <label className="block text-[10px] font-black uppercase tracking-wider text-violet-300 mb-1.5">Team name</label>
+              <input required value={teamName} onChange={(event) => setTeamName(event.target.value.toUpperCase())} placeholder="EX: TEAM RACEPULSE" className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-violet-500/50" />
+            </div>
+            {Array.from({ length: memberCount - 1 }).map((_, index) => (
+              <div key={index}>
+                <label className="block text-[10px] font-black uppercase tracking-wider text-violet-300 mb-1.5">Member {index + 2}</label>
+                <input required value={teamMembers[index + 1] || ''} onChange={(event) => updateMember(index + 1, event.target.value.toUpperCase())} placeholder={`MEMBER ${index + 2} NAME`} className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-violet-500/50" />
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button type="submit" disabled={saving} className="sm:col-span-2 w-full text-xs font-black uppercase tracking-widest px-5 py-3 rounded-[var(--radius-control)] text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 flex items-center justify-center gap-2 transition disabled:opacity-60">
+          {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Users2 className="w-4 h-4" />} {saving ? 'Adding runner…' : 'Add runner to roster'}
+        </button>
+      </form>
+      {feedback && <p className={`text-xs font-semibold ${feedback.type === 'success' ? 'text-emerald-500' : 'text-red-500'}`}>{feedback.type === 'success' ? '✅' : '⚠️'} {feedback.text}</p>}
+    </div>
+  );
 }
 
 interface RosterImportPanelProps {
@@ -1273,6 +1481,7 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
 
   return (
     <div className="space-y-6">
+      <ManualRunnerPanel race={race} runnerProfiles={runnerProfiles} />
       <RosterImportPanel race={race} runnerProfiles={runnerProfiles} />
 
       <div className="glass-panel p-5 space-y-4">
@@ -1460,12 +1669,13 @@ interface StartRollCallPanelProps {
   runnerProfiles: RunnerProfile[];
   chipReads: ChipRead[];
   startCheckpointId?: string;
+  onOpenStartScanner: (distance: string) => void;
 }
 
 // Roster checklist for the gun start: every registered runner ticks green the
 // instant their chip crosses the start mat, so the race-in-charge can spot at
 // a glance who the reader missed and needs a manual re-scan.
-function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId }: StartRollCallPanelProps) {
+function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId, onOpenStartScanner }: StartRollCallPanelProps) {
   const [settingDistance, setSettingDistance] = useState<string | null>(null);
 
   const startedBibs = useMemo(() => {
@@ -1477,7 +1687,7 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
   const startedCount = runnerProfiles.filter((r) => startedBibs.has(r.bibNumber)).length;
 
   const handleStartWave = async (distance: string) => {
-    if (!window.confirm(`Fire the gun for ${distance} now? This starts the official ${distance} race clock.`)) return;
+    if (!window.confirm(`Fire the gun for ${distance} now? This starts the official ${distance} race clock, opens Record Splits, and arms Start RFID.`)) return;
     setSettingDistance(distance);
     try {
       const raceRef = doc(db, 'races', race.id);
@@ -1492,6 +1702,7 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
           gunStartTime: currentRace?.gunStartTime || startedAt,
         });
       });
+      onOpenStartScanner(distance);
     } catch (err: any) {
       alert(err.message || `Failed to start the ${distance} clock.`);
     } finally {
@@ -1544,13 +1755,16 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
                 {waveStartTime ? (
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[10px] font-bold text-emerald-500">Gun: {new Date(waveStartTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                    <button
-                      onClick={() => handleResetWave(group.distance)}
-                      disabled={!!settingDistance}
-                      className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-secondary)] hover:text-red-500 disabled:opacity-50 flex items-center gap-1 transition"
-                    >
-                      {settingThisWave ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />} Reset
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => onOpenStartScanner(group.distance)} disabled={!!settingDistance} className="text-[10px] font-black uppercase tracking-wide text-emerald-500 hover:text-emerald-400 disabled:opacity-50 transition">Arm Start RFID</button>
+                      <button
+                        onClick={() => handleResetWave(group.distance)}
+                        disabled={!!settingDistance}
+                        className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-secondary)] hover:text-red-500 disabled:opacity-50 flex items-center gap-1 transition"
+                      >
+                        {settingThisWave ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />} Reset
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <button
@@ -1558,7 +1772,7 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
                     disabled={!!settingDistance}
                     className="w-full text-xs font-black uppercase tracking-widest px-4 py-2.5 rounded-[var(--radius-control)] text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 flex items-center justify-center gap-2 transition disabled:opacity-60"
                   >
-                    {settingThisWave ? <RefreshCw className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />} Fire {group.distance} Gun
+                    {settingThisWave ? <RefreshCw className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />} Start {group.distance} & Arm RFID
                   </button>
                 )}
               </div>

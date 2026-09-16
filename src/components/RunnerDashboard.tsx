@@ -5,7 +5,7 @@ import { db, sendPasswordReset, signOutUser, updateAccountDisplayName } from '..
 import { checkpointType, computeResults, getWaveStartTime } from '../lib/timing';
 import { downloadFinisherCertificate } from '../lib/finisherCertificate';
 import { resizeImageToDataUrl } from '../lib/image';
-import { ChipRead, Gender, Race, RaceBibFont, RaceEntryCategory, RunnerProfile, UserProfile } from '../types';
+import { ChipRead, Gender, PublicLeaderboardEntry, PublicLiveResults, Race, RaceBibFont, RaceEntryCategory, RunnerProfile, UserProfile } from '../types';
 import CustomerForm from './CustomerForm';
 import { QRCodeSVG } from 'qrcode.react';
 import { LogOut, User, Hash, MapPin, RefreshCw, Award, ClipboardList, Clock, ArrowLeft, ArrowRight, Flag, Calendar, CheckSquare, Coins, PackageCheck, Camera, Trophy, X, Pencil, CheckCircle2, Circle, Radio, Phone, HeartPulse, Mail, FileDown, Maximize2, Users2 } from 'lucide-react';
@@ -973,6 +973,7 @@ function DigitalRaceBib({ race, runnerProfile }: { race: Race; runnerProfile: Ru
 function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
   const [race, setRace] = useState<Race | null | undefined>(undefined);
   const [chipReads, setChipReads] = useState<ChipRead[]>([]);
+  const [officialEntry, setOfficialEntry] = useState<PublicLeaderboardEntry | null>(null);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(doc(db, 'races', runnerProfile.raceId), (docSnap) => {
@@ -1000,10 +1001,32 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
     return () => unsubscribe();
   }, [runnerProfile.raceId, runnerProfile.bibNumber]);
 
-  const result = useMemo(() => {
+  // The runner may read only their own raw splits. Their official placing must
+  // instead come from the organizer-published public result document; ranking
+  // a one-runner private query would incorrectly make every finisher #1.
+  useEffect(() => {
+    const unsubscribe = onSnapshot(doc(db, 'liveResults', runnerProfile.raceId), (snapshot) => {
+      const summary = snapshot.exists() ? (snapshot.data() as PublicLiveResults) : null;
+      setOfficialEntry(summary?.officialResults?.find((entry) => entry.bibNumber === runnerProfile.bibNumber) || null);
+    }, () => setOfficialEntry(null));
+    return () => unsubscribe();
+  }, [runnerProfile.raceId, runnerProfile.bibNumber]);
+
+  const localResult = useMemo(() => {
     if (!race) return null;
-    return computeResults(race.checkpoints, chipReads, [runnerProfile]).find((r) => r.bibNumber === runnerProfile.bibNumber);
+    return computeResults(race.checkpoints, chipReads, [runnerProfile], race.ageCategories || []).find((r) => r.bibNumber === runnerProfile.bibNumber);
   }, [race, chipReads, runnerProfile]);
+
+  const result = useMemo(() => {
+    if (!localResult || !officialEntry) return localResult ? { ...localResult, rank: undefined, overallRank: undefined, categoryRank: undefined, categoryLabel: undefined } : localResult;
+    return {
+      ...localResult,
+      rank: officialEntry.overallRank ?? officialEntry.rank,
+      overallRank: officialEntry.overallRank ?? officialEntry.rank,
+      categoryRank: officialEntry.categoryRank,
+      categoryLabel: officialEntry.categoryLabel,
+    };
+  }, [localResult, officialEntry]);
 
   const orderedCheckpoints = useMemo(() => race ? [...race.checkpoints].sort((a, b) => a.order - b.order) : [], [race]);
 
@@ -1047,7 +1070,7 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
             <div className="mt-4 bg-emerald-950/20 border border-emerald-800/40 p-4 rounded-2xl text-center">
               <p className="text-[10px] uppercase font-bold tracking-widest text-emerald-500">Finish Time</p>
               <p className="text-2xl font-mono font-black text-emerald-400 mt-1">{result.finishTime}</p>
-              {result.rank && <p className="text-xs text-emerald-500 mt-1">Rank #{result.rank} in {runnerDivisionLabel(runnerProfile)}</p>}
+              {result.overallRank && <p className="text-xs text-emerald-500 mt-1">Overall #{result.overallRank} in {runnerDivisionLabel(runnerProfile)}{result.categoryRank ? ` · ${result.categoryLabel || 'Category'} #${result.categoryRank}` : ''}</p>}
               {race && (
                 <button
                   type="button"

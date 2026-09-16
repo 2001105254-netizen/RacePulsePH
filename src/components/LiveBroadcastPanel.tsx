@@ -4,6 +4,7 @@ import { CirclePlay, ExternalLink, MapPinned, Radio, RefreshCw, Save, Trophy, Us
 import { db } from '../firebase';
 import { computeResults, getCheckpointByType } from '../lib/timing';
 import { embeddableMapUrl, safeExternalUrl, youtubeEmbedUrl } from '../lib/liveBroadcast';
+import { runnerDivisionLabel } from '../lib/raceEntry';
 import { ChipRead, PublicLeaderboardEntry, PublicLiveResults, Race, RunnerProfile } from '../types';
 
 interface LiveBroadcastPanelProps {
@@ -69,7 +70,7 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
   }, [activeRace?.id]);
 
   const results = useMemo(
-    () => activeRace ? computeResults(activeRace.checkpoints, chipReads, runnerProfiles) : [],
+    () => activeRace ? computeResults(activeRace.checkpoints, chipReads, runnerProfiles, activeRace.ageCategories || []) : [],
     [activeRace, chipReads, runnerProfiles]
   );
   const startedCount = useMemo(() => {
@@ -92,6 +93,9 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
           fullName: result.runnerProfile?.fullName || `Bib ${result.bibNumber}`,
           distance: distance.label,
           rank: result.rank!,
+          overallRank: result.overallRank ?? result.rank,
+          ...(result.categoryRank ? { categoryRank: result.categoryRank } : {}),
+          ...(result.categoryLabel ? { categoryLabel: result.categoryLabel } : {}),
           finishTime: result.finishTime!,
         }))
       );
@@ -100,8 +104,11 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
         .map((result) => ({
           bibNumber: result.bibNumber,
           fullName: result.runnerProfile?.fullName || `Bib ${result.bibNumber}`,
-          distance: result.runnerProfile?.distance || 'Unknown',
+          distance: runnerDivisionLabel(result.runnerProfile),
           rank: result.rank!,
+          overallRank: result.overallRank ?? result.rank,
+          ...(result.categoryRank ? { categoryRank: result.categoryRank } : {}),
+          ...(result.categoryLabel ? { categoryLabel: result.categoryLabel } : {}),
           finishTime: result.finishTime!,
         }))
         .sort((a, b) => a.distance.localeCompare(b.distance) || a.rank - b.rank);
