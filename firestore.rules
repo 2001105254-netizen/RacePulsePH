@@ -234,7 +234,10 @@ service cloud.firestore {
             && request.resource.data.raceId == resource.data.raceId)
           || (managesRace(resource.data.raceId)
             && request.resource.data.raceId == resource.data.raceId));
-      allow delete: if isSuperAdmin();
+      // Race organizers may remove a roster entry from a race they own before
+      // timing begins. The UI locks entries with reads; Super Admin retains
+      // authority for exceptional data correction.
+      allow delete: if isSuperAdmin() || managesRace(resource.data.raceId);
     }
 
     // Per race+distance sequence counters, incremented transactionally when a

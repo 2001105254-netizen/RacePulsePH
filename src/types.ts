@@ -112,6 +112,10 @@ export interface Race {
   // RFC3339 start time per distance label (e.g. "10K", "5K"). Falls back to
   // gunStartTime for legacy races and races with one shared start.
   waveStartTimes?: Record<string, string>;
+  // Set explicitly by the organizer after the last timing check. This is the
+  // source of truth for moving an event to Done Races; it does not depend on
+  // waiting for the calendar date to roll over.
+  completedAt?: string; // RFC3339
   // Public live-race presentation. The video and route remain optional so an
   // organizer can enable a live leaderboard even without a stream provider.
   liveBroadcastEnabled?: boolean;
@@ -136,6 +140,7 @@ export interface PublicLeaderboardEntry {
   overallRank?: number;
   categoryRank?: number;
   categoryLabel?: string;
+  timingMethod?: 'chip' | 'gun';
   finishTime: string;
 }
 
@@ -208,4 +213,7 @@ export interface RunnerResult {
   overallRank?: number;
   categoryRank?: number;
   categoryLabel?: string;
+  // A chip start is preferred. Gun is a deliberate per-distance fallback when
+  // a crowded start mat misses an otherwise valid finisher.
+  timingMethod?: 'chip' | 'gun';
 }

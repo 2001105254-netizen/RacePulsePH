@@ -70,7 +70,7 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
   }, [activeRace?.id]);
 
   const results = useMemo(
-    () => activeRace ? computeResults(activeRace.checkpoints, chipReads, runnerProfiles, activeRace.ageCategories || []) : [],
+    () => activeRace ? computeResults(activeRace.checkpoints, chipReads, runnerProfiles, activeRace.ageCategories || [], activeRace) : [],
     [activeRace, chipReads, runnerProfiles]
   );
   const startedCount = useMemo(() => {
@@ -96,6 +96,7 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
           overallRank: result.overallRank ?? result.rank,
           ...(result.categoryRank ? { categoryRank: result.categoryRank } : {}),
           ...(result.categoryLabel ? { categoryLabel: result.categoryLabel } : {}),
+          ...(result.timingMethod ? { timingMethod: result.timingMethod } : {}),
           finishTime: result.finishTime!,
         }))
       );
@@ -109,6 +110,7 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
           overallRank: result.overallRank ?? result.rank,
           ...(result.categoryRank ? { categoryRank: result.categoryRank } : {}),
           ...(result.categoryLabel ? { categoryLabel: result.categoryLabel } : {}),
+          ...(result.timingMethod ? { timingMethod: result.timingMethod } : {}),
           finishTime: result.finishTime!,
         }))
         .sort((a, b) => a.distance.localeCompare(b.distance) || a.rank - b.rank);
@@ -117,7 +119,7 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
         raceId: activeRace.id,
         raceName: activeRace.name,
         updatedAt: new Date().toISOString(),
-        status: finishedCount > 0 && finishedCount === runnerProfiles.length ? 'completed' : hasWaveStarted ? 'live' : 'upcoming',
+        status: activeRace.completedAt || (finishedCount > 0 && finishedCount === runnerProfiles.length) ? 'completed' : hasWaveStarted ? 'live' : 'upcoming',
         totalRegistered: runnerProfiles.length,
         totalStarted: startedCount,
         totalFinished: finishedCount,

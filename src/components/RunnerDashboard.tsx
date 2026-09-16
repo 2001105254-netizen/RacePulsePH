@@ -338,7 +338,7 @@ function RaceProfileSection({
             const today = new Date().toISOString().slice(0, 10);
             const raceStatus = !race
               ? 'Registration saved'
-              : race.date < today
+              : race.completedAt || race.date < today
                 ? 'Race completed'
                 : race.date === today
                   ? 'Race day'
@@ -855,7 +855,13 @@ function RunnerRacePass({ race, runnerProfile, result, orderedCheckpoints }: {
     { id: 'registered', label: 'Registered', detail: 'Your race slot is confirmed', completed: true, timestamp: runnerProfile.createdAt },
     { id: 'kit', label: 'Kit claimed', detail: runnerProfile.kitClaimedAt ? 'Race kit released to runner' : 'Claim from the race-kit desk', completed: !!runnerProfile.kitClaimedAt, timestamp: runnerProfile.kitClaimedAt },
     ...(checkin ? [{ id: 'checkin', label: 'Checked in', detail: checkin.label, completed: !!checkinSplit, timestamp: checkinSplit?.timestamp }] : []),
-    ...(start ? [{ id: 'start', label: 'Started', detail: start.label, completed: !!startSplit, timestamp: startSplit?.timestamp }] : []),
+    ...(start ? [{
+      id: 'start',
+      label: 'Started',
+      detail: startSplit ? start.label : result?.timingMethod === 'gun' ? 'Official wave gun-time fallback' : start.label,
+      completed: !!startSplit || result?.timingMethod === 'gun',
+      timestamp: startSplit?.timestamp || (result?.timingMethod === 'gun' ? getWaveStartTime(race, runnerProfile.distance) : undefined),
+    }] : []),
     ...(finish ? [{ id: 'finish', label: 'Finished', detail: finish.label, completed: !!finishSplit, timestamp: finishSplit?.timestamp }] : []),
     { id: 'result', label: 'Official result', detail: hasOfficialResult ? `Rank #${result!.rank} • ${result!.finishTime}` : 'Available after your finish is recorded', completed: hasOfficialResult, timestamp: hasOfficialResult ? finishSplit?.timestamp : undefined },
   ];
@@ -1014,17 +1020,21 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
 
   const localResult = useMemo(() => {
     if (!race) return null;
-    return computeResults(race.checkpoints, chipReads, [runnerProfile], race.ageCategories || []).find((r) => r.bibNumber === runnerProfile.bibNumber);
+    return computeResults(race.checkpoints, chipReads, [runnerProfile], race.ageCategories || [], race).find((r) => r.bibNumber === runnerProfile.bibNumber);
   }, [race, chipReads, runnerProfile]);
 
   const result = useMemo(() => {
-    if (!localResult || !officialEntry) return localResult ? { ...localResult, rank: undefined, overallRank: undefined, categoryRank: undefined, categoryLabel: undefined } : localResult;
+    // Keep the runner's own recorded finish visible while the organizer's
+    // public summary is arriving. Once it arrives it replaces the local
+    // placeholder with the real all-runner overall/category placement.
+    if (!localResult || !officialEntry) return localResult;
     return {
       ...localResult,
       rank: officialEntry.overallRank ?? officialEntry.rank,
       overallRank: officialEntry.overallRank ?? officialEntry.rank,
       categoryRank: officialEntry.categoryRank,
       categoryLabel: officialEntry.categoryLabel,
+      timingMethod: officialEntry.timingMethod || localResult.timingMethod,
     };
   }, [localResult, officialEntry]);
 
@@ -1049,6 +1059,7 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
                 ? new Date(new Date(waveStartTime).getTime() + cp.cutoffMinutes * 60_000)
                 : undefined;
               const afterCutoff = !!split && !!cutoffDeadline && new Date(split.timestamp).getTime() > cutoffDeadline.getTime();
+              const usesGunFallback = phase === 'start' && !split && result?.timingMethod === 'gun' && !!waveStartTime;
               return (
                 <div key={cp.id} className="flex items-center justify-between glass-inset px-4 py-3">
                   <span className="min-w-0">
@@ -1057,9 +1068,10 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
                       {phase === 'checkin' ? 'Check-In' : phase === 'start' ? 'Official Start' : phase === 'finish' ? 'Finish' : cutoffDeadline ? `Cutoff ${cutoffDeadline.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Split'}
                     </span>
                   </span>
-                  <span className={`font-mono text-sm font-black shrink-0 text-right ${afterCutoff ? 'text-amber-500' : split ? 'text-red-500' : 'text-[var(--text-muted)]'}`}>
-                    {split ? new Date(split.timestamp).toLocaleTimeString() : 'Pending'}
+                  <span className={`font-mono text-sm font-black shrink-0 text-right ${afterCutoff ? 'text-amber-500' : split ? 'text-red-500' : usesGunFallback ? 'text-emerald-500' : 'text-[var(--text-muted)]'}`}>
+                    {split ? new Date(split.timestamp).toLocaleTimeString() : usesGunFallback ? `Gun ${new Date(waveStartTime!).toLocaleTimeString()}` : 'Pending'}
                     {afterCutoff && <span className="block text-[9px] font-sans uppercase tracking-wide">After cutoff</span>}
+                    {usesGunFallback && <span className="block text-[9px] font-sans uppercase tracking-wide">Official fallback</span>}
                   </span>
                 </div>
               );

@@ -36,8 +36,8 @@ export default function PublicRaceLanding({ onRegister }: PublicRaceLandingProps
   // follow live timing while the race is under way.
   const now = new Date();
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const doneRaces = races.filter((race) => race.date < today);
-  const activeRaces = races.filter((race) => race.date >= today);
+  const doneRaces = races.filter((race) => !!race.completedAt || race.date < today);
+  const activeRaces = races.filter((race) => !race.completedAt && race.date >= today);
   const selectedRace = races.find((race) => race.id === selectedRaceId);
 
   return (

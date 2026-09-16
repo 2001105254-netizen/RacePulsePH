@@ -112,7 +112,8 @@ export async function downloadFinisherCertificate(race: Race, runner: Certificat
   const rankText = result.categoryRank && result.categoryLabel
     ? `${result.categoryLabel} category rank #${result.categoryRank}`
     : 'Category rank is not configured for this race';
-  pdf.text(`${raceDate}  •  ${rankText}`, center, raceBottom + 51, { align: 'center' });
+  const timingText = result.timingMethod === 'gun' ? 'Official gun-time fallback' : 'Individual chip time';
+  pdf.text(`${raceDate}  •  ${rankText}  •  ${timingText}`, center, raceBottom + 51, { align: 'center' });
 
   pdf.setDrawColor(190, 190, 190);
   pdf.setLineWidth(0.3);

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { collection, query, where, doc, setDoc, updateDoc, onSnapshot, writeBatch, deleteField, runTransaction } from 'firebase/firestore';
+import { collection, query, where, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch, deleteField, runTransaction } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 import { db } from '../firebase';
 import { useDualSync } from '../lib/dualSync';
@@ -244,6 +244,11 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   const [runnerProfiles, setRunnerProfiles] = useState<RunnerProfile[]>([]);
   const [runnerProfilesError, setRunnerProfilesError] = useState('');
   useEffect(() => {
+    if (!race.completedAt) return;
+    setScannerArmed(false);
+    setArmStartOnEnter(false);
+  }, [race.completedAt]);
+  useEffect(() => {
     const q = query(collection(db, 'runners'), where('raceId', '==', race.id));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const list: RunnerProfile[] = [];
@@ -258,13 +263,14 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   }, [race.id]);
 
   const results = useMemo(
-    () => computeResults(race.checkpoints, chipReads, runnerProfiles, race.ageCategories || []),
+    () => computeResults(race.checkpoints, chipReads, runnerProfiles, race.ageCategories || [], race),
     [race.ageCategories, race.checkpoints, chipReads, runnerProfiles]
   );
 
   const checkpointLabel = (id: string) => orderedCheckpoints.find((c) => c.id === id)?.label || id;
   const checkInCount = checkInCheckpoint ? new Set(chipReads.filter((read) => read.checkpointId === checkInCheckpoint.id).map((read) => read.bibNumber)).size : 0;
   const finishedCount = results.filter((result) => !!result.finishTime).length;
+  const isRaceCompleted = !!race.completedAt;
   const publicLeaders = useMemo<PublicLeaderboardEntry[]>(() => {
     const divisions = [...new Set(results.filter((result) => result.finishTime && result.rank).map((result) => runnerDivisionLabel(result.runnerProfile)))];
     return divisions.flatMap((division) => results
@@ -278,6 +284,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         overallRank: result.overallRank ?? result.rank,
         ...(result.categoryRank ? { categoryRank: result.categoryRank } : {}),
         ...(result.categoryLabel ? { categoryLabel: result.categoryLabel } : {}),
+        ...(result.timingMethod ? { timingMethod: result.timingMethod } : {}),
         finishTime: result.finishTime!,
       })));
   }, [results]);
@@ -291,22 +298,23 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         overallRank: result.overallRank ?? result.rank,
         ...(result.categoryRank ? { categoryRank: result.categoryRank } : {}),
         ...(result.categoryLabel ? { categoryLabel: result.categoryLabel } : {}),
+        ...(result.timingMethod ? { timingMethod: result.timingMethod } : {}),
         finishTime: result.finishTime!,
     }))
     .sort((a, b) => a.distance.localeCompare(b.distance) || a.rank - b.rank), [results]);
 
-  // The operator normally stays on this screen during the race. Publish only
-  // this compact, public-safe scoreboard after each scan; raw chip reads stay
-  // inside their protected collection and are never queried by spectators.
+  // The operator normally stays on this screen during the race. Publish this
+  // compact, public-safe official result record after each scan, even when a
+  // livestream is disabled. Runner status and certificates rely on it; raw
+  // chip reads remain private to operators and the individual runner.
   useEffect(() => {
-    if (!race.liveBroadcastEnabled) return;
     const timeout = window.setTimeout(() => {
       const hasWaveStarted = Object.keys(race.waveStartTimes || {}).length > 0 || !!race.gunStartTime;
       const summary: PublicLiveResults = {
         raceId: race.id,
         raceName: race.name,
         updatedAt: new Date().toISOString(),
-        status: finishedCount > 0 && finishedCount === runnerProfiles.length ? 'completed' : hasWaveStarted ? 'live' : 'upcoming',
+        status: isRaceCompleted || (finishedCount > 0 && finishedCount === runnerProfiles.length) ? 'completed' : hasWaveStarted ? 'live' : 'upcoming',
         totalRegistered: runnerProfiles.length,
         totalStarted: new Set(chipReads.filter((read) => read.checkpointId === startCheckpoint?.id).map((read) => read.bibNumber)).size,
         totalFinished: finishedCount,
@@ -318,7 +326,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
       });
     }, 500);
     return () => window.clearTimeout(timeout);
-  }, [chipReads, finishedCount, publicLeaders, publicOfficialResults, race, runnerProfiles.length, startCheckpoint?.id]);
+  }, [chipReads, finishedCount, isRaceCompleted, publicLeaders, publicOfficialResults, race, runnerProfiles.length, startCheckpoint?.id]);
 
   const actionLabel = selectedCheckpointType === 'checkin'
     ? 'Check In Runner'
@@ -369,6 +377,10 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   }, [mode, selectedCheckpointId]);
 
   const openStartScanner = (distance: string) => {
+    if (isRaceCompleted) {
+      setFeedback({ type: 'warning', text: 'This race is already finished. Reopen timing first if you need to make a correction.' });
+      return;
+    }
     if (!startCheckpoint) {
       setFeedback({ type: 'error', text: 'This race has no Start checkpoint configured yet.' });
       return;
@@ -381,6 +393,10 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   };
 
   const submitRead = async (scanRaw: string, overrideTimestamp?: string) => {
+    if (isRaceCompleted) {
+      setFeedback({ type: 'warning', text: 'Race timing is closed. Reopen timing first before recording another scan.' });
+      return false;
+    }
     if (!selectedCheckpointId || !selectedCheckpoint) {
       setFeedback({ type: 'error', text: 'Select a checkpoint first.' });
       return false;
@@ -542,6 +558,57 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
     [chipReads]
   );
 
+  const [updatingRaceStatus, setUpdatingRaceStatus] = useState(false);
+
+  const finishRace = async () => {
+    if (isRaceCompleted || updatingRaceStatus) return;
+    const missingFinishers = Math.max(0, runnerProfiles.length - finishedCount);
+    const warning = missingFinishers > 0
+      ? ` ${missingFinishers} registered runner${missingFinishers === 1 ? '' : 's'} do not have a Finish scan yet.`
+      : '';
+    if (!window.confirm(`Finish ${race.name}? RFID timing will pause, registration will close, and the current official results will be published.${warning}\n\nYou can reopen timing later only if you need to correct a result.`)) return;
+
+    setUpdatingRaceStatus(true);
+    setScannerArmed(false);
+    setArmStartOnEnter(false);
+    try {
+      const completedAt = new Date().toISOString();
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'races', race.id), { completedAt, registrationOpen: false });
+      batch.set(doc(db, 'liveResults', race.id), {
+        raceId: race.id,
+        raceName: race.name,
+        updatedAt: completedAt,
+        status: 'completed',
+        totalRegistered: runnerProfiles.length,
+        totalStarted: new Set(chipReads.filter((read) => read.checkpointId === startCheckpoint?.id).map((read) => read.bibNumber)).size,
+        totalFinished: finishedCount,
+        leaders: publicLeaders,
+        officialResults: publicOfficialResults,
+      } satisfies PublicLiveResults);
+      await batch.commit();
+      setFeedback({ type: 'success', text: `Race finished. ${finishedCount} official finisher${finishedCount === 1 ? '' : 's'} are now published in Done Races.` });
+    } catch (error: any) {
+      setFeedback({ type: 'error', text: error.message || 'Could not finish the race. Please try again.' });
+    } finally {
+      setUpdatingRaceStatus(false);
+    }
+  };
+
+  const reopenTiming = async () => {
+    if (!isRaceCompleted || updatingRaceStatus) return;
+    if (!window.confirm(`Reopen timing for ${race.name}? This keeps all recorded results, but allows new scans and corrections. Registration stays closed.`)) return;
+    setUpdatingRaceStatus(true);
+    try {
+      await updateDoc(doc(db, 'races', race.id), { completedAt: deleteField() });
+      setFeedback({ type: 'success', text: 'Race timing reopened. Results will update as you record corrections; registration remains closed.' });
+    } catch (error: any) {
+      setFeedback({ type: 'error', text: error.message || 'Could not reopen race timing. Please try again.' });
+    } finally {
+      setUpdatingRaceStatus(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Status bar */}
@@ -552,6 +619,15 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         </div>
         <div className="flex items-center gap-3">
           <LiveClock gunStartTime={race.gunStartTime} />
+          {isRaceCompleted ? (
+            <button type="button" onClick={() => void reopenTiming()} disabled={updatingRaceStatus} className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-emerald-500 hover:bg-emerald-500/20 disabled:opacity-50 transition">
+              {updatingRaceStatus ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />} Race complete · Reopen timing
+            </button>
+          ) : (
+            <button type="button" onClick={() => void finishRace()} disabled={updatingRaceStatus} className="inline-flex items-center gap-1.5 rounded-full border border-red-500/35 bg-red-500/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-red-500 hover:bg-red-500 hover:text-white disabled:opacity-50 transition">
+              {updatingRaceStatus ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />} Finish race & publish results
+            </button>
+          )}
           <span className={`inline-flex items-center gap-1.5 text-[9px] font-mono font-bold tracking-wider uppercase px-2.5 py-1 rounded-full border ${lanConnected ? 'bg-green-500/10 border-green-500/25 text-green-500' : 'bg-rose-500/10 border-rose-500/25 text-rose-500'}`}>
             {lanConnected ? <><Wifi className="w-3 h-3" /> LAN Sync Linked</> : <><WifiOff className="w-3 h-3" /> Standalone Mode</>}
           </span>
@@ -684,9 +760,10 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
           <button
             type="button"
             onClick={scannerArmed ? pauseAutomaticScanner : armAutomaticScanner}
+            disabled={isRaceCompleted}
             className={`min-h-11 shrink-0 px-5 py-3 rounded-[14px] text-xs font-black uppercase tracking-widest transition active:scale-[0.98] ${scannerArmed ? 'bg-amber-500 hover:bg-amber-400 text-black' : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-950/25'}`}
           >
-            {scannerArmed ? 'Pause RFID Scanner' : `Arm ${stationName}`}
+            {isRaceCompleted ? 'Race timing closed' : scannerArmed ? 'Pause RFID Scanner' : `Arm ${stationName}`}
           </button>
         </div>
 
@@ -1386,6 +1463,30 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
     }
   };
 
+  const handleDeleteRunner = async () => {
+    if (!foundRunner) return;
+    if (selectedHasReads) {
+      setFeedback({ type: 'error', text: 'This runner cannot be deleted because timing reads already exist. Preserve the record or ask a Super Admin to correct the race data.' });
+      return;
+    }
+    if (!window.confirm(`Permanently remove ${foundRunner.fullName} (bib #${foundRunner.bibNumber}) from this race roster? This cannot be undone.`)) return;
+
+    setSaving(true);
+    setFeedback(null);
+    try {
+      await deleteDoc(doc(db, 'runners', `${foundRunner.uid}_${race.id}`));
+      setBibInput('');
+      setChipInput('');
+      setNextBib('');
+      setEditingBib(false);
+      setFeedback({ type: 'success', text: `${foundRunner.fullName} (bib #${foundRunner.bibNumber}) was removed from the race roster.` });
+    } catch (err: any) {
+      setFeedback({ type: 'error', text: err.message || 'Failed to remove the runner.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleKitClaim = async () => {
     if (!foundRunner) return;
     const alreadyClaimed = !!foundRunner.kitClaimedAt;
@@ -1589,6 +1690,11 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
                 {foundRunner.kitClaimedAt ? 'Undo kit claimed' : 'Mark kit claimed'}
               </button>
             )}
+            {!editingBib && (
+              <button type="button" onClick={handleDeleteRunner} disabled={saving || selectedHasReads} className="sm:col-span-2 glass-inset px-3 py-2.5 text-[10px] font-black uppercase tracking-wide text-red-500 hover:bg-red-500/10 disabled:opacity-50 transition">
+                {selectedHasReads ? 'Runner locked after timing reads' : 'Delete runner from race'}
+              </button>
+            )}
           </div>
         )}
 
@@ -1687,6 +1793,10 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
   const startedCount = runnerProfiles.filter((r) => startedBibs.has(r.bibNumber)).length;
 
   const handleStartWave = async (distance: string) => {
+    if (race.completedAt) {
+      alert('This race is already finished. Reopen timing from Record Splits before starting another wave.');
+      return;
+    }
     if (!window.confirm(`Fire the gun for ${distance} now? This starts the official ${distance} race clock, opens Record Splits, and arms Start RFID.`)) return;
     setSettingDistance(distance);
     try {
