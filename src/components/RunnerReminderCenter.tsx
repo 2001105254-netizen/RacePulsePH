@@ -78,7 +78,8 @@ export default function RunnerReminderCenter({ runnerProfiles }: { runnerProfile
     for (const profile of runnerProfiles) {
       const race = raceById.get(profile.raceId);
       if (!race) continue;
-      const officialEntry = liveResults[profile.raceId]?.officialResults?.find((entry) => entry.bibNumber === profile.bibNumber);
+      const resultsArePublic = !!race.completedAt || Object.keys(race.waveStartTimes || {}).length > 0 || !!race.gunStartTime;
+      const officialEntry = resultsArePublic ? liveResults[profile.raceId]?.officialResults?.find((entry) => entry.bibNumber === profile.bibNumber) : undefined;
       if (officialEntry) {
         all.push({
           id: `result_${profile.raceId}_${profile.bibNumber}`,

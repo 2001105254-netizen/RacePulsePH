@@ -1018,6 +1018,8 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
     return () => unsubscribe();
   }, [runnerProfile.raceId, runnerProfile.bibNumber]);
 
+  const resultsArePublic = !!race?.completedAt || Object.keys(race?.waveStartTimes || {}).length > 0 || !!race?.gunStartTime;
+
   const localResult = useMemo(() => {
     if (!race) return null;
     return computeResults(race.checkpoints, chipReads, [runnerProfile], race.ageCategories || [], race).find((r) => r.bibNumber === runnerProfile.bibNumber);
@@ -1027,7 +1029,7 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
     // Keep the runner's own recorded finish visible while the organizer's
     // public summary is arriving. Once it arrives it replaces the local
     // placeholder with the real all-runner overall/category placement.
-    if (!localResult || !officialEntry) return localResult;
+    if (!localResult || !officialEntry || !resultsArePublic) return localResult;
     return {
       ...localResult,
       rank: officialEntry.overallRank ?? officialEntry.rank,
@@ -1036,7 +1038,7 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
       categoryLabel: officialEntry.categoryLabel,
       timingMethod: officialEntry.timingMethod || localResult.timingMethod,
     };
-  }, [localResult, officialEntry]);
+  }, [localResult, officialEntry, resultsArePublic]);
 
   const orderedCheckpoints = useMemo(() => race ? [...race.checkpoints].sort((a, b) => a.order - b.order) : [], [race]);
 

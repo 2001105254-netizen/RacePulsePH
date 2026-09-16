@@ -45,7 +45,12 @@ export default function PublicRaceResults({ race, onRegister }: PublicRaceResult
     return () => unsubscribe();
   }, [race.id]);
 
-  const officialResults = summary?.officialResults || [];
+  // Do not trust an old/stale leaderboard document on its own: the actual
+  // race settings decide when results may become public. This hides any
+  // pre-race scanner test records until an organizer starts a wave.
+  const raceHasStarted = Object.keys(race.waveStartTimes || {}).length > 0 || !!race.gunStartTime;
+  const resultsArePublic = !!race.completedAt || raceHasStarted;
+  const officialResults = resultsArePublic ? (summary?.officialResults || []) : [];
   const distances = useMemo(() => [...new Set(officialResults.map((entry) => entry.distance))], [officialResults]);
   const filteredResults = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -83,7 +88,7 @@ export default function PublicRaceResults({ race, onRegister }: PublicRaceResult
           <div className="glass-inset px-5 py-8 text-center space-y-2">
             <Medal className="w-8 h-8 mx-auto text-[var(--text-muted)]" />
             <p className="text-sm font-bold text-[var(--text-primary)]">Official results are not published yet</p>
-            <p className="text-xs text-[var(--text-secondary)]">Results and E-certificates become available here after the organizer records and publishes finishers.</p>
+            <p className="text-xs text-[var(--text-secondary)]">Results and E-certificates become available after the organizer starts the race and records finishers.</p>
           </div>
         ) : (
           <>

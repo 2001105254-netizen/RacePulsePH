@@ -271,6 +271,11 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   const checkInCount = checkInCheckpoint ? new Set(chipReads.filter((read) => read.checkpointId === checkInCheckpoint.id).map((read) => read.bibNumber)).size : 0;
   const finishedCount = results.filter((result) => !!result.finishTime).length;
   const isRaceCompleted = !!race.completedAt;
+  const hasWaveStarted = Object.keys(race.waveStartTimes || {}).length > 0 || !!race.gunStartTime;
+  // Pre-race chip tests must never leak into the public leaderboard. Timing
+  // becomes publishable only after an official wave start, or after the
+  // organizer explicitly finishes the race.
+  const canPublishResults = isRaceCompleted || hasWaveStarted;
   const publicLeaders = useMemo<PublicLeaderboardEntry[]>(() => {
     const divisions = [...new Set(results.filter((result) => result.finishTime && result.rank).map((result) => runnerDivisionLabel(result.runnerProfile)))];
     return divisions.flatMap((division) => results
@@ -309,24 +314,23 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   // chip reads remain private to operators and the individual runner.
   useEffect(() => {
     const timeout = window.setTimeout(() => {
-      const hasWaveStarted = Object.keys(race.waveStartTimes || {}).length > 0 || !!race.gunStartTime;
       const summary: PublicLiveResults = {
         raceId: race.id,
         raceName: race.name,
         updatedAt: new Date().toISOString(),
-        status: isRaceCompleted || (finishedCount > 0 && finishedCount === runnerProfiles.length) ? 'completed' : hasWaveStarted ? 'live' : 'upcoming',
+        status: isRaceCompleted ? 'completed' : hasWaveStarted ? 'live' : 'upcoming',
         totalRegistered: runnerProfiles.length,
         totalStarted: new Set(chipReads.filter((read) => read.checkpointId === startCheckpoint?.id).map((read) => read.bibNumber)).size,
         totalFinished: finishedCount,
-        leaders: publicLeaders,
-        officialResults: publicOfficialResults,
+        leaders: canPublishResults ? publicLeaders : [],
+        officialResults: canPublishResults ? publicOfficialResults : [],
       };
       setDoc(doc(db, 'liveResults', race.id), summary).catch((error) => {
         console.warn('Public live leaderboard publish skipped:', error.message);
       });
     }, 500);
     return () => window.clearTimeout(timeout);
-  }, [chipReads, finishedCount, isRaceCompleted, publicLeaders, publicOfficialResults, race, runnerProfiles.length, startCheckpoint?.id]);
+  }, [canPublishResults, chipReads, finishedCount, hasWaveStarted, isRaceCompleted, publicLeaders, publicOfficialResults, race, runnerProfiles.length, startCheckpoint?.id]);
 
   const actionLabel = selectedCheckpointType === 'checkin'
     ? 'Check In Runner'

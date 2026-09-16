@@ -115,16 +115,17 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
         }))
         .sort((a, b) => a.distance.localeCompare(b.distance) || a.rank - b.rank);
       const hasWaveStarted = Object.keys(activeRace.waveStartTimes || {}).length > 0 || !!activeRace.gunStartTime;
+      const canPublishResults = !!activeRace.completedAt || hasWaveStarted;
       const summary: PublicLiveResults = {
         raceId: activeRace.id,
         raceName: activeRace.name,
         updatedAt: new Date().toISOString(),
-        status: activeRace.completedAt || (finishedCount > 0 && finishedCount === runnerProfiles.length) ? 'completed' : hasWaveStarted ? 'live' : 'upcoming',
+        status: activeRace.completedAt ? 'completed' : hasWaveStarted ? 'live' : 'upcoming',
         totalRegistered: runnerProfiles.length,
         totalStarted: startedCount,
         totalFinished: finishedCount,
-        leaders,
-        officialResults,
+        leaders: canPublishResults ? leaders : [],
+        officialResults: canPublishResults ? officialResults : [],
       };
       await setDoc(doc(db, 'liveResults', activeRace.id), summary);
       if (!quiet) setMessage('Live leaderboard published. It will update automatically with new scans.');

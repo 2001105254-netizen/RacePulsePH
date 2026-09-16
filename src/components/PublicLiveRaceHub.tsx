@@ -43,14 +43,18 @@ export default function PublicLiveRaceHub({ races }: PublicLiveRaceHubProps) {
   const streamEmbed = youtubeEmbedUrl(activeRace.livestreamUrl);
   const mapUrl = safeExternalUrl(activeRace.routeMapUrl);
   const mapEmbed = embeddableMapUrl(activeRace.routeMapUrl);
-  const status = summary?.status || 'upcoming';
+  // The race record is the source of truth. A stale public summary from a
+  // pre-race scanner test must not make an upcoming event appear finished.
+  const raceHasStarted = Object.keys(activeRace.waveStartTimes || {}).length > 0 || !!activeRace.gunStartTime;
+  const resultsArePublic = !!activeRace.completedAt || raceHasStarted;
+  const status = activeRace.completedAt ? 'completed' : raceHasStarted ? 'live' : 'upcoming';
   const statusLabel = status === 'live' ? 'Live now' : status === 'completed' ? 'Race complete' : 'Upcoming';
   const statusClass = status === 'live'
     ? 'bg-red-500/10 border-red-500/30 text-red-500'
     : status === 'completed'
       ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500'
       : 'bg-amber-500/10 border-amber-500/30 text-amber-500';
-  const officialResults = summary?.officialResults || [];
+  const officialResults = resultsArePublic ? (summary?.officialResults || []) : [];
   const filteredOfficialResults = officialResults.filter((result) => {
     const term = resultSearch.trim().toLowerCase();
     return !term || result.fullName.toLowerCase().includes(term) || result.bibNumber.toLowerCase().includes(term);
