@@ -27,11 +27,18 @@ interface AgeCategoryDraft {
   gender: Gender;
   minAge: number;
   maxAge: number;
+  // The gender is prepended automatically, e.g. “Male 20 & Below”.
+  labelSuffix: string;
 }
 
 function draftToAgeCategory(d: AgeCategoryDraft): AgeCategory {
   const genderLabel = d.gender === 'male' ? 'Male' : 'Female';
-  return { id: d.id, gender: d.gender, minAge: d.minAge, maxAge: d.maxAge, label: `${genderLabel} ${d.minAge}-${d.maxAge}` };
+  const rangeLabel = d.labelSuffix.trim() || `${d.minAge}-${d.maxAge}`;
+  return { id: d.id, gender: d.gender, minAge: d.minAge, maxAge: d.maxAge, label: `${genderLabel} ${rangeLabel}` };
+}
+
+function ageCategoryLabelSuffix(category: AgeCategory): string {
+  return category.label.replace(/^(Male|Female)\s+/i, '') || `${category.minAge}-${category.maxAge}`;
 }
 
 interface DistanceDraft {
@@ -166,7 +173,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
       type: c.type || (index === 0 ? 'start' : index === ordered.length - 1 ? 'finish' : 'intermediate'),
       cutoffMinutes: c.cutoffMinutes ? String(c.cutoffMinutes) : '',
     })));
-    setAgeCategories((race.ageCategories || []).map((c) => ({ id: c.id, gender: c.gender, minAge: c.minAge, maxAge: c.maxAge })));
+    setAgeCategories((race.ageCategories || []).map((c) => ({ id: c.id, gender: c.gender, minAge: c.minAge, maxAge: c.maxAge, labelSuffix: ageCategoryLabelSuffix(c) })));
     setDistances((race.distances || []).sort((a, b) => a.km - b.km).map((d) => ({ id: d.id, km: d.km, price: d.price || 0 })));
     setEntryCategories(raceEntryCategories(race));
     setInclusions((race.inclusions || []).map((text, idx) => ({ id: `incl_${idx}_${Date.now()}`, text })));
@@ -238,7 +245,18 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     setCheckpoints((prev) => prev.map((c, i) => (i === idx ? { ...c, ...patch } : c)));
 
   const addAgeCategory = () =>
-    setAgeCategories((prev) => [...prev, { id: `age_${Date.now()}`, gender: 'male', minAge: 18, maxAge: 29 }]);
+    setAgeCategories((prev) => [...prev, { id: `age_${Date.now()}`, gender: 'male', minAge: 18, maxAge: 29, labelSuffix: '18-29' }]);
+  const addAgeCategoryPreset = (minAge: number, maxAge: number, labelSuffix: string) => {
+    setAgeCategories((prev) => {
+      const next = [...prev];
+      (['male', 'female'] as Gender[]).forEach((gender) => {
+        if (!next.some((category) => category.gender === gender && category.minAge === minAge && category.maxAge === maxAge)) {
+          next.push({ id: `age_${gender}_${minAge}_${maxAge}_${Date.now()}`, gender, minAge, maxAge, labelSuffix });
+        }
+      });
+      return next;
+    });
+  };
   const removeAgeCategory = (idx: number) => setAgeCategories((prev) => prev.filter((_, i) => i !== idx));
   const updateAgeCategory = (idx: number, patch: Partial<AgeCategoryDraft>) =>
     setAgeCategories((prev) => prev.map((c, i) => (i === idx ? { ...c, ...patch } : c)));
@@ -677,7 +695,14 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
                     onChange={(e) => updateAgeCategory(idx, { maxAge: parseInt(e.target.value, 10) || 1 })}
                     className="w-16 glass-inset px-2 py-2 text-xs font-semibold text-center text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
                   />
-                  <span className="flex-1 text-xs text-[var(--text-secondary)] truncate">{draftToAgeCategory(cat).label}</span>
+                  <input
+                    type="text"
+                    value={cat.labelSuffix}
+                    onChange={(e) => updateAgeCategory(idx, { labelSuffix: e.target.value })}
+                    className="min-w-0 flex-1 glass-inset px-2 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                    placeholder="Label, e.g. 20 & Below"
+                    aria-label="Age category label"
+                  />
                   <button type="button" onClick={() => removeAgeCategory(idx)} className="text-[var(--text-muted)] hover:text-red-500 p-1.5">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -687,9 +712,17 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
                 <p className="text-[10.5px] text-[var(--text-muted)]">No age categories yet - runners will be reported as "Unclassified" until you add some.</p>
               )}
             </div>
-            <button type="button" onClick={addAgeCategory} className="mt-2 text-xs font-bold text-red-500 hover:text-red-400 flex items-center gap-1.5">
-              <Plus className="w-3.5 h-3.5" /> Add Age Category
-            </button>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
+              <button type="button" onClick={addAgeCategory} className="text-xs font-bold text-red-500 hover:text-red-400 flex items-center gap-1.5">
+                <Plus className="w-3.5 h-3.5" /> Add Age Category
+              </button>
+              <button type="button" onClick={() => addAgeCategoryPreset(1, 20, '20 & Below')} className="text-xs font-bold text-red-500 hover:text-red-400">
+                + Add 20 & Below (M/F)
+              </button>
+              <button type="button" onClick={() => addAgeCategoryPreset(50, 120, '50 & Above')} className="text-xs font-bold text-red-500 hover:text-red-400">
+                + Add 50 & Above (M/F)
+              </button>
+            </div>
           </div>
 
           {error && <p className="text-xs text-red-500 font-semibold">⚠️ {error}</p>}

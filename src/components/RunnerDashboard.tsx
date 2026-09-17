@@ -473,6 +473,8 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
   const [teamMembers, setTeamMembers] = useState<string[]>(['', '']);
   const [gender, setGender] = useState<Gender>(latest?.gender || 'male');
   const [age, setAge] = useState(latest?.age ? String(latest.age) : '');
+  const [emergencyContactName, setEmergencyContactName] = useState(latest?.emergencyContactName || '');
+  const [emergencyContactPhone, setEmergencyContactPhone] = useState(latest?.emergencyContactPhone || '');
   const [shirtSize, setShirtSize] = useState(initialShirtSize || latest?.shirtSize || '');
   const [showInclusionImage, setShowInclusionImage] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -501,6 +503,8 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
       setFullName(existingForRace.fullName);
       setGender(existingForRace.gender);
       setAge(String(existingForRace.age));
+      setEmergencyContactName(existingForRace.emergencyContactName || '');
+      setEmergencyContactPhone(existingForRace.emergencyContactPhone || '');
       setShirtSize(existingForRace.shirtSize || initialShirtSize || '');
       setEntryCategory(runnerEntryCategory(existingForRace));
       setTeamName(existingForRace.teamName || '');
@@ -532,6 +536,8 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
     if (!raceId) return setError('Please select which race you are registering for.');
     const parsedAge = parseInt(age, 10);
     if (!age || isNaN(parsedAge) || parsedAge < 1 || parsedAge > 120) return setError('Please enter a valid age.');
+    if (!emergencyContactName.trim()) return setError('Please enter an emergency contact person.');
+    if (emergencyContactPhone.trim().length < 4) return setError('Please enter a valid emergency contact number.');
 
     setSaving(true);
     try {
@@ -553,6 +559,8 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
         entryCategory,
         gender,
         age: parsedAge,
+        emergencyContactName: emergencyContactName.trim().toUpperCase(),
+        emergencyContactPhone: emergencyContactPhone.trim(),
         createdAt: existingForRace?.createdAt || new Date().toISOString(),
         // A runner may correct their profile before race day, but that must
         // never erase operational records already set by the kit desk.
@@ -799,6 +807,18 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
             </div>
           </div>
           <p className="text-[10.5px] text-[var(--text-muted)] -mt-2 pl-1">Used to place you in the correct age category on race reports.</p>
+          <div className="glass-inset p-4 space-y-3">
+            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-[var(--text-secondary)]"><HeartPulse className="w-4 h-4 text-red-500" /> Emergency Contact</div>
+            <p className="text-[10.5px] text-[var(--text-muted)] -mt-1">Used only by the race organizer in case of an emergency.</p>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Contact Person</label>
+              <input type="text" required value={emergencyContactName} onChange={(e) => setEmergencyContactName(e.target.value.toUpperCase())} maxLength={100} className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" placeholder="EX: MARIA DELA CRUZ (MOTHER)" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Contact Number</label>
+              <div className="relative"><Phone className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" /><input type="tel" required value={emergencyContactPhone} onChange={(e) => setEmergencyContactPhone(e.target.value)} maxLength={30} className="w-full glass-inset pl-10 pr-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" placeholder="EX: 0917 123 4567" /></div>
+            </div>
+          </div>
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Shirt Size <span className="normal-case font-normal text-[var(--text-muted)]">(for this race)</span></label>
             <ShirtSizePicker key={`${raceId}_${existingForRace?.shirtSize || initialShirtSize || ''}`} value={shirtSize} onChange={setShirtSize} emptyLabel="Select shirt size" />

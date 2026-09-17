@@ -1,5 +1,5 @@
 import { AgeCategory, Checkpoint, CheckpointType, ChipRead, Race, RunnerProfile, RunnerResult, RunnerSplit } from '../types';
-import { runnerDivisionLabel } from './raceEntry';
+import { runnerDivisionLabel, runnerEntryCategory } from './raceEntry';
 
 // A staggered race stores one gun time for each distance. When no wave has
 // been started yet, retain the old single gun time behavior for legacy races.
@@ -44,8 +44,6 @@ export function computeResults(
   const startCheckpoint = getCheckpointByType(orderedCheckpoints, 'start') || orderedCheckpoints[0];
   const finishCheckpoint = getCheckpointByType(orderedCheckpoints, 'finish') || orderedCheckpoints[orderedCheckpoints.length - 1];
 
-  const profileByBib = new Map(runnerProfiles.map((r) => [r.bibNumber, r]));
-
   // bib -> checkpointId -> earliest recorded timestamp (guards against duplicate scans)
   const readsByBib = new Map<string, Map<string, string>>();
   for (const read of chipReads) {
@@ -61,7 +59,14 @@ export function computeResults(
   }
 
   const results: RunnerResult[] = [];
-  for (const [bibNumber, checkpointMap] of readsByBib.entries()) {
+  // A timing read without a current roster record is useful audit data, but
+  // it can never be an official result. Iterate the registered roster rather
+  // than raw reads so deleted/test/typo bibs cannot become an “Unknown” rank.
+  // If the organizer later imports the matching runner with the same bib,
+  // their existing reads are automatically picked up on the next calculation.
+  for (const runnerProfile of runnerProfiles) {
+    const bibNumber = runnerProfile.bibNumber;
+    const checkpointMap = readsByBib.get(bibNumber) || new Map<string, string>();
     const splits: RunnerSplit[] = orderedCheckpoints
       .filter((cp) => checkpointMap.has(cp.id))
       .map((cp) => ({ checkpointId: cp.id, timestamp: checkpointMap.get(cp.id)! }));
@@ -69,7 +74,6 @@ export function computeResults(
     let finishTime: string | undefined;
     let finishSeconds: number | undefined;
 
-    const runnerProfile = profileByBib.get(bibNumber);
     if (startCheckpoint && finishCheckpoint && startCheckpoint.id !== finishCheckpoint.id && checkpointMap.has(finishCheckpoint.id)) {
       const chipStart = checkpointMap.get(startCheckpoint.id);
       // When a dense start line misses an individual tag, the official wave
@@ -124,6 +128,10 @@ export function computeResults(
   const byAgeCategory = new Map<string, RunnerResult[]>();
   for (const result of results) {
     if (result.finishSeconds === undefined || !result.runnerProfile) continue;
+    // Duo and Trio are team divisions: the representative/captain's age must
+    // not decide the team's ranking. They receive their own overall division
+    // rank only (e.g. 10K Duo #1), while age categories stay Solo-only.
+    if (runnerEntryCategory(result.runnerProfile) !== 'solo') continue;
     const category = ageCategories.find((item) =>
       item.gender === result.runnerProfile!.gender
       && result.runnerProfile!.age >= item.minAge

@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { AgeCategory, Gender, Race, RunnerProfile } from '../types';
-import { runnerDivisionLabel } from './raceEntry';
+import { runnerDivisionLabel, runnerEntryCategory } from './raceEntry';
 
 export function findAgeCategory(ageCategories: AgeCategory[], gender: Gender, age: number): AgeCategory | undefined {
   return ageCategories.find((c) => c.gender === gender && age >= c.minAge && age <= c.maxAge);
@@ -19,8 +19,9 @@ export function groupRunnersForReport(runners: RunnerProfile[], ageCategories: A
   const groups = new Map<string, RunnerProfile[]>();
 
   for (const runner of runners) {
-    const category = findAgeCategory(ageCategories, runner.gender, runner.age);
-    const categoryLabel = category?.label || 'Unclassified';
+    const isSolo = runnerEntryCategory(runner) === 'solo';
+    const category = isSolo ? findAgeCategory(ageCategories, runner.gender, runner.age) : undefined;
+    const categoryLabel = isSolo ? (category?.label || 'Unclassified') : 'Team division (no age category)';
     const key = `${runnerDivisionLabel(runner)}|||${categoryLabel}`;
     const list = groups.get(key) ?? [];
     list.push(runner);

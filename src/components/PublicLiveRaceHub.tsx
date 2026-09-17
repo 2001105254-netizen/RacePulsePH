@@ -54,7 +54,9 @@ export default function PublicLiveRaceHub({ races }: PublicLiveRaceHubProps) {
     : status === 'completed'
       ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500'
       : 'bg-amber-500/10 border-amber-500/30 text-amber-500';
-  const officialResults = resultsArePublic ? (summary?.officialResults || []) : [];
+  const officialResults = resultsArePublic
+    ? (summary?.officialResults || []).filter((entry) => entry.distance !== 'Unknown')
+    : [];
   const filteredOfficialResults = officialResults.filter((result) => {
     const term = resultSearch.trim().toLowerCase();
     return !term || result.fullName.toLowerCase().includes(term) || result.bibNumber.toLowerCase().includes(term);

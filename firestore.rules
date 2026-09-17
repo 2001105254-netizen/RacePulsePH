@@ -200,6 +200,8 @@ service cloud.firestore {
         && data.gender is string && (data.gender == 'male' || data.gender == 'female')
         && data.age is int && data.age >= 1 && data.age <= 120
         && data.createdAt is string
+        && (!data.keys().hasAny(['emergencyContactName']) || (data.emergencyContactName is string && data.emergencyContactName.size() >= 1 && data.emergencyContactName.size() <= 100))
+        && (!data.keys().hasAny(['emergencyContactPhone']) || (data.emergencyContactPhone is string && data.emergencyContactPhone.size() >= 4 && data.emergencyContactPhone.size() <= 30))
         && (!data.keys().hasAny(['chipId']) || data.chipId is string)
         && (!data.keys().hasAny(['kitClaimedAt']) || data.kitClaimedAt is string)
         && (!data.keys().hasAny(['shirtSize']) || (data.shirtSize is string && data.shirtSize.size() <= 20))

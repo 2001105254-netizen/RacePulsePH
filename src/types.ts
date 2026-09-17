@@ -178,6 +178,10 @@ export interface RunnerProfile {
   teamMembers?: string[];
   gender: Gender;
   age: number;
+  // Stored on the race registration (not the public leaderboard) so the race
+  // organizer has the correct emergency contact for this specific event.
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
   createdAt: string;
 }
 

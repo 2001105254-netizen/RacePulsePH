@@ -50,7 +50,9 @@ export default function PublicRaceResults({ race, onRegister }: PublicRaceResult
   // pre-race scanner test records until an organizer starts a wave.
   const raceHasStarted = Object.keys(race.waveStartTimes || {}).length > 0 || !!race.gunStartTime;
   const resultsArePublic = !!race.completedAt || raceHasStarted;
-  const officialResults = resultsArePublic ? (summary?.officialResults || []) : [];
+  const officialResults = resultsArePublic
+    ? (summary?.officialResults || []).filter((entry) => entry.distance !== 'Unknown')
+    : [];
   const distances = useMemo(() => [...new Set(officialResults.map((entry) => entry.distance))], [officialResults]);
   const filteredResults = useMemo(() => {
     const term = search.trim().toLowerCase();
