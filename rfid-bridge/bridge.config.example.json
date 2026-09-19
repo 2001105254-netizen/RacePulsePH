@@ -1,7 +1,7 @@
 {
   "readerIp": "192.168.0.128",
   "readerPort": 1969,
-  "antennas": [1],
+  "antennas": [1, 2],
   "racePulseEndpoint": "http://localhost:3000/api/rfid-events",
   "dedupeMilliseconds": 4000
 }

@@ -427,6 +427,12 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
 
     const scannedChip = !!matchedRunner.chipId && normalizeScanValue(matchedRunner.chipId) === scannedValue;
     const bibNumber = matchedRunner.bibNumber;
+    // Check-in is attendance only. A runner who reaches the start without
+    // visiting the desk must still be timed normally; showing this explicitly
+    // reassures the operator instead of making them stop the start-line flow.
+    const runnerCheckedIn = !!checkInCheckpoint && chipReads.some((read) =>
+      read.bibNumber === bibNumber && read.checkpointId === checkInCheckpoint.id
+    );
     // Each distance may leave at a different time. A legacy/shared gun time
     // remains the fallback so older races still work exactly as before.
     const waveStartTime = getWaveStartTime(race, matchedRunner.distance);
@@ -481,7 +487,15 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
 
       lastRecordedScanRef.current = { key: scanKey, at: nowMs };
       const queuedOffline = typeof navigator !== 'undefined' && !navigator.onLine;
-      setFeedback({ type: 'success', text: `${queuedOffline ? 'Saved to device queue' : 'Recorded'} ${matchedRunner.fullName} • bib ${bibNumber} @ ${checkpointLabel(selectedCheckpointId)}${lateForCutoff ? ' • AFTER CUTOFF' : ''}` });
+      const skippedCheckInNote = selectedCheckpointType === 'start' && !runnerCheckedIn
+        ? ' • no check-in (allowed)'
+        : '';
+      const gunFallbackNote = selectedCheckpointType === 'finish'
+        && !chipReads.some((read) => read.bibNumber === bibNumber && read.checkpointId === startCheckpoint?.id)
+        && waveStartTime
+        ? ' • official gun-time fallback'
+        : '';
+      setFeedback({ type: 'success', text: `${queuedOffline ? 'Saved to device queue' : 'Recorded'} ${matchedRunner.fullName} • bib ${bibNumber} @ ${checkpointLabel(selectedCheckpointId)}${skippedCheckInNote}${gunFallbackNote}${lateForCutoff ? ' • AFTER CUTOFF' : ''}` });
       announceSuccessfulScan();
       setBibInput('');
       scanInputRef.current?.focus();
@@ -1373,8 +1387,10 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
   const [showBibScanner, setShowBibScanner] = useState(false);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [bridgeEndpointReady, setBridgeEndpointReady] = useState(false);
   const bibInputRef = useRef<HTMLInputElement>(null);
   const chipInputRef = useRef<HTMLInputElement>(null);
+  const processedBridgeEventsRef = useRef(new Set<string>());
 
   const foundRunner = useMemo(
     () => runnerProfiles.find((r) => normalizeScanValue(r.bibNumber) === normalizeScanValue(bibInput)),
@@ -1384,6 +1400,56 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
   useEffect(() => {
     if (foundRunner) chipInputRef.current?.focus();
   }, [foundRunner]);
+
+  // The Windows bridge can also be used at kit collection.  Deliberately wait
+  // for an operator to choose a runner first, then place the next EPC into the
+  // Chip ID box for review.  It never auto-assigns a chip: the operator still
+  // has to press Assign Chip, preventing a nearby tag from being linked to the
+  // wrong bib.
+  useEffect(() => {
+    if (!foundRunner) {
+      setBridgeEndpointReady(false);
+      return;
+    }
+
+    let active = true;
+    let polling = false;
+    let after = new Date().toISOString();
+
+    const pollBridge = async () => {
+      if (polling) return;
+      polling = true;
+      try {
+        const response = await fetch(`/api/rfid-events?after=${encodeURIComponent(after)}`, { cache: 'no-store' });
+        if (!response.ok) return;
+        const payload = await response.json() as { events?: RfidBridgeEvent[] };
+        if (!active) return;
+        setBridgeEndpointReady(true);
+
+        for (const event of payload.events || []) {
+          const cursor = event.receivedAt || event.timestamp;
+          if (cursor && Date.parse(cursor) >= Date.parse(after)) after = cursor;
+          if (processedBridgeEventsRef.current.has(event.id)) continue;
+          processedBridgeEventsRef.current.add(event.id);
+          const chipId = normalizeScanValue(event.epc);
+          setChipInput(chipId);
+          setFeedback({ type: 'success', text: `RFID chip ${chipId} detected on ANT${event.antenna}. Verify ${foundRunner.fullName}, then click Assign Chip.` });
+          chipInputRef.current?.focus();
+        }
+      } catch {
+        if (active) setBridgeEndpointReady(false);
+      } finally {
+        polling = false;
+      }
+    };
+
+    void pollBridge();
+    const interval = window.setInterval(() => { void pollBridge(); }, 450);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [foundRunner?.uid]);
 
   const selectRunner = (r: RunnerProfile) => {
     setFeedback(null);
@@ -1647,11 +1713,18 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
           )}
 
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Chip ID</label>
+            <div className="flex items-center justify-between gap-3 mb-1.5">
+              <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">Chip ID</label>
+              {foundRunner && (
+                <span className={`text-[9px] font-black uppercase tracking-widest flex items-center gap-1 ${bridgeEndpointReady ? 'text-emerald-500' : 'text-[var(--text-muted)]'}`}>
+                  <Radio className="w-3 h-3" /> {bridgeEndpointReady ? 'RFID Bridge Ready' : 'Checking RFID Bridge…'}
+                </span>
+              )}
+            </div>
             <input
               ref={chipInputRef}
               type="text"
-              placeholder="SCAN OR TYPE CHIP ID"
+              placeholder="SCAN RFID OR TYPE CHIP ID"
               value={chipInput}
               onChange={(e) => setChipInput(e.target.value.toUpperCase())}
               autoComplete="off"
