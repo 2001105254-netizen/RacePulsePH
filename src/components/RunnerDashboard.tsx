@@ -880,7 +880,7 @@ function RunnerRacePass({ race, runnerProfile, result, orderedCheckpoints }: {
       label: 'Started',
       detail: startSplit ? start.label : result?.timingMethod === 'gun' ? 'Official wave gun-time fallback' : start.label,
       completed: !!startSplit || result?.timingMethod === 'gun',
-      timestamp: startSplit?.timestamp || (result?.timingMethod === 'gun' ? getWaveStartTime(race, runnerProfile.distance) : undefined),
+      timestamp: startSplit?.timestamp || (result?.timingMethod === 'gun' ? getWaveStartTime(race, runnerProfile.distance, runnerEntryCategory(runnerProfile)) : undefined),
     }] : []),
     ...(finish ? [{ id: 'finish', label: 'Finished', detail: finish.label, completed: !!finishSplit, timestamp: finishSplit?.timestamp }] : []),
     { id: 'result', label: 'Official result', detail: hasOfficialResult ? `Rank #${result!.rank} • ${result!.finishTime}` : 'Available after your finish is recorded', completed: hasOfficialResult, timestamp: hasOfficialResult ? finishSplit?.timestamp : undefined },
@@ -1076,7 +1076,7 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
             {orderedCheckpoints.map((cp, index) => {
               const split = result?.splits.find((s) => s.checkpointId === cp.id);
               const phase = checkpointType(cp, index, orderedCheckpoints.length);
-              const waveStartTime = getWaveStartTime(race, runnerProfile.distance);
+              const waveStartTime = getWaveStartTime(race, runnerProfile.distance, runnerEntryCategory(runnerProfile));
               const cutoffDeadline = cp.cutoffMinutes && waveStartTime
                 ? new Date(new Date(waveStartTime).getTime() + cp.cutoffMinutes * 60_000)
                 : undefined;

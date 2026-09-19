@@ -7,7 +7,7 @@ import { checkpointType, computeResults, getCheckpointByType, getWaveStartTime }
 import { useOfflineScanQueue } from '../lib/offlineScanQueue';
 import { Race, ChipRead, PublicLeaderboardEntry, PublicLiveResults, RaceEntryCategory, RunnerProfile, RunnerResult } from '../types';
 import { groupRunnersByDistance, generateRunnerRosterPdf } from '../lib/runnerReport';
-import { entryCategoryLabels, entryMemberCount, raceEntryCategories, runnerDivisionLabel } from '../lib/raceEntry';
+import { entryCategoryLabels, entryMemberCount, raceEntryCategories, runnerDivisionLabel, runnerEntryCategory } from '../lib/raceEntry';
 import { Radio, ScanLine, Trophy, Clock, Wifi, WifiOff, QrCode, RefreshCw, ArrowLeft, Cpu, Users2, FileDown, FileUp, Maximize2, X, ListChecks, CheckCircle2, Circle, PlayCircle, RotateCcw, Timer } from 'lucide-react';
 import QrScannerModal from './QrScannerModal';
 import RaceList from './RaceList';
@@ -29,6 +29,18 @@ function formatClockElapsed(totalMs: number): string {
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = totalSeconds % 60;
   return [h, m, s].map((n) => String(n).padStart(2, '0')).join(':');
+}
+
+// datetime-local inputs use the operator's local clock while Firestore stores
+// timestamps in UTC.  Keep that conversion in one place so a corrected gun
+// time produces the same result on the timing laptop and public leaderboard.
+function toLocalDateTimeInputValue(isoTimestamp: string | undefined, fallbackRaceDate?: string): string {
+  const candidate = isoTimestamp
+    ? new Date(isoTimestamp)
+    : new Date(`${fallbackRaceDate || new Date().toISOString().slice(0, 10)}T06:00:00`);
+  if (Number.isNaN(candidate.getTime())) return '';
+  const local = new Date(candidate.getTime() - candidate.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
 }
 
 // RFID readers commonly send an EPC as keyboard text. Normalising both the
@@ -435,7 +447,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
     );
     // Each distance may leave at a different time. A legacy/shared gun time
     // remains the fallback so older races still work exactly as before.
-    const waveStartTime = getWaveStartTime(race, matchedRunner.distance);
+    const waveStartTime = getWaveStartTime(race, matchedRunner.distance, runnerEntryCategory(matchedRunner));
     const cutoffDeadline = selectedCheckpoint.cutoffMinutes && waveStartTime
       ? new Date(new Date(waveStartTime).getTime() + selectedCheckpoint.cutoffMinutes * 60_000)
       : undefined;
@@ -855,16 +867,23 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
             {results.length === 0 && (
               <p className="text-xs text-[var(--text-secondary)]">No results yet.</p>
             )}
-            {results.map((r) => (
-              <div key={r.bibNumber} className="flex items-center justify-between glass-inset px-3 py-2 text-xs gap-2">
-                <span className="font-mono font-bold text-red-500 w-8 shrink-0">{r.rank ? `#${r.rank}` : '-'}</span>
-                <span className="flex-1 truncate">
-                  <span className="font-bold text-[var(--text-primary)]">{r.runnerProfile?.fullName || `Bib ${r.bibNumber}`}</span>
-                  <span className="text-[var(--text-muted)]"> &bull; #{r.bibNumber}</span>
-                </span>
-                <span className="font-mono font-bold text-[var(--text-primary)] shrink-0">{r.finishTime || `${r.splits.length}/${orderedCheckpoints.length}`}</span>
-              </div>
-            ))}
+            {results.map((r) => {
+              const missingCheckpoints = orderedCheckpoints
+                .filter((checkpoint) => !r.splits.some((split) => split.checkpointId === checkpoint.id))
+                .map((checkpoint) => checkpointLabel(checkpoint.id));
+              return (
+                <div key={r.bibNumber} className="flex items-center justify-between glass-inset px-3 py-2 text-xs gap-2">
+                  <span className="font-mono font-bold text-red-500 w-8 shrink-0">{r.rank ? `#${r.rank}` : '-'}</span>
+                  <span className="flex-1 truncate">
+                    <span className="font-bold text-[var(--text-primary)]">{r.runnerProfile?.fullName || `Bib ${r.bibNumber}`}</span>
+                    <span className="text-[var(--text-muted)]"> &bull; #{r.bibNumber}</span>
+                  </span>
+                  <span className={`font-mono font-bold text-right shrink-0 ${r.finishTime ? 'text-[var(--text-primary)]' : 'text-amber-500'}`}>
+                    {r.finishTime || (missingCheckpoints.length ? `Missing: ${missingCheckpoints.join(', ')}` : 'Needs review')}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -1863,6 +1882,8 @@ interface StartRollCallPanelProps {
 // a glance who the reader missed and needs a manual re-scan.
 function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId, onOpenStartScanner }: StartRollCallPanelProps) {
   const [settingDistance, setSettingDistance] = useState<string | null>(null);
+  const [editingGunTimeDistance, setEditingGunTimeDistance] = useState<string | null>(null);
+  const [gunTimeInput, setGunTimeInput] = useState('');
 
   const startedBibs = useMemo(() => {
     if (!startCheckpointId) return new Set<string>();
@@ -1924,6 +1945,43 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
     }
   };
 
+  const openGunTimeEditor = (distance: string) => {
+    setGunTimeInput(toLocalDateTimeInputValue(getWaveStartTime(race, distance), race.date));
+    setEditingGunTimeDistance(distance);
+  };
+
+  const handleSaveGunTime = async (distance: string) => {
+    const parsedTime = new Date(gunTimeInput);
+    if (!gunTimeInput || Number.isNaN(parsedTime.getTime())) {
+      alert('Enter the verified gun start date and time first.');
+      return;
+    }
+    if (!window.confirm(`Save ${parsedTime.toLocaleString()} as the official ${distance} gun time? Finishers without an individual Start read will be recalculated using this time.`)) return;
+
+    setSettingDistance(distance);
+    try {
+      const raceRef = doc(db, 'races', race.id);
+      const startedAt = parsedTime.toISOString();
+      await runTransaction(db, async (tx) => {
+        const currentSnapshot = await tx.get(raceRef);
+        const currentRace = currentSnapshot.data() as Race | undefined;
+        const waveStartTimes = { ...(currentRace?.waveStartTimes || {}), [distance]: startedAt };
+        tx.update(raceRef, {
+          waveStartTimes,
+          // Retain a legacy shared gun time for older race screens. New
+          // result calculation always prefers the distance-specific value.
+          gunStartTime: currentRace?.gunStartTime || startedAt,
+        });
+      });
+      setEditingGunTimeDistance(null);
+      setGunTimeInput('');
+    } catch (err: any) {
+      alert(err.message || `Failed to save the ${distance} gun time.`);
+    } finally {
+      setSettingDistance(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="glass-panel p-5">
@@ -1936,17 +1994,37 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
           {distanceGroups.map((group) => {
             const waveStartTime = getWaveStartTime(race, group.distance);
             const settingThisWave = settingDistance === group.distance;
+            const editingThisWave = editingGunTimeDistance === group.distance;
             return (
               <div key={group.distance} className="glass-inset px-4 py-3 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-black font-display text-[var(--text-primary)]">{group.distance}</span>
                   {waveStartTime ? <LiveClock gunStartTime={waveStartTime} /> : <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Not started</span>}
                 </div>
-                {waveStartTime ? (
+                {editingThisWave ? (
+                  <div className="space-y-2">
+                    <label className="block text-[9px] font-black uppercase tracking-widest text-amber-500">Verified official gun time</label>
+                    <input
+                      type="datetime-local"
+                      value={gunTimeInput}
+                      onChange={(event) => setGunTimeInput(event.target.value)}
+                      disabled={!!settingDistance}
+                      className="w-full glass-inset px-3 py-2 text-xs font-bold font-mono text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-amber-500/50 disabled:opacity-60"
+                    />
+                    <p className="text-[9px] leading-relaxed text-[var(--text-secondary)]">Only runners with a Finish read but no individual Start read will use this fallback. Chip-start results stay unchanged.</p>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => void handleSaveGunTime(group.distance)} disabled={!!settingDistance} className="flex-1 rounded-[12px] bg-amber-500 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-black disabled:opacity-60">
+                        {settingThisWave ? 'Saving…' : 'Save gun time'}
+                      </button>
+                      <button type="button" onClick={() => { setEditingGunTimeDistance(null); setGunTimeInput(''); }} disabled={!!settingDistance} className="rounded-[12px] glass-inset px-3 py-2 text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)] disabled:opacity-60">Cancel</button>
+                    </div>
+                  </div>
+                ) : waveStartTime ? (
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[10px] font-bold text-emerald-500">Gun: {new Date(waveStartTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                     <div className="flex items-center gap-2">
                       <button onClick={() => onOpenStartScanner(group.distance)} disabled={!!settingDistance} className="text-[10px] font-black uppercase tracking-wide text-emerald-500 hover:text-emerald-400 disabled:opacity-50 transition">Arm Start RFID</button>
+                      <button type="button" onClick={() => openGunTimeEditor(group.distance)} disabled={!!settingDistance} className="text-[10px] font-black uppercase tracking-wide text-amber-500 hover:text-amber-400 disabled:opacity-50 transition">Correct gun time</button>
                       <button
                         onClick={() => handleResetWave(group.distance)}
                         disabled={!!settingDistance}
@@ -1956,6 +2034,15 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
                       </button>
                     </div>
                   </div>
+                ) : race.completedAt ? (
+                  <button
+                    type="button"
+                    onClick={() => openGunTimeEditor(group.distance)}
+                    disabled={!!settingDistance}
+                    className="w-full text-xs font-black uppercase tracking-widest px-4 py-2.5 rounded-[var(--radius-control)] text-black bg-amber-500 hover:bg-amber-400 flex items-center justify-center gap-2 transition disabled:opacity-60"
+                  >
+                    Set official gun time
+                  </button>
                 ) : (
                   <button
                     onClick={() => handleStartWave(group.distance)}

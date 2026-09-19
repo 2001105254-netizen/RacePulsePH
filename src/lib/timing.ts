@@ -1,12 +1,28 @@
-import { AgeCategory, Checkpoint, CheckpointType, ChipRead, Race, RunnerProfile, RunnerResult, RunnerSplit } from '../types';
-import { runnerDivisionLabel, runnerEntryCategory } from './raceEntry';
+import { AgeCategory, Checkpoint, CheckpointType, ChipRead, Race, RaceEntryCategory, RunnerProfile, RunnerResult, RunnerSplit } from '../types';
+import { entryCategoryLabels, runnerDivisionLabel, runnerEntryCategory } from './raceEntry';
 
 // A staggered race stores one gun time for each distance. When no wave has
 // been started yet, retain the old single gun time behavior for legacy races.
-export function getWaveStartTime(race: Pick<Race, 'gunStartTime' | 'waveStartTimes'>, distance: string): string | undefined {
+export function getWaveStartTime(
+  race: Pick<Race, 'gunStartTime' | 'waveStartTimes'>,
+  distance: string,
+  entryCategory?: RaceEntryCategory,
+): string | undefined {
   const waveStartTimes = race.waveStartTimes;
   if (waveStartTimes && Object.keys(waveStartTimes).length > 0) {
-    return waveStartTimes[distance];
+    // Start Roll Call stores wave keys by the complete division (for example
+    // "21K Solo"), while imported runners commonly retain the base distance
+    // "21K" plus a separate entryCategory.  Resolve both forms so a valid
+    // Finish scan can receive its correct division-specific gun-time fallback.
+    const division = entryCategory ? `${distance} ${entryCategoryLabels[entryCategory]}` : distance;
+    if (waveStartTimes[division]) return waveStartTimes[division];
+    if (waveStartTimes[distance]) return waveStartTimes[distance];
+
+    const normalise = (value: string) => value.replace(/[^a-z0-9]/gi, '').toUpperCase();
+    const target = normalise(division);
+    const matchingKey = Object.keys(waveStartTimes).find((key) => normalise(key) === target);
+    if (matchingKey) return waveStartTimes[matchingKey];
+    return undefined;
   }
   return race.gunStartTime || undefined;
 }
@@ -80,7 +96,7 @@ export function computeResults(
       // gun time is the safe fallback. It is distance-specific, so a later 5K
       // wave cannot accidentally use an earlier 10K gun time.
       const fallbackGunStart = !chipStart && runnerProfile && raceTiming
-        ? getWaveStartTime(raceTiming, runnerProfile.distance)
+        ? getWaveStartTime(raceTiming, runnerProfile.distance, runnerEntryCategory(runnerProfile))
         : undefined;
       const startTimestamp = chipStart || fallbackGunStart;
       if (startTimestamp) {
