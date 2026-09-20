@@ -141,6 +141,11 @@ export interface PublicLeaderboardEntry {
   categoryRank?: number;
   categoryLabel?: string;
   timingMethod?: 'chip' | 'gun';
+  // Both elapsed views are published for transparent certificates. `finishTime`
+  // remains the official result (chip time when a valid chip start exists;
+  // otherwise the documented gun-time fallback).
+  chipTime?: string;
+  gunTime?: string;
   finishTime: string;
 }
 
@@ -210,6 +215,12 @@ export interface RunnerResult {
   splits: RunnerSplit[];
   finishTime?: string; // formatted HH:MM:SS elapsed from 'start' checkpoint to 'finish'
   finishSeconds?: number;
+  // Kept independently so a certificate can show both elapsed measurements.
+  // Chip time exists only if the runner has a valid individual Start read.
+  chipTime?: string;
+  chipSeconds?: number;
+  gunTime?: string;
+  gunSeconds?: number;
   // `rank` remains the legacy/display alias for overallRank. Overall rank is
   // within the same distance and Solo/Duo/Trio division; category rank is
   // within the organizer-configured gender/age bracket of that division.

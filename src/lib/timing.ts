@@ -89,24 +89,32 @@ export function computeResults(
 
     let finishTime: string | undefined;
     let finishSeconds: number | undefined;
+    let chipTime: string | undefined;
+    let chipSeconds: number | undefined;
+    let gunTime: string | undefined;
+    let gunSeconds: number | undefined;
 
     if (startCheckpoint && finishCheckpoint && startCheckpoint.id !== finishCheckpoint.id && checkpointMap.has(finishCheckpoint.id)) {
       const chipStart = checkpointMap.get(startCheckpoint.id);
-      // When a dense start line misses an individual tag, the official wave
-      // gun time is the safe fallback. It is distance-specific, so a later 5K
-      // wave cannot accidentally use an earlier 10K gun time.
-      const fallbackGunStart = !chipStart && runnerProfile && raceTiming
+      // Calculate both transparent elapsed views. The chip time stays the
+      // preferred official result whenever its individual Start read is valid;
+      // gun time remains the documented fallback for a missed start scan.
+      const gunStart = runnerProfile && raceTiming
         ? getWaveStartTime(raceTiming, runnerProfile.distance, runnerEntryCategory(runnerProfile))
         : undefined;
-      const startTimestamp = chipStart || fallbackGunStart;
-      if (startTimestamp) {
+      const finishMs = new Date(checkpointMap.get(finishCheckpoint.id)!).getTime();
+      const elapsedFrom = (startTimestamp: string | undefined): number | undefined => {
+        if (!startTimestamp || Number.isNaN(finishMs)) return undefined;
         const startMs = new Date(startTimestamp).getTime();
-        const finishMs = new Date(checkpointMap.get(finishCheckpoint.id)!).getTime();
-        if (!Number.isNaN(startMs) && !Number.isNaN(finishMs) && finishMs >= startMs) {
-          finishSeconds = Math.round((finishMs - startMs) / 1000);
-          finishTime = formatElapsed(finishSeconds);
-        }
-      }
+        return !Number.isNaN(startMs) && finishMs >= startMs ? Math.round((finishMs - startMs) / 1000) : undefined;
+      };
+
+      chipSeconds = elapsedFrom(chipStart);
+      gunSeconds = elapsedFrom(gunStart);
+      chipTime = chipSeconds === undefined ? undefined : formatElapsed(chipSeconds);
+      gunTime = gunSeconds === undefined ? undefined : formatElapsed(gunSeconds);
+      finishSeconds = chipSeconds ?? gunSeconds;
+      finishTime = finishSeconds === undefined ? undefined : formatElapsed(finishSeconds);
     }
 
     results.push({
@@ -115,7 +123,9 @@ export function computeResults(
       splits,
       finishTime,
       finishSeconds,
-      ...(finishTime ? { timingMethod: checkpointMap.has(startCheckpoint?.id || '') ? 'chip' as const : 'gun' as const } : {}),
+      ...(chipTime ? { chipTime, chipSeconds } : {}),
+      ...(gunTime ? { gunTime, gunSeconds } : {}),
+      ...(finishTime ? { timingMethod: chipTime ? 'chip' as const : 'gun' as const } : {}),
     });
   }
 

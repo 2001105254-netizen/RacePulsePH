@@ -26,8 +26,8 @@ function loadCertificateLogo(): Promise<HTMLImageElement | null> {
 // Creates the certificate on the runner's own device. No additional personal
 // data is stored: the certified details are the official result already shown
 // in the runner's private My Races view.
-export async function downloadFinisherCertificate(race: Race, runner: CertificateRunner, result: RunnerResult): Promise<void> {
-  if (!result.finishTime) return;
+export async function createFinisherCertificate(race: Race, runner: CertificateRunner, result: RunnerResult): Promise<jsPDF | null> {
+  if (!result.finishTime) return null;
 
   const logo = await loadCertificateLogo();
 
@@ -92,19 +92,30 @@ export async function downloadFinisherCertificate(race: Race, runner: Certificat
   pdf.roundedRect(52, raceBottom + 13, 193, 26, 4, 4, 'F');
   pdf.setTextColor(255, 255, 255);
   pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(7);
-  pdf.text('DISTANCE', 75, raceBottom + 22, { align: 'center' });
-  pdf.text('OFFICIAL TIME', 117, raceBottom + 22, { align: 'center' });
-  pdf.text('OVERALL RANK', 157, raceBottom + 22, { align: 'center' });
-  pdf.text('CATEGORY RANK', 198, raceBottom + 22, { align: 'center' });
-  pdf.text('BIB NUMBER', 227, raceBottom + 22, { align: 'center' });
+  pdf.setFontSize(6.1);
+  // Keep the timing evidence beside the official result. This makes a chip
+  // result transparent while clearly labelling a rare gun-time fallback.
+  pdf.text('DISTANCE', 65, raceBottom + 22, { align: 'center' });
+  pdf.text('GUN TIME', 93, raceBottom + 22, { align: 'center' });
+  pdf.text('CHIP TIME', 121, raceBottom + 22, { align: 'center' });
+  pdf.text('OFFICIAL TIME', 150, raceBottom + 22, { align: 'center' });
+  pdf.text('OVERALL', 180, raceBottom + 22, { align: 'center' });
+  pdf.text('CATEGORY', 208, raceBottom + 22, { align: 'center' });
+  pdf.text('BIB', 232, raceBottom + 22, { align: 'center' });
   pdf.setTextColor(255, 230, 230);
-  pdf.setFontSize(11.5);
-  pdf.text(runner.distance, 75, raceBottom + 32, { align: 'center' });
-  pdf.text(result.finishTime, 117, raceBottom + 32, { align: 'center' });
-  pdf.text(result.overallRank || result.rank ? `#${result.overallRank || result.rank}` : '—', 157, raceBottom + 32, { align: 'center' });
-  pdf.text(result.categoryRank ? `#${result.categoryRank}` : '—', 198, raceBottom + 32, { align: 'center' });
-  pdf.text(`#${runner.bibNumber}`, 227, raceBottom + 32, { align: 'center' });
+  pdf.setFontSize(9.2);
+  const chipTimeText = result.chipTime || 'NO START';
+  const gunTimeText = result.gunTime || '—';
+  // A valid chip time is always preferred. Existing fallback finishers stay
+  // certifiable, but the certificate never mislabels their time as chip time.
+  const officialTimeText = result.chipTime || result.finishTime;
+  pdf.text(runner.distance, 65, raceBottom + 32, { align: 'center' });
+  pdf.text(gunTimeText, 93, raceBottom + 32, { align: 'center' });
+  pdf.text(chipTimeText, 121, raceBottom + 32, { align: 'center' });
+  pdf.text(officialTimeText, 150, raceBottom + 32, { align: 'center' });
+  pdf.text(result.overallRank || result.rank ? `#${result.overallRank || result.rank}` : '—', 180, raceBottom + 32, { align: 'center' });
+  pdf.text(result.categoryRank ? `#${result.categoryRank}` : '—', 208, raceBottom + 32, { align: 'center' });
+  pdf.text(`#${runner.bibNumber}`, 232, raceBottom + 32, { align: 'center' });
 
   pdf.setTextColor(75, 75, 78);
   pdf.setFont('helvetica', 'normal');
@@ -112,7 +123,9 @@ export async function downloadFinisherCertificate(race: Race, runner: Certificat
   const rankText = result.categoryRank && result.categoryLabel
     ? `${result.categoryLabel} category rank #${result.categoryRank}`
     : 'Category rank is not configured for this race';
-  const timingText = result.timingMethod === 'gun' ? 'Official gun-time fallback' : 'Individual chip time';
+  const timingText = result.timingMethod === 'gun'
+    ? 'Official time uses gun-time fallback because no valid chip start was recorded'
+    : "Official time uses the runner's validated individual chip time";
   pdf.text(`${raceDate}  •  ${rankText}  •  ${timingText}`, center, raceBottom + 51, { align: 'center' });
 
   pdf.setDrawColor(190, 190, 190);
@@ -123,5 +136,11 @@ export async function downloadFinisherCertificate(race: Race, runner: Certificat
   pdf.text('Verified from the RacePulsePH official timing record', 22, 189);
   pdf.text(`Certificate ref: ${safeFilename(race.id).slice(0, 18)}-${safeFilename(runner.bibNumber).slice(0, 18)}`, pageWidth - 22, 189, { align: 'right' });
 
+  return pdf;
+}
+
+export async function downloadFinisherCertificate(race: Race, runner: CertificateRunner, result: RunnerResult): Promise<void> {
+  const pdf = await createFinisherCertificate(race, runner, result);
+  if (!pdf) return;
   pdf.save(`${safeFilename(race.name)}_${safeFilename(runner.bibNumber)}_E-Certificate.pdf`);
 }

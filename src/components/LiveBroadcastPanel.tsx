@@ -97,6 +97,8 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
           ...(result.categoryRank ? { categoryRank: result.categoryRank } : {}),
           ...(result.categoryLabel ? { categoryLabel: result.categoryLabel } : {}),
           ...(result.timingMethod ? { timingMethod: result.timingMethod } : {}),
+          ...(result.chipTime ? { chipTime: result.chipTime } : {}),
+          ...(result.gunTime ? { gunTime: result.gunTime } : {}),
           finishTime: result.finishTime!,
         }))
       );
@@ -111,6 +113,8 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
           ...(result.categoryRank ? { categoryRank: result.categoryRank } : {}),
           ...(result.categoryLabel ? { categoryLabel: result.categoryLabel } : {}),
           ...(result.timingMethod ? { timingMethod: result.timingMethod } : {}),
+          ...(result.chipTime ? { chipTime: result.chipTime } : {}),
+          ...(result.gunTime ? { gunTime: result.gunTime } : {}),
           finishTime: result.finishTime!,
         }))
         .sort((a, b) => a.distance.localeCompare(b.distance) || a.rank - b.rank);

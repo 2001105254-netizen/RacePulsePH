@@ -302,6 +302,8 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         ...(result.categoryRank ? { categoryRank: result.categoryRank } : {}),
         ...(result.categoryLabel ? { categoryLabel: result.categoryLabel } : {}),
         ...(result.timingMethod ? { timingMethod: result.timingMethod } : {}),
+        ...(result.chipTime ? { chipTime: result.chipTime } : {}),
+        ...(result.gunTime ? { gunTime: result.gunTime } : {}),
         finishTime: result.finishTime!,
       })));
   }, [results]);
@@ -316,6 +318,8 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         ...(result.categoryRank ? { categoryRank: result.categoryRank } : {}),
         ...(result.categoryLabel ? { categoryLabel: result.categoryLabel } : {}),
         ...(result.timingMethod ? { timingMethod: result.timingMethod } : {}),
+        ...(result.chipTime ? { chipTime: result.chipTime } : {}),
+        ...(result.gunTime ? { gunTime: result.gunTime } : {}),
         finishTime: result.finishTime!,
     }))
     .sort((a, b) => a.distance.localeCompare(b.distance) || a.rank - b.rank), [results]);
