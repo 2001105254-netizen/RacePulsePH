@@ -1,0 +1,27 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Race bibs are downloadable by the registered runner, so the referenced
+    // font must be readable without exposing any private profile data. Only
+    // the signed-in uploader may create, replace, or remove their own fonts.
+    match /race-bib-fonts/{ownerUid}/{fontFile} {
+      allow read: if true;
+      allow create, update: if request.auth != null
+        && request.auth.uid == ownerUid
+        && request.resource.size < 2 * 1024 * 1024;
+      allow delete: if request.auth != null && request.auth.uid == ownerUid;
+    }
+
+    // Public race artwork is displayed in event cards, payment instructions,
+    // digital bibs, and printable bib PDFs. The uploader owns the folder,
+    // which also lets a co-organizer upload a replacement safely.
+    match /race-assets/{ownerUid}/{raceId}/{assetFile} {
+      allow read: if true;
+      allow create, update: if request.auth != null
+        && request.auth.uid == ownerUid
+        && request.resource.contentType.matches('image/.*')
+        && request.resource.size < 8 * 1024 * 1024;
+      allow delete: if request.auth != null && request.auth.uid == ownerUid;
+    }
+  }
+}

@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, getDocFromServer, enableIndexedDbPersistence } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import {
   getAuth,
   setPersistence,
@@ -28,6 +29,7 @@ const app = initializeApp(firebaseConfig);
 
 // Initialize Firestore on the default database
 export const db = getFirestore(app);
+export const storage = getStorage(app);
 
 // Enable offline database persistence for resilient offline capabilities
 if (typeof window !== 'undefined') {

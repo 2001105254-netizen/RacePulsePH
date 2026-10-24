@@ -13,3 +13,6 @@ local_rfid_events.json
 rfid-bridge/vendor/*.dll
 rfid-bridge/bin/
 rfid-bridge/obj/
+rfid-station/bin/
+rfid-station/obj/
+release/

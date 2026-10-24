@@ -82,7 +82,36 @@ body {
   font-family: var(--font-sans);
   background-color: var(--surface-page);
   color: var(--text-primary);
+  min-width: 0;
+  overflow-x: clip;
   transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* A single long team name, bib code, or toolbar must never make the whole
+   application wider than a phone screen. Individual lists may still opt in
+   to horizontal scrolling when keeping columns side-by-side is important. */
+#root,
+#app_root {
+  min-width: 0;
+  overflow-x: clip;
+}
+
+img,
+canvas,
+video {
+  max-width: 100%;
+}
+
+.racepulse-horizontal-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.racepulse-horizontal-scroll::-webkit-scrollbar {
+  display: none;
 }
 
 /* iOS Safari auto-zooms in on any <input>/<textarea>/<select> whose computed
@@ -92,6 +121,16 @@ body {
 @media (max-width: 767px) {
   input, textarea, select {
     font-size: 16px !important;
+  }
+
+  /* Keep panels and dialogs comfortably inside narrow phone screens while
+     preserving the more spacious desktop visual treatment. */
+  .glass-panel {
+    border-radius: 20px;
+  }
+
+  .glass-inset {
+    border-radius: 16px;
   }
 }
 

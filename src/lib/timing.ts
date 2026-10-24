@@ -154,6 +154,9 @@ export function computeResults(
   const byAgeCategory = new Map<string, RunnerResult[]>();
   for (const result of results) {
     if (result.finishSeconds === undefined || !result.runnerProfile) continue;
+    // Free slots are anonymous race-day places. They can receive a time and
+    // a rank in their own division, but never an age-category place.
+    if (result.runnerProfile.isFreeSlot) continue;
     // Duo and Trio are team divisions: the representative/captain's age must
     // not decide the team's ranking. They receive their own overall division
     // rank only (e.g. 10K Duo #1), while age categories stay Solo-only.

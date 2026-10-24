@@ -13,6 +13,14 @@ import { Sun, Moon, RefreshCw, Clock3, LogOut, LogIn, UserPlus, ArrowLeft, Shiel
 
 type Theme = 'light' | 'dark';
 
+// Event registration QR codes use ?register={raceId}. Keep this intentionally
+// small and local: race IDs are public identifiers, and the actual race is
+// still loaded/validated from Firestore before a runner can submit.
+function registrationRaceIdFromUrl(): string | null {
+  const raceId = new URLSearchParams(window.location.search).get('register')?.trim();
+  return raceId || null;
+}
+
 function useTheme() {
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem('racepulse_theme');
@@ -32,9 +40,9 @@ export default function App() {
   const { theme, toggleTheme } = useTheme();
   const [authUser, setAuthUser] = useState<User | null | undefined>(undefined); // undefined = still checking session
   const [profile, setProfile] = useState<UserProfile | null | undefined>(undefined);
-  const [guestScreen, setGuestScreen] = useState<'landing' | 'login' | 'signup'>('landing');
-  const [pendingRaceId, setPendingRaceId] = useState<string | null>(null);
-  const [runnerSignupIntent, setRunnerSignupIntent] = useState(false);
+  const [guestScreen, setGuestScreen] = useState<'landing' | 'login' | 'signup'>(() => registrationRaceIdFromUrl() ? 'signup' : 'landing');
+  const [pendingRaceId, setPendingRaceId] = useState<string | null>(() => registrationRaceIdFromUrl());
+  const [runnerSignupIntent, setRunnerSignupIntent] = useState(() => !!registrationRaceIdFromUrl());
   const [openingPhase, setOpeningPhase] = useState<'showing' | 'leaving' | 'done'>('showing');
 
   useEffect(() => {
@@ -64,10 +72,11 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setAuthUser(user);
       if (!user) {
+        const registrationRaceId = registrationRaceIdFromUrl();
         setProfile(null);
-        setGuestScreen('landing');
-        setPendingRaceId(null);
-        setRunnerSignupIntent(false);
+        setGuestScreen(registrationRaceId ? 'signup' : 'landing');
+        setPendingRaceId(registrationRaceId);
+        setRunnerSignupIntent(!!registrationRaceId);
       }
     });
     return () => unsubscribe();
@@ -117,7 +126,12 @@ export default function App() {
   } else if (profile.role === 'organizer') {
     content = profile.approved ? <OrganizerDashboard profile={profile} /> : <PendingApprovalScreen displayName={profile.displayName} />;
   } else {
-    content = <RunnerDashboard profile={profile} initialRaceId={pendingRaceId} onInitialRaceHandled={() => setPendingRaceId(null)} />;
+    content = <RunnerDashboard profile={profile} initialRaceId={pendingRaceId} onInitialRaceHandled={() => {
+      setPendingRaceId(null);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('register');
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    }} />;
   }
 
   return (
@@ -134,8 +148,8 @@ export default function App() {
 
       {/* Global Navigation - persistent frosted glass bar on every page */}
       <nav className="sticky top-0 z-40 glass-nav">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
+        <div className="max-w-7xl mx-auto min-w-0 px-3 sm:px-6 h-16 flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
             <button
               type="button"
               onClick={handleBack}
@@ -152,25 +166,25 @@ export default function App() {
                 className="w-full h-full object-contain"
               />
             </div>
-            <span className="font-display font-black text-sm tracking-tight uppercase">
+            <span className="hidden min-w-0 truncate font-display font-black text-sm tracking-tight uppercase min-[390px]:inline">
               RacePulse<span className="text-red-500">PH</span>
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="flex shrink-0 items-center gap-0.5 sm:gap-2">
             {!authUser && guestScreen === 'landing' && (
               <>
                 <button
                   onClick={() => { setPendingRaceId(null); setRunnerSignupIntent(false); setGuestScreen('login'); }}
-                  className="h-9 px-3 rounded-[18px] text-[10px] sm:text-xs font-black uppercase tracking-wide text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)] transition flex items-center gap-1.5"
+                  className="h-9 px-2 sm:px-3 rounded-[18px] text-[10px] sm:text-xs font-black uppercase tracking-wide text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)] transition flex items-center gap-1.5"
                 >
-                  <LogIn className="w-3.5 h-3.5" /> Log in
+                  <LogIn className="w-3.5 h-3.5" /> <span className="hidden min-[430px]:inline">Log in</span>
                 </button>
                 <button
                   onClick={() => { setPendingRaceId(null); setRunnerSignupIntent(false); setGuestScreen('signup'); }}
-                  className="h-9 px-3 sm:px-4 rounded-[18px] bg-red-600 hover:bg-red-500 text-white text-[10px] sm:text-xs font-black uppercase tracking-wide shadow-lg shadow-red-900/30 transition flex items-center gap-1.5"
+                  className="h-9 px-2 sm:px-4 rounded-[18px] bg-red-600 hover:bg-red-500 text-white text-[10px] sm:text-xs font-black uppercase tracking-wide shadow-lg shadow-red-900/30 transition flex items-center gap-1.5"
                 >
-                  <UserPlus className="w-3.5 h-3.5" /> Sign up
+                  <UserPlus className="w-3.5 h-3.5" /> <span className="hidden min-[430px]:inline">Sign up</span>
                 </button>
               </>
             )}

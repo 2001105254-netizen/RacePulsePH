@@ -28,14 +28,27 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
   const publishingRef = useRef(false);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(query(collection(db, 'races'), where('createdBy', '==', uid)), (snapshot) => {
-      const list: Race[] = [];
-      snapshot.forEach((raceDoc) => list.push(raceDoc.data() as Race));
-      list.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    let owned: Race[] = [];
+    let shared: Race[] = [];
+    const publish = () => {
+      const unique = new Map<string, Race>();
+      [...owned, ...shared].forEach((race) => unique.set(race.id, race));
+      const list = Array.from(unique.values()).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       setRaces(list);
       setActiveRaceId((current) => current && list.some((race) => race.id === current) ? current : (list[0]?.id || ''));
-    }, (error) => console.warn('Live broadcast races listener failed:', error.message));
-    return () => unsubscribe();
+    };
+    const ownedUnsubscribe = onSnapshot(query(collection(db, 'races'), where('createdBy', '==', uid)), (snapshot) => {
+      owned = snapshot.docs.map((raceDoc) => raceDoc.data() as Race);
+      publish();
+    }, (error) => console.warn('Owned broadcast races listener failed:', error.message));
+    const sharedUnsubscribe = onSnapshot(query(collection(db, 'races'), where('organizerIds', 'array-contains', uid)), (snapshot) => {
+      shared = snapshot.docs.map((raceDoc) => raceDoc.data() as Race);
+      publish();
+    }, (error) => console.warn('Shared broadcast races listener failed:', error.message));
+    return () => {
+      ownedUnsubscribe();
+      sharedUnsubscribe();
+    };
   }, [uid]);
 
   const activeRace = races.find((race) => race.id === activeRaceId);
@@ -90,8 +103,9 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
         .slice(0, 5)
         .map((result) => ({
           bibNumber: result.bibNumber,
-          fullName: result.runnerProfile?.fullName || `Bib ${result.bibNumber}`,
-          distance: distance.label,
+          fullName: result.runnerProfile?.isFreeSlot ? `Bib ${result.bibNumber}` : result.runnerProfile?.fullName || `Bib ${result.bibNumber}`,
+          ...(result.runnerProfile?.isFreeSlot ? { isFreeSlot: true } : {}),
+          distance: runnerDivisionLabel(result.runnerProfile),
           rank: result.rank!,
           overallRank: result.overallRank ?? result.rank,
           ...(result.categoryRank ? { categoryRank: result.categoryRank } : {}),
@@ -106,7 +120,8 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
         .filter((result) => result.finishTime && result.rank)
         .map((result) => ({
           bibNumber: result.bibNumber,
-          fullName: result.runnerProfile?.fullName || `Bib ${result.bibNumber}`,
+          fullName: result.runnerProfile?.isFreeSlot ? `Bib ${result.bibNumber}` : result.runnerProfile?.fullName || `Bib ${result.bibNumber}`,
+          ...(result.runnerProfile?.isFreeSlot ? { isFreeSlot: true } : {}),
           distance: runnerDivisionLabel(result.runnerProfile),
           rank: result.rank!,
           overallRank: result.overallRank ?? result.rank,

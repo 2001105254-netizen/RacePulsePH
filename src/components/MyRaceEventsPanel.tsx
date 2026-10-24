@@ -9,26 +9,37 @@ interface MyRaceEventsPanelProps {
   onManageRace: (raceId: string) => void;
 }
 
-// Organizer's own-events overview - separate from Race Setup (the create/edit
-// form) and Timing (the operational console for one race at a time). This is
-// the "how are my events doing" glance: registrations, revenue, at a glance.
+// Organizer's event overview - separate from Race Setup (the create/edit form)
+// and Timing (the operational console). It includes races they created and
+// races whose owner added them to the organizer team.
 export default function MyRaceEventsPanel({ uid, onManageRace }: MyRaceEventsPanelProps) {
   const [races, setRaces] = useState<Race[]>([]);
   const [runners, setRunners] = useState<RunnerProfile[]>([]);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(query(collection(db, 'races'), where('createdBy', '==', uid)), (snapshot) => {
-      const list: Race[] = [];
-      snapshot.forEach((docSnap) => list.push(docSnap.data() as Race));
-      list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      setRaces(list);
-    }, (err) => console.warn('Races listener failed:', err.message));
-    return () => unsubscribe();
+    let owned: Race[] = [];
+    let shared: Race[] = [];
+    const publish = () => {
+      const unique = new Map<string, Race>();
+      [...owned, ...shared].forEach((race) => unique.set(race.id, race));
+      setRaces(Array.from(unique.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+    };
+    const ownedUnsubscribe = onSnapshot(query(collection(db, 'races'), where('createdBy', '==', uid)), (snapshot) => {
+      owned = snapshot.docs.map((docSnap) => docSnap.data() as Race);
+      publish();
+    }, (err) => console.warn('Owned races listener failed:', err.message));
+    const sharedUnsubscribe = onSnapshot(query(collection(db, 'races'), where('organizerIds', 'array-contains', uid)), (snapshot) => {
+      shared = snapshot.docs.map((docSnap) => docSnap.data() as Race);
+      publish();
+    }, (err) => console.warn('Shared races listener failed:', err.message));
+    return () => {
+      ownedUnsubscribe();
+      sharedUnsubscribe();
+    };
   }, [uid]);
 
-  // Read registrations one owned race at a time. This is deliberate: the
-  // Firestore rule only grants an organizer access to runners in races they
-  // created, instead of exposing the entire runners collection.
+  // Read registrations one authorized race at a time. This keeps each query
+  // scoped to the race team rather than exposing the entire runners collection.
   const raceIds = useMemo(() => races.map((race) => race.id).sort(), [races]);
   const raceIdsKey = raceIds.join('|');
 

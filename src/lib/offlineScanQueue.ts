@@ -96,6 +96,16 @@ export function useOfflineScanQueue(raceId: string) {
     void flush();
   }, [flush, refreshCount]);
 
+  // A timing operator may immediately correct an accidental manual entry.
+  // Remove it from the local safety queue too, otherwise an offline browser
+  // could upload the deleted read again when connectivity returns.
+  const discard = useCallback((recordId: string) => {
+    const current = readQueue();
+    const remaining = current.filter((record) => record.id !== recordId);
+    if (remaining.length !== current.length) writeQueue(remaining);
+    refreshCount();
+  }, [refreshCount]);
+
   useEffect(() => {
     refreshCount();
     void flush();
@@ -110,5 +120,5 @@ export function useOfflineScanQueue(raceId: string) {
     };
   }, [flush, refreshCount]);
 
-  return { pendingCount, enqueue, flush };
+  return { pendingCount, enqueue, flush, discard };
 }

@@ -40,9 +40,19 @@ interface RfidBridgeEvent {
 }
 
 const PORT = 3000;
-const DB_FILE = path.join(process.cwd(), "local_orders.json");
-const CHIP_READS_DB_FILE = path.join(process.cwd(), "local_chip_reads.json");
-const RFID_EVENTS_DB_FILE = path.join(process.cwd(), "local_rfid_events.json");
+// Timing Station.exe runs the local server from Program Files, which Windows
+// intentionally protects from normal writes.  The desktop wrapper supplies a
+// user-writable RACEPULSE_DATA_DIR; the normal developer workflow keeps using
+// the repository root with no configuration change.
+const DATA_DIRECTORY = process.env.RACEPULSE_DATA_DIR || process.cwd();
+try {
+  fs.mkdirSync(DATA_DIRECTORY, { recursive: true });
+} catch (error) {
+  console.warn("[Local Server DB] Could not create data directory:", error);
+}
+const DB_FILE = path.join(DATA_DIRECTORY, "local_orders.json");
+const CHIP_READS_DB_FILE = path.join(DATA_DIRECTORY, "local_chip_reads.json");
+const RFID_EVENTS_DB_FILE = path.join(DATA_DIRECTORY, "local_rfid_events.json");
 
 // Load initial orders from a local JSON db file (handles on-site server restarts)
 let orders: Record<string, EngravingOrder> = {};

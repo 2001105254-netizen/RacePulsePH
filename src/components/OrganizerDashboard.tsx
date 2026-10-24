@@ -6,7 +6,9 @@ import RaceSetupPanel from './RaceSetupPanel';
 import MyRaceEventsPanel from './MyRaceEventsPanel';
 import LiveBroadcastPanel from './LiveBroadcastPanel';
 import BottomNav from './BottomNav';
-import { LogOut, Radio, Flag, LayoutGrid, Tv } from 'lucide-react';
+import DeleteAccountModal from './DeleteAccountModal';
+import OrganizerSetupGuide from './OrganizerSetupGuide';
+import { BookOpen, LogOut, Radio, Flag, LayoutGrid, Tv, Trash2 } from 'lucide-react';
 
 interface OrganizerDashboardProps {
   profile: UserProfile;
@@ -16,6 +18,8 @@ type OrganizerTab = 'myevents' | 'timing' | 'race' | 'broadcast';
 
 export default function OrganizerDashboard({ profile }: OrganizerDashboardProps) {
   const [tab, setTab] = useState<OrganizerTab>('myevents');
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
+  const [showSetupGuide, setShowSetupGuide] = useState(false);
 
   useEffect(() => {
     const goHome = () => setTab('myevents');
@@ -36,12 +40,11 @@ export default function OrganizerDashboard({ profile }: OrganizerDashboardProps)
           <h1 className="heading-float text-2xl font-black tracking-tight font-display text-[var(--text-primary)] mt-1.5 uppercase">Welcome, {profile.displayName}</h1>
           <p className="text-xs text-[var(--text-secondary)] mt-1">Set up races and record checkpoint splits.</p>
         </div>
-        <button
-          onClick={() => signOutUser()}
-          className="text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)]/75 backdrop-blur-md hover:text-[var(--text-primary)] font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider self-start"
-        >
-          <LogOut className="w-3.5 h-3.5" /> Sign Out
-        </button>
+        <div className="flex flex-wrap items-center gap-2 self-start">
+          <button onClick={() => setShowSetupGuide(true)} className="text-xs text-[var(--text-primary)] border border-[var(--border-default)] hover:border-red-500/40 hover:text-red-500 font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"><BookOpen className="w-3.5 h-3.5" /> Setup guide</button>
+          <button onClick={() => setShowDeleteAccount(true)} title="Delete my account" className="text-xs text-red-500 border border-red-500/30 hover:bg-red-500 hover:text-white font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"><Trash2 className="w-3.5 h-3.5" /> Delete account</button>
+          <button onClick={() => signOutUser()} className="text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)]/75 backdrop-blur-md hover:text-[var(--text-primary)] font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"><LogOut className="w-3.5 h-3.5" /> Sign Out</button>
+        </div>
       </div>
 
       {tab === 'myevents' && <MyRaceEventsPanel uid={profile.uid} onManageRace={handleManageRace} />}
@@ -57,6 +60,8 @@ export default function OrganizerDashboard({ profile }: OrganizerDashboardProps)
           { key: 'race', icon: <Flag className="w-4 h-4" />, label: 'Race Setup', active: tab === 'race', onClick: () => setTab('race') },
         ]}
       />
+      {showDeleteAccount && <DeleteAccountModal profile={profile} onClose={() => setShowDeleteAccount(false)} />}
+      {showSetupGuide && <OrganizerSetupGuide onClose={() => setShowSetupGuide(false)} onNavigate={(destination) => setTab(destination)} />}
     </div>
   );
 }

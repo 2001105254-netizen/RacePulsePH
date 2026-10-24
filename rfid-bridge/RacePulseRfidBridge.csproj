@@ -11,6 +11,9 @@
     committed to RacePulse. Copy them into rfid-bridge/vendor before building.
   -->
   <ItemGroup>
+    <!-- Required by the net48 bridge for JSON serialization and HTTP relay. -->
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Web.Extensions" />
     <Reference Include="Vup">
       <HintPath>vendor\Vup.dll</HintPath>
       <Private>true</Private>

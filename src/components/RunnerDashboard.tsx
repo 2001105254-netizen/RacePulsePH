@@ -1,19 +1,24 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { collection, doc, getDocs, onSnapshot, query, runTransaction, setDoc, updateDoc, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, onSnapshot, query, runTransaction, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db, sendPasswordReset, signOutUser, updateAccountDisplayName } from '../firebase';
 import { checkpointType, computeResults, getWaveStartTime } from '../lib/timing';
 import { downloadFinisherCertificate } from '../lib/finisherCertificate';
 import { resizeImageToDataUrl } from '../lib/image';
-import { ChipRead, Gender, PublicLeaderboardEntry, PublicLiveResults, Race, RaceBibFont, RaceEntryCategory, RunnerProfile, UserProfile } from '../types';
+import { ChipRead, FriendActivity, FriendProfile, Gender, PublicLeaderboardEntry, PublicLiveResults, Race, RaceEntryCategory, RunnerProfile, UserProfile } from '../types';
 import CustomerForm from './CustomerForm';
 import { QRCodeSVG } from 'qrcode.react';
-import { LogOut, User, Hash, MapPin, RefreshCw, Award, ClipboardList, Clock, ArrowLeft, ArrowRight, Flag, Calendar, CheckSquare, Coins, PackageCheck, Camera, Trophy, X, Pencil, CheckCircle2, Circle, Radio, Phone, HeartPulse, Mail, FileDown, Maximize2, Users2 } from 'lucide-react';
+import { LogOut, User, Hash, MapPin, RefreshCw, Award, ClipboardList, Clock, ArrowLeft, ArrowRight, Flag, Calendar, CheckSquare, Coins, PackageCheck, Camera, Trophy, X, Pencil, CheckCircle2, Circle, Radio, Phone, HeartPulse, Mail, FileDown, Maximize2, Users2, UserPlus, UserCheck } from 'lucide-react';
 import BottomNav from './BottomNav';
 import RaceList from './RaceList';
 import { isRaceRegistrationOpen } from '../lib/raceRegistration';
 import { entryCategoryLabels, entryMemberCount, raceEntryCategories, runnerDivisionLabel, runnerEntryCategory } from '../lib/raceEntry';
+import { raceBibNameLines, resolveRaceBibTemplate } from '../lib/raceBib';
+import { ensureRaceBibCustomFont, raceBibFontFamily } from '../lib/raceBibFont';
 import RunnerReminderCenter from './RunnerReminderCenter';
+import { createPayMongoCheckout, getPaymentStatus, PaymentStatusResponse } from '../lib/payments';
+import DeleteAccountModal from './DeleteAccountModal';
+import QrScannerModal from './QrScannerModal';
 
 interface RunnerDashboardProps {
   profile: UserProfile;
@@ -21,21 +26,7 @@ interface RunnerDashboardProps {
   onInitialRaceHandled?: () => void;
 }
 
-type RunnerTab = 'events' | 'myraces' | 'engraving';
-
-const raceBibFontFamilies: Record<RaceBibFont, string> = {
-  display: '"Space Grotesk", sans-serif',
-  sans: 'Inter, sans-serif',
-  mono: '"JetBrains Mono", monospace',
-  condensed: 'Impact, "Arial Narrow Bold", sans-serif',
-};
-
-const raceBibCanvasFontFamilies: Record<RaceBibFont, string> = {
-  display: 'Space Grotesk, sans-serif',
-  sans: 'Inter, sans-serif',
-  mono: 'JetBrains Mono, monospace',
-  condensed: 'Impact, Arial Narrow Bold, sans-serif',
-};
+type RunnerTab = 'events' | 'myraces' | 'friends' | 'engraving';
 
 const standardShirtSizes = ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL', '6XL'];
 const usernamePattern = /^[a-z0-9][a-z0-9_.-]{2,23}$/;
@@ -101,11 +92,12 @@ function drawFittedRaceBibText(
   yPercent: number,
   sizePercent: number,
   color: string,
-  font: RaceBibFont,
+  strokeColor: string,
+  strokeWidthPercent: number,
+  fontFamily: string,
 ): void {
   let fontSize = Math.max(12, (width * sizePercent) / 100);
   const maxWidth = width * 0.9;
-  const fontFamily = raceBibCanvasFontFamilies[font];
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   do {
@@ -117,12 +109,77 @@ function drawFittedRaceBibText(
   const x = Math.min(width * 0.95, Math.max(width * 0.05, (width * xPercent) / 100));
   const safeHalfHeight = fontSize * 0.62;
   const y = Math.min(height - safeHalfHeight - 6, Math.max(safeHalfHeight + 6, (height * yPercent) / 100));
+  const strokeWidth = Math.max(0, (width * strokeWidthPercent) / 100);
+  if (strokeWidth > 0) {
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = strokeWidth * 2;
+    ctx.strokeStyle = strokeColor;
+    ctx.strokeText(text, x, y);
+  }
   ctx.fillStyle = color;
   ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
   ctx.shadowBlur = Math.max(1.5, fontSize * 0.035);
   ctx.shadowOffsetX = 0;
   ctx.shadowOffsetY = Math.max(1, fontSize * 0.025);
   ctx.fillText(text, x, y);
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+}
+
+function drawFittedRaceBibTextLines(
+  ctx: CanvasRenderingContext2D,
+  lines: string[],
+  width: number,
+  height: number,
+  xPercent: number,
+  yPercent: number,
+  sizePercent: number,
+  color: string,
+  strokeColor: string,
+  strokeWidthPercent: number,
+  fontFamily: string,
+): void {
+  if (lines.length <= 1) {
+    drawFittedRaceBibText(ctx, lines[0] || '', width, height, xPercent, yPercent, sizePercent, color, strokeColor, strokeWidthPercent, fontFamily);
+    return;
+  }
+
+  const maxWidth = width * 0.9;
+  // Keep multi-member team names above lower bib artwork such as inclusions
+  // and medal panels.
+  const maxBlockHeight = height * 0.18;
+  let fontSize = Math.max(12, Math.min((width * sizePercent) / 100, maxBlockHeight / (lines.length * 1.16)));
+  do {
+    ctx.font = `900 ${fontSize}px ${fontFamily}`;
+    if (lines.every((line) => ctx.measureText(line).width <= maxWidth) || fontSize <= 12) break;
+    fontSize -= 1;
+  } while (fontSize > 12);
+
+  const x = Math.min(width * 0.95, Math.max(width * 0.05, (width * xPercent) / 100));
+  const lineHeight = fontSize * 1.16;
+  const blockHalfHeight = (lineHeight * (lines.length - 1)) / 2 + fontSize * 0.62;
+  const centerY = Math.min(height - blockHalfHeight - 6, Math.max(blockHalfHeight + 6, (height * yPercent) / 100));
+  const firstY = centerY - (lineHeight * (lines.length - 1)) / 2;
+  const strokeWidth = Math.max(0, (width * strokeWidthPercent) / 100);
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = color;
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+  ctx.shadowBlur = Math.max(1.5, fontSize * 0.035);
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = Math.max(1, fontSize * 0.025);
+  if (strokeWidth > 0) {
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = strokeWidth * 2;
+    ctx.strokeStyle = strokeColor;
+  }
+  for (const [index, line] of lines.entries()) {
+    const y = firstY + lineHeight * index;
+    if (strokeWidth > 0) ctx.strokeText(line, x, y);
+    ctx.fillText(line, x, y);
+  }
   ctx.shadowColor = 'transparent';
   ctx.shadowBlur = 0;
   ctx.shadowOffsetY = 0;
@@ -136,6 +193,10 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
   const [runnerProfiles, setRunnerProfiles] = useState<RunnerProfile[] | undefined>(undefined); // undefined = loading
   const [tab, setTab] = useState<RunnerTab>('events');
   const [showProfile, setShowProfile] = useState(false);
+  const [showEventQrScanner, setShowEventQrScanner] = useState(false);
+  const [scannedRaceId, setScannedRaceId] = useState<string | null>(null);
+  const [eventQrMessage, setEventQrMessage] = useState('');
+  const [eventQrError, setEventQrError] = useState('');
 
   useEffect(() => {
     const goHome = () => {
@@ -162,7 +223,78 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
     return () => unsubscribe();
   }, [profile.uid]);
 
+  // Legacy accounts get their safe friend card automatically once they open
+  // the Runner Portal. No email or private medical/payment fields are copied.
+  useEffect(() => {
+    const username = profile.username?.trim().toLowerCase();
+    if (!username) return;
+    const payload = {
+      uid: profile.uid,
+      username,
+      displayName: profile.displayName,
+      ...(profile.nickname ? { nickname: profile.nickname } : {}),
+      ...(profile.photoURL ? { photoURL: profile.photoURL } : {}),
+      updatedAt: new Date().toISOString(),
+    };
+    void Promise.all([
+      setDoc(doc(db, 'friendDirectory', username), payload, { merge: true }),
+      setDoc(doc(db, 'friendProfiles', profile.uid), payload, { merge: true }),
+    ]).catch((err) => console.warn('Failed to update friend profile:', err));
+  }, [profile.uid, profile.username, profile.displayName, profile.nickname, profile.photoURL]);
+
+  // Publish only a short race summary for accepted friends. Raw registrations,
+  // bibs, results, payment state, and medical/emergency data stay private.
+  useEffect(() => {
+    if (!runnerProfiles) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const snapshot = await getDocs(collection(db, 'races'));
+        if (cancelled) return;
+        const raceById = new Map<string, Race>();
+        snapshot.forEach((item) => raceById.set(item.id, item.data() as Race));
+        const recentRaces = [...runnerProfiles]
+          .map((runner) => {
+            const race = raceById.get(runner.raceId);
+            return race ? { raceId: race.id, raceName: race.name, date: race.date, distance: runner.distance } : null;
+          })
+          .filter((item): item is NonNullable<typeof item> => item !== null)
+          .sort((a, b) => b.date.localeCompare(a.date))
+          .slice(0, 6);
+        await setDoc(doc(db, 'friendActivities', profile.uid), {
+          uid: profile.uid,
+          recentRaces,
+          updatedAt: new Date().toISOString(),
+        } satisfies FriendActivity);
+      } catch (err) {
+        console.warn('Failed to update friend activity:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [profile.uid, runnerProfiles]);
+
   const latestProfile = runnerProfiles ? mostRecent(runnerProfiles) : undefined;
+
+  const scanEventQr = async (text: string): Promise<boolean> => {
+    try {
+      const url = new URL(text.trim());
+      const allowedHosts = new Set(['racepulseph.com', 'www.racepulseph.com', 'racepulseph.web.app', 'racepulseph.firebaseapp.com', 'localhost']);
+      const raceId = url.searchParams.get('register')?.trim();
+      if (!allowedHosts.has(url.hostname) || !raceId || !/^[A-Za-z0-9_-]{1,64}$/.test(raceId)) {
+        setEventQrError('This is not a valid RacePulse event registration QR code.');
+        return false;
+      }
+      setEventQrError('');
+      setEventQrMessage('Event found — opening its registration form…');
+      setScannedRaceId(raceId);
+      setTab('events');
+      window.setTimeout(() => setShowEventQrScanner(false), 450);
+      return true;
+    } catch {
+      setEventQrError('This is not a valid RacePulse event registration QR code.');
+      return false;
+    }
+  };
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 py-4 pb-28 space-y-6">
@@ -173,6 +305,12 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
           <p className="text-xs text-[var(--text-secondary)] mt-1">Register for races, track your splits, and personalize your finisher medal.</p>
         </div>
         <div className="flex items-center gap-2 self-start">
+          <button
+            onClick={() => { setEventQrError(''); setEventQrMessage(''); setShowEventQrScanner(true); }}
+            className="text-xs text-violet-500 border border-violet-500/30 hover:bg-violet-500/10 font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
+          >
+            <Camera className="w-3.5 h-3.5" /> Scan event QR
+          </button>
           <button
             onClick={() => setShowProfile(true)}
             title="My Profile"
@@ -208,9 +346,12 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
           <RunnerReminderCenter runnerProfiles={runnerProfiles} />
           <RaceRegistrationForm
             uid={profile.uid}
+            friendIdentity={{ username: profile.username, displayName: profile.nickname || profile.displayName }}
             runnerProfiles={runnerProfiles}
             initialShirtSize={profile.shirtSize}
             initialRaceId={initialRaceId}
+            requestedRaceId={scannedRaceId}
+            onRequestedRaceHandled={() => setScannedRaceId(null)}
             onSaved={() => setTab('myraces')}
           />
         </>
@@ -221,6 +362,10 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
           <RunnerReminderCenter runnerProfiles={runnerProfiles} />
           <MyRacesView uid={profile.uid} runnerProfiles={runnerProfiles} onBrowseEvents={() => setTab('events')} />
         </>
+      )}
+
+      {runnerProfiles !== undefined && tab === 'friends' && (
+        <FriendsView profile={profile} onOpenRace={(raceId) => { setScannedRaceId(raceId); setTab('events'); }} />
       )}
 
       {runnerProfiles !== undefined && tab === 'engraving' && (
@@ -238,8 +383,20 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
           items={[
             { key: 'events', icon: <Flag className="w-4 h-4" />, label: 'Events', active: tab === 'events', onClick: () => setTab('events') },
             { key: 'myraces', icon: <ClipboardList className="w-4 h-4" />, label: 'My Races', active: tab === 'myraces', onClick: () => setTab('myraces') },
+            { key: 'friends', icon: <Users2 className="w-4 h-4" />, label: 'Friends', active: tab === 'friends', onClick: () => setTab('friends') },
             { key: 'engraving', icon: <Award className="w-4 h-4" />, label: 'Engraving', active: tab === 'engraving', onClick: () => setTab('engraving') },
           ]}
+        />
+      )}
+      {showEventQrScanner && (
+        <QrScannerModal
+          onClose={() => setShowEventQrScanner(false)}
+          onScanSuccess={scanEventQr}
+          successMessage={eventQrMessage}
+          errorMessage={eventQrError}
+          title="Scan Event QR"
+          subtitle="OPEN A RACE REGISTRATION"
+          instructions="Scan the RacePulse event QR from the organizer. We will open that specific race registration form for you."
         />
       )}
     </div>
@@ -313,6 +470,255 @@ function MyRacesView({ runnerProfiles, onBrowseEvents }: MyRacesViewProps) {
   );
 }
 
+// ========== FRIENDS & RACE INVITES ==========
+
+interface FriendRequestRecord {
+  fromUid: string;
+  toUid: string;
+  fromUsername: string;
+  fromDisplayName: string;
+  status: 'pending' | 'accepted' | 'declined';
+  createdAt: string;
+  respondedAt?: string;
+}
+
+interface FriendshipRecord {
+  fromUid: string;
+  toUid: string;
+  members: string[];
+  createdAt: string;
+}
+
+interface RaceInviteRecord {
+  fromUid: string;
+  toUid: string;
+  raceId: string;
+  raceName: string;
+  raceDate: string;
+  fromDisplayName: string;
+  createdAt: string;
+  status: 'pending' | 'opened';
+}
+
+function FriendsView({ profile, onOpenRace }: { profile: UserProfile; onOpenRace: (raceId: string) => void }) {
+  const [searchUsername, setSearchUsername] = useState('');
+  const [searchResult, setSearchResult] = useState<FriendProfile | null>(null);
+  const [friends, setFriends] = useState<FriendProfile[]>([]);
+  const [activities, setActivities] = useState<Record<string, FriendActivity>>({});
+  const [incoming, setIncoming] = useState<FriendRequestRecord[]>([]);
+  const [outgoing, setOutgoing] = useState<FriendRequestRecord[]>([]);
+  const [invites, setInvites] = useState<RaceInviteRecord[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  useEffect(() => onSnapshot(query(collection(db, 'friendRequests'), where('toUid', '==', profile.uid)), (snapshot) => {
+    const records: FriendRequestRecord[] = [];
+    snapshot.forEach((item) => records.push(item.data() as FriendRequestRecord));
+    setIncoming(records.filter((item) => item.status === 'pending').sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+  }, (err) => console.warn('Friend requests listener failed:', err)), [profile.uid]);
+
+  useEffect(() => onSnapshot(query(collection(db, 'friendRequests'), where('fromUid', '==', profile.uid)), (snapshot) => {
+    const records: FriendRequestRecord[] = [];
+    snapshot.forEach((item) => records.push(item.data() as FriendRequestRecord));
+    setOutgoing(records.filter((item) => item.status === 'pending'));
+  }, (err) => console.warn('Outgoing friend requests listener failed:', err)), [profile.uid]);
+
+  useEffect(() => onSnapshot(query(collection(db, 'raceInvites'), where('toUid', '==', profile.uid)), (snapshot) => {
+    const records: RaceInviteRecord[] = [];
+    snapshot.forEach((item) => records.push(item.data() as RaceInviteRecord));
+    setInvites(records.filter((item) => item.status === 'pending').sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+  }, (err) => console.warn('Race invites listener failed:', err)), [profile.uid]);
+
+  useEffect(() => onSnapshot(query(collection(db, 'friendships'), where('members', 'array-contains', profile.uid)), (snapshot) => {
+    const connections: FriendshipRecord[] = [];
+    snapshot.forEach((item) => connections.push(item.data() as FriendshipRecord));
+    void (async () => {
+      try {
+        const friendIds = connections.map((item) => item.fromUid === profile.uid ? item.toUid : item.fromUid);
+        const loaded = await Promise.all(friendIds.map(async (uid) => {
+          const [friendProfile, activity] = await Promise.all([getDoc(doc(db, 'friendProfiles', uid)), getDoc(doc(db, 'friendActivities', uid))]);
+          return {
+            profile: friendProfile.exists() ? friendProfile.data() as FriendProfile : null,
+            activity: activity.exists() ? activity.data() as FriendActivity : null,
+          };
+        }));
+        setFriends(loaded.map((item) => item.profile).filter((item): item is FriendProfile => item !== null).sort((a, b) => a.displayName.localeCompare(b.displayName)));
+        setActivities(Object.fromEntries(loaded.filter((item) => item.profile && item.activity).map((item) => [item.profile!.uid, item.activity!])));
+      } catch (err) {
+        console.warn('Failed to load friend cards:', err);
+      }
+    })();
+  }, (err) => console.warn('Friendships listener failed:', err)), [profile.uid]);
+
+  const search = async () => {
+    const username = searchUsername.trim().toLowerCase();
+    setError('');
+    setNotice('');
+    setSearchResult(null);
+    if (!usernamePattern.test(username)) {
+      setError('Enter an exact username (3–24 letters, numbers, dots, hyphens, or underscores).');
+      return;
+    }
+    setBusy(true);
+    try {
+      const directory = await getDoc(doc(db, 'friendDirectory', username));
+      if (!directory.exists()) {
+        setError('No runner profile found for that username.');
+      } else if ((directory.data() as FriendProfile).uid === profile.uid) {
+        setError('That is your own profile.');
+      } else {
+        setSearchResult(directory.data() as FriendProfile);
+      }
+    } catch {
+      setError('Could not search right now. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sendFriendRequest = async () => {
+    if (!searchResult || !profile.username) return;
+    setBusy(true);
+    setError('');
+    try {
+      if (friends.some((friend) => friend.uid === searchResult.uid)) {
+        setNotice('You are already friends.');
+        return;
+      }
+      if (outgoing.some((request) => request.toUid === searchResult.uid)) {
+        setNotice('Friend request already sent.');
+        return;
+      }
+      await setDoc(doc(db, 'friendRequests', `${profile.uid}_${searchResult.uid}`), {
+        fromUid: profile.uid,
+        toUid: searchResult.uid,
+        fromUsername: profile.username,
+        fromDisplayName: profile.nickname || profile.displayName,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      } satisfies FriendRequestRecord);
+      setNotice(`Friend request sent to @${searchResult.username}.`);
+    } catch (err: any) {
+      setError(err.message || 'Could not send the friend request.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const respondToRequest = async (request: FriendRequestRecord, accepted: boolean) => {
+    setBusy(true);
+    setError('');
+    try {
+      const requestRef = doc(db, 'friendRequests', `${request.fromUid}_${request.toUid}`);
+      if (accepted) {
+        const batch = writeBatch(db);
+        batch.update(requestRef, { status: 'accepted', respondedAt: new Date().toISOString() });
+        batch.set(doc(db, 'friendships', `${request.fromUid}_${request.toUid}`), {
+          fromUid: request.fromUid,
+          toUid: request.toUid,
+          members: [request.fromUid, request.toUid],
+          createdAt: new Date().toISOString(),
+        } satisfies FriendshipRecord);
+        await batch.commit();
+      } else {
+        await updateDoc(requestRef, { status: 'declined', respondedAt: new Date().toISOString() });
+      }
+    } catch (err: any) {
+      setError(err.message || 'Could not update this request.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openInvite = async (invite: RaceInviteRecord) => {
+    try {
+      await updateDoc(doc(db, 'raceInvites', `${invite.fromUid}_${invite.toUid}_${invite.raceId}`), { status: 'opened' });
+    } catch {
+      // The registration link is still safe to open if marking it read fails.
+    }
+    onOpenRace(invite.raceId);
+  };
+
+  if (!profile.username) {
+    return <div className="glass-panel p-7 text-center space-y-2"><Users2 className="w-9 h-9 text-red-500 mx-auto" /><h2 className="text-base font-black text-[var(--text-primary)]">Choose a username first</h2><p className="text-xs text-[var(--text-secondary)]">Open your profile and save a unique username to use Friends. We use usernames so email addresses stay private.</p></div>;
+  }
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-5 animate-fadeIn">
+      <div className="glass-panel p-5">
+        <div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-red-500/10 text-red-500"><Users2 className="w-5 h-5" /></span><div><h2 className="text-base font-black uppercase tracking-tight text-[var(--text-primary)]">Runner Friends</h2><p className="mt-1 text-xs text-[var(--text-secondary)]">Find a runner by username, then both of you must agree before profiles and recent races are shared.</p></div></div>
+        <div className="mt-4 flex gap-2"><input value={searchUsername} onChange={(event) => setSearchUsername(event.target.value.toLowerCase())} onKeyDown={(event) => { if (event.key === 'Enter') void search(); }} placeholder="Search exact username, e.g. juan.runner" autoCapitalize="none" autoCorrect="off" maxLength={24} className="min-w-0 flex-1 glass-inset px-3 py-2.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" /><button type="button" onClick={() => void search()} disabled={busy} className="rounded-[12px] bg-red-600 px-4 text-[10px] font-black uppercase tracking-wide text-white disabled:opacity-60">Search</button></div>
+        {error && <p className="mt-3 text-xs text-red-500">{error}</p>}
+        {notice && <p className="mt-3 text-xs text-emerald-500">{notice}</p>}
+        {searchResult && <div className="mt-4 flex items-center justify-between gap-3 rounded-[16px] border border-[var(--border-default)] bg-[var(--surface-inset)]/50 p-3"><div className="flex min-w-0 items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-red-500/10 font-black text-red-500">{searchResult.photoURL ? <img src={searchResult.photoURL} alt="" className="h-full w-full object-cover" /> : searchResult.displayName.charAt(0).toUpperCase()}</span><span className="min-w-0"><strong className="block truncate text-sm text-[var(--text-primary)]">{searchResult.nickname || searchResult.displayName}</strong><small className="block text-[11px] text-[var(--text-secondary)]">@{searchResult.username}</small></span></div><button type="button" onClick={() => void sendFriendRequest()} disabled={busy} className="shrink-0 rounded-[12px] border border-red-500/30 bg-red-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-red-500 transition hover:bg-red-500 hover:text-white disabled:opacity-60"><UserPlus className="mr-1 inline h-3.5 w-3.5" /> Add</button></div>}
+      </div>
+
+      {invites.length > 0 && <div className="glass-panel p-5"><h3 className="text-[11px] font-black uppercase tracking-widest text-violet-500">Race invitations</h3><div className="mt-3 space-y-2">{invites.map((invite) => <div key={`${invite.fromUid}_${invite.raceId}`} className="flex items-center justify-between gap-3 rounded-[14px] border border-violet-500/20 bg-violet-500/5 p-3"><div><p className="text-xs font-bold text-[var(--text-primary)]">{invite.raceName}</p><p className="mt-0.5 text-[10.5px] text-[var(--text-secondary)]">Invited by {invite.fromDisplayName} • {invite.raceDate}</p></div><button type="button" onClick={() => void openInvite(invite)} className="shrink-0 rounded-[10px] bg-violet-600 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-white">View event</button></div>)}</div></div>}
+
+      {incoming.length > 0 && <div className="glass-panel p-5"><h3 className="text-[11px] font-black uppercase tracking-widest text-amber-500">Friend requests</h3><div className="mt-3 space-y-2">{incoming.map((request) => <div key={`${request.fromUid}_${request.toUid}`} className="flex items-center justify-between gap-3 rounded-[14px] border border-[var(--border-default)] p-3"><div><p className="text-sm font-bold text-[var(--text-primary)]">{request.fromDisplayName}</p><p className="text-[10.5px] text-[var(--text-secondary)]">@{request.fromUsername} wants to connect.</p></div><div className="flex gap-1.5"><button type="button" onClick={() => void respondToRequest(request, false)} disabled={busy} className="rounded-[10px] glass-inset px-3 py-2 text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)]">Decline</button><button type="button" onClick={() => void respondToRequest(request, true)} disabled={busy} className="rounded-[10px] bg-emerald-600 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-white"><UserCheck className="mr-1 inline h-3.5 w-3.5" /> Accept</button></div></div>)}</div></div>}
+
+      <div className="glass-panel p-5"><div className="flex items-center justify-between"><h3 className="text-[11px] font-black uppercase tracking-widest text-[var(--text-secondary)]">Your friends</h3><span className="text-xs font-mono font-bold text-red-500">{friends.length}</span></div>{friends.length === 0 ? <p className="mt-3 text-xs text-[var(--text-secondary)]">No friends yet. Search their username above to send your first request.</p> : <div className="mt-3 space-y-3">{friends.map((friend) => { const activity = activities[friend.uid]; return <div key={friend.uid} className="rounded-[16px] border border-[var(--border-default)] bg-[var(--surface-inset)]/35 p-4"><div className="flex items-center gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-red-500/10 font-black text-red-500">{friend.photoURL ? <img src={friend.photoURL} alt="" className="h-full w-full object-cover" /> : friend.displayName.charAt(0).toUpperCase()}</span><div className="min-w-0"><p className="truncate text-sm font-black text-[var(--text-primary)]">{friend.nickname || friend.displayName}</p><p className="text-[10.5px] text-[var(--text-secondary)]">@{friend.username}</p></div></div><div className="mt-3 border-t border-[var(--border-subtle)] pt-3"><p className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Recent races</p>{activity?.recentRaces?.length ? <div className="mt-2 space-y-1.5">{activity.recentRaces.slice(0, 3).map((race) => <p key={`${race.raceId}_${race.distance}`} className="text-xs text-[var(--text-secondary)]"><strong className="text-[var(--text-primary)]">{race.raceName}</strong> <span className="text-red-500">• {race.distance}</span> <span className="text-[var(--text-muted)]">• {race.date}</span></p>)}</div> : <p className="mt-1 text-xs text-[var(--text-muted)]">No shared race activity yet.</p>}</div></div>; })}</div>}</div>
+    </div>
+  );
+}
+
+function InviteFriendsToRace({ uid, senderName, race }: { uid: string; senderName: string; race: Race }) {
+  const [open, setOpen] = useState(false);
+  const [friends, setFriends] = useState<FriendProfile[]>([]);
+  const [sendingTo, setSendingTo] = useState<string | null>(null);
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    return onSnapshot(query(collection(db, 'friendships'), where('members', 'array-contains', uid)), (snapshot) => {
+      const connections: FriendshipRecord[] = [];
+      snapshot.forEach((item) => connections.push(item.data() as FriendshipRecord));
+      void (async () => {
+        try {
+          const loaded = await Promise.all(connections.map(async (connection) => {
+            const friendUid = connection.fromUid === uid ? connection.toUid : connection.fromUid;
+            const friend = await getDoc(doc(db, 'friendProfiles', friendUid));
+            return friend.exists() ? friend.data() as FriendProfile : null;
+          }));
+          setFriends(loaded.filter((item): item is FriendProfile => item !== null));
+        } catch (err) {
+          console.warn('Failed to load friends for race invite:', err);
+        }
+      })();
+    }, (err) => console.warn('Race invite friends listener failed:', err));
+  }, [open, uid]);
+
+  const invite = async (friend: FriendProfile) => {
+    setSendingTo(friend.uid);
+    setMessage('');
+    try {
+      await setDoc(doc(db, 'raceInvites', `${uid}_${friend.uid}_${race.id}`), {
+        fromUid: uid,
+        toUid: friend.uid,
+        raceId: race.id,
+        raceName: race.name,
+        raceDate: race.date,
+        fromDisplayName: senderName,
+        createdAt: new Date().toISOString(),
+        status: 'pending',
+      } satisfies RaceInviteRecord);
+      setMessage(`Invite sent to ${friend.nickname || friend.displayName}.`);
+    } catch (err: any) {
+      setMessage(err.message || 'Could not send the race invite.');
+    } finally {
+      setSendingTo(null);
+    }
+  };
+
+  return (
+    <div className="rounded-[16px] border border-violet-500/20 bg-violet-500/5 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-black text-[var(--text-primary)]">Running with friends?</p><p className="mt-0.5 text-[10.5px] text-[var(--text-secondary)]">Send this event straight to an accepted RacePulse friend.</p></div><button type="button" onClick={() => { setOpen((value) => !value); setMessage(''); }} className="rounded-[12px] border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-violet-500 transition hover:bg-violet-600 hover:text-white"><UserPlus className="mr-1 inline h-3.5 w-3.5" /> Invite friends</button></div>
+      {open && <div className="mt-3 border-t border-violet-500/15 pt-3"><p className="text-[9px] font-black uppercase tracking-widest text-violet-500">Choose friend</p>{friends.length === 0 ? <p className="mt-2 text-xs text-[var(--text-secondary)]">No accepted friends yet. Add friends first from the Friends tab.</p> : <div className="mt-2 space-y-1.5">{friends.map((friend) => <div key={friend.uid} className="flex items-center justify-between gap-2 rounded-[12px] bg-black/10 px-3 py-2"><span className="min-w-0"><strong className="block truncate text-xs text-[var(--text-primary)]">{friend.nickname || friend.displayName}</strong><small className="text-[10px] text-[var(--text-secondary)]">@{friend.username}</small></span><button type="button" onClick={() => void invite(friend)} disabled={sendingTo === friend.uid} className="rounded-lg bg-violet-600 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wide text-white disabled:opacity-60">{sendingTo === friend.uid ? 'Sending…' : 'Invite'}</button></div>)}</div>}{message && <p className={`mt-2 text-[10.5px] ${message.startsWith('Invite sent') ? 'text-emerald-500' : 'text-red-500'}`}>{message}</p>}</div>}
+    </div>
+  );
+}
+
 function RaceProfileSection({
   title,
   profiles,
@@ -376,9 +782,12 @@ function RaceProfileSection({
 
 interface RaceRegistrationFormProps {
   uid: string;
+  friendIdentity?: { username?: string; displayName: string };
   runnerProfiles: RunnerProfile[];
   initialShirtSize?: string;
   initialRaceId?: string | null;
+  requestedRaceId?: string | null;
+  onRequestedRaceHandled?: () => void;
   onSaved?: () => void;
   onCancel?: () => void;
 }
@@ -398,7 +807,8 @@ async function generateBibNumber(raceId: string, distanceLabel: string, km: numb
     return next;
   });
   const basePrefix = km !== null ? String(km) : 'CUSTOM';
-  const prefix = entryCategory === 'solo' ? basePrefix : `${basePrefix}-${entryCategory === 'duo' ? 'D' : 'T'}`;
+  const suffix = entryCategory === 'duo' ? 'D' : entryCategory === 'trio' ? 'T' : entryCategory === 'group' ? 'G' : '';
+  const prefix = suffix ? `${basePrefix}-${suffix}` : basePrefix;
   return `${prefix}-${String(sequence).padStart(3, '0')}`;
 }
 
@@ -439,15 +849,23 @@ function RegistrationConfirmation({ race, registration, updated, onViewMyRace, o
           <CheckCircle2 className="w-8 h-8" />
         </div>
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-500">{updated ? 'Registration updated' : 'Registration confirmed'}</p>
-          <h2 className="heading-float text-xl font-black font-display uppercase tracking-tight text-[var(--text-primary)] mt-2">You’re in!</h2>
-          <p className="text-xs text-[var(--text-secondary)] mt-2">Your race registration is saved under your account.</p>
+          <p className={`text-[10px] font-black uppercase tracking-[0.18em] ${registration.paymentStatus === 'pending' ? 'text-amber-500' : 'text-emerald-500'}`}>{registration.paymentStatus === 'pending' ? 'Payment verification needed' : updated ? 'Registration updated' : 'Registration confirmed'}</p>
+          <h2 className="heading-float text-xl font-black font-display uppercase tracking-tight text-[var(--text-primary)] mt-2">{registration.paymentStatus === 'pending' ? 'Registration reserved' : 'You’re in!'}</h2>
+          <p className="text-xs text-[var(--text-secondary)] mt-2">{registration.paymentStatus === 'pending' ? 'Your bib is reserved. Follow the payment instructions below; the organizer will confirm payment before race day.' : 'Your race registration is saved under your account.'}</p>
         </div>
+        {registration.paymentStatus === 'pending' && (
+          <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-left">
+            <p className="text-[10px] font-black uppercase tracking-widest text-amber-500">Manual payment instructions</p>
+            <p className="text-xs text-[var(--text-primary)] whitespace-pre-line mt-1.5">{race?.manualPaymentInstructions || 'Please contact the race organizer to complete payment.'}</p>
+            {race?.manualPaymentQrImage && <img src={race.manualPaymentQrImage} alt="GCash or QRPh payment code" className="mt-3 mx-auto w-44 max-w-full rounded-xl bg-white p-2" />}
+          </div>
+        )}
         <div className="glass-inset p-4 text-left grid grid-cols-2 gap-y-3 gap-x-4">
           <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Race</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5 truncate">{race?.name || 'Race event'}</span></span>
           <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Race date</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5">{race?.date || 'To be announced'}</span></span>
           <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Distance</span><span className="block text-sm font-bold text-red-500 mt-0.5">{registration.distance}</span></span>
           <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Bib number</span><span className="block text-lg font-mono font-black text-red-500 mt-0.5">#{registration.bibNumber}</span></span>
+          {registration.paymentStatus === 'pending' && registration.paymentReference && <span className="col-span-2"><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Payment reference</span><span className="block text-sm font-mono font-bold text-amber-500 mt-0.5 break-all">{registration.paymentReference}</span></span>}
           {registration.shirtSize && <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Shirt size</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5">{registration.shirtSize}</span></span>}
         </div>
         <p className="text-[10.5px] text-[var(--text-secondary)]">Your QR race pass and live race status will be available under My Races.</p>
@@ -460,11 +878,13 @@ function RegistrationConfirmation({ race, registration, updated, onViewMyRace, o
   );
 }
 
-function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRaceId, onSaved, onCancel }: RaceRegistrationFormProps) {
+function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShirtSize, initialRaceId, requestedRaceId, onRequestedRaceHandled, onSaved, onCancel }: RaceRegistrationFormProps) {
   const latest = mostRecent(runnerProfiles);
   const [races, setRaces] = useState<Race[]>([]);
   const [raceId, setRaceId] = useState(initialRaceId || '');
-  const [showForm, setShowForm] = useState(false);
+  // A per-event public QR brings a runner directly here. Keep the normal
+  // browse-first screen for dashboard navigation, but skip it for that link.
+  const [showForm, setShowForm] = useState(() => !!initialRaceId);
   const [fullName, setFullName] = useState(latest?.fullName || '');
   const [distance, setDistance] = useState('Custom');
   const [customDistance, setCustomDistance] = useState('');
@@ -476,10 +896,13 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
   const [emergencyContactName, setEmergencyContactName] = useState(latest?.emergencyContactName || '');
   const [emergencyContactPhone, setEmergencyContactPhone] = useState(latest?.emergencyContactPhone || '');
   const [shirtSize, setShirtSize] = useState(initialShirtSize || latest?.shirtSize || '');
+  const [paymentReference, setPaymentReference] = useState('');
   const [showInclusionImage, setShowInclusionImage] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [confirmation, setConfirmation] = useState<{ registration: RunnerProfile; wasUpdate: boolean } | null>(null);
+  const [paymentReturn, setPaymentReturn] = useState<PaymentStatusResponse | null>(null);
+  const [checkingPayment, setCheckingPayment] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'races'), (snapshot) => {
@@ -491,11 +914,52 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
     return () => unsubscribe();
   }, []);
 
+  // The payment-provider return URL is never treated as proof of payment.
+  // It only tells us which server-side payment record to poll; the webhook is
+  // still the only code path that creates a paid race registration.
+  useEffect(() => {
+    const paymentId = new URLSearchParams(window.location.search).get('payment');
+    if (!paymentId) return;
+    let cancelled = false;
+    let timeout: number | undefined;
+    const check = async () => {
+      setCheckingPayment(true);
+      try {
+        const payment = await getPaymentStatus(paymentId);
+        if (cancelled) return;
+        setPaymentReturn(payment);
+        setRaceId(payment.raceId);
+        if (payment.status === 'paid') {
+          window.history.replaceState({}, '', window.location.pathname);
+          return;
+        }
+        if (payment.status === 'pending' || payment.status === 'creating') timeout = window.setTimeout(check, 2500);
+      } catch (err: any) {
+        if (!cancelled) setError(err.message || 'We could not verify your payment yet. Please refresh in a moment.');
+      } finally {
+        if (!cancelled) setCheckingPayment(false);
+      }
+    };
+    void check();
+    return () => {
+      cancelled = true;
+      if (timeout) window.clearTimeout(timeout);
+    };
+  }, []);
+
   const openRaces = races.filter((race) => isRaceRegistrationOpen(race));
   const selectedRace = openRaces.find((r) => r.id === raceId);
   const raceDistances = selectedRace?.distances || [];
   const availableEntryCategories: RaceEntryCategory[] = selectedRace ? raceEntryCategories(selectedRace) : ['solo'];
   const existingForRace = runnerProfiles.find((rp) => rp.raceId === raceId);
+
+  useEffect(() => {
+    if (!requestedRaceId) return;
+    setRaceId(requestedRaceId);
+    setShowForm(true);
+    setError('');
+    onRequestedRaceHandled?.();
+  }, [onRequestedRaceHandled, requestedRaceId]);
 
   // Already registered for this specific race? Load those details for editing.
   useEffect(() => {
@@ -547,7 +1011,29 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
         ? [fullName.trim()]
         : [fullName.trim(), ...teamMembers.slice(1, memberCount).map((member) => member.trim())];
       if (entryCategory !== 'solo' && !teamName.trim()) return setError('Please enter your team name.');
-      if (normalizedMembers.some((member) => !member)) return setError(`Enter all ${memberCount} ${entryCategory === 'duo' ? 'Duo' : 'Trio'} member names.`);
+      if (normalizedMembers.some((member) => !member)) return setError(`Enter all ${memberCount} ${entryCategoryLabels[entryCategory]} member names.`);
+      const selectedDistance = raceDistances.find((item) => item.label === distance);
+      const shouldPayOnline = !existingForRace && !!selectedRace?.onlinePaymentEnabled && (selectedDistance?.price || 0) > 0;
+      const shouldUseManualPayment = !existingForRace && !!selectedRace?.manualPaymentEnabled && (selectedDistance?.price || 0) > 0;
+      if (shouldUseManualPayment && paymentReference.trim().length < 4) {
+        return setError('Enter the payment reference number from your GCash or bank transaction.');
+      }
+      if (shouldPayOnline) {
+        const checkout = await createPayMongoCheckout({
+          raceId,
+          distance: finalDistance,
+          entryCategory,
+          fullName: entryCategory === 'solo' ? fullName.trim().toUpperCase() : teamName.trim().toUpperCase(),
+          gender,
+          age: parsedAge,
+          emergencyContactName: emergencyContactName.trim().toUpperCase(),
+          emergencyContactPhone: emergencyContactPhone.trim(),
+          ...(shirtSize ? { shirtSize } : {}),
+          ...(entryCategory !== 'solo' ? { teamName: teamName.trim().toUpperCase(), teamMembers: normalizedMembers.map((member) => member.toUpperCase()) } : {}),
+        });
+        window.location.assign(checkout.checkoutUrl);
+        return;
+      }
       const selectedDistanceKm = raceDistances.find((d) => d.label === distance)?.km ?? null;
       const bibNumber = existingForRace ? existingForRace.bibNumber : await generateBibNumber(raceId, finalDistance, selectedDistanceKm, entryCategory);
       const record: RunnerProfile = {
@@ -568,8 +1054,18 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
         ...(existingForRace?.kitClaimedAt ? { kitClaimedAt: existingForRace.kitClaimedAt } : {}),
         ...(shirtSize ? { shirtSize } : {}),
         ...(entryCategory !== 'solo' ? { teamName: teamName.trim().toUpperCase(), teamMembers: normalizedMembers.map((member) => member.toUpperCase()) } : {}),
+        ...(shouldUseManualPayment ? {
+          paymentStatus: 'pending' as const,
+          paymentMethod: 'manual',
+          paymentAmount: selectedDistance!.price,
+          paymentReference: paymentReference.trim().toUpperCase(),
+        } : {}),
       };
-      await setDoc(doc(db, 'runners', `${uid}_${raceId}`), record);
+      if (existingForRace) {
+        await setDoc(doc(db, 'runners', `${uid}_${raceId}`), record, { merge: true });
+      } else {
+        await setDoc(doc(db, 'runners', `${uid}_${raceId}`), record);
+      }
       setConfirmation({ registration: record, wasUpdate: !!existingForRace });
     } catch (err: any) {
       setError(err.message || 'Failed to save your race profile.');
@@ -587,6 +1083,19 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
       onViewMyRace={() => onSaved?.()}
       onRegisterAnother={() => { setConfirmation(null); setRaceId(''); setShowForm(false); setError(''); }}
     />;
+  }
+
+  if (paymentReturn?.status === 'paid') {
+    return (
+      <div className="max-w-xl mx-auto space-y-5 animate-fadeIn">
+        <RegistrationProgress currentStep={3} />
+        <div className="glass-panel p-7 text-center space-y-4">
+          <div className="w-14 h-14 rounded-full mx-auto bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-emerald-500"><CheckCircle2 className="w-8 h-8" /></div>
+          <div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-500">Payment verified</p><h2 className="heading-float text-xl font-black font-display uppercase text-[var(--text-primary)] mt-2">Race registration confirmed</h2><p className="text-xs text-[var(--text-secondary)] mt-2">Your PayMongo payment was confirmed securely. Your race pass will appear in My Races.</p></div>
+          <button type="button" onClick={() => onSaved?.()} className="w-full py-3.5 rounded-[var(--radius-control)] font-display font-black uppercase text-xs tracking-widest text-white bg-gradient-to-r from-red-600 to-red-700">View My Races</button>
+        </div>
+      </div>
+    );
   }
 
   if (!raceId || !selectedRace) {
@@ -685,6 +1194,8 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
           <p className="text-[10.5px] text-amber-500 glass-inset px-3 py-2">You're already registered for this race under bib #{existingForRace.bibNumber}. Continuing will let you update your details.</p>
         )}
 
+        {friendIdentity?.username && <InviteFriendsToRace uid={uid} senderName={friendIdentity.displayName} race={selectedRace} />}
+
         <button
           type="button"
           onClick={() => setShowForm(true)}
@@ -765,7 +1276,7 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
             {existingForRace ? (
               <div className="glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2"><Users2 className="w-4 h-4 text-red-500" /> {entryCategoryLabels[runnerEntryCategory(existingForRace)]}</div>
             ) : (
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {availableEntryCategories.map((category) => <button key={category} type="button" onClick={() => setEntryCategory(category)} className={`rounded-xl border px-2 py-2.5 text-[10px] font-black uppercase tracking-wide transition ${entryCategory === category ? 'border-red-500/45 bg-red-500/10 text-red-500' : 'border-[var(--border-default)] glass-inset text-[var(--text-secondary)]'}`}>{entryCategoryLabels[category]}</button>)}
               </div>
             )}
@@ -832,11 +1343,39 @@ function RaceRegistrationForm({ uid, runnerProfiles, initialShirtSize, initialRa
               : 'Your bib number is assigned automatically based on your distance (e.g. first 5K registrant gets "5-001").'}
           </p>
 
+          {!existingForRace && selectedRace.onlinePaymentEnabled && (raceDistances.find((item) => item.label === distance)?.price || 0) > 0 && (
+            <p className="text-[10.5px] text-emerald-500 border border-emerald-500/25 bg-emerald-500/5 rounded-xl px-3 py-2 flex items-center gap-1.5"><Coins className="w-3.5 h-3.5 shrink-0" /> Secure checkout: GCash, Maya, QRPh, or card. Your registration is confirmed only after payment verification.</p>
+          )}
+          {!existingForRace && selectedRace.manualPaymentEnabled && (raceDistances.find((item) => item.label === distance)?.price || 0) > 0 && (
+            <div className="text-[10.5px] text-amber-500 border border-amber-500/25 bg-amber-500/5 rounded-xl px-3 py-2.5">
+              <p className="font-bold">Manual payment • ₱{(raceDistances.find((item) => item.label === distance)?.price || 0).toFixed(2)}</p>
+              <p className="text-[var(--text-secondary)] whitespace-pre-line mt-1">{selectedRace.manualPaymentInstructions || 'Submit your registration, then follow the organizer’s payment instructions. Your bib will be reserved pending verification.'}</p>
+              {selectedRace.manualPaymentQrImage && (
+                <div className="mt-3 text-center">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-amber-500 mb-1.5">Scan to pay</p>
+                  <img src={selectedRace.manualPaymentQrImage} alt="GCash or QRPh payment code" className="mx-auto w-48 max-w-full rounded-xl bg-white p-2 shadow-sm" />
+                </div>
+              )}
+              <div className="mt-3">
+                <label className="block text-[10px] font-black uppercase tracking-widest text-amber-500 mb-1.5">Payment reference number <span className="text-red-500">required</span></label>
+                <input type="text" required value={paymentReference} onChange={(event) => setPaymentReference(event.target.value.toUpperCase())} maxLength={100} autoCapitalize="characters" autoCorrect="off" placeholder="GCash / bank transaction reference" className="w-full glass-inset px-3 py-2.5 text-sm font-mono font-bold tracking-wide text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                <p className="mt-1.5 text-[10px] text-[var(--text-secondary)]">We use this to match your payment. A screenshot is not required.</p>
+              </div>
+            </div>
+          )}
+
+          {(checkingPayment || paymentReturn?.status === 'pending' || paymentReturn?.status === 'creating') && (
+            <p className="text-[10.5px] text-amber-500 border border-amber-500/25 bg-amber-500/5 rounded-xl px-3 py-2 flex items-center gap-1.5"><RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" /> Verifying your PayMongo payment securely…</p>
+          )}
+          {(paymentReturn?.status === 'failed' || paymentReturn?.status === 'expired') && (
+            <p className="text-[10.5px] text-red-500 border border-red-500/25 bg-red-500/5 rounded-xl px-3 py-2">Your checkout was not completed. No registration was created; you may try payment again.</p>
+          )}
+
           {error && <p className="text-xs text-red-500 font-semibold">⚠️ {error}</p>}
 
           <button type="submit" disabled={saving}
             className="w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-black uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-red-900/30 disabled:opacity-60">
-            {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ClipboardList className="w-4 h-4" />} {existingForRace ? 'Update Registration' : 'Save Race Profile'}
+            {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ClipboardList className="w-4 h-4" />} {existingForRace ? 'Update Registration' : selectedRace.onlinePaymentEnabled && (raceDistances.find((item) => item.label === distance)?.price || 0) > 0 ? `Continue to payment • ₱${(raceDistances.find((item) => item.label === distance)?.price || 0).toFixed(2)}` : selectedRace.manualPaymentEnabled && (raceDistances.find((item) => item.label === distance)?.price || 0) > 0 ? `Reserve slot • Manual payment ₱${(raceDistances.find((item) => item.label === distance)?.price || 0).toFixed(2)}` : 'Save Race Profile'}
           </button>
       </form>
     </div>
@@ -935,15 +1474,23 @@ function DigitalRaceBib({ race, runnerProfile }: { race: Race; runnerProfile: Ru
   const bibRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState('');
-  const layout = race.raceBibLayout || { bibNumberX: 50, bibNumberY: 48, runnerNameX: 50, runnerNameY: 70 };
+  const bibTemplate = resolveRaceBibTemplate(race, runnerProfile.distance);
+  const layout = bibTemplate?.layout;
+  const nameLines = raceBibNameLines(runnerProfile);
+  const previewNameSize = Math.min(layout?.runnerNameSize ?? 5, 11 / Math.max(1, nameLines.length));
+
+  useEffect(() => {
+    void ensureRaceBibCustomFont(race.raceBibCustomFont).catch((error) => console.warn('Unable to load custom race bib font:', error));
+  }, [race.raceBibCustomFont?.url]);
 
   const handleDownload = async () => {
-    if (!race.raceBibTemplateImage) return;
+    if (!bibTemplate || !layout) return;
     setDownloading(true);
     setDownloadError('');
     try {
+      await ensureRaceBibCustomFont(race.raceBibCustomFont);
       await document.fonts?.ready;
-      const template = await loadDataImage(race.raceBibTemplateImage);
+      const template = await loadDataImage(bibTemplate.image);
       const canvas = document.createElement('canvas');
       canvas.width = template.naturalWidth;
       canvas.height = template.naturalHeight;
@@ -953,12 +1500,12 @@ function DigitalRaceBib({ race, runnerProfile }: { race: Race; runnerProfile: Ru
       drawFittedRaceBibText(
         ctx, runnerProfile.bibNumber, canvas.width, canvas.height,
         layout.bibNumberX, layout.bibNumberY, layout.bibNumberSize ?? 12,
-        layout.bibNumberColor ?? '#FFFFFF', layout.bibNumberFont ?? 'mono',
+        layout.bibNumberColor ?? '#FFFFFF', layout.bibNumberStrokeColor ?? '#000000', layout.bibNumberStrokeWidth ?? 0, raceBibFontFamily(layout.bibNumberFont, race.raceBibCustomFont, true),
       );
-      drawFittedRaceBibText(
-        ctx, runnerProfile.fullName, canvas.width, canvas.height,
+      drawFittedRaceBibTextLines(
+        ctx, nameLines, canvas.width, canvas.height,
         layout.runnerNameX, layout.runnerNameY, layout.runnerNameSize ?? 5,
-        layout.runnerNameColor ?? '#FFFFFF', layout.runnerNameFont ?? 'display',
+        layout.runnerNameColor ?? '#FFFFFF', layout.runnerNameStrokeColor ?? '#000000', layout.runnerNameStrokeWidth ?? 0, raceBibFontFamily(layout.runnerNameFont, race.raceBibCustomFont, true),
       );
       const link = document.createElement('a');
       const safeRaceName = race.name.trim().replace(/[^a-zA-Z0-9_-]/g, '_') || 'RacePulsePH';
@@ -973,7 +1520,7 @@ function DigitalRaceBib({ race, runnerProfile }: { race: Race; runnerProfile: Ru
     }
   };
 
-  if (!race.raceBibTemplateImage) return null;
+  if (!bibTemplate || !layout) return null;
 
   return (
     <div className="glass-panel p-5 space-y-4">
@@ -984,9 +1531,9 @@ function DigitalRaceBib({ race, runnerProfile }: { race: Race; runnerProfile: Ru
         </div>
       </div>
       <div ref={bibRef} className="relative w-full aspect-[3/2] overflow-hidden rounded-xl bg-[var(--surface-inset)] select-none" style={{ containerType: 'inline-size' }}>
-        <img src={race.raceBibTemplateImage} alt={`${race.name} personalized race bib`} className="absolute inset-0 w-full h-full object-cover" />
-        <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${layout.bibNumberX}%`, top: `${layout.bibNumberY}%`, fontSize: `${layout.bibNumberSize ?? 12}cqw`, color: layout.bibNumberColor ?? '#FFFFFF', fontFamily: raceBibFontFamilies[layout.bibNumberFont ?? 'mono'] }}>{runnerProfile.bibNumber}</span>
-        <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-wide drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap max-w-[90%] truncate" style={{ left: `${layout.runnerNameX}%`, top: `${layout.runnerNameY}%`, fontSize: `${layout.runnerNameSize ?? 5}cqw`, color: layout.runnerNameColor ?? '#FFFFFF', fontFamily: raceBibFontFamilies[layout.runnerNameFont ?? 'display'] }}>{runnerProfile.fullName}</span>
+        <img src={bibTemplate.image} alt={`${race.name} personalized race bib`} className="absolute inset-0 w-full h-full object-cover" />
+        <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${layout.bibNumberX}%`, top: `${layout.bibNumberY}%`, fontSize: `${layout.bibNumberSize ?? 12}cqw`, color: layout.bibNumberColor ?? '#FFFFFF', fontFamily: raceBibFontFamily(layout.bibNumberFont, race.raceBibCustomFont), WebkitTextStroke: `${layout.bibNumberStrokeWidth ?? 0}cqw ${layout.bibNumberStrokeColor ?? '#000000'}`, paintOrder: 'stroke fill' }}>{runnerProfile.bibNumber}</span>
+        <div className="absolute -translate-x-1/2 -translate-y-1/2 w-[90%] text-center leading-[1.16] font-black tracking-wide drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)]" style={{ left: `${layout.runnerNameX}%`, top: `${layout.runnerNameY}%`, fontSize: `${previewNameSize}cqw`, color: layout.runnerNameColor ?? '#FFFFFF', fontFamily: raceBibFontFamily(layout.runnerNameFont, race.raceBibCustomFont), WebkitTextStroke: `${layout.runnerNameStrokeWidth ?? 0}cqw ${layout.runnerNameStrokeColor ?? '#000000'}`, paintOrder: 'stroke fill' }}>{nameLines.map((name, index) => <span key={`${name}-${index}`} className="block">{name}</span>)}</div>
       </div>
       <button type="button" onClick={handleDownload} disabled={downloading} className="w-full py-2.5 px-4 rounded-[var(--radius-control)] font-display font-black uppercase text-[10px] tracking-widest text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 transition disabled:opacity-60 flex items-center justify-center gap-2">
         {downloading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />} {downloading ? 'Preparing Bib...' : 'Download Race Bib'}
@@ -1159,6 +1706,7 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
   const [sendingPasswordReset, setSendingPasswordReset] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -1259,9 +1807,33 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
             email: profile.email,
             createdAt: new Date().toISOString(),
           });
+          const friendPayload = {
+            uid: profile.uid,
+            username: nextUsername,
+            displayName: displayName.trim(),
+            ...(nickname.trim() ? { nickname: nickname.trim() } : {}),
+            ...(photoPreview ? { photoURL: photoPreview } : {}),
+            updatedAt: new Date().toISOString(),
+          };
+          transaction.set(doc(db, 'friendDirectory', nextUsername), friendPayload);
+          transaction.set(doc(db, 'friendProfiles', profile.uid), friendPayload);
         });
       } else {
         await updateDoc(doc(db, 'users', profile.uid), profileUpdate);
+        if (profile.username) {
+          const friendPayload = {
+            uid: profile.uid,
+            username: profile.username,
+            displayName: displayName.trim(),
+            ...(nickname.trim() ? { nickname: nickname.trim() } : {}),
+            ...(photoPreview ? { photoURL: photoPreview } : {}),
+            updatedAt: new Date().toISOString(),
+          };
+          await Promise.all([
+            setDoc(doc(db, 'friendDirectory', profile.username), friendPayload, { merge: true }),
+            setDoc(doc(db, 'friendProfiles', profile.uid), friendPayload, { merge: true }),
+          ]);
+        }
       }
       onClose();
     } catch (err: any) {
@@ -1426,7 +1998,13 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
         >
           {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <User className="w-4 h-4" />} Save Settings
         </button>
+        <div className="rounded-[var(--radius-control)] border border-red-500/25 bg-red-500/5 p-4 space-y-2">
+          <p className="text-xs font-black uppercase tracking-wider text-red-400">Danger zone</p>
+          <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">Permanently remove your account, profile, and race registrations.</p>
+          <button type="button" onClick={() => setShowDeleteAccount(true)} className="text-[10px] font-black uppercase tracking-wide px-3 py-2.5 rounded-[14px] border border-red-500/35 text-red-500 hover:bg-red-500 hover:text-white transition">Delete my account</button>
+        </div>
       </div>
+      {showDeleteAccount && <DeleteAccountModal profile={profile} onClose={() => setShowDeleteAccount(false)} />}
     </div>
   );
 }

@@ -1,11 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { collection, doc, onSnapshot, setDoc, deleteDoc, getDocs, query, where } from 'firebase/firestore';
-import { db } from '../firebase';
+import { collection, doc, onSnapshot, setDoc, deleteDoc, getDocs, query, runTransaction, where, writeBatch } from 'firebase/firestore';
+import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
+import { db, storage } from '../firebase';
 import { resizeImageToDataUrl, resizeImageToDataUrlContain } from '../lib/image';
-import { AgeCategory, CheckpointType, Gender, Race, RaceBibFont, RaceDistance, RaceEntryCategory, RunnerProfile } from '../types';
+import { AgeCategory, CheckpointType, Gender, Race, RaceBibCustomFont, RaceBibFont, RaceBibTemplate, RaceDistance, RaceEntryCategory, RunnerProfile, UserProfile } from '../types';
 import { entryCategoryLabels, raceEntryCategories } from '../lib/raceEntry';
 import { generateRunnerRosterPdf } from '../lib/runnerReport';
-import { Flag, Trash2, Plus, Save, Pencil, RefreshCw, Users2, FileDown, ImagePlus, X } from 'lucide-react';
+import { generateRaceBibsPdf } from '../lib/raceBibPdf';
+import { hasRaceBibTemplate } from '../lib/raceBib';
+import { ensureRaceBibCustomFont, raceBibFontFamily } from '../lib/raceBibFont';
+import { QRCodeSVG } from 'qrcode.react';
+import { Flag, Trash2, Plus, Save, Pencil, RefreshCw, Users2, FileDown, ImagePlus, X, QrCode, Copy, Download } from 'lucide-react';
 
 interface CheckpointDraft {
   id: string;
@@ -56,19 +61,43 @@ interface InclusionDraft {
   text: string;
 }
 
-const raceBibFontFamilies: Record<RaceBibFont, string> = {
-  display: '"Space Grotesk", sans-serif',
-  sans: 'Inter, sans-serif',
-  mono: '"JetBrains Mono", monospace',
-  condensed: 'Impact, "Arial Narrow Bold", sans-serif',
-};
-
 function formatPriceRange(distances: RaceDistance[] | undefined): string {
   if (!distances || distances.length === 0) return 'No pricing set';
   const prices = distances.map((d) => d.price || 0);
   const min = Math.min(...prices);
   const max = Math.max(...prices);
   return min === max ? `₱${min.toFixed(0)}` : `₱${min.toFixed(0)}-₱${max.toFixed(0)}`;
+}
+
+function freeSlotCounterId(raceId: string, distanceLabel: string, entryCategory: RaceEntryCategory): string {
+  // Free slots intentionally share the matching category counter with normal
+  // registrations. That keeps Solo, Duo, Trio, and Group bibs unique.
+  return `${raceId}_${distanceLabel}_${entryCategory}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+}
+
+function normalizeBib(value: string): string {
+  return value.trim().replace(/^#\s*/, '').replace(/\s+/g, '').toUpperCase();
+}
+
+async function reserveFreeSlotBibs(race: Race, distance: RaceDistance, entryCategory: RaceEntryCategory, count: number, usedBibs: Set<string>): Promise<string[]> {
+  const counterRef = doc(db, 'bibCounters', freeSlotCounterId(race.id, distance.label, entryCategory));
+  return runTransaction(db, async (transaction) => {
+    const counter = await transaction.get(counterRef);
+    let sequence = Number(counter.exists() ? counter.data().count : 0) || 0;
+    const bibs: string[] = [];
+    while (bibs.length < count) {
+      sequence += 1;
+      const suffix = entryCategory === 'duo' ? 'D' : entryCategory === 'trio' ? 'T' : entryCategory === 'group' ? 'G' : '';
+      const prefix = suffix ? `${distance.km}-${suffix}` : String(distance.km);
+      const bib = `${prefix}-${String(sequence).padStart(3, '0')}`;
+      if (!usedBibs.has(normalizeBib(bib))) {
+        usedBibs.add(normalizeBib(bib));
+        bibs.push(bib);
+      }
+    }
+    transaction.set(counterRef, { count: sequence });
+    return bibs;
+  });
 }
 
 interface RaceSetupPanelProps {
@@ -87,6 +116,14 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [registrationOpen, setRegistrationOpen] = useState(true);
   const [registrationCloseDate, setRegistrationCloseDate] = useState('');
+  const [onlinePaymentEnabled, setOnlinePaymentEnabled] = useState(false);
+  const [paymentFeeMode, setPaymentFeeMode] = useState<'absorbed' | 'passed_on'>('absorbed');
+  const [manualPaymentEnabled, setManualPaymentEnabled] = useState(false);
+  const [manualPaymentInstructions, setManualPaymentInstructions] = useState('');
+  const [manualPaymentQrImage, setManualPaymentQrImage] = useState('');
+  const [manualPaymentQrUploading, setManualPaymentQrUploading] = useState(false);
+  const [organizerIds, setOrganizerIds] = useState<string[]>([]);
+  const [approvedOrganizers, setApprovedOrganizers] = useState<UserProfile[]>([]);
   const [checkpoints, setCheckpoints] = useState<CheckpointDraft[]>(emptyCheckpointDrafts());
   const [ageCategories, setAgeCategories] = useState<AgeCategoryDraft[]>([]);
   const [distances, setDistances] = useState<DistanceDraft[]>([]);
@@ -97,7 +134,10 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
   const [inclusionImage, setInclusionImage] = useState('');
   const [inclusionUploading, setInclusionUploading] = useState(false);
   const [raceBibTemplateImage, setRaceBibTemplateImage] = useState('');
+  const [raceBibTemplatesByDistance, setRaceBibTemplatesByDistance] = useState<Record<string, RaceBibTemplate>>({});
   const [raceBibUploading, setRaceBibUploading] = useState(false);
+  const [raceBibCustomFont, setRaceBibCustomFont] = useState<RaceBibCustomFont | undefined>(undefined);
+  const [raceBibFontUploading, setRaceBibFontUploading] = useState(false);
   const [bibNumberX, setBibNumberX] = useState(50);
   const [bibNumberY, setBibNumberY] = useState(48);
   const [runnerNameX, setRunnerNameX] = useState(50);
@@ -106,27 +146,76 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
   const [runnerNameSize, setRunnerNameSize] = useState(5);
   const [bibNumberColor, setBibNumberColor] = useState('#FFFFFF');
   const [runnerNameColor, setRunnerNameColor] = useState('#FFFFFF');
+  const [bibNumberStrokeColor, setBibNumberStrokeColor] = useState('#000000');
+  const [runnerNameStrokeColor, setRunnerNameStrokeColor] = useState('#000000');
+  const [bibNumberStrokeWidth, setBibNumberStrokeWidth] = useState(0);
+  const [runnerNameStrokeWidth, setRunnerNameStrokeWidth] = useState(0);
   const [bibNumberFont, setBibNumberFont] = useState<RaceBibFont>('mono');
   const [runnerNameFont, setRunnerNameFont] = useState<RaceBibFont>('display');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [reportBusyRaceId, setReportBusyRaceId] = useState<string | null>(null);
+  const [raceBibPdfBusyRaceId, setRaceBibPdfBusyRaceId] = useState<string | null>(null);
+  const [bibDownloadRace, setBibDownloadRace] = useState<Race | null>(null);
+  const [qrRace, setQrRace] = useState<Race | null>(null);
+  const [freeSlotRace, setFreeSlotRace] = useState<Race | null>(null);
   const posterInputRef = useRef<HTMLInputElement>(null);
   const inclusionInputRef = useRef<HTMLInputElement>(null);
   const raceBibInputRef = useRef<HTMLInputElement>(null);
+  const raceBibFontInputRef = useRef<HTMLInputElement>(null);
+  const raceBibDistanceInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const manualPaymentQrInputRef = useRef<HTMLInputElement>(null);
+  const registrationQrRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
-    const racesQuery = canSeeAllRaces
-      ? query(collection(db, 'races'))
-      : query(collection(db, 'races'), where('createdBy', '==', uid));
-    const unsubscribe = onSnapshot(racesQuery, (snapshot) => {
-      const list: Race[] = [];
-      snapshot.forEach((docSnap) => list.push(docSnap.data() as Race));
+    const publish = (list: Race[]) => {
       list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setRaces(list);
-    }, (err) => console.warn('Races listener failed:', err.message));
-    return () => unsubscribe();
+    };
+
+    if (canSeeAllRaces) {
+      return onSnapshot(query(collection(db, 'races')), (snapshot) => {
+        const list: Race[] = [];
+        snapshot.forEach((docSnap) => list.push(docSnap.data() as Race));
+        publish(list);
+      }, (err) => console.warn('Races listener failed:', err.message));
+    }
+
+    let owned: Race[] = [];
+    let shared: Race[] = [];
+    const publishTeamRaces = () => {
+      const unique = new Map<string, Race>();
+      [...owned, ...shared].forEach((race) => unique.set(race.id, race));
+      publish(Array.from(unique.values()));
+    };
+    const ownedUnsubscribe = onSnapshot(query(collection(db, 'races'), where('createdBy', '==', uid)), (snapshot) => {
+      owned = snapshot.docs.map((docSnap) => docSnap.data() as Race);
+      publishTeamRaces();
+    }, (err) => console.warn('Owned races listener failed:', err.message));
+    const sharedUnsubscribe = onSnapshot(query(collection(db, 'races'), where('organizerIds', 'array-contains', uid)), (snapshot) => {
+      shared = snapshot.docs.map((docSnap) => docSnap.data() as Race);
+      publishTeamRaces();
+    }, (err) => console.warn('Shared races listener failed:', err.message));
+    return () => {
+      ownedUnsubscribe();
+      sharedUnsubscribe();
+    };
   }, [canSeeAllRaces, uid]);
+
+  useEffect(() => {
+    const organizersQuery = query(
+      collection(db, 'users'),
+      where('role', '==', 'organizer'),
+      where('approved', '==', true),
+    );
+    return onSnapshot(organizersQuery, (snapshot) => {
+      const list = snapshot.docs
+        .map((docSnap) => docSnap.data() as UserProfile)
+        .filter((organizer) => organizer.uid !== uid)
+        .sort((a, b) => a.displayName.localeCompare(b.displayName));
+      setApprovedOrganizers(list);
+    }, (err) => console.warn('Organizer team directory listener failed:', err.message));
+  }, [uid]);
 
   const resetForm = () => {
     setEditingId(null);
@@ -134,6 +223,12 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     setDate(new Date().toISOString().slice(0, 10));
     setRegistrationOpen(true);
     setRegistrationCloseDate('');
+    setOnlinePaymentEnabled(false);
+    setPaymentFeeMode('absorbed');
+    setManualPaymentEnabled(false);
+    setManualPaymentInstructions('');
+    setManualPaymentQrImage('');
+    setOrganizerIds([]);
     setCheckpoints(emptyCheckpointDrafts());
     setAgeCategories([]);
     setDistances([]);
@@ -142,6 +237,8 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     setPosterImage('');
     setInclusionImage('');
     setRaceBibTemplateImage('');
+    setRaceBibTemplatesByDistance({});
+    setRaceBibCustomFont(undefined);
     setBibNumberX(50);
     setBibNumberY(48);
     setRunnerNameX(50);
@@ -150,6 +247,10 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     setRunnerNameSize(5);
     setBibNumberColor('#FFFFFF');
     setRunnerNameColor('#FFFFFF');
+    setBibNumberStrokeColor('#000000');
+    setRunnerNameStrokeColor('#000000');
+    setBibNumberStrokeWidth(0);
+    setRunnerNameStrokeWidth(0);
     setBibNumberFont('mono');
     setRunnerNameFont('display');
     setError('');
@@ -166,6 +267,12 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     setDate(race.date);
     setRegistrationOpen(race.registrationOpen !== false);
     setRegistrationCloseDate(race.registrationCloseDate || '');
+    setOnlinePaymentEnabled(race.onlinePaymentEnabled === true);
+    setPaymentFeeMode(race.paymentFeeMode || 'absorbed');
+    setManualPaymentEnabled(race.manualPaymentEnabled === true);
+    setManualPaymentInstructions(race.manualPaymentInstructions || '');
+    setManualPaymentQrImage(race.manualPaymentQrImage || '');
+    setOrganizerIds((race.organizerIds || []).filter((organizerId) => organizerId !== race.createdBy));
     const ordered = [...race.checkpoints].sort((a, b) => a.order - b.order);
     setCheckpoints(ordered.map((c, index) => ({
       id: c.id,
@@ -180,6 +287,9 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     setPosterImage(race.posterImage || '');
     setInclusionImage(race.inclusionImage || '');
     setRaceBibTemplateImage(race.raceBibTemplateImage || '');
+    setRaceBibTemplatesByDistance(race.raceBibTemplatesByDistance || {});
+    setRaceBibCustomFont(race.raceBibCustomFont);
+    void ensureRaceBibCustomFont(race.raceBibCustomFont).catch((err) => console.warn('Unable to load custom race bib font:', err));
     setBibNumberX(race.raceBibLayout?.bibNumberX ?? 50);
     setBibNumberY(race.raceBibLayout?.bibNumberY ?? 48);
     setRunnerNameX(race.raceBibLayout?.runnerNameX ?? 50);
@@ -188,6 +298,10 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     setRunnerNameSize(race.raceBibLayout?.runnerNameSize ?? 5);
     setBibNumberColor(race.raceBibLayout?.bibNumberColor ?? '#FFFFFF');
     setRunnerNameColor(race.raceBibLayout?.runnerNameColor ?? '#FFFFFF');
+    setBibNumberStrokeColor(race.raceBibLayout?.bibNumberStrokeColor ?? '#000000');
+    setRunnerNameStrokeColor(race.raceBibLayout?.runnerNameStrokeColor ?? '#000000');
+    setBibNumberStrokeWidth(race.raceBibLayout?.bibNumberStrokeWidth ?? 0);
+    setRunnerNameStrokeWidth(race.raceBibLayout?.runnerNameStrokeWidth ?? 0);
     setBibNumberFont(race.raceBibLayout?.bibNumberFont ?? 'mono');
     setRunnerNameFont(race.raceBibLayout?.runnerNameFont ?? 'display');
     setError('');
@@ -231,11 +345,81 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     setRaceBibUploading(true);
     setError('');
     try {
-      setRaceBibTemplateImage(await resizeImageToDataUrl(file, 1000, 667, 0.82));
+      // The race-bib PDF places two landscape bibs on one A4 sheet. Keep the
+      // uploaded artwork at the same 3:2 ratio used by that print layout.
+      setRaceBibTemplateImage(await resizeImageToDataUrl(file, 1200, 800, 0.82));
     } catch (err: any) {
       setError(err.message || 'Failed to process the race bib template.');
     } finally {
       setRaceBibUploading(false);
+    }
+  };
+
+  const handleDistanceRaceBibTemplateSelected = async (distanceLabel: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setRaceBibUploading(true);
+    setError('');
+    try {
+      const image = await resizeImageToDataUrl(file, 1200, 800, 0.82);
+      setRaceBibTemplatesByDistance((current) => ({ ...current, [distanceLabel]: { image } }));
+    } catch (err: any) {
+      setError(err.message || `Failed to process the ${distanceLabel} race bib template.`);
+    } finally {
+      setRaceBibUploading(false);
+    }
+  };
+
+  const handleRaceBibFontSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    if (!extension || !['woff2', 'woff', 'ttf', 'otf'].includes(extension)) {
+      setError('Upload a font file in WOFF2, WOFF, TTF, or OTF format.');
+      return;
+    }
+    if (file.size > 1_500_000) {
+      setError('Keep the custom font under 1.5 MB. WOFF2 is recommended for the best print and download speed.');
+      return;
+    }
+    setRaceBibFontUploading(true);
+    setError('');
+    try {
+      const stamp = Date.now();
+      const family = `RacePulseCustom_${stamp}`;
+      const path = `race-bib-fonts/${uid}/${stamp}.${extension}`;
+      const fontRef = storageRef(storage, path);
+      await uploadBytes(fontRef, file, { contentType: file.type || 'font/woff2' });
+      const customFont: RaceBibCustomFont = { family, url: await getDownloadURL(fontRef), name: file.name };
+      await ensureRaceBibCustomFont(customFont);
+      setRaceBibCustomFont(customFont);
+    } catch (err: any) {
+      console.warn('Failed to upload custom race bib font:', err);
+      setError(err.message || 'Could not upload the custom font. Please try again.');
+    } finally {
+      setRaceBibFontUploading(false);
+    }
+  };
+
+  const handleManualPaymentQrSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setError('Please select an image file for the payment QR code.');
+      return;
+    }
+    setManualPaymentQrUploading(true);
+    setError('');
+    try {
+      // Keep the whole QR square intact and small enough for a Firestore race doc.
+      setManualPaymentQrImage(await resizeImageToDataUrlContain(file, 640, 640, 0.92));
+    } catch (err: any) {
+      setError(err.message || 'Failed to process the payment QR image.');
+    } finally {
+      setManualPaymentQrUploading(false);
     }
   };
 
@@ -273,6 +457,26 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
   const updateInclusionText = (idx: number, text: string) =>
     setInclusions((prev) => prev.map((i, idx2) => (idx2 === idx ? { ...i, text } : i)));
 
+  // Images used to be embedded as base64 strings in the race document. A few
+  // separate bib designs can easily push a Firestore document past its 1 MiB
+  // limit, so keep the files in Storage and retain only their download URLs.
+  // Existing base64 artwork is migrated the next time its race is saved.
+  const storeRaceImage = async (image: string, raceId: string, assetName: string): Promise<string> => {
+    if (!image || !image.startsWith('data:')) return image;
+
+    const response = await fetch(image);
+    const blob = await response.blob();
+    if (!blob.type.startsWith('image/')) throw new Error('The selected race artwork is not a valid image.');
+
+    const safeName = assetName.replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
+    const fileRef = storageRef(storage, `race-assets/${uid}/${raceId}/${safeName}-${Date.now()}.jpg`);
+    await uploadBytes(fileRef, blob, {
+      contentType: blob.type || 'image/jpeg',
+      cacheControl: 'public,max-age=31536000,immutable',
+    });
+    return getDownloadURL(fileRef);
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -294,16 +498,50 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     if (distances.some((d) => d.price < 0)) return setError('A distance\'s price cannot be negative.');
     if (entryCategories.length === 0) return setError('Choose at least one entry category.');
     if (registrationCloseDate && registrationCloseDate > date) return setError('Registration closing date cannot be after the race date.');
+    if ((onlinePaymentEnabled || manualPaymentEnabled) && !distances.some((distance) => distance.price > 0)) return setError('Set a price on at least one distance before enabling payment.');
+    if (manualPaymentEnabled && !manualPaymentInstructions.trim()) return setError('Add payment instructions for runners (for example, Cash, GCash, or bank-transfer details).');
 
     setSaving(true);
     try {
       const raceId = editingId || `race_${Date.now()}`;
       const existing = editingId ? races.find((r) => r.id === editingId) : undefined;
+      const primaryOrganizerId = existing?.createdBy || uid;
+      const teamOrganizerIds = [...new Set(organizerIds)]
+        .filter((organizerId) => organizerId && organizerId !== primaryOrganizerId)
+        .slice(0, 20);
+      const savedDistances = [...distances].sort((a, b) => a.km - b.km).map(draftToDistance);
+      const [storedPosterImage, storedInclusionImage, storedManualPaymentQrImage, storedRaceBibTemplateImage] = await Promise.all([
+        storeRaceImage(posterImage, raceId, 'poster'),
+        storeRaceImage(inclusionImage, raceId, 'inclusion'),
+        storeRaceImage(manualPaymentQrImage, raceId, 'payment-qr'),
+        storeRaceImage(raceBibTemplateImage, raceId, 'bib-default'),
+      ]);
+      // Ignore templates from a distance that an organizer has removed before
+      // saving. Matching uses the runner's stored distance label, e.g. "12K".
+      // Upload only fresh base64 data; already-stored asset URLs are retained.
+      const savedDistanceBibTemplates = Object.fromEntries(await Promise.all(
+        savedDistances
+          .filter((distance) => raceBibTemplatesByDistance[distance.label]?.image)
+          .map(async (distance) => {
+            const template = raceBibTemplatesByDistance[distance.label];
+            return [distance.label, {
+              ...template,
+              image: await storeRaceImage(template.image, raceId, `bib-${distance.label}`),
+            }] as const;
+          }),
+      )) as Record<string, RaceBibTemplate>;
       const record: Race = {
         id: raceId,
         name: name.trim(),
         date,
         registrationOpen,
+        onlinePaymentEnabled,
+        paymentFeeMode,
+        manualPaymentEnabled,
+        ...(manualPaymentEnabled ? {
+          manualPaymentInstructions: manualPaymentInstructions.trim(),
+          ...(storedManualPaymentQrImage ? { manualPaymentQrImage: storedManualPaymentQrImage } : {}),
+        } : {}),
         ...(registrationCloseDate ? { registrationCloseDate } : {}),
         checkpoints: checkpoints.map((c, idx) => ({
           id: c.id,
@@ -313,22 +551,25 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
           ...(c.type === 'intermediate' && c.cutoffMinutes ? { cutoffMinutes: Number(c.cutoffMinutes) } : {}),
         })),
         ageCategories: ageCategories.map(draftToAgeCategory),
-        distances: [...distances].sort((a, b) => a.km - b.km).map(draftToDistance),
+        distances: savedDistances,
         entryCategories,
         inclusions: inclusions.map((i) => i.text.trim()).filter(Boolean),
-        createdBy: existing?.createdBy || uid,
+        createdBy: primaryOrganizerId,
+        ...(teamOrganizerIds.length ? { organizerIds: teamOrganizerIds } : {}),
         createdAt: existing?.createdAt || new Date().toISOString(),
         ...(existing?.gunStartTime ? { gunStartTime: existing.gunStartTime } : {}),
         ...(existing?.waveStartTimes ? { waveStartTimes: existing.waveStartTimes } : {}),
         ...(existing?.liveBroadcastEnabled ? { liveBroadcastEnabled: true } : {}),
         ...(existing?.livestreamUrl ? { livestreamUrl: existing.livestreamUrl } : {}),
         ...(existing?.routeMapUrl ? { routeMapUrl: existing.routeMapUrl } : {}),
-        ...(posterImage ? { posterImage } : {}),
-        ...(inclusionImage ? { inclusionImage } : {}),
-        ...(raceBibTemplateImage ? {
-          raceBibTemplateImage,
-          raceBibLayout: { bibNumberX, bibNumberY, runnerNameX, runnerNameY, bibNumberSize, runnerNameSize, bibNumberColor, runnerNameColor, bibNumberFont, runnerNameFont },
+        ...(storedPosterImage ? { posterImage: storedPosterImage } : {}),
+        ...(storedInclusionImage ? { inclusionImage: storedInclusionImage } : {}),
+        ...(storedRaceBibTemplateImage ? { raceBibTemplateImage: storedRaceBibTemplateImage } : {}),
+        ...(raceBibCustomFont ? { raceBibCustomFont } : {}),
+        ...(storedRaceBibTemplateImage || Object.keys(savedDistanceBibTemplates).length ? {
+          raceBibLayout: { bibNumberX, bibNumberY, runnerNameX, runnerNameY, bibNumberSize, runnerNameSize, bibNumberColor, runnerNameColor, bibNumberStrokeColor, runnerNameStrokeColor, bibNumberStrokeWidth, runnerNameStrokeWidth, bibNumberFont, runnerNameFont },
         } : {}),
+        ...(Object.keys(savedDistanceBibTemplates).length ? { raceBibTemplatesByDistance: savedDistanceBibTemplates } : {}),
       };
       await setDoc(doc(db, 'races', raceId), record);
       resetForm();
@@ -366,6 +607,55 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
       setReportBusyRaceId(null);
     }
   };
+
+  const handleGenerateRaceBibs = async (race: Race, distanceLabel?: string) => {
+    if (!hasRaceBibTemplate(race)) {
+      alert('Upload and save at least one blank race bib layout first. You can set a different layout for every distance.');
+      return;
+    }
+    setRaceBibPdfBusyRaceId(race.id);
+    try {
+      const snapshot = await getDocs(query(collection(db, 'runners'), where('raceId', '==', race.id)));
+      const runners: RunnerProfile[] = [];
+      snapshot.forEach((docSnap) => runners.push(docSnap.data() as RunnerProfile));
+      const selectedRunners = distanceLabel ? runners.filter((runner) => runner.distance === distanceLabel) : runners;
+      const count = await generateRaceBibsPdf(race, selectedRunners, distanceLabel);
+      if (!count) alert(distanceLabel ? `No registered runners for ${distanceLabel} yet.` : 'No registered runners for this race yet.');
+    } catch (err) {
+      console.warn('Failed to generate race bib PDF:', err);
+      const detail = err instanceof Error ? err.message : 'Please try again.';
+      alert(`Failed to prepare the ${distanceLabel || 'all-race-bibs'} PDF. ${detail}`);
+    } finally {
+      setRaceBibPdfBusyRaceId(null);
+    }
+  };
+
+  const registrationUrl = (raceId: string) => `https://racepulseph.com/?register=${encodeURIComponent(raceId)}`;
+
+  const copyRegistrationUrl = async () => {
+    if (!qrRace) return;
+    try {
+      await navigator.clipboard.writeText(registrationUrl(qrRace.id));
+    } catch {
+      window.prompt('Copy this event registration link:', registrationUrl(qrRace.id));
+    }
+  };
+
+  const downloadRegistrationQr = () => {
+    if (!qrRace || !registrationQrRef.current) return;
+    const source = new XMLSerializer().serializeToString(registrationQrRef.current);
+    const svg = `<?xml version="1.0" encoding="UTF-8"?>\n${source}`;
+    const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${qrRace.name.replace(/[^a-z0-9]+/gi, '-').replace(/(^-|-$)/g, '').toLowerCase() || 'race'}-registration-qr.svg`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const editingRace = editingId ? races.find((race) => race.id === editingId) : undefined;
+  const canManageOrganizerTeam = !editingRace || canSeeAllRaces || editingRace.createdBy === uid;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -411,6 +701,126 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
             </div>
           </div>
 
+          <div className="glass-inset p-3 space-y-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">Organizer team</p>
+              <p className="text-[10.5px] text-[var(--text-muted)] mt-0.5">{canManageOrganizerTeam ? 'Add approved organizers who can edit this race, view registrations, assign chips, and run timing. The account that created the race remains the primary owner.' : 'You are a collaborator on this race. The primary organizer manages the organizer team.'}</p>
+            </div>
+            <select
+              value=""
+              onChange={(event) => {
+                const organizerId = event.target.value;
+                if (organizerId) setOrganizerIds((current) => current.includes(organizerId) ? current : [...current, organizerId]);
+              }}
+              disabled={!canManageOrganizerTeam || organizerIds.length >= 20}
+              className="w-full glass-inset px-3 py-2.5 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-60"
+            >
+              <option value="">{approvedOrganizers.length ? 'Add an approved organizer…' : 'No other approved organizer accounts available'}</option>
+              {approvedOrganizers
+                .filter((organizer) => !organizerIds.includes(organizer.uid))
+                .map((organizer) => (
+                  <option key={organizer.uid} value={organizer.uid}>{organizer.displayName} — {organizer.email}</option>
+                ))}
+            </select>
+            {organizerIds.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {organizerIds.map((organizerId) => {
+                  const organizer = approvedOrganizers.find((candidate) => candidate.uid === organizerId);
+                  const label = organizer ? `${organizer.displayName} (${organizer.email})` : `Organizer account ${organizerId.slice(0, 8)}…`;
+                  return (
+                    <span key={organizerId} className="inline-flex items-center gap-1.5 rounded-full border border-red-500/25 bg-red-500/8 px-2.5 py-1 text-[10px] font-semibold text-[var(--text-primary)]">
+                      {label}
+                      <button type="button" disabled={!canManageOrganizerTeam} onClick={() => setOrganizerIds((current) => current.filter((id) => id !== organizerId))} className="text-[var(--text-muted)] hover:text-red-500 transition disabled:opacity-40" title={canManageOrganizerTeam ? `Remove ${label}` : 'Only the primary organizer can change the team'}>
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-[10px] text-[var(--text-muted)]">Only you can manage this race right now.</p>
+            )}
+          </div>
+
+          <div className="glass-inset p-3 space-y-3">
+            <label className="flex items-center justify-between gap-3 cursor-pointer">
+              <span>
+                <span className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">Online payment</span>
+                <span className="block text-[10.5px] text-[var(--text-muted)] mt-0.5">Collect paid registrations securely through PayMongo. A bib is issued only after payment is confirmed.</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={onlinePaymentEnabled}
+                onChange={(e) => {
+                  setOnlinePaymentEnabled(e.target.checked);
+                  if (e.target.checked) setManualPaymentEnabled(false);
+                }}
+                className="w-4 h-4 accent-red-600 shrink-0"
+              />
+            </label>
+            {onlinePaymentEnabled && (
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Payment processing fee</label>
+                <select
+                  value={paymentFeeMode}
+                  onChange={(e) => setPaymentFeeMode(e.target.value as 'absorbed' | 'passed_on')}
+                  className="w-full glass-inset px-3 py-2.5 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                >
+                  <option value="absorbed">Organizer absorbs the fee — runner pays the listed price</option>
+                  <option value="passed_on">Pass fee to runner — checkout adds PayMongo's fee</option>
+                </select>
+              </div>
+            )}
+            <div className="border-t border-[var(--border-default)] pt-3">
+              <label className="flex items-center justify-between gap-3 cursor-pointer">
+                <span>
+                  <span className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">Manual payment</span>
+                  <span className="block text-[10.5px] text-[var(--text-muted)] mt-0.5">For Cash, GCash, or bank transfer while PayMongo is pending. Runners register as pending until you mark payment received.</span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={manualPaymentEnabled}
+                  onChange={(e) => {
+                    setManualPaymentEnabled(e.target.checked);
+                    if (e.target.checked) setOnlinePaymentEnabled(false);
+                  }}
+                  className="w-4 h-4 accent-red-600 shrink-0"
+                />
+              </label>
+              {manualPaymentEnabled && (
+                <div className="mt-3 space-y-3">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Instructions shown to runners</label>
+                  <textarea
+                    value={manualPaymentInstructions}
+                    onChange={(e) => setManualPaymentInstructions(e.target.value)}
+                    maxLength={500}
+                    rows={3}
+                    placeholder="EX: Pay via GCash to JUAN DELA CRUZ, 09XX XXX XXXX. Put your full name and race distance in the message. Cash payments accepted at the organizer's office."
+                    className="w-full glass-inset px-3 py-2.5 text-xs text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 resize-y"
+                  />
+                  <p className="text-[10px] text-amber-500 mt-1.5">Only add a payment destination you are authorized to publish. Confirm each payment in Assign Chips before releasing the race kit.</p>
+                  <div className="border-t border-[var(--border-default)] pt-3">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">GCash / QRPh code <span className="normal-case font-normal text-[var(--text-muted)]">(optional)</span></label>
+                    <p className="text-[10.5px] text-[var(--text-muted)] mb-2">Upload the organizer’s official payment QR. Runners can scan it directly during registration.</p>
+                    <input ref={manualPaymentQrInputRef} type="file" accept="image/*" onChange={handleManualPaymentQrSelected} className="hidden" />
+                    {manualPaymentQrImage ? (
+                      <div className="relative w-44 max-w-full rounded-[16px] overflow-hidden border border-[var(--border-default)] bg-white p-2">
+                        <img src={manualPaymentQrImage} alt="Manual payment QR code preview" className="w-full aspect-square object-contain" />
+                        <button type="button" onClick={() => setManualPaymentQrImage('')} className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center transition" title="Remove payment QR"><X className="w-3.5 h-3.5" /></button>
+                        <button type="button" onClick={() => manualPaymentQrInputRef.current?.click()} className="absolute bottom-2 right-2 text-[9px] font-black uppercase tracking-wide px-2.5 py-1.5 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center gap-1 transition"><ImagePlus className="w-3 h-3" /> Change</button>
+                      </div>
+                    ) : (
+                      <button type="button" onClick={() => manualPaymentQrInputRef.current?.click()} disabled={manualPaymentQrUploading} className="w-full max-w-xs aspect-square rounded-[16px] border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-2 text-[var(--text-secondary)] hover:text-amber-500 hover:border-amber-500/40 transition disabled:opacity-60">
+                        {manualPaymentQrUploading ? <RefreshCw className="w-6 h-6 animate-spin" /> : <ImagePlus className="w-6 h-6" />}
+                        <span className="text-xs font-bold uppercase tracking-wide">{manualPaymentQrUploading ? 'Processing...' : 'Upload GCash / QRPh Code'}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Event Poster</label>
             <p className="text-[10.5px] text-[var(--text-secondary)] mb-2">Shown on the race card runners see when browsing events - a good poster gets more registrations.</p>
@@ -448,15 +858,19 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
           </div>
 
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Personalized Race Bib Template <span className="normal-case font-normal text-[var(--text-muted)]">(optional)</span></label>
-            <p className="text-[10.5px] text-[var(--text-secondary)] mb-2">Upload your blank bib layout. RacePulse automatically adds each runner’s name and bib number after registration.</p>
+            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Default Race Bib Template <span className="normal-case font-normal text-[var(--text-muted)]">(optional)</span></label>
+            <p className="text-[10.5px] text-[var(--text-secondary)] mb-2">Upload a blank horizontal bib layout as the default/fallback. RacePulse automatically adds each runner’s name and bib number after registration.</p>
+            <div className="mb-3 rounded-[14px] border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-[10.5px] leading-relaxed text-[var(--text-secondary)]">
+              <span className="font-black uppercase tracking-wide text-emerald-500">Print standard: </span>
+              Design at <strong className="text-[var(--text-primary)]">1200 × 800 px</strong> (landscape, 3:2 ratio). The All Race Bibs PDF prints <strong className="text-[var(--text-primary)]">2 borderless bibs per A4 page</strong>, each one exact half-A4 (210 × 148.5 mm) for one straight centre cut. Keep important artwork at least 40 px from the edges; upload a blank template only—no runner name or bib number.
+            </div>
             <input ref={raceBibInputRef} type="file" accept="image/*" onChange={handleRaceBibTemplateSelected} className="hidden" />
             {raceBibTemplateImage ? (
               <div className="space-y-3">
                 <div className="relative rounded-[16px] overflow-hidden border border-[var(--border-default)] bg-[var(--surface-inset)]" style={{ containerType: 'inline-size' }}>
                   <img src={raceBibTemplateImage} alt="Race bib template preview" className="w-full aspect-[3/2] object-cover" />
-                  <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${bibNumberX}%`, top: `${bibNumberY}%`, fontSize: `${bibNumberSize}cqw`, color: bibNumberColor, fontFamily: raceBibFontFamilies[bibNumberFont] }}>10-001</span>
-                  <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-wide drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${runnerNameX}%`, top: `${runnerNameY}%`, fontSize: `${runnerNameSize}cqw`, color: runnerNameColor, fontFamily: raceBibFontFamilies[runnerNameFont] }}>RUNNER NAME</span>
+                  <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${bibNumberX}%`, top: `${bibNumberY}%`, fontSize: `${bibNumberSize}cqw`, color: bibNumberColor, fontFamily: raceBibFontFamily(bibNumberFont, raceBibCustomFont), WebkitTextStroke: `${bibNumberStrokeWidth}cqw ${bibNumberStrokeColor}`, paintOrder: 'stroke fill' }}>10-001</span>
+                  <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-wide drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${runnerNameX}%`, top: `${runnerNameY}%`, fontSize: `${runnerNameSize}cqw`, color: runnerNameColor, fontFamily: raceBibFontFamily(runnerNameFont, raceBibCustomFont), WebkitTextStroke: `${runnerNameStrokeWidth}cqw ${runnerNameStrokeColor}`, paintOrder: 'stroke fill' }}>RUNNER NAME</span>
                   <button type="button" onClick={() => setRaceBibTemplateImage('')} className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center transition" title="Remove race bib template"><X className="w-4 h-4" /></button>
                   <button type="button" onClick={() => raceBibInputRef.current?.click()} className="absolute bottom-2 right-2 text-[10px] font-black uppercase tracking-wide px-3 py-1.5 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center gap-1.5 transition"><ImagePlus className="w-3 h-3" /> Change</button>
                 </div>
@@ -467,7 +881,9 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
                     <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Y <input type="range" min="5" max="95" value={bibNumberY} onChange={(e) => setBibNumberY(Number(e.target.value))} className="flex-1 accent-red-600" /> {bibNumberY}%</label>
                     <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Size <input type="range" min="5" max="24" value={bibNumberSize} onChange={(e) => setBibNumberSize(Number(e.target.value))} className="flex-1 accent-red-600" /> {bibNumberSize}</label>
                     <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Color <input type="color" value={bibNumberColor} onChange={(e) => setBibNumberColor(e.target.value)} className="w-7 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" /> <span className="font-mono">{bibNumberColor}</span></label>
-                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Font <select value={bibNumberFont} onChange={(e) => setBibNumberFont(e.target.value as RaceBibFont)} className="flex-1 glass-inset px-2 py-1 text-[10px] font-bold text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-red-500/50"><option value="mono">Timing Mono</option><option value="display">Racing Bold</option><option value="condensed">Condensed</option><option value="sans">Clean Sans</option></select></label>
+                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Border <input type="color" value={bibNumberStrokeColor} onChange={(e) => setBibNumberStrokeColor(e.target.value)} className="w-7 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" /> <span className="font-mono">{bibNumberStrokeColor}</span></label>
+                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Border thickness <input type="range" min="0" max="1.5" step="0.1" value={bibNumberStrokeWidth} onChange={(e) => setBibNumberStrokeWidth(Number(e.target.value))} className="flex-1 accent-red-600" /> {bibNumberStrokeWidth.toFixed(1)}</label>
+                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Font <select value={bibNumberFont} onChange={(e) => setBibNumberFont(e.target.value as RaceBibFont)} className="flex-1 glass-inset px-2 py-1 text-[10px] font-bold text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-red-500/50"><option value="mono">Timing Mono</option><option value="display">Racing Bold</option><option value="condensed">Condensed</option><option value="sans">Clean Sans</option><option value="custom" disabled={!raceBibCustomFont}>Uploaded Custom Font</option></select></label>
                   </div>
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)] mb-2">Runner name position</p>
@@ -475,15 +891,73 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
                     <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Y <input type="range" min="5" max="95" value={runnerNameY} onChange={(e) => setRunnerNameY(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameY}%</label>
                     <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Size <input type="range" min="3" max="14" value={runnerNameSize} onChange={(e) => setRunnerNameSize(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameSize}</label>
                     <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Color <input type="color" value={runnerNameColor} onChange={(e) => setRunnerNameColor(e.target.value)} className="w-7 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" /> <span className="font-mono">{runnerNameColor}</span></label>
-                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Font <select value={runnerNameFont} onChange={(e) => setRunnerNameFont(e.target.value as RaceBibFont)} className="flex-1 glass-inset px-2 py-1 text-[10px] font-bold text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-red-500/50"><option value="display">Racing Bold</option><option value="sans">Clean Sans</option><option value="mono">Timing Mono</option><option value="condensed">Condensed</option></select></label>
+                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Border <input type="color" value={runnerNameStrokeColor} onChange={(e) => setRunnerNameStrokeColor(e.target.value)} className="w-7 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" /> <span className="font-mono">{runnerNameStrokeColor}</span></label>
+                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Border thickness <input type="range" min="0" max="1.5" step="0.1" value={runnerNameStrokeWidth} onChange={(e) => setRunnerNameStrokeWidth(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameStrokeWidth.toFixed(1)}</label>
+                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Font <select value={runnerNameFont} onChange={(e) => setRunnerNameFont(e.target.value as RaceBibFont)} className="flex-1 glass-inset px-2 py-1 text-[10px] font-bold text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-red-500/50"><option value="display">Racing Bold</option><option value="sans">Clean Sans</option><option value="mono">Timing Mono</option><option value="condensed">Condensed</option><option value="custom" disabled={!raceBibCustomFont}>Uploaded Custom Font</option></select></label>
                   </div>
+                </div>
+                <div className="border-t border-[var(--border-default)] pt-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)] mb-1">Custom font <span className="normal-case font-normal text-[var(--text-muted)]">(optional)</span></p>
+                  <p className="text-[10px] text-[var(--text-muted)] mb-2">Upload one WOFF2, WOFF, TTF, or OTF font (max 1.5 MB), then select “Uploaded Custom Font” above. WOFF2 is recommended.</p>
+                  <input ref={raceBibFontInputRef} type="file" accept=".woff2,.woff,.ttf,.otf,font/woff2,font/woff,font/ttf,font/otf" onChange={(e) => void handleRaceBibFontSelected(e)} className="hidden" />
+                  {raceBibCustomFont ? (
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-violet-500/25 bg-violet-500/5 px-3 py-2">
+                      <span className="min-w-0 text-[10px] font-bold text-[var(--text-primary)] truncate">{raceBibCustomFont.name}</span>
+                      <span className="flex shrink-0 gap-2"><button type="button" onClick={() => raceBibFontInputRef.current?.click()} disabled={raceBibFontUploading} className="text-[9px] font-black uppercase tracking-wide text-violet-500 hover:text-violet-400">Replace</button><button type="button" onClick={() => { setRaceBibCustomFont(undefined); if (bibNumberFont === 'custom') setBibNumberFont('mono'); if (runnerNameFont === 'custom') setRunnerNameFont('display'); }} className="text-[9px] font-black uppercase tracking-wide text-red-500 hover:text-red-400">Remove</button></span>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => raceBibFontInputRef.current?.click()} disabled={raceBibFontUploading} className="w-full rounded-xl border border-dashed border-violet-500/35 px-3 py-2.5 text-[10px] font-black uppercase tracking-wide text-violet-500 hover:bg-violet-500/5 transition disabled:opacity-60">{raceBibFontUploading ? 'Uploading font…' : 'Upload Custom Font'}</button>
+                  )}
                 </div>
               </div>
             ) : (
               <button type="button" onClick={() => raceBibInputRef.current?.click()} disabled={raceBibUploading} className="w-full aspect-[3/2] rounded-[16px] border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-2 text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 transition disabled:opacity-60">
                 {raceBibUploading ? <RefreshCw className="w-6 h-6 animate-spin" /> : <ImagePlus className="w-6 h-6" />}
-                <span className="text-xs font-bold uppercase tracking-wide">{raceBibUploading ? 'Processing...' : 'Upload Blank Race Bib Layout'}</span>
+                <span className="text-xs font-bold uppercase tracking-wide">{raceBibUploading ? 'Processing...' : 'Upload Bib Layout — 1200 × 800 px'}</span>
               </button>
+            )}
+          </div>
+
+          <div className="border-t border-[var(--border-default)] pt-5">
+            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Different Bib Design Per Distance <span className="normal-case font-normal text-[var(--text-muted)]">(optional)</span></label>
+            <p className="text-[10.5px] text-[var(--text-secondary)] mb-3">Upload a separate blank design for 5K, 12K, 18K, and other distances. RacePulse automatically selects the correct design from the runner’s registered distance. The number/name placement above is shared by these designs.</p>
+            {distances.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-[var(--border-default)] px-3 py-3 text-[10.5px] text-[var(--text-muted)]">Add your race distances first, then their individual bib upload boxes will appear here.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                {[...distances].sort((a, b) => a.km - b.km).map((distance) => {
+                  const label = `${distance.km}K`;
+                  const template = raceBibTemplatesByDistance[label];
+                  return (
+                    <div key={distance.id} className="glass-inset p-3 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-black text-[var(--text-primary)]">{label} bib design</p>
+                        {template?.image && <span className="text-[9px] font-black uppercase tracking-wide text-emerald-500">Custom</span>}
+                      </div>
+                      <input
+                        ref={(node) => { raceBibDistanceInputRefs.current[label] = node; }}
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => void handleDistanceRaceBibTemplateSelected(label, e)}
+                        className="hidden"
+                      />
+                      {template?.image ? (
+                        <div className="relative overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)]">
+                          <img src={template.image} alt={`${label} race bib template`} className="w-full aspect-[3/2] object-cover" />
+                          <button type="button" onClick={() => setRaceBibTemplatesByDistance((current) => { const next = { ...current }; delete next[label]; return next; })} className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center transition" title={`Remove ${label} design`}><X className="w-3.5 h-3.5" /></button>
+                          <button type="button" onClick={() => raceBibDistanceInputRefs.current[label]?.click()} className="absolute bottom-2 right-2 text-[9px] font-black uppercase tracking-wide px-2.5 py-1.5 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center gap-1 transition"><ImagePlus className="w-3 h-3" /> Change</button>
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => raceBibDistanceInputRefs.current[label]?.click()} disabled={raceBibUploading} className="w-full aspect-[3/2] rounded-xl border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-1.5 text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 transition disabled:opacity-60">
+                          {raceBibUploading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <ImagePlus className="w-5 h-5" />}
+                          <span className="text-[10px] font-black uppercase tracking-wide">Upload {label} Design</span>
+                          <span className="text-[9px] text-[var(--text-muted)]">Otherwise uses default bib</span>
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
 
@@ -588,10 +1062,10 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
           <div className="glass-inset p-3 space-y-2">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">Road Run Entry Categories</label>
-              <p className="text-[10.5px] text-[var(--text-muted)] mt-0.5">Duo and Trio share one race bib/chip and receive one team result.</p>
+              <p className="text-[10.5px] text-[var(--text-muted)] mt-0.5">Duo (2), Trio (3), and Group (4) share one race bib/chip and receive one team result.</p>
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              {(['solo', 'duo', 'trio'] as RaceEntryCategory[]).map((category) => (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {(['solo', 'duo', 'trio', 'group'] as RaceEntryCategory[]).map((category) => (
                 <label key={category} className={`cursor-pointer rounded-xl border px-2 py-2 text-center text-[10px] font-black uppercase tracking-wide transition ${entryCategories.includes(category) ? 'border-red-500/45 bg-red-500/10 text-red-500' : 'border-[var(--border-default)] text-[var(--text-secondary)]'}`}>
                   <input type="checkbox" className="sr-only" checked={entryCategories.includes(category)} onChange={(event) => setEntryCategories((current) => event.target.checked ? [...current, category] : current.filter((item) => item !== category))} />
                   {entryCategoryLabels[category]}
@@ -756,7 +1230,18 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
                   {formatPriceRange(race.distances)} &bull; {(race.inclusions || []).length} inclusions
                 </p>
               </div>
-              <div className="flex gap-1.5 shrink-0">
+              <div className="flex flex-wrap justify-end gap-1.5 shrink-0">
+                {canSeeAllRaces && (
+                  <button
+                    type="button"
+                    onClick={() => setBibDownloadRace(race)}
+                    disabled={!hasRaceBibTemplate(race) || raceBibPdfBusyRaceId === race.id}
+                    className="flex items-center gap-1 rounded-lg px-2 py-2 text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)] transition hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-35"
+                    title={hasRaceBibTemplate(race) ? 'Download personalized race bibs by distance or for all runners — two bibs per A4 page' : 'Upload a race bib template first'}
+                  >
+                    {raceBibPdfBusyRaceId === race.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />} BIB PDF
+                  </button>
+                )}
                 <button
                   onClick={() => handleGenerateRunnerReport(race)}
                   disabled={reportBusyRaceId === race.id}
@@ -765,6 +1250,8 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
                 >
                   {reportBusyRaceId === race.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
                 </button>
+                <button onClick={() => setQrRace(race)} className="flex items-center gap-1 rounded-lg px-2 py-2 text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)] transition hover:text-violet-500" title="Show downloadable event registration QR code"><QrCode className="w-3.5 h-3.5" /> QR</button>
+                <button onClick={() => setFreeSlotRace(race)} className="flex items-center gap-1 rounded-lg px-2 py-2 text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)] transition hover:text-cyan-500" title="Create anonymous late/on-site runner slots"><Plus className="w-3.5 h-3.5" /> Slots</button>
                 <button onClick={() => loadForEdit(race)} className="p-2 text-[var(--text-secondary)] hover:text-amber-500 transition" title="Edit race"><Pencil className="w-3.5 h-3.5" /></button>
                 {canDeleteRaces && <button onClick={() => handleDelete(race.id)} className="p-2 text-[var(--text-secondary)] hover:text-red-500 transition" title="Delete race"><Trash2 className="w-3.5 h-3.5" /></button>}
               </div>
@@ -774,6 +1261,202 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
         <div className="mt-4 pt-4 border-t border-[var(--border-subtle)] flex items-start gap-2 text-[10.5px] text-[var(--text-muted)]">
           <Users2 className="w-3.5 h-3.5 shrink-0 mt-0.5" />
           The PDF starts with runner totals per distance and shirt size, then lists every runner by distance and age category.
+        </div>
+      </div>
+      {qrRace && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="registration-qr-title" onClick={() => setQrRace(null)}>
+          <div className="w-full max-w-sm rounded-[24px] border border-[var(--border-default)] bg-[var(--surface-page)] p-6 text-center shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3 text-left">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-violet-500">Event registration QR</p>
+                <h3 id="registration-qr-title" className="mt-1 text-base font-black uppercase tracking-tight text-[var(--text-primary)]">{qrRace.name}</h3>
+                <p className="mt-1 text-[10.5px] text-[var(--text-secondary)]">Scan to open this event’s registration form.</p>
+              </div>
+              <button type="button" onClick={() => setQrRace(null)} className="rounded-full p-1.5 text-[var(--text-muted)] transition hover:text-red-500" aria-label="Close registration QR"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="mx-auto mt-5 inline-block rounded-[18px] bg-white p-4 shadow-lg">
+              <QRCodeSVG ref={registrationQrRef} value={registrationUrl(qrRace.id)} size={224} level="M" includeMargin />
+            </div>
+            <p className="mt-3 break-all rounded-xl bg-[var(--surface-inset)] px-3 py-2 font-mono text-[9px] text-[var(--text-muted)]">{registrationUrl(qrRace.id)}</p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => void copyRegistrationUrl()} className="flex items-center justify-center gap-1.5 rounded-[14px] glass-inset px-3 py-2.5 text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)] transition hover:text-violet-500"><Copy className="h-3.5 w-3.5" /> Copy link</button>
+              <button type="button" onClick={downloadRegistrationQr} className="flex items-center justify-center gap-1.5 rounded-[14px] bg-violet-600 px-3 py-2.5 text-[10px] font-black uppercase tracking-wide text-white transition hover:bg-violet-500"><Download className="h-3.5 w-3.5" /> Download QR</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {freeSlotRace && <FreeSlotsDialog race={freeSlotRace} onClose={() => setFreeSlotRace(null)} />}
+      {bibDownloadRace && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="bib-download-title" onClick={() => !raceBibPdfBusyRaceId && setBibDownloadRace(null)}>
+          <div className="w-full max-w-md rounded-[24px] border border-[var(--border-default)] bg-[var(--surface-page)] p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 id="bib-download-title" className="text-lg font-display font-black text-[var(--text-primary)]">Download Race Bibs</h3>
+                <p className="mt-1 text-xs text-[var(--text-secondary)]">Choose all runners or one distance. Each PDF keeps two borderless bibs per A4 page. Group members receive separate same-number bibs; attach the single RFID chip to the captain’s bib only.</p>
+              </div>
+              <button type="button" onClick={() => setBibDownloadRace(null)} disabled={Boolean(raceBibPdfBusyRaceId)} className="rounded-lg p-2 text-[var(--text-secondary)] hover:text-red-500 disabled:opacity-40" aria-label="Close bib download options"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => void handleGenerateRaceBibs(bibDownloadRace)}
+                disabled={Boolean(raceBibPdfBusyRaceId)}
+                className="sm:col-span-2 rounded-xl bg-red-600 px-4 py-3 text-xs font-black uppercase tracking-widest text-white hover:bg-red-500 transition disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {raceBibPdfBusyRaceId ? <RefreshCw className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />} Download All Race Bibs
+              </button>
+              {(bibDownloadRace.distances || []).map((distance) => (
+                <button
+                  key={distance.id}
+                  type="button"
+                  onClick={() => void handleGenerateRaceBibs(bibDownloadRace, distance.label)}
+                  disabled={Boolean(raceBibPdfBusyRaceId)}
+                  className="rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 py-3 text-xs font-black uppercase tracking-widest text-violet-500 hover:bg-violet-500 hover:text-white transition disabled:opacity-60 flex items-center justify-center gap-2"
+                >
+                  {raceBibPdfBusyRaceId ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} {distance.label} Bibs
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface FreeSlotsDialogProps {
+  race: Race;
+  onClose: () => void;
+}
+
+function FreeSlotsDialog({ race, onClose }: FreeSlotsDialogProps) {
+  const [distanceLabel, setDistanceLabel] = useState(race.distances[0]?.label || '');
+  const supportedCategories = raceEntryCategories(race);
+  const [entryCategory, setEntryCategory] = useState<RaceEntryCategory>(supportedCategories[0] || 'solo');
+  const [quantity, setQuantity] = useState(1);
+  const [slots, setSlots] = useState<RunnerProfile[]>([]);
+  const [creating, setCreating] = useState(false);
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    setDistanceLabel(race.distances[0]?.label || '');
+    setEntryCategory(raceEntryCategories(race)[0] || 'solo');
+    setQuantity(1);
+    setMessage('');
+    return onSnapshot(query(collection(db, 'runners'), where('raceId', '==', race.id)), (snapshot) => {
+      const current: RunnerProfile[] = [];
+      snapshot.forEach((runnerDoc) => {
+        const runner = runnerDoc.data() as RunnerProfile;
+        if (runner.isFreeSlot) current.push(runner);
+      });
+      current.sort((a, b) => a.distance.localeCompare(b.distance) || a.bibNumber.localeCompare(b.bibNumber, undefined, { numeric: true }));
+      setSlots(current);
+    }, (error) => setMessage(error.message || 'Could not load Free Slots.'));
+  }, [race]);
+
+  const createSlots = async () => {
+    const distance = race.distances.find((item) => item.label === distanceLabel);
+    const safeQuantity = Math.floor(Number(quantity));
+    if (!distance) {
+      setMessage('Choose a race distance first.');
+      return;
+    }
+    if (!Number.isFinite(safeQuantity) || safeQuantity < 1 || safeQuantity > 100) {
+      setMessage('Enter a quantity from 1 to 100.');
+      return;
+    }
+    setCreating(true);
+    setMessage('');
+    try {
+      const snapshot = await getDocs(query(collection(db, 'runners'), where('raceId', '==', race.id)));
+      const usedBibs = new Set<string>();
+      snapshot.forEach((runnerDoc) => usedBibs.add(normalizeBib(String(runnerDoc.data().bibNumber || ''))));
+      const bibs = await reserveFreeSlotBibs(race, distance, entryCategory, safeQuantity, usedBibs);
+      const now = new Date().toISOString();
+      const batch = writeBatch(db);
+      bibs.forEach((bib, index) => {
+        const slotUid = `free_${race.id}_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 8)}`;
+        const slot: RunnerProfile = {
+          uid: slotUid,
+          raceId: race.id,
+          fullName: `FREE ${entryCategoryLabels[entryCategory].toUpperCase()} SLOT`,
+          bibNumber: bib,
+          distance: distance.label,
+          entryCategory,
+          gender: 'male',
+          age: 18,
+          ageNotProvided: true,
+          isFreeSlot: true,
+          createdAt: now,
+        };
+        batch.set(doc(db, 'runners', `${slotUid}_${race.id}`), slot);
+      });
+      await batch.commit();
+      setMessage(`${bibs.length} ${entryCategoryLabels[entryCategory]} Free Slot${bibs.length === 1 ? '' : 's'} created for ${distance.label}: ${bibs[0]}${bibs.length > 1 ? ` to ${bibs[bibs.length - 1]}` : ''}.`);
+    } catch (error: any) {
+      console.warn('Failed to create Free Slots:', error);
+      setMessage(error?.message || 'Could not create the Free Slots. Please try again.');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const slotsByDivision = race.distances.flatMap((distance) => supportedCategories.map((category) => ({
+    distance,
+    entryCategory: category,
+    slots: slots.filter((slot) => slot.distance === distance.label && (slot.entryCategory || 'solo') === category),
+  }))).filter((group) => group.slots.length > 0);
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="free-slots-title" onClick={() => !creating && onClose()}>
+      <div className="w-full max-w-lg rounded-[24px] border border-[var(--border-default)] bg-[var(--surface-page)] p-5 sm:p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-cyan-500">Race-day roster</p>
+            <h3 id="free-slots-title" className="mt-1 text-lg font-display font-black text-[var(--text-primary)]">Free Slots</h3>
+            <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">Create empty Solo, Duo, Trio, or Group bib slots for late/on-site runners. They show as bib-only in timing and never join age categories.</p>
+          </div>
+          <button type="button" onClick={onClose} disabled={creating} className="rounded-lg p-2 text-[var(--text-secondary)] hover:text-red-500 disabled:opacity-40" aria-label="Close Free Slots"><X className="w-5 h-5" /></button>
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 sm:grid-cols-[1fr_8rem_7rem] gap-2">
+          <label className="block">
+            <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)]">Distance</span>
+            <select value={distanceLabel} onChange={(event) => setDistanceLabel(event.target.value)} disabled={creating} className="w-full glass-inset px-3 py-3 text-sm font-bold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50">
+              {race.distances.map((distance) => <option key={distance.id} value={distance.label}>{distance.label}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)]">Entry type</span>
+            <select value={entryCategory} onChange={(event) => setEntryCategory(event.target.value as RaceEntryCategory)} disabled={creating} className="w-full glass-inset px-3 py-3 text-sm font-bold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50">
+              {supportedCategories.map((category) => <option key={category} value={category}>{entryCategoryLabels[category]}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)]">Slots</span>
+            <input type="number" min="1" max="100" step="1" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} disabled={creating} className="w-full glass-inset px-3 py-3 text-sm font-bold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50" />
+          </label>
+        </div>
+        <button type="button" onClick={() => void createSlots()} disabled={creating || race.distances.length === 0} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600 px-4 py-3 text-xs font-black uppercase tracking-widest text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-55">
+          {creating ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} {creating ? 'Creating slots…' : 'Create Free Slots'}
+        </button>
+        {message && <p className={`mt-3 rounded-xl px-3 py-2.5 text-xs font-semibold ${message.startsWith('Could') || message.startsWith('Choose') || message.startsWith('Enter') ? 'bg-red-500/10 text-red-500' : 'bg-emerald-500/10 text-emerald-500'}`}>{message}</p>}
+
+        <div className="mt-5 border-t border-[var(--border-subtle)] pt-4">
+          <div className="flex items-center justify-between gap-3">
+            <h4 className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)]">Created Free Slots</h4>
+            <span className="font-mono text-xs font-black text-cyan-500">{slots.length}</span>
+          </div>
+          {slots.length === 0 ? <p className="mt-3 text-xs text-[var(--text-muted)]">No empty slots yet.</p> : (
+            <div className="mt-3 max-h-48 space-y-2 overflow-y-auto pr-1">
+              {slotsByDivision.map(({ distance, entryCategory: category, slots: distanceSlots }) => (
+                <div key={`${distance.id}_${category}`} className="rounded-xl glass-inset px-3 py-2.5">
+                  <p className="text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)]">{distance.label} {entryCategoryLabels[category]} · {distanceSlots.length} slots</p>
+                  <p className="mt-1 break-words font-mono text-xs font-bold text-[var(--text-primary)]">{distanceSlots.map((slot) => slot.bibNumber).join(' · ')}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

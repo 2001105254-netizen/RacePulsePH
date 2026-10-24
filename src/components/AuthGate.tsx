@@ -72,6 +72,20 @@ async function createUserProfileForRole(user: User, role: SignupRole, displayNam
     if (existingUsername.exists()) throw new Error('That username is already taken. Please choose another one.');
 
     transaction.set(doc(db, 'users', user.uid), profile);
+    transaction.set(doc(db, 'friendDirectory', username), {
+      uid: user.uid,
+      username,
+      displayName: profile.displayName,
+      ...(user.photoURL ? { photoURL: user.photoURL } : {}),
+      updatedAt: profile.createdAt,
+    });
+    transaction.set(doc(db, 'friendProfiles', user.uid), {
+      uid: user.uid,
+      username,
+      displayName: profile.displayName,
+      ...(user.photoURL ? { photoURL: user.photoURL } : {}),
+      updatedAt: profile.createdAt,
+    });
     transaction.set(usernameRef, {
       username,
       uid: user.uid,

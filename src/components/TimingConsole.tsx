@@ -7,8 +7,8 @@ import { checkpointType, computeResults, getCheckpointByType, getWaveStartTime }
 import { useOfflineScanQueue } from '../lib/offlineScanQueue';
 import { Race, ChipRead, PublicLeaderboardEntry, PublicLiveResults, RaceEntryCategory, RunnerProfile, RunnerResult } from '../types';
 import { groupRunnersByDistance, generateRunnerRosterPdf } from '../lib/runnerReport';
-import { entryCategoryLabels, entryMemberCount, raceEntryCategories, runnerDivisionLabel, runnerEntryCategory } from '../lib/raceEntry';
-import { Radio, ScanLine, Trophy, Clock, Wifi, WifiOff, QrCode, RefreshCw, ArrowLeft, Cpu, Users2, FileDown, FileUp, Maximize2, X, ListChecks, CheckCircle2, Circle, PlayCircle, RotateCcw, Timer } from 'lucide-react';
+import { entryCategoryLabels, entryMemberCount, raceEntryCategories, runnerDivisionLabel, runnerEntryCategory, runnerWaveLabel } from '../lib/raceEntry';
+import { Radio, ScanLine, Trophy, Clock, Wifi, WifiOff, QrCode, RefreshCw, ArrowLeft, Cpu, Users2, FileDown, FileUp, Maximize2, X, ListChecks, CheckCircle2, Circle, PlayCircle, RotateCcw, Timer, Keyboard, Smartphone, Search, UserCheck, Undo2 } from 'lucide-react';
 import QrScannerModal from './QrScannerModal';
 import RaceList from './RaceList';
 
@@ -48,6 +48,11 @@ function toLocalDateTimeInputValue(isoTimestamp: string | undefined, fallbackRac
 // between lowercase and uppercase hexadecimal output.
 function normalizeScanValue(value: string): string {
   return value.trim().toUpperCase();
+}
+
+function runnerTimingName(runner: Pick<RunnerProfile, 'fullName' | 'bibNumber' | 'isFreeSlot'> | undefined, fallbackBib?: string): string {
+  if (!runner) return `Bib ${fallbackBib || ''}`.trim();
+  return runner.isFreeSlot ? `Bib ${runner.bibNumber}` : runner.fullName;
 }
 
 type ScanFeedback = { type: 'success' | 'error' | 'warning'; text: string };
@@ -157,16 +162,35 @@ export default function TimingConsole({ uid, canSeeAllRaces }: TimingConsoleProp
   }, []);
 
   useEffect(() => {
-    const q = canSeeAllRaces
-      ? query(collection(db, 'races'))
-      : query(collection(db, 'races'), where('createdBy', '==', uid));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const list: Race[] = [];
-      snapshot.forEach((docSnap) => list.push(docSnap.data() as Race));
+    const publish = (list: Race[]) => {
       list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setRaces(list);
-    }, (error) => console.warn('Races listener failed:', error.message));
-    return () => unsubscribe();
+    };
+    if (canSeeAllRaces) {
+      return onSnapshot(query(collection(db, 'races')), (snapshot) => {
+        publish(snapshot.docs.map((docSnap) => docSnap.data() as Race));
+      }, (error) => console.warn('Races listener failed:', error.message));
+    }
+
+    let owned: Race[] = [];
+    let shared: Race[] = [];
+    const publishTeamRaces = () => {
+      const unique = new Map<string, Race>();
+      [...owned, ...shared].forEach((race) => unique.set(race.id, race));
+      publish(Array.from(unique.values()));
+    };
+    const ownedUnsubscribe = onSnapshot(query(collection(db, 'races'), where('createdBy', '==', uid)), (snapshot) => {
+      owned = snapshot.docs.map((docSnap) => docSnap.data() as Race);
+      publishTeamRaces();
+    }, (error) => console.warn('Owned races listener failed:', error.message));
+    const sharedUnsubscribe = onSnapshot(query(collection(db, 'races'), where('organizerIds', 'array-contains', uid)), (snapshot) => {
+      shared = snapshot.docs.map((docSnap) => docSnap.data() as Race);
+      publishTeamRaces();
+    }, (error) => console.warn('Shared races listener failed:', error.message));
+    return () => {
+      ownedUnsubscribe();
+      sharedUnsubscribe();
+    };
   }, [canSeeAllRaces, uid]);
 
   useEffect(() => {
@@ -215,13 +239,16 @@ interface TimingConsoleForRaceProps {
 }
 
 function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
-  const [mode, setMode] = useState<'record' | 'assign' | 'roster' | 'rankings' | 'rollcall'>('record');
+  const [mode, setMode] = useState<'record' | 'mobile-checkin' | 'assign' | 'roster' | 'rankings' | 'rollcall'>('record');
   const orderedCheckpoints = useMemo(() => [...race.checkpoints].sort((a, b) => a.order - b.order), [race.checkpoints]);
   const [selectedCheckpointId, setSelectedCheckpointId] = useState(orderedCheckpoints[0]?.id || '');
   const [bibInput, setBibInput] = useState('');
   const [recording, setRecording] = useState(false);
   const [feedback, setFeedback] = useState<ScanFeedback | null>(null);
   const [showScanModal, setShowScanModal] = useState(false);
+  const [scanSource, setScanSource] = useState<'keyboard' | 'vf787p'>('keyboard');
+  const [runnerSearch, setRunnerSearch] = useState('');
+  const [mobileCheckInBib, setMobileCheckInBib] = useState<string | null>(null);
   // Live reader input is deliberately opt-in. A reader may continue to see
   // nearby chips before the gun, so selecting a station alone must never arm
   // automatic timing.
@@ -232,7 +259,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   const [armStartOnEnter, setArmStartOnEnter] = useState(false);
   const scanInputRef = useRef<HTMLInputElement>(null);
   const lastRecordedScanRef = useRef<{ key: string; at: number } | null>(null);
-  const submitReadRef = useRef<(scanRaw: string, overrideTimestamp?: string) => Promise<boolean>>(async () => false);
+  const submitReadRef = useRef<(scanRaw: string, overrideTimestamp?: string, source?: 'keyboard' | 'vf787p' | 'camera') => Promise<boolean>>(async () => false);
   const processedBridgeEventsRef = useRef(new Set<string>());
   const [bridgeEndpointReady, setBridgeEndpointReady] = useState(false);
   const selectedCheckpoint = orderedCheckpoints.find((checkpoint) => checkpoint.id === selectedCheckpointId);
@@ -251,7 +278,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
     getId: (r) => r.id,
     getUpdatedAt: (r) => r.createdAt,
   });
-  const { pendingCount: pendingScanCount, enqueue: enqueueScan } = useOfflineScanQueue(race.id);
+  const { pendingCount: pendingScanCount, enqueue: enqueueScan, discard: discardQueuedScan } = useOfflineScanQueue(race.id);
 
   const [runnerProfiles, setRunnerProfiles] = useState<RunnerProfile[]>([]);
   const [runnerProfilesError, setRunnerProfilesError] = useState('');
@@ -295,7 +322,8 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
       .slice(0, 5)
       .map((result) => ({
         bibNumber: result.bibNumber,
-        fullName: result.runnerProfile?.fullName || `Bib ${result.bibNumber}`,
+        fullName: runnerTimingName(result.runnerProfile, result.bibNumber),
+        ...(result.runnerProfile?.isFreeSlot ? { isFreeSlot: true } : {}),
         distance: division,
         rank: result.rank!,
         overallRank: result.overallRank ?? result.rank,
@@ -311,7 +339,8 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
     .filter((result) => result.finishTime && result.rank)
     .map((result) => ({
       bibNumber: result.bibNumber,
-      fullName: result.runnerProfile?.fullName || `Bib ${result.bibNumber}`,
+      fullName: runnerTimingName(result.runnerProfile, result.bibNumber),
+      ...(result.runnerProfile?.isFreeSlot ? { isFreeSlot: true } : {}),
         distance: runnerDivisionLabel(result.runnerProfile),
         rank: result.rank!,
         overallRank: result.overallRank ?? result.rank,
@@ -329,6 +358,12 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   // livestream is disabled. Runner status and certificates rely on it; raw
   // chip reads remain private to operators and the individual runner.
   useEffect(() => {
+    // A completed race is a locked, published record. In particular, an old
+    // timing-console tab may still hold an offline/stale snapshot; it must
+    // never overwrite the reviewed final leaderboard after the race closes.
+    // `finishRace` is the one deliberate publish at completion time.
+    if (isRaceCompleted) return;
+
     const timeout = window.setTimeout(() => {
       const summary: PublicLiveResults = {
         raceId: race.id,
@@ -365,6 +400,11 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   const requiresArmingConfirmation = selectedCheckpointType === 'start' || selectedCheckpointType === 'finish';
 
   const armAutomaticScanner = () => {
+    if (scanSource !== 'vf787p') {
+      scanInputRef.current?.focus();
+      setFeedback({ type: 'success', text: 'Keyboard scanner is ready. Scan the bib or chip, then its Enter key will record the runner.' });
+      return;
+    }
     if (requiresArmingConfirmation && !window.confirm(`Arm RFID ${stationName}? Any assigned tag read from this moment will be recorded as ${stationName}.`)) {
       return;
     }
@@ -381,20 +421,20 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   // an operator explicitly arm the next station at the intended race moment.
   useEffect(() => {
     setScannerArmed(false);
-  }, [mode, selectedCheckpointId]);
+  }, [mode, selectedCheckpointId, scanSource]);
 
   useEffect(() => {
-    if (!armStartOnEnter || mode !== 'record' || selectedCheckpointType !== 'start') return;
+    if (!armStartOnEnter || mode !== 'record' || selectedCheckpointType !== 'start' || scanSource !== 'vf787p') return;
     setScannerArmed(true);
     setArmStartOnEnter(false);
     setFeedback({ type: 'success', text: 'Official gun time saved. Start RFID scanner is armed and ready for runner chips.' });
-  }, [armStartOnEnter, mode, selectedCheckpointType]);
+  }, [armStartOnEnter, mode, scanSource, selectedCheckpointType]);
 
   // Keep a keyboard-wedge RFID reader ready after every scan. This also makes
   // the manual fallback quick: operators can simply type a known bib and Enter.
   useEffect(() => {
-    if (mode === 'record') scanInputRef.current?.focus();
-  }, [mode, selectedCheckpointId]);
+    if (mode === 'record' && scanSource === 'keyboard') scanInputRef.current?.focus();
+  }, [mode, scanSource, selectedCheckpointId]);
 
   const openStartScanner = (distance: string) => {
     if (isRaceCompleted) {
@@ -406,13 +446,14 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
       return;
     }
     setBibInput('');
+    setScanSource('vf787p');
     setArmStartOnEnter(true);
     setSelectedCheckpointId(startCheckpoint.id);
     setMode('record');
     setFeedback({ type: 'success', text: `${distance} gun started. Opening and arming the Start RFID station…` });
   };
 
-  const submitRead = async (scanRaw: string, overrideTimestamp?: string) => {
+  const submitRead = async (scanRaw: string, overrideTimestamp?: string, source: 'keyboard' | 'vf787p' | 'camera' = 'keyboard') => {
     if (isRaceCompleted) {
       setFeedback({ type: 'warning', text: 'Race timing is closed. Reopen timing first before recording another scan.' });
       return false;
@@ -437,7 +478,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
     if (!matchedRunner) {
       setFeedback({ type: 'error', text: `No assigned runner matches "${scannedValue}". Assign the chip first, or check the bib.` });
       setBibInput('');
-      scanInputRef.current?.focus();
+      if (scanSource === 'keyboard') scanInputRef.current?.focus();
       return false;
     }
 
@@ -463,7 +504,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
     if (lastScan?.key === scanKey && nowMs - lastScan.at < 4000) {
       setFeedback({ type: 'warning', text: `Duplicate scan: bib #${bibNumber} was just recorded at ${checkpointLabel(selectedCheckpointId)}. No new read was saved.` });
       setBibInput('');
-      scanInputRef.current?.focus();
+      if (scanSource === 'keyboard') scanInputRef.current?.focus();
       return false;
     }
 
@@ -492,7 +533,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         ...(scannedChip ? { chipId: matchedRunner.chipId } : {}),
         checkpointId: selectedCheckpointId,
         timestamp: recordedTimestamp,
-        source: scannedChip ? 'rfid-bridge' : 'manual',
+        source: source === 'vf787p' ? 'rfid-bridge' : 'manual',
         recordedBy: uid,
         createdAt: nowIso,
       };
@@ -511,10 +552,10 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         && waveStartTime
         ? ' • official gun-time fallback'
         : '';
-      setFeedback({ type: 'success', text: `${queuedOffline ? 'Saved to device queue' : 'Recorded'} ${matchedRunner.fullName} • bib ${bibNumber} @ ${checkpointLabel(selectedCheckpointId)}${skippedCheckInNote}${gunFallbackNote}${lateForCutoff ? ' • AFTER CUTOFF' : ''}` });
+      setFeedback({ type: 'success', text: `${queuedOffline ? 'Saved to device queue' : 'Recorded'} ${runnerTimingName(matchedRunner)}${matchedRunner.isFreeSlot ? '' : ` • bib ${bibNumber}`} @ ${checkpointLabel(selectedCheckpointId)}${skippedCheckInNote}${gunFallbackNote}${lateForCutoff ? ' • AFTER CUTOFF' : ''}` });
       announceSuccessfulScan();
       setBibInput('');
-      scanInputRef.current?.focus();
+      if (scanSource === 'keyboard') scanInputRef.current?.focus();
       return true;
     } finally {
       setRecording(false);
@@ -529,7 +570,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   }, [submitRead]);
 
   useEffect(() => {
-    if (mode !== 'record' || !selectedCheckpointId || !scannerArmed) {
+    if (mode !== 'record' || !selectedCheckpointId || scanSource !== 'vf787p' || !scannerArmed) {
       setBridgeEndpointReady(false);
       return;
     }
@@ -554,7 +595,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
           if (cursor && Date.parse(cursor) >= Date.parse(after)) after = cursor;
           if (processedBridgeEventsRef.current.has(event.id)) continue;
           processedBridgeEventsRef.current.add(event.id);
-          await submitReadRef.current(event.epc, event.timestamp);
+          await submitReadRef.current(event.epc, event.timestamp, 'vf787p');
         }
       } catch {
         if (active) setBridgeEndpointReady(false);
@@ -569,11 +610,30 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
       active = false;
       window.clearInterval(interval);
     };
-  }, [mode, selectedCheckpointId, scannerArmed]);
+  }, [mode, scanSource, selectedCheckpointId, scannerArmed]);
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    submitRead(bibInput);
+    void submitRead(bibInput, undefined, 'keyboard');
+  };
+
+  const undoTimingRead = async (read: ChipRead) => {
+    const canUndoAtStation = selectedCheckpointType === 'checkin' || !!selectedCheckpoint?.cutoffMinutes;
+    if (!canUndoAtStation || read.checkpointId !== selectedCheckpointId) return;
+    const stationTypeLabel = selectedCheckpointType === 'checkin' ? 'check-in' : 'cutoff';
+    const runner = runnerProfiles.find((profile) => profile.bibNumber === read.bibNumber);
+    const runnerLabel = runner ? runnerTimingName(runner) : `Bib ${read.bibNumber}`;
+    if (!window.confirm(`Undo the ${stationTypeLabel} read for ${runnerLabel} (#${read.bibNumber}) at ${new Date(read.timestamp).toLocaleTimeString()}?\n\nOnly this one timing entry will be removed.`)) return;
+
+    try {
+      // Also remove an offline copy before deleting Firestore. This prevents a
+      // delayed device sync from restoring an accidental entry.
+      discardQueuedScan(read.id);
+      await deleteDoc(doc(db, 'chipReads', read.id));
+      setFeedback({ type: 'success', text: `Undid ${stationTypeLabel} read for ${runnerLabel} • bib ${read.bibNumber}.` });
+    } catch (error: any) {
+      setFeedback({ type: 'error', text: error.message || 'Could not undo this timing read. Sign in with the Super Admin account and try again.' });
+    }
   };
 
   const handleQrScan = async (text: string): Promise<boolean> => {
@@ -584,7 +644,82 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
       bib = bib.split('|')[3] || ''; // fall back to the engraving ticket's bib field
     }
     if (!bib) return false;
-    return submitRead(bib);
+    return submitRead(bib, undefined, 'camera');
+  };
+
+  const searchResults = useMemo(() => {
+    const term = normalizeScanValue(runnerSearch);
+    if (!term) return [];
+    return runnerProfiles
+      .filter((runner) => runner.isFreeSlot
+        ? normalizeScanValue(runner.bibNumber).includes(term) || normalizeScanValue(runner.chipId || '').includes(term)
+        : normalizeScanValue(runner.fullName).includes(term)
+          || normalizeScanValue(runner.bibNumber).includes(term)
+          || normalizeScanValue(runner.chipId || '').includes(term))
+      .sort((a, b) => a.bibNumber.localeCompare(b.bibNumber, undefined, { numeric: true }))
+      .slice(0, 8);
+  }, [runnerProfiles, runnerSearch]);
+
+  // Manual timing staff often only know part of a bib number. Show a small,
+  // tap-friendly match list before they record the split so they can verify
+  // the runner's name and distance instead of timing the wrong bib by typo.
+  const bibSuggestions = useMemo(() => {
+    const term = normalizeScanValue(bibInput);
+    if (!term || scanSource !== 'keyboard') return [];
+    return runnerProfiles
+      .filter((runner) => runner.isFreeSlot
+        ? normalizeScanValue(runner.bibNumber).includes(term)
+        : normalizeScanValue(runner.bibNumber).includes(term)
+          || normalizeScanValue(runner.fullName).includes(term))
+      .sort((a, b) => a.bibNumber.localeCompare(b.bibNumber, undefined, { numeric: true }))
+      .slice(0, 6);
+  }, [bibInput, runnerProfiles, scanSource]);
+
+  const checkInSearchRunner = async (runner: RunnerProfile) => {
+    const saved = await submitRead(runner.bibNumber, undefined, 'keyboard');
+    if (saved) setRunnerSearch('');
+  };
+
+  // Designed for staff carrying a phone or tablet. This deliberately writes
+  // only at the Check-In checkpoint, so it can never create a Start, Finish,
+  // or split time while the staff are walking around the venue.
+  const checkInFromMobile = async (runner: RunnerProfile) => {
+    if (isRaceCompleted) {
+      setFeedback({ type: 'warning', text: 'Race timing is closed. Reopen timing first before checking in another runner.' });
+      return;
+    }
+    if (!checkInCheckpoint) {
+      setFeedback({ type: 'error', text: 'This race has no Check-In checkpoint yet. Add one in Race Setup before using Mobile Check-In.' });
+      return;
+    }
+    const previousRead = chipReads.find((read) => read.bibNumber === runner.bibNumber && read.checkpointId === checkInCheckpoint.id);
+    if (previousRead) {
+      setFeedback({ type: 'warning', text: `${runnerTimingName(runner)}${runner.isFreeSlot ? '' : ` • bib ${runner.bibNumber}`} is already checked in at ${new Date(previousRead.timestamp).toLocaleTimeString()}.` });
+      return;
+    }
+
+    setMobileCheckInBib(runner.bibNumber);
+    setFeedback(null);
+    try {
+      const nowIso = new Date().toISOString();
+      const record: ChipRead = {
+        id: `${race.id}_${runner.bibNumber}_${checkInCheckpoint.id}_${Date.now()}`,
+        raceId: race.id,
+        bibNumber: runner.bibNumber,
+        ...(runner.chipId ? { chipId: runner.chipId } : {}),
+        checkpointId: checkInCheckpoint.id,
+        timestamp: nowIso,
+        source: 'manual',
+        recordedBy: uid,
+        createdAt: nowIso,
+      };
+      enqueueScan(record);
+      const queuedOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+      setFeedback({ type: 'success', text: `${queuedOffline ? 'Saved to this device' : 'Checked in'} ${runnerTimingName(runner)}${runner.isFreeSlot ? '' : ` • bib ${runner.bibNumber}`}.` });
+      announceSuccessfulScan();
+    } finally {
+      setMobileCheckInBib(null);
+    }
   };
 
   const recentReads = useMemo(
@@ -685,7 +820,13 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
       )}
 
       {/* Mode toggle */}
-      <div className="flex gap-2 glass-inset p-1.5 w-max max-w-full">
+      <div className="racepulse-horizontal-scroll flex gap-2 glass-inset p-1.5 w-max">
+        <button
+          onClick={() => setMode('mobile-checkin')}
+          className={`flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide px-4 py-2.5 rounded-[16px] transition ${mode === 'mobile-checkin' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/30' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+        >
+          <Smartphone className="w-3.5 h-3.5" /> Mobile Check-In
+        </button>
         <button
           onClick={() => setMode('record')}
           className={`flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide px-4 py-2.5 rounded-[16px] transition ${mode === 'record' ? 'bg-red-600 text-white shadow-lg shadow-red-900/30' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
@@ -719,6 +860,19 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
       </div>
 
       {mode === 'assign' && <ChipAssignmentPanel race={race} runnerProfiles={runnerProfiles} chipReads={chipReads} />}
+      {mode === 'mobile-checkin' && (
+        <MobileCheckInPanel
+          raceName={race.name}
+          runners={runnerProfiles}
+          chipReads={chipReads}
+          checkInCheckpoint={checkInCheckpoint}
+          checkedInCount={checkInCount}
+          raceCompleted={isRaceCompleted}
+          checkingBib={mobileCheckInBib}
+          feedback={feedback}
+          onCheckIn={checkInFromMobile}
+        />
+      )}
       {mode === 'roster' && <RunnerRosterPanel race={race} runnerProfiles={runnerProfiles} />}
       {mode === 'rankings' && <RaceRankingsPanel race={race} results={results} />}
       {mode === 'rollcall' && (
@@ -746,8 +900,8 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
                 : 'Scan an assigned RFID chip. Typing a registered bib remains available as backup.'}
             </p>
           </div>
-          <span className={`inline-flex items-center gap-1.5 text-[9px] font-mono font-black tracking-widest uppercase px-2.5 py-1.5 rounded-full border ${scannerArmed ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-500' : 'bg-amber-500/10 border-amber-500/30 text-amber-500'}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${scannerArmed ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} /> {scannerArmed ? 'RFID Scanner Armed' : 'RFID Scanner Paused'}
+          <span className={`inline-flex items-center gap-1.5 text-[9px] font-mono font-black tracking-widest uppercase px-2.5 py-1.5 rounded-full border ${scanSource === 'keyboard' || scannerArmed ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-500' : 'bg-amber-500/10 border-amber-500/30 text-amber-500'}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${scanSource === 'keyboard' || scannerArmed ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} /> {scanSource === 'keyboard' ? 'Keyboard Scanner Ready' : scannerArmed ? 'VF-787P Armed' : 'VF-787P Paused'}
           </span>
         </div>
 
@@ -770,6 +924,36 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
           </div>
         </div>
 
+        <div>
+          <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Scanner input</label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setScanSource('keyboard');
+                setScannerArmed(false);
+                setFeedback({ type: 'success', text: 'Keyboard scanner selected. Scan the bib or chip into the field, then Enter to record.' });
+              }}
+              className={`text-left rounded-[14px] border px-3.5 py-3 transition ${scanSource === 'keyboard' ? 'border-emerald-500/45 bg-emerald-500/10 text-emerald-500' : 'glass-inset border-transparent text-[var(--text-secondary)] hover:border-emerald-500/25'}`}
+            >
+              <span className="flex items-center gap-2 text-xs font-black uppercase tracking-wide"><Keyboard className="w-4 h-4" /> Keyboard scanner</span>
+              <span className="block text-[10.5px] mt-1 opacity-80">USB/Bluetooth scanner types then sends Enter.</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setScanSource('vf787p');
+                setScannerArmed(false);
+                setFeedback({ type: 'warning', text: 'VF-787P selected. Choose the station, then arm the reader when you are ready to accept live tag reads.' });
+              }}
+              className={`text-left rounded-[14px] border px-3.5 py-3 transition ${scanSource === 'vf787p' ? 'border-cyan-500/45 bg-cyan-500/10 text-cyan-400' : 'glass-inset border-transparent text-[var(--text-secondary)] hover:border-cyan-500/25'}`}
+            >
+              <span className="flex items-center gap-2 text-xs font-black uppercase tracking-wide"><Radio className="w-4 h-4" /> VF-787P bridge</span>
+              <span className="block text-[10.5px] mt-1 opacity-80">Automatic reads from the Windows Timing Station.</span>
+            </button>
+          </div>
+        </div>
+
         {(selectedCheckpointType === 'checkin' || selectedCheckpoint?.cutoffMinutes) && (
           <div className={`glass-inset px-4 py-3 text-xs flex flex-wrap items-center justify-between gap-2 ${selectedCheckpoint?.cutoffMinutes ? 'border-amber-500/30' : ''}`}>
             {selectedCheckpointType === 'checkin' && <span className="font-bold text-[var(--text-primary)]">{checkInCount} / {runnerProfiles.length} runners checked in</span>}
@@ -777,15 +961,55 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
           </div>
         )}
 
-        <div className={`rounded-[16px] border px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${scannerArmed ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/10'}`}>
+        {selectedCheckpointType === 'checkin' && (
+          <div className="glass-inset p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <label className="text-xs font-black uppercase tracking-wide text-[var(--text-secondary)]">Find runner for check-in</label>
+              <span className="text-[9px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Tap a result to check in</span>
+            </div>
+            <input
+              type="search"
+              value={runnerSearch}
+              onChange={(event) => setRunnerSearch(event.target.value)}
+              placeholder="SEARCH NAME, BIB, OR CHIP ID"
+              className="w-full glass-inset px-3.5 py-2.5 text-xs font-bold font-mono tracking-wide text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+            />
+            {runnerSearch.trim() && (
+              <div className="space-y-1.5 max-h-52 overflow-y-auto pr-0.5">
+                {searchResults.length === 0 ? (
+                  <p className="text-xs text-[var(--text-secondary)] px-1 py-2">No runner matches “{runnerSearch}”.</p>
+                ) : searchResults.map((runner) => {
+                  const alreadyCheckedIn = chipReads.some((read) => read.bibNumber === runner.bibNumber && read.checkpointId === checkInCheckpoint?.id);
+                  return (
+                    <button
+                      key={`${runner.uid}_${runner.bibNumber}`}
+                      type="button"
+                      disabled={alreadyCheckedIn || recording}
+                      onClick={() => { void checkInSearchRunner(runner); }}
+                      className={`w-full text-left flex items-center gap-3 rounded-xl border px-3 py-2.5 transition disabled:cursor-not-allowed ${alreadyCheckedIn ? 'border-emerald-500/20 bg-emerald-500/5 text-emerald-500' : 'border-transparent glass-panel hover:border-red-500/35 hover:bg-red-500/5'}`}
+                    >
+                      <span className="font-mono font-black text-xs shrink-0">#{runner.bibNumber}</span>
+                      <span className="min-w-0 flex-1"><span className="block truncate text-xs font-bold text-[var(--text-primary)]">{runnerTimingName(runner)}</span><span className="block text-[10px] text-[var(--text-secondary)] mt-0.5">{runner.distance}{runner.isFreeSlot ? ' • Free Slot' : ''}{runner.chipId ? ` • chip ${runner.chipId}` : ''}</span></span>
+                      <span className="text-[9px] font-black uppercase tracking-wide shrink-0">{alreadyCheckedIn ? 'Checked in' : 'Check in'}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className={`rounded-[16px] border px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${scanSource === 'keyboard' || scannerArmed ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/10'}`}>
           <div className="flex items-start gap-2.5">
-            {scannerArmed ? <Radio className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" /> : <Circle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />}
+            {scanSource === 'keyboard' ? <Keyboard className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" /> : scannerArmed ? <Radio className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" /> : <Circle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />}
             <div>
-              <p className={`text-xs font-black uppercase tracking-wide ${scannerArmed ? 'text-emerald-500' : 'text-amber-500'}`}>
-                {scannerArmed ? `RFID ${stationName} is armed` : `RFID ${stationName} is paused`}
+              <p className={`text-xs font-black uppercase tracking-wide ${scanSource === 'keyboard' || scannerArmed ? 'text-emerald-500' : 'text-amber-500'}`}>
+                {scanSource === 'keyboard' ? 'Keyboard scanner is ready' : scannerArmed ? `VF-787P ${stationName} is armed` : `VF-787P ${stationName} is paused`}
               </p>
               <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-                {scannerArmed
+                {scanSource === 'keyboard'
+                  ? 'Use a USB/Bluetooth keyboard scanner or type a registered bib/chip, then press Enter. VF-787P bridge reads are ignored in this mode.'
+                  : scannerArmed
                   ? 'Live tag reads from the bridge will record at this station. Pause it before changing station or moving the carpet.'
                   : 'Nearby chips are ignored until you arm this station. Manual bib entry and camera scan still work.'}
               </p>
@@ -793,11 +1017,11 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
           </div>
           <button
             type="button"
-            onClick={scannerArmed ? pauseAutomaticScanner : armAutomaticScanner}
+            onClick={scanSource === 'keyboard' ? () => scanInputRef.current?.focus() : scannerArmed ? pauseAutomaticScanner : armAutomaticScanner}
             disabled={isRaceCompleted}
             className={`min-h-11 shrink-0 px-5 py-3 rounded-[14px] text-xs font-black uppercase tracking-widest transition active:scale-[0.98] ${scannerArmed ? 'bg-amber-500 hover:bg-amber-400 text-black' : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-950/25'}`}
           >
-            {isRaceCompleted ? 'Race timing closed' : scannerArmed ? 'Pause RFID Scanner' : `Arm ${stationName}`}
+            {isRaceCompleted ? 'Race timing closed' : scanSource === 'keyboard' ? 'Focus keyboard input' : scannerArmed ? 'Pause VF-787P' : `Arm ${stationName}`}
           </button>
         </div>
 
@@ -809,20 +1033,47 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         )}
 
         <form onSubmit={handleManualSubmit} className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto_auto] gap-2">
-          <input
-            ref={scanInputRef}
-            type="text"
-            placeholder="SCAN RFID CHIP OR TYPE BIB"
-            value={bibInput}
-            onChange={(e) => setBibInput(e.target.value.toUpperCase())}
-            autoComplete="off"
-            autoCapitalize="characters"
-            aria-label="RFID chip or runner bib scan input"
-            className="min-h-[68px] glass-inset px-5 py-4 text-base sm:text-lg font-black font-mono tracking-wider text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
-          />
+          <div className="relative min-w-0">
+            <input
+              ref={scanInputRef}
+              type="text"
+              placeholder={scanSource === 'keyboard' ? 'SCAN WITH KEYBOARD OR TYPE BIB' : 'VF-787P MODE — USE CAMERA OR SWITCH TO KEYBOARD'}
+              value={bibInput}
+              onChange={(e) => setBibInput(e.target.value.toUpperCase())}
+              autoComplete="off"
+              autoCapitalize="characters"
+              aria-label="RFID chip or runner bib scan input"
+              disabled={scanSource !== 'keyboard' || recording}
+              className="min-h-[68px] w-full glass-inset px-5 py-4 text-base sm:text-lg font-black font-mono tracking-wider text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50"
+            />
+            {bibSuggestions.length > 0 && !recording && (
+              <div className="absolute z-30 left-0 right-0 top-[calc(100%+0.45rem)] overflow-hidden rounded-[16px] border border-emerald-500/45 bg-[var(--surface-card)] shadow-2xl shadow-black/25">
+                <p className="border-b border-[var(--border-default)] bg-[var(--surface-inset)] px-3.5 py-2 text-[9px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Matching runners — tap to select</p>
+                <div className="max-h-64 overflow-y-auto p-1.5">
+                  {bibSuggestions.map((runner) => (
+                    <button
+                      key={`${runner.uid}_${runner.bibNumber}`}
+                      type="button"
+                      onClick={() => {
+                        setBibInput(runner.bibNumber);
+                        scanInputRef.current?.focus();
+                      }}
+                      className="flex w-full items-center gap-3 rounded-xl bg-[var(--surface-card)] px-3 py-2.5 text-left transition hover:bg-emerald-500/10 active:bg-emerald-500/20"
+                    >
+                      <span className="w-[5.75rem] shrink-0 font-mono text-sm font-black text-[var(--text-primary)]">#{runner.bibNumber}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-xs font-black text-[var(--text-primary)]">{runnerTimingName(runner)}</span>
+                        <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-wide text-[var(--text-secondary)]">{runner.distance} • {entryCategoryLabels[runnerEntryCategory(runner)]}{runner.isFreeSlot ? ' • Free Slot' : ''}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           <button
             type="submit"
-            disabled={recording}
+            disabled={scanSource !== 'keyboard' || recording}
             className="min-h-[68px] text-sm font-black uppercase tracking-widest px-7 py-4 rounded-[var(--radius-control)] text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-xl shadow-red-900/40 flex items-center justify-center gap-2 transition active:scale-[0.98] disabled:opacity-60"
           >
             {recording ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Clock className="w-5 h-5" />} {actionLabel}
@@ -854,10 +1105,20 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
               <p className="text-xs text-[var(--text-secondary)]">No reads recorded yet.</p>
             )}
             {recentReads.map((r) => (
-              <div key={r.id} className="flex items-center justify-between glass-inset px-3 py-2 text-xs">
+              <div key={r.id} className="flex items-center justify-between gap-2 glass-inset px-3 py-2 text-xs">
                 <span className="font-mono font-bold text-[var(--text-primary)] flex items-center gap-1.5"><span>#{r.bibNumber}</span>{r.source === 'rfid-bridge' && <Cpu className="w-3 h-3 text-emerald-500" aria-label="RFID scan" />}</span>
                 <span className="text-[var(--text-secondary)]">{checkpointLabel(r.checkpointId)}</span>
                 <span className="font-mono text-[var(--text-muted)]">{new Date(r.timestamp).toLocaleTimeString()}</span>
+                {(selectedCheckpointType === 'checkin' || selectedCheckpoint?.cutoffMinutes) && r.checkpointId === selectedCheckpointId && (
+                  <button
+                    type="button"
+                    onClick={() => { void undoTimingRead(r); }}
+                    className="shrink-0 rounded-lg border border-amber-500/35 bg-amber-500/10 px-2 py-1 text-[9px] font-black uppercase tracking-wide text-amber-500 transition hover:bg-amber-500 hover:text-black"
+                    title="Undo this timing read"
+                  >
+                    <span className="flex items-center gap-1"><Undo2 className="h-3 w-3" /> Undo</span>
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -909,9 +1170,165 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   );
 }
 
+// ========== MOBILE CHECK-IN ==========
+
+interface MobileCheckInPanelProps {
+  raceName: string;
+  runners: RunnerProfile[];
+  chipReads: ChipRead[];
+  checkInCheckpoint?: Race['checkpoints'][number];
+  checkedInCount: number;
+  raceCompleted: boolean;
+  checkingBib: string | null;
+  feedback: ScanFeedback | null;
+  onCheckIn: (runner: RunnerProfile) => Promise<void>;
+}
+
+function MobileCheckInPanel({
+  raceName,
+  runners,
+  chipReads,
+  checkInCheckpoint,
+  checkedInCount,
+  raceCompleted,
+  checkingBib,
+  feedback,
+  onCheckIn,
+}: MobileCheckInPanelProps) {
+  const [search, setSearch] = useState('');
+  const normalizedSearch = normalizeScanValue(search);
+  const checkedInBibs = useMemo(() => new Set(
+    checkInCheckpoint
+      ? chipReads.filter((read) => read.checkpointId === checkInCheckpoint.id).map((read) => read.bibNumber)
+      : []
+  ), [checkInCheckpoint, chipReads]);
+  const runnerByBib = useMemo(() => new Map(runners.map((runner) => [runner.bibNumber, runner])), [runners]);
+  const results = useMemo(() => {
+    if (!normalizedSearch) return [];
+    return runners
+      .filter((runner) => {
+        if (runner.isFreeSlot) return normalizeScanValue(runner.bibNumber).includes(normalizedSearch);
+        const memberNames = (runner.teamMembers || []).join(' ');
+        return normalizeScanValue(runner.bibNumber).includes(normalizedSearch)
+          || normalizeScanValue(`${runner.fullName} ${memberNames}`).includes(normalizedSearch);
+      })
+      .sort((a, b) => {
+        const aExact = normalizeScanValue(a.bibNumber) === normalizedSearch ? -1 : 0;
+        const bExact = normalizeScanValue(b.bibNumber) === normalizedSearch ? -1 : 0;
+        return aExact - bExact || a.bibNumber.localeCompare(b.bibNumber, undefined, { numeric: true });
+      })
+      .slice(0, 15);
+  }, [normalizedSearch, runners]);
+  const recentCheckIns = useMemo(() => chipReads
+    .filter((read) => read.checkpointId === checkInCheckpoint?.id)
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, 6), [checkInCheckpoint?.id, chipReads]);
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-4">
+      <section className="glass-panel overflow-hidden">
+        <div className="p-5 sm:p-7 bg-gradient-to-br from-emerald-600 to-emerald-800 text-white">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-100 flex items-center gap-2"><Smartphone className="w-4 h-4" /> Staff mobile mode</p>
+              <h2 className="font-display font-black text-2xl sm:text-3xl uppercase tracking-tight mt-2">Mobile Check-In</h2>
+              <p className="text-sm text-emerald-50/90 mt-2">Ask for a bib number or name, then tap once to mark the runner present. Free Slots are searched by bib only.</p>
+            </div>
+            <div className="shrink-0 text-right rounded-2xl bg-black/15 px-4 py-3 border border-white/15">
+              <p className="font-mono font-black text-2xl leading-none">{checkedInCount}</p>
+              <p className="text-[9px] font-black uppercase tracking-widest text-emerald-100 mt-1">of {runners.length} checked in</p>
+            </div>
+          </div>
+          <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-100/80 mt-5 truncate">{raceName} {checkInCheckpoint ? `• ${checkInCheckpoint.label}` : ''}</p>
+        </div>
+
+        {!checkInCheckpoint ? (
+          <div className="p-5 text-sm font-semibold text-amber-500 bg-amber-500/10">
+            Add a Check-In checkpoint in Race Setup first. This mobile tool only records attendance and never creates a timing split.
+          </div>
+        ) : (
+          <div className="p-4 sm:p-5 space-y-3">
+            <label className="sr-only" htmlFor="mobile-checkin-search">Search runner</label>
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
+              <input
+                id="mobile-checkin-search"
+                type="search"
+                inputMode="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search bib number or runner name"
+                autoComplete="off"
+                className="w-full min-h-16 rounded-[18px] glass-inset pl-12 pr-4 py-4 text-base sm:text-lg font-bold text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-emerald-500/60"
+              />
+            </div>
+
+            {search.trim() && (
+              <div className="space-y-2">
+                {results.length === 0 ? (
+                  <p className="text-center text-sm text-[var(--text-secondary)] py-6">No runner matches “{search}”. Check the spelling or bib number.</p>
+                ) : results.map((runner) => {
+                  const alreadyCheckedIn = checkedInBibs.has(runner.bibNumber);
+                  const isBusy = checkingBib === runner.bibNumber;
+                  return (
+                    <div key={`${runner.uid}_${runner.bibNumber}`} className={`rounded-[18px] border p-3.5 sm:p-4 flex items-center gap-3 ${alreadyCheckedIn ? 'border-emerald-500/25 bg-emerald-500/5' : 'glass-inset border-transparent'}`}>
+                      <span className="shrink-0 rounded-xl bg-black/10 px-2.5 py-2 font-mono font-black text-sm text-[var(--text-primary)]">#{runner.bibNumber}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-sm sm:text-base text-[var(--text-primary)] leading-tight">{runnerTimingName(runner)}</p>
+                        <p className="text-xs text-[var(--text-secondary)] mt-1 truncate">{runner.distance}{runner.isFreeSlot ? ' • Free Slot' : runner.entryCategory ? ` • ${entryCategoryLabels[runner.entryCategory] || runner.entryCategory}` : ''}</p>
+                      </div>
+                      {alreadyCheckedIn ? (
+                        <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wide text-emerald-500"><CheckCircle2 className="w-4 h-4" /> Done</span>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={raceCompleted || !!checkingBib}
+                          onClick={() => { void onCheckIn(runner); }}
+                          className="shrink-0 min-h-11 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-55 px-3 sm:px-4 text-[11px] font-black uppercase tracking-wide text-white transition active:scale-[0.98]"
+                        >
+                          {isBusy ? 'Saving…' : <span className="inline-flex items-center gap-1.5"><UserCheck className="w-4 h-4" /> Check in</span>}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+
+      {feedback && (
+        <p role="status" className={`text-sm font-bold px-4 py-3.5 rounded-[16px] border ${feedback.type === 'success' ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/25' : feedback.type === 'warning' ? 'text-amber-500 bg-amber-500/10 border-amber-500/30' : 'text-red-500 bg-red-500/10 border-red-500/25'}`}>
+          {feedback.type === 'success' ? '✓ Check-in saved' : feedback.type === 'warning' ? '⚠ Check-in notice' : '⚠ Check-in issue'} <span className="font-medium">— {feedback.text}</span>
+        </p>
+      )}
+
+      <section className="glass-panel p-4 sm:p-5">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)]">Recent mobile/live check-ins</h3>
+          <span className="text-[10px] font-bold text-[var(--text-muted)]">Live sync</span>
+        </div>
+        <div className="space-y-1.5">
+          {recentCheckIns.length === 0 ? (
+            <p className="text-sm text-[var(--text-secondary)] py-2">No runners checked in yet.</p>
+          ) : recentCheckIns.map((read) => (
+            <div key={read.id} className="flex items-center gap-3 glass-inset px-3 py-2.5 rounded-xl">
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-500" />
+              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--text-primary)]">{runnerTimingName(runnerByBib.get(read.bibNumber), read.bibNumber)}</span>
+              <span className="font-mono text-xs font-bold text-[var(--text-secondary)]">#{read.bibNumber}</span>
+              <span className="text-[10px] text-[var(--text-muted)] shrink-0">{new Date(read.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 // ========== CHIP ASSIGNMENT ==========
 
-type ImportedRunner = Pick<RunnerProfile, 'fullName' | 'bibNumber' | 'distance' | 'gender' | 'age' | 'shirtSize' | 'entryCategory' | 'teamMembers'> & {
+type ImportedRunner = Pick<RunnerProfile, 'fullName' | 'bibNumber' | 'distance' | 'gender' | 'age' | 'ageNotProvided' | 'shirtSize' | 'entryCategory' | 'teamMembers'> & {
   source: string;
   sourceRows: number[];
 };
@@ -942,6 +1359,16 @@ function normalizeImportBib(value: unknown): string {
   return spreadsheetText(value).replace(/^#\s*/, '').replace(/\s+/g, '').toUpperCase();
 }
 
+// Older CSV imports were interpreted as spreadsheet dates by SheetJS. For
+// example a valid physical bib `12-20-01` arrived as `12/20/01`. This helper
+// is intentionally used only when locating an existing imported row, so a
+// re-import repairs those old records without treating slash-form bibs as the
+// new stored format.
+function importBibMatchKey(value: unknown): string {
+  const bib = normalizeImportBib(value);
+  return /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(bib) ? bib.replaceAll('/', '-') : bib;
+}
+
 function importGender(value: unknown): RunnerProfile['gender'] | null {
   const normalized = spreadsheetText(value).toLowerCase();
   if (normalized.startsWith('m')) return 'male';
@@ -951,6 +1378,7 @@ function importGender(value: unknown): RunnerProfile['gender'] | null {
 
 function importEntryCategory(value: unknown): RaceEntryCategory {
   const category = spreadsheetText(value).toLowerCase();
+  if (category.includes('group') || category.includes('team')) return 'group';
   if (category.includes('trio')) return 'trio';
   if (category.includes('duo') || category.includes('pair')) return 'duo';
   return 'solo';
@@ -1018,15 +1446,25 @@ function parseRosterWorkbook(workbook: XLSX.WorkBook, fileName: string, race: Ra
       const age = ageFromSpreadsheetValue(ageColumn >= 0 ? row[ageColumn] : '')
         ?? ageFromSpreadsheetValue(dateOfBirthColumn >= 0 ? row[dateOfBirthColumn] : '');
       const shirtSize = shirtSizeColumn >= 0 ? spreadsheetText(row[shirtSizeColumn]).toUpperCase() : '';
+      // Sex is only used to rank an individual in a Solo division. A Duo,
+      // Trio, or Group can be mixed, so permit a blank column for team rows.
+      // RunnerProfile still requires a value for legacy Firestore records;
+      // that internal fallback is never used to split team results by gender.
+      const genderIsRequired = entryCategory === 'solo';
+      // A Group is ranked as one team and never enters an individual age
+      // division, so its roster can omit Age/DOB. We retain an explicit flag
+      // instead of showing Firestore's required numeric fallback as a real age.
+      const ageIsRequired = entryCategory !== 'group';
+      const ageNotProvided = age === null;
 
       if (!fullName && !bibNumber) return;
-      if (!fullName || !bibNumber || !distance || !gender || age === null) {
+      if (!fullName || !bibNumber || !distance || (genderIsRequired && !gender) || (ageIsRequired && age === null)) {
         const missing = [
           !fullName && 'name',
           !bibNumber && 'bib',
           !distance && 'a matching race distance',
-          !gender && 'sex/gender',
-          age === null && 'valid age or date of birth',
+          genderIsRequired && !gender && 'sex/gender (Solo only)',
+          ageIsRequired && age === null && 'valid age or date of birth (Group optional)',
         ].filter(Boolean).join(', ');
         skipped.push(`${sheetName} row ${sourceRow}: missing ${missing}`);
         return;
@@ -1051,8 +1489,12 @@ function parseRosterWorkbook(workbook: XLSX.WorkBook, fileName: string, race: Ra
         bibNumber,
         distance,
         entryCategory,
-        gender,
-        age,
+        gender: gender || 'male',
+        // `age` is required by the existing runner schema. This internal
+        // placeholder is ignored for all Group results and is hidden by the
+        // `ageNotProvided` marker below.
+        age: age ?? 18,
+        ageNotProvided,
         ...(entryCategory !== 'solo' ? { teamMembers: [fullName] } : {}),
         ...(shirtSize ? { shirtSize } : {}),
         source: sheetName,
@@ -1096,7 +1538,7 @@ function ManualRunnerPanel({ race, runnerProfiles }: ManualRunnerPanelProps) {
   const [age, setAge] = useState('');
   const [shirtSize, setShirtSize] = useState('');
   const [teamName, setTeamName] = useState('');
-  const [teamMembers, setTeamMembers] = useState<string[]>(['', '', '']);
+  const [teamMembers, setTeamMembers] = useState<string[]>(['', '', '', '']);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -1140,7 +1582,7 @@ function ManualRunnerPanel({ race, runnerProfiles }: ManualRunnerPanelProps) {
     const normalizedTeamName = teamName.trim().toUpperCase();
     const normalizedMembers = [normalizedName, ...teamMembers.slice(1, memberCount).map((member) => member.trim().toUpperCase())];
     if (entryCategory !== 'solo' && !normalizedTeamName) {
-      setFeedback({ type: 'error', text: 'Enter the team name for a Duo or Trio.' });
+      setFeedback({ type: 'error', text: `Enter the team name for this ${entryCategoryLabels[entryCategory]} entry.` });
       return;
     }
     if (entryCategory !== 'solo' && normalizedMembers.some((member) => !member || member.length > 100)) {
@@ -1175,7 +1617,7 @@ function ManualRunnerPanel({ race, runnerProfiles }: ManualRunnerPanelProps) {
       setAge('');
       setShirtSize('');
       setTeamName('');
-      setTeamMembers(['', '', '']);
+      setTeamMembers(['', '', '', '']);
     } catch (error: any) {
       setFeedback({ type: 'error', text: error.message || 'Could not add the runner.' });
     } finally {
@@ -1281,10 +1723,15 @@ function RosterImportPanel({ race, runnerProfiles }: RosterImportPanelProps) {
 
     try {
       const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+      // CSV has no column typing. Without `raw: true`, SheetJS sees a bib
+      // such as 12-20-01 as a calendar date and formats it as 12/20/01.
+      // Keep CSV values as literal text; Excel files still retain their
+      // normal cell formatting and date support for date-of-birth columns.
+      const isCsv = /\.csv$/i.test(file.name);
+      const workbook = XLSX.read(data, { type: 'array', cellDates: !isCsv, raw: isCsv });
       const parsed = parseRosterWorkbook(workbook, file.name, race);
       if (parsed.detectedSheets.length === 0) {
-        setFeedback({ type: 'error', text: 'No importable roster tab found. The file needs Full name, Race bib number, Distance, Sex/Gender, and Age or Date of birth columns.' });
+        setFeedback({ type: 'error', text: 'No importable roster tab found. The file needs Full name, Race bib number, Distance, Entry category, and Age or Date of birth. Sex/Gender is required only for Solo.' });
         return;
       }
       if (parsed.runners.length === 0) {
@@ -1298,8 +1745,8 @@ function RosterImportPanel({ race, runnerProfiles }: RosterImportPanelProps) {
 
   const handleImport = async () => {
     if (!preview || preview.runners.length === 0) return;
-    const existingByBib = new Map(runnerProfiles.map((runner) => [normalizeImportBib(runner.bibNumber), runner]));
-    const existingCount = preview.runners.filter((runner) => existingByBib.has(normalizeImportBib(runner.bibNumber))).length;
+    const existingByBib = new Map(runnerProfiles.map((runner) => [importBibMatchKey(runner.bibNumber), runner]));
+    const existingCount = preview.runners.filter((runner) => existingByBib.has(importBibMatchKey(runner.bibNumber))).length;
     const newCount = preview.runners.length - existingCount;
     if (!window.confirm(`Import ${preview.runners.length} roster entries into ${race.name}?\n\n${newCount} new runner${newCount === 1 ? '' : 's'} will be created and ${existingCount} matching bib${existingCount === 1 ? '' : 's'} will be updated. This does not create login accounts.`)) return;
 
@@ -1315,7 +1762,7 @@ function RosterImportPanel({ race, runnerProfiles }: RosterImportPanelProps) {
       for (let start = 0; start < preview.runners.length; start += 400) {
         const batch = writeBatch(db);
         for (const imported of preview.runners.slice(start, start + 400)) {
-          const existing = existingByBib.get(normalizeImportBib(imported.bibNumber));
+          const existing = existingByBib.get(importBibMatchKey(imported.bibNumber));
           const uid = existing?.uid || importedRunnerUid();
           const record: RunnerProfile = {
             uid,
@@ -1326,9 +1773,12 @@ function RosterImportPanel({ race, runnerProfiles }: RosterImportPanelProps) {
             ...(imported.entryCategory ? { entryCategory: imported.entryCategory } : {}),
             gender: imported.gender,
             age: imported.age,
+            // Always write an explicit boolean so re-importing a Group with
+            // a real age clears any older "not provided" marker.
+            ageNotProvided: Boolean(imported.ageNotProvided),
             createdAt: existing?.createdAt || now,
             ...(imported.shirtSize ? { shirtSize: imported.shirtSize } : {}),
-            ...(imported.teamMembers && imported.teamMembers.length >= (imported.entryCategory === 'trio' ? 3 : 2) ? { teamMembers: imported.teamMembers } : {}),
+            ...(imported.teamMembers && imported.teamMembers.length >= entryMemberCount[imported.entryCategory || 'solo'] ? { teamMembers: imported.teamMembers } : {}),
           };
           batch.set(doc(db, 'runners', `${uid}_${race.id}`), record, { merge: true });
           if (existing) updated += 1;
@@ -1360,7 +1810,7 @@ function RosterImportPanel({ race, runnerProfiles }: RosterImportPanelProps) {
       </div>
 
       <div className="rounded-[14px] border border-amber-500/20 bg-amber-500/5 px-3 py-2.5 text-[10.5px] text-[var(--text-secondary)] leading-relaxed">
-        Required columns: <strong className="text-[var(--text-primary)]">Full name, Race bib number, Distance, Sex/Gender</strong>, and <strong className="text-[var(--text-primary)]">Age or Date of birth</strong>. The distance must already exist in this race. For a duo/team sharing one bib, the names are combined into one timing entry.
+        Required columns: <strong className="text-[var(--text-primary)]">Full name, Race bib number, Distance, Entry category</strong>, and <strong className="text-[var(--text-primary)]">Age or Date of birth</strong> (optional for Group). <strong className="text-[var(--text-primary)]">Sex/Gender is required for Solo only</strong>; it may be blank for Duo, Trio, and Group. The distance must already exist in this race. Members sharing one bib are combined into one timing entry.
       </div>
 
       {preview && (
@@ -1410,10 +1860,8 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
   const [showBibScanner, setShowBibScanner] = useState(false);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [bridgeEndpointReady, setBridgeEndpointReady] = useState(false);
   const bibInputRef = useRef<HTMLInputElement>(null);
   const chipInputRef = useRef<HTMLInputElement>(null);
-  const processedBridgeEventsRef = useRef(new Set<string>());
 
   const foundRunner = useMemo(
     () => runnerProfiles.find((r) => normalizeScanValue(r.bibNumber) === normalizeScanValue(bibInput)),
@@ -1423,56 +1871,6 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
   useEffect(() => {
     if (foundRunner) chipInputRef.current?.focus();
   }, [foundRunner]);
-
-  // The Windows bridge can also be used at kit collection.  Deliberately wait
-  // for an operator to choose a runner first, then place the next EPC into the
-  // Chip ID box for review.  It never auto-assigns a chip: the operator still
-  // has to press Assign Chip, preventing a nearby tag from being linked to the
-  // wrong bib.
-  useEffect(() => {
-    if (!foundRunner) {
-      setBridgeEndpointReady(false);
-      return;
-    }
-
-    let active = true;
-    let polling = false;
-    let after = new Date().toISOString();
-
-    const pollBridge = async () => {
-      if (polling) return;
-      polling = true;
-      try {
-        const response = await fetch(`/api/rfid-events?after=${encodeURIComponent(after)}`, { cache: 'no-store' });
-        if (!response.ok) return;
-        const payload = await response.json() as { events?: RfidBridgeEvent[] };
-        if (!active) return;
-        setBridgeEndpointReady(true);
-
-        for (const event of payload.events || []) {
-          const cursor = event.receivedAt || event.timestamp;
-          if (cursor && Date.parse(cursor) >= Date.parse(after)) after = cursor;
-          if (processedBridgeEventsRef.current.has(event.id)) continue;
-          processedBridgeEventsRef.current.add(event.id);
-          const chipId = normalizeScanValue(event.epc);
-          setChipInput(chipId);
-          setFeedback({ type: 'success', text: `RFID chip ${chipId} detected on ANT${event.antenna}. Verify ${foundRunner.fullName}, then click Assign Chip.` });
-          chipInputRef.current?.focus();
-        }
-      } catch {
-        if (active) setBridgeEndpointReady(false);
-      } finally {
-        polling = false;
-      }
-    };
-
-    void pollBridge();
-    const interval = window.setInterval(() => { void pollBridge(); }, 450);
-    return () => {
-      active = false;
-      window.clearInterval(interval);
-    };
-  }, [foundRunner?.uid]);
 
   const selectRunner = (r: RunnerProfile) => {
     setFeedback(null);
@@ -1599,6 +1997,30 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
     }
   };
 
+  const handleConfirmManualPayment = async () => {
+    if (!foundRunner || foundRunner.paymentStatus !== 'pending' || foundRunner.paymentMethod !== 'manual') return;
+    const amount = Number(foundRunner.paymentAmount || 0);
+    const reference = foundRunner.paymentReference || 'No reference supplied';
+    if (!window.confirm(`Mark manual payment received for ${foundRunner.fullName} (bib #${foundRunner.bibNumber})?\n\nAmount: ₱${amount.toFixed(2)}\nReference: ${reference}\n\nOnly continue after you have verified this transaction in your Cash, GCash, or bank dashboard.`)) return;
+
+    setSaving(true);
+    setFeedback(null);
+    try {
+      const paidAt = new Date().toISOString();
+      await updateDoc(doc(db, 'runners', `${foundRunner.uid}_${race.id}`), {
+        paymentStatus: 'paid',
+        paymentMethod: 'manual',
+        paymentId: `manual_${race.id}_${foundRunner.uid}`.slice(0, 120),
+        paymentPaidAt: paidAt,
+      });
+      setFeedback({ type: 'success', text: `Manual payment confirmed for ${foundRunner.fullName} • ₱${amount.toFixed(2)}.` });
+    } catch (err: any) {
+      setFeedback({ type: 'error', text: err.message || 'Could not confirm manual payment.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleBibUpdate = async () => {
     if (!foundRunner) return;
     const newBib = normalizeScanValue(nextBib);
@@ -1684,7 +2106,7 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
             <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2">
               <Cpu className="w-4 h-4 text-red-500" /> Race Kit Assignment
             </h3>
-            <p className="text-xs text-[var(--text-secondary)] mt-1">Select the race bib, scan its timing chip, then verify the runner before handing out the kit.</p>
+            <p className="text-xs text-[var(--text-secondary)] mt-1">Select the race bib first, then use the keyboard/USB scanner to capture one chip. Verify the code before assigning it.</p>
           </div>
           <span className="text-[10px] font-mono font-bold text-[var(--text-secondary)] shrink-0">{kitClaimedCount} kits claimed &bull; {assignedCount} chips assigned</span>
         </div>
@@ -1717,6 +2139,12 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-[var(--text-primary)] truncate">{foundRunner.fullName}</p>
                   <p className="text-[10px] text-[var(--text-secondary)]">{foundRunner.distance} &bull; #{foundRunner.bibNumber} &bull; Shirt {foundRunner.shirtSize || 'not selected'}</p>
+                  {foundRunner.paymentStatus === 'pending' && foundRunner.paymentMethod === 'manual' && (
+                    <p className="mt-1 text-[10px] font-bold text-amber-500">Manual payment pending • ₱{Number(foundRunner.paymentAmount || 0).toFixed(2)}{foundRunner.paymentReference ? ` • Ref: ${foundRunner.paymentReference}` : ''}</p>
+                  )}
+                  {foundRunner.paymentStatus === 'paid' && (
+                    <p className="mt-1 text-[10px] font-bold text-emerald-500">Payment confirmed{foundRunner.paymentMethod ? ` • ${foundRunner.paymentMethod}` : ''}</p>
+                  )}
                   {foundRunner.emergencyContactName && foundRunner.emergencyContactPhone && (
                     <p className="mt-1 text-[10px] text-amber-500">Emergency: {foundRunner.emergencyContactName} &bull; {foundRunner.emergencyContactPhone}</p>
                   )}
@@ -1738,23 +2166,25 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
           <div>
             <div className="flex items-center justify-between gap-3 mb-1.5">
               <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">Chip ID</label>
-              {foundRunner && (
-                <span className={`text-[9px] font-black uppercase tracking-widest flex items-center gap-1 ${bridgeEndpointReady ? 'text-emerald-500' : 'text-[var(--text-muted)]'}`}>
-                  <Radio className="w-3 h-3" /> {bridgeEndpointReady ? 'RFID Bridge Ready' : 'Checking RFID Bridge…'}
-                </span>
-              )}
+              <span className="text-[9px] font-black uppercase tracking-widest flex items-center gap-1 text-emerald-500"><Keyboard className="w-3 h-3" /> Keyboard scanner only</span>
             </div>
             <input
               ref={chipInputRef}
               type="text"
-              placeholder="SCAN RFID OR TYPE CHIP ID"
+              placeholder="SCAN CHIP WITH KEYBOARD READER"
               value={chipInput}
               onChange={(e) => setChipInput(e.target.value.toUpperCase())}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                if (chipInput.trim()) setFeedback({ type: 'success', text: 'Chip captured. Verify the runner and chip ID, then click Assign Chip.' });
+              }}
               autoComplete="off"
               autoCapitalize="characters"
               disabled={!foundRunner}
               className="w-full glass-inset px-4 py-3 text-sm font-bold font-mono tracking-wider text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50"
             />
+            <p className="text-[10px] text-[var(--text-muted)] mt-1.5">VF-787P bridge reads are disabled here to prevent a nearby chip from being assigned to the wrong runner.</p>
           </div>
 
           <button
@@ -1791,6 +2221,11 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
             {!editingBib && (
               <button type="button" onClick={handleKitClaim} disabled={saving} className={`glass-inset px-3 py-2.5 text-[10px] font-black uppercase tracking-wide disabled:opacity-50 transition ${foundRunner.kitClaimedAt ? 'text-emerald-500 hover:text-red-500' : 'text-[var(--text-secondary)] hover:text-emerald-500'}`}>
                 {foundRunner.kitClaimedAt ? 'Undo kit claimed' : 'Mark kit claimed'}
+              </button>
+            )}
+            {!editingBib && foundRunner.paymentStatus === 'pending' && foundRunner.paymentMethod === 'manual' && (
+              <button type="button" onClick={handleConfirmManualPayment} disabled={saving} className="glass-inset px-3 py-2.5 text-[10px] font-black uppercase tracking-wide text-amber-500 hover:text-emerald-500 disabled:opacity-50 transition">
+                Confirm manual payment
               </button>
             )}
             {!editingBib && (
@@ -1888,13 +2323,32 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
   const [settingDistance, setSettingDistance] = useState<string | null>(null);
   const [editingGunTimeDistance, setEditingGunTimeDistance] = useState<string | null>(null);
   const [gunTimeInput, setGunTimeInput] = useState('');
+  const [pendingGunStartDistance, setPendingGunStartDistance] = useState<string | null>(null);
+  const now = useNow(1000);
 
   const startedBibs = useMemo(() => {
     if (!startCheckpointId) return new Set<string>();
     return new Set(chipReads.filter((r) => r.checkpointId === startCheckpointId).map((r) => r.bibNumber));
   }, [chipReads, startCheckpointId]);
 
-  const distanceGroups = useMemo(() => groupRunnersByDistance(runnerProfiles), [runnerProfiles]);
+  // Free Slots must leave with their matching entry-category wave.  Grouping
+  // by the timing wave (rather than display division) prevents a separate
+  // Free Slots gun-start button and makes all runners share one official time.
+  const distanceGroups = useMemo(() => {
+    const groups = new Map<string, RunnerProfile[]>();
+    runnerProfiles.forEach((runner) => {
+      const wave = runnerWaveLabel(runner);
+      const runners = groups.get(wave) || [];
+      runners.push(runner);
+      groups.set(wave, runners);
+    });
+    return Array.from(groups.entries())
+      .map(([distance, runners]) => ({
+        distance,
+        runners: runners.sort((a, b) => a.bibNumber.localeCompare(b.bibNumber)),
+      }))
+      .sort((a, b) => a.distance.localeCompare(b.distance));
+  }, [runnerProfiles]);
   const startedCount = runnerProfiles.filter((r) => startedBibs.has(r.bibNumber)).length;
 
   const handleStartWave = async (distance: string) => {
@@ -1902,7 +2356,6 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
       alert('This race is already finished. Reopen timing from Record Splits before starting another wave.');
       return;
     }
-    if (!window.confirm(`Fire the gun for ${distance} now? This starts the official ${distance} race clock, opens Record Splits, and arms Start RFID.`)) return;
     setSettingDistance(distance);
     try {
       const raceRef = doc(db, 'races', race.id);
@@ -1911,6 +2364,9 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
         const currentSnapshot = await tx.get(raceRef);
         const currentRace = currentSnapshot.data() as Race | undefined;
         const waveStartTimes = { ...(currentRace?.waveStartTimes || {}), [distance]: startedAt };
+        // Clean up a stale Free Slots clock from an older release. Free Slots
+        // now inherit this exact normal division clock.
+        delete waveStartTimes[`${distance} Free Slots`];
         // Keep gunStartTime as a first-wave fallback for old screens/races.
         tx.update(raceRef, {
           waveStartTimes,
@@ -1935,6 +2391,7 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
         const currentRace = currentSnapshot.data() as Race | undefined;
         const waveStartTimes = { ...(currentRace?.waveStartTimes || {}) };
         delete waveStartTimes[distance];
+        delete waveStartTimes[`${distance} Free Slots`];
         tx.update(raceRef, {
           waveStartTimes,
           // A blank map means no active wave clock. Otherwise the map is the
@@ -1954,6 +2411,13 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
     setEditingGunTimeDistance(distance);
   };
 
+  const confirmGunStart = () => {
+    if (!pendingGunStartDistance) return;
+    const distance = pendingGunStartDistance;
+    setPendingGunStartDistance(null);
+    void handleStartWave(distance);
+  };
+
   const handleSaveGunTime = async (distance: string) => {
     const parsedTime = new Date(gunTimeInput);
     if (!gunTimeInput || Number.isNaN(parsedTime.getTime())) {
@@ -1970,6 +2434,7 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
         const currentSnapshot = await tx.get(raceRef);
         const currentRace = currentSnapshot.data() as Race | undefined;
         const waveStartTimes = { ...(currentRace?.waveStartTimes || {}), [distance]: startedAt };
+        delete waveStartTimes[`${distance} Free Slots`];
         tx.update(raceRef, {
           waveStartTimes,
           // Retain a legacy shared gun time for older race screens. New
@@ -1992,7 +2457,7 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
         <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2">
           <PlayCircle className="w-4 h-4 text-red-500" /> Distance Wave Starts
         </h3>
-        <p className="text-xs text-[var(--text-secondary)] mt-1">Fire each distance when it leaves the line. Cutoffs use that distance's own gun time.</p>
+        <p className="text-xs text-[var(--text-secondary)] mt-1">Fire each distance/category when it leaves the line. Free Slots inherit their matching wave's gun time; cutoffs use that wave's official time.</p>
         {distanceGroups.length === 0 && <p className="text-xs text-[var(--text-secondary)] mt-4">Wave controls appear once runners are registered.</p>}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
           {distanceGroups.map((group) => {
@@ -2049,7 +2514,7 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
                   </button>
                 ) : (
                   <button
-                    onClick={() => handleStartWave(group.distance)}
+                    onClick={() => setPendingGunStartDistance(group.distance)}
                     disabled={!!settingDistance}
                     className="w-full text-xs font-black uppercase tracking-widest px-4 py-2.5 rounded-[var(--radius-control)] text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 flex items-center justify-center gap-2 transition disabled:opacity-60"
                   >
@@ -2061,6 +2526,63 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
           })}
         </div>
       </div>
+
+      {pendingGunStartDistance && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="gun-start-confirmation-title">
+          <div className="w-full max-w-lg overflow-hidden rounded-[24px] border border-red-500/40 bg-[var(--bg-elevated)] shadow-2xl shadow-red-950/40">
+            <div className="border-b border-red-500/25 bg-gradient-to-r from-red-600/25 to-orange-500/10 px-5 py-4 sm:px-6">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow-lg shadow-red-900/50">
+                    <PlayCircle className="h-6 w-6" />
+                  </span>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-300">Official race action</p>
+                    <h3 id="gun-start-confirmation-title" className="mt-0.5 text-xl font-black font-display text-white">Fire {pendingGunStartDistance} gun?</h3>
+                  </div>
+                </div>
+                <button type="button" onClick={() => setPendingGunStartDistance(null)} className="rounded-xl p-2 text-[var(--text-secondary)] transition hover:bg-white/10 hover:text-white" aria-label="Cancel gun start">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-4 px-5 py-5 sm:px-6">
+              <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                The official <strong className="text-[var(--text-primary)]">{pendingGunStartDistance}</strong> gun clock will start the instant you confirm. Use this only when the runners are leaving the start line.
+              </p>
+
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="rounded-[14px] border border-white/10 bg-black/20 px-3 py-3">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Official start time</p>
+                  <p className="mt-1 font-mono text-lg font-black tabular-nums text-emerald-400">
+                    {new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </p>
+                  <p className="text-[10px] text-[var(--text-secondary)]">Your timing device clock</p>
+                </div>
+                <div className="rounded-[14px] border border-white/10 bg-black/20 px-3 py-3">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">After confirmation</p>
+                  <p className="mt-1 text-xs font-bold text-[var(--text-primary)]">Start RFID opens automatically</p>
+                  <p className="mt-1 text-[10px] text-[var(--text-secondary)]">Record Splits switches to Start</p>
+                </div>
+              </div>
+
+              <div className="rounded-[14px] border border-amber-500/25 bg-amber-500/10 px-3 py-2.5 text-xs leading-relaxed text-amber-100">
+                <strong>Important:</strong> This gun time is the fallback for runners whose Start chip read is missed. You can correct it later, but firing it at the real start is best.
+              </div>
+            </div>
+
+            <div className="flex flex-col-reverse gap-2 border-t border-white/10 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
+              <button type="button" onClick={() => setPendingGunStartDistance(null)} disabled={!!settingDistance} className="rounded-[12px] border border-white/10 px-4 py-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-secondary)] transition hover:bg-white/10 hover:text-white disabled:opacity-50">
+                Cancel — not yet
+              </button>
+              <button type="button" onClick={confirmGunStart} disabled={!!settingDistance} className="rounded-[12px] bg-gradient-to-r from-red-600 to-red-700 px-5 py-2.5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-red-900/35 transition hover:from-red-500 hover:to-red-600 disabled:opacity-50">
+                {settingDistance ? 'Starting…' : `Fire ${pendingGunStartDistance} gun & arm RFID`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="glass-panel p-5">
         <div className="flex items-center justify-between mb-1">
@@ -2089,7 +2611,7 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
                         <div key={r.uid} className={`flex items-center justify-between px-3 py-2 text-xs gap-2 rounded-[14px] ${started ? 'bg-emerald-500/10 border border-emerald-500/25' : 'glass-inset'}`}>
                           {started ? <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" /> : <Circle className="w-4 h-4 text-[var(--text-muted)] shrink-0" />}
                           <span className="font-mono font-bold text-[var(--text-primary)] w-16 shrink-0">#{r.bibNumber}</span>
-                          <span className="flex-1 truncate text-[var(--text-secondary)]">{r.fullName}</span>
+                          <span className="flex-1 truncate text-[var(--text-secondary)]">{runnerTimingName(r)}</span>
                           <span className={`text-[10px] font-black uppercase tracking-wide shrink-0 ${started ? 'text-emerald-500' : 'text-[var(--text-muted)]'}`}>
                             {started ? 'Started' : 'Pending'}
                           </span>
@@ -2152,7 +2674,7 @@ function RunnerRosterPanel({ race, runnerProfiles }: RunnerRosterPanelProps) {
                   <div key={r.uid} className="flex items-center justify-between glass-inset px-3 py-2 text-xs gap-2">
                     <span className="font-mono font-bold text-[var(--text-primary)] w-16 shrink-0">#{r.bibNumber}</span>
                     <span className="flex-1 truncate text-[var(--text-primary)] font-semibold">{r.fullName}</span>
-                    <span className="text-[var(--text-secondary)] shrink-0">{r.gender === 'male' ? 'M' : 'F'} &bull; {r.age}</span>
+                    <span className="text-[var(--text-secondary)] shrink-0">{r.ageNotProvided ? 'Age —' : `${r.gender === 'male' ? 'M' : 'F'} • ${r.age}`}</span>
                   </div>
                 ))}
               </div>

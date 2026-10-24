@@ -20,7 +20,7 @@ export function groupRunnersForReport(runners: RunnerProfile[], ageCategories: A
 
   for (const runner of runners) {
     const isSolo = runnerEntryCategory(runner) === 'solo';
-    const category = isSolo ? findAgeCategory(ageCategories, runner.gender, runner.age) : undefined;
+    const category = isSolo && !runner.isFreeSlot ? findAgeCategory(ageCategories, runner.gender, runner.age) : undefined;
     const categoryLabel = isSolo ? (category?.label || 'Unclassified') : 'Team division (no age category)';
     const key = `${runnerDivisionLabel(runner)}|||${categoryLabel}`;
     const list = groups.get(key) ?? [];
@@ -136,7 +136,7 @@ export function generateRunnerRosterPdf(race: Race, runners: RunnerProfile[]): b
     autoTable(pdf, {
       startY: cursorY,
       head: [['#', 'Bib', 'Runner Name', 'Gender', 'Age', 'Shirt']],
-      body: group.runners.map((r, idx) => [idx + 1, r.bibNumber, r.fullName, r.gender.toUpperCase(), r.age, r.shirtSize || 'Not selected']),
+      body: group.runners.map((r, idx) => [idx + 1, r.bibNumber, r.fullName, r.ageNotProvided ? '—' : r.gender.toUpperCase(), r.ageNotProvided ? '—' : r.age, r.shirtSize || 'Not selected']),
       styles: { fontSize: 8, cellPadding: 2.5, textColor: [40, 40, 40] },
       headStyles: { fillColor: [30, 30, 35], textColor: [255, 255, 255], fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [248, 248, 250] },

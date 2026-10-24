@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>RacePulseTimingStation</RootNamespace>
+    <AssemblyName>RacePulseTimingStation</AssemblyName>
+  </PropertyGroup>
+
+  <!-- The same tested reader service used by RacePulseRfidBridge.exe. -->
+  <ItemGroup>
+    <Compile Include="..\rfid-bridge\BridgeModels.cs" Link="BridgeModels.cs" />
+    <Compile Include="..\rfid-bridge\RfidBridgeService.cs" Link="RfidBridgeService.cs" />
+  </ItemGroup>
+
+  <!-- Supplied by the VF-787P SDK. Keep these local; they are gitignored. -->
+  <ItemGroup>
+    <Reference Include="Vup">
+      <HintPath>..\rfid-bridge\vendor\Vup.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\rfid-bridge\vendor\rfid.dll" Link="rfid.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\rfid-bridge\vendor\rfid_core.dll" Link="rfid_core.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="timing-station.config.example.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

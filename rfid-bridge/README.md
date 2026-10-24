@@ -2,6 +2,8 @@
 
 This is a **Windows-only, read-only** bridge for the VANCH/Vup VF-787P. It receives EPC sightings from the reader and sends them to the local RacePulse Timing Console. It never writes, formats, locks, or changes an RFID tag.
 
+For the one-click desktop installer (reader setup, antenna diagnostics, local RacePulse startup, and bridge controls in one app), use [RacePulse Timing Station](../rfid-station/README.md). This console bridge remains available for technical troubleshooting.
+
 ## Before building
 
 1. Install Visual Studio 2022 (or Build Tools) with the **.NET Framework 4.8 Developer Pack**.

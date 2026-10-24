@@ -43,6 +43,31 @@ export interface UserProfile {
   medicalNotes?: string;
 }
 
+// Deliberately separate from UserProfile: this is the small, consent-based
+// profile card a runner may share only with accepted friends. It never carries
+// email, emergency details, medical notes, payment, or account role data.
+export interface FriendProfile {
+  uid: string;
+  username: string;
+  displayName: string;
+  nickname?: string;
+  photoURL?: string;
+  updatedAt: string;
+}
+
+export interface FriendActivityRace {
+  raceId: string;
+  raceName: string;
+  date: string;
+  distance: string;
+}
+
+export interface FriendActivity {
+  uid: string;
+  recentRaces: FriendActivityRace[];
+  updatedAt: string;
+}
+
 export type CheckpointType = 'checkin' | 'start' | 'intermediate' | 'finish';
 
 export interface Checkpoint {
@@ -75,9 +100,17 @@ export interface RaceDistance {
 
 // A team category shares one bib/chip and produces one official result. Old
 // races without this setting remain Solo-only for full backward compatibility.
-export type RaceEntryCategory = 'solo' | 'duo' | 'trio';
+export type RaceEntryCategory = 'solo' | 'duo' | 'trio' | 'group';
 
-export type RaceBibFont = 'display' | 'sans' | 'mono' | 'condensed';
+export type RaceBibFont = 'display' | 'sans' | 'mono' | 'condensed' | 'custom';
+
+export interface RaceBibCustomFont {
+  // Stable generated family name used by the browser canvas and bib preview.
+  family: string;
+  // Firebase Storage download URL. The font asset is not stored in Firestore.
+  url: string;
+  name: string;
+}
 
 export interface RaceBibLayout {
   bibNumberX: number;
@@ -90,8 +123,22 @@ export interface RaceBibLayout {
   runnerNameSize?: number;
   bibNumberColor?: string;
   runnerNameColor?: string;
+  // Outline widths use container-width units (cqw), matching the text sizes.
+  // A value of 0 keeps the legacy no-outline appearance.
+  bibNumberStrokeColor?: string;
+  bibNumberStrokeWidth?: number;
+  runnerNameStrokeColor?: string;
+  runnerNameStrokeWidth?: number;
   bibNumberFont?: RaceBibFont;
   runnerNameFont?: RaceBibFont;
+}
+
+// A race can use a different blank bib artwork for each distance. Each
+// distance template inherits the race-wide text placement unless its own
+// layout is supplied later.
+export interface RaceBibTemplate {
+  image: string;
+  layout?: RaceBibLayout;
 }
 
 export interface Race {
@@ -104,10 +151,25 @@ export interface Race {
   entryCategories?: RaceEntryCategory[];
   inclusions: string[];
   createdBy: string;
+  // Approved organizer account IDs that can jointly operate this event. The
+  // creator remains the primary owner and cannot be changed by collaborators.
+  organizerIds?: string[];
   createdAt: string;
   // Legacy races without this field remain open until their race date.
   registrationOpen?: boolean;
   registrationCloseDate?: string; // YYYY-MM-DD; defaults to the race date
+  // Paid registrations use a hosted PayMongo Checkout session. Keeping this
+  // opt-in per race means existing/free events retain the current fast flow.
+  onlinePaymentEnabled?: boolean;
+  paymentFeeMode?: 'absorbed' | 'passed_on';
+  // Temporary cash / GCash / bank-transfer flow. The organizer verifies a
+  // pending registration manually before race day; no payment proof is stored
+  // in the public race document.
+  manualPaymentEnabled?: boolean;
+  manualPaymentInstructions?: string;
+  // Optional organizer-uploaded GCash / QRPh code displayed only when the
+  // race uses the temporary manual-payment flow.
+  manualPaymentQrImage?: string;
   gunStartTime?: string; // RFC3339, set when the race-in-charge fires the official start
   // RFC3339 start time per distance label (e.g. "10K", "5K"). Falls back to
   // gunStartTime for legacy races and races with one shared start.
@@ -128,11 +190,18 @@ export interface Race {
   // overlaid on this template using the organizer-configured positions.
   raceBibTemplateImage?: string;
   raceBibLayout?: RaceBibLayout;
+  raceBibCustomFont?: RaceBibCustomFont;
+  // Keyed by the distance label stored on registrations (for example, "5K").
+  // Falls back to the original single raceBibTemplateImage for old races.
+  raceBibTemplatesByDistance?: Record<string, RaceBibTemplate>;
 }
 
 export interface PublicLeaderboardEntry {
   bibNumber: string;
   fullName: string;
+  // A late/on-site entry can be created before the runner details are known.
+  // Public and timing views deliberately identify it by bib only.
+  isFreeSlot?: boolean;
   distance: string;
   // `rank` stays for backwards compatibility with already-published result
   // documents. It is the official overall rank for this race division.
@@ -183,10 +252,27 @@ export interface RunnerProfile {
   teamMembers?: string[];
   gender: Gender;
   age: number;
+  // Group roster sheets may intentionally omit individual ages. Firestore
+  // still stores a schema-safe numeric fallback, while this flag ensures it
+  // is never presented as a real age or used for a division.
+  ageNotProvided?: boolean;
+  // A pre-created, anonymous race-day place. It uses a normal unique bib but
+  // must never be placed in a gender/age category.
+  isFreeSlot?: boolean;
   // Stored on the race registration (not the public leaderboard) so the race
   // organizer has the correct emergency contact for this specific event.
   emergencyContactName?: string;
   emergencyContactPhone?: string;
+  // Written only by the trusted payment webhook after PayMongo confirms a
+  // successful charge. Browser code must never mark its own registration paid.
+  paymentStatus?: 'pending' | 'paid';
+  paymentId?: string;
+  paymentMethod?: string;
+  paymentAmount?: number;
+  // Required for a manual GCash/bank/cash-transfer reservation. The organizer
+  // checks this against the actual payment dashboard before confirming paid.
+  paymentReference?: string;
+  paymentPaidAt?: string;
   createdAt: string;
 }
 
