@@ -21,6 +21,7 @@ import RunnerReminderCenter from './RunnerReminderCenter';
 import { createPayMongoCheckout, getPaymentStatus, PaymentStatusResponse } from '../lib/payments';
 import DeleteAccountModal from './DeleteAccountModal';
 import QrScannerModal from './QrScannerModal';
+import PublicRaceResults from './PublicRaceResults';
 
 interface RunnerDashboardProps {
   profile: UserProfile;
@@ -28,7 +29,7 @@ interface RunnerDashboardProps {
   onInitialRaceHandled?: () => void;
 }
 
-type RunnerTab = 'events' | 'myraces' | 'friends' | 'engraving';
+type RunnerTab = 'events' | 'allraces' | 'myraces' | 'friends' | 'engraving';
 
 const standardShirtSizes = ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL', '6XL'];
 const usernamePattern = /^[a-z0-9][a-z0-9_.-]{2,23}$/;
@@ -369,6 +370,13 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
         </>
       )}
 
+      {runnerProfiles !== undefined && tab === 'allraces' && (
+        <AllRacesView onRegister={(raceId) => {
+          setScannedRaceId(raceId);
+          setTab('events');
+        }} />
+      )}
+
       {runnerProfiles !== undefined && tab === 'friends' && can('personal.friends') && (
         <FriendsView profile={profile} onOpenRace={(raceId) => { setScannedRaceId(raceId); setTab('events'); }} />
       )}
@@ -387,6 +395,7 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
         <BottomNav
           items={[
             { key: 'events', icon: <Flag className="w-4 h-4" />, label: 'Events', active: tab === 'events', onClick: () => setTab('events') },
+            { key: 'allraces', icon: <Trophy className="w-4 h-4" />, label: 'All Races', active: tab === 'allraces', onClick: () => setTab('allraces') },
             { key: 'myraces', icon: <ClipboardList className="w-4 h-4" />, label: 'My Races', active: tab === 'myraces', onClick: () => setTab('myraces') },
             { key: 'friends', icon: <Users2 className="w-4 h-4" />, label: 'Friends', active: tab === 'friends', onClick: () => setTab('friends') },
             { key: 'engraving', icon: <Award className="w-4 h-4" />, label: 'Engraving', active: tab === 'engraving', onClick: () => setTab('engraving') },
@@ -403,6 +412,66 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
           subtitle="OPEN A RACE REGISTRATION"
           instructions="Scan the RacePulse event QR from the organizer. We will open that specific race registration form for you."
         />
+      )}
+    </div>
+  );
+}
+
+// ========== ALL PUBLIC RACES ==========
+
+// This is deliberately separate from My Races: a runner can browse every
+// public event and its published standings without adding that event to their
+// personal registration list.
+function AllRacesView({ onRegister }: { onRegister: (raceId: string) => void }) {
+  const [races, setRaces] = useState<Race[]>([]);
+  const [selectedRaceId, setSelectedRaceId] = useState('');
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'races'), (snapshot) => {
+      const list: Race[] = [];
+      snapshot.forEach((docSnap) => list.push(docSnap.data() as Race));
+      list.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      setRaces(list);
+    }, (err) => console.warn('All races listener failed:', err.message));
+    return () => unsubscribe();
+  }, []);
+
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const activeRaces = races.filter((race) => !race.completedAt && race.date >= today);
+  const doneRaces = races.filter((race) => !!race.completedAt || race.date < today);
+  const selectedRace = races.find((race) => race.id === selectedRaceId);
+  const selectRace = (raceId: string) => {
+    setSelectedRaceId(raceId);
+    requestAnimationFrame(() => document.getElementById('runner-public-race-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
+
+  return (
+    <div className="space-y-8 pb-8">
+      <RaceList
+        races={activeRaces}
+        onSelectRace={selectRace}
+        selectedRaceId={selectedRaceId}
+        title="Active & Upcoming Races"
+        subtitle="Browse every published RacePulsePH event. Registration is optional."
+        actionLabel="View Race"
+        emptyTitle="No active or upcoming races"
+        emptyDescription="Check back soon for the next event."
+      />
+      <RaceList
+        races={doneRaces}
+        onSelectRace={selectRace}
+        selectedRaceId={selectedRaceId}
+        title="Done & Past Races"
+        subtitle="View official rankings, finish times, and digital certificates."
+        actionLabel="View Official Results"
+        emptyTitle="No completed races yet"
+        emptyDescription="Completed events will be archived here."
+      />
+      {selectedRace && (
+        <div id="runner-public-race-results" className="scroll-mt-6">
+          <PublicRaceResults race={selectedRace} onRegister={onRegister} />
+        </div>
       )}
     </div>
   );
@@ -447,8 +516,15 @@ function MyRacesView({ runnerProfiles, onBrowseEvents }: MyRacesViewProps) {
 
   const raceById = new Map(races.map((r) => [r.id, r]));
   const todayStr = new Date().toISOString().slice(0, 10);
-  const upcoming = runnerProfiles.filter((rp) => (raceById.get(rp.raceId)?.date || '9999') >= todayStr);
-  const past = runnerProfiles.filter((rp) => (raceById.get(rp.raceId)?.date || '9999') < todayStr);
+  // The organizer can close a race before its scheduled date (or correct a
+  // date later). Treat completedAt as the source of truth so an official Done
+  // Race always remains visible in the runner's own race archive.
+  const isDoneRace = (profile: RunnerProfile) => {
+    const race = raceById.get(profile.raceId);
+    return !!race?.completedAt || (race?.date || '9999') < todayStr;
+  };
+  const upcoming = runnerProfiles.filter((rp) => !isDoneRace(rp));
+  const past = runnerProfiles.filter(isDoneRace);
 
   return (
     <div className="space-y-6">
@@ -469,7 +545,7 @@ function MyRacesView({ runnerProfiles, onBrowseEvents }: MyRacesViewProps) {
       ) : (
         <>
           <RaceProfileSection title="Upcoming Races" profiles={upcoming} raceById={raceById} onSelect={setViewingProfile} emptyText="No upcoming races." />
-          <RaceProfileSection title="Past Races" profiles={past} raceById={raceById} onSelect={setViewingProfile} emptyText="No past races yet." />
+          <RaceProfileSection title="Done & Past Races" profiles={past} raceById={raceById} onSelect={setViewingProfile} emptyText="No done or past races yet." />
         </>
       )}
     </div>
