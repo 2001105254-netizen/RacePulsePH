@@ -209,7 +209,8 @@ export interface PublicLeaderboardEntry {
   overallRank?: number;
   categoryRank?: number;
   categoryLabel?: string;
-  timingMethod?: 'chip' | 'gun';
+  timingMethod?: 'chip' | 'gun' | 'transition';
+  sequenceStartTime?: string;
   // Both elapsed views are published for transparent certificates. `finishTime`
   // remains the official result (chip time when a valid chip start exists;
   // otherwise the documented gun-time fallback).
@@ -248,6 +249,9 @@ export interface RunnerProfile {
   shirtSize?: string;
   distance: string;
   entryCategory?: RaceEntryCategory;
+  // An organizer links separate bibs for consecutive entries. This entry's
+  // clock starts at the previous bib's validated finish, not its wave start.
+  startsAfterBib?: string;
   teamName?: string;
   teamMembers?: string[];
   gender: Gender;
@@ -316,5 +320,6 @@ export interface RunnerResult {
   categoryLabel?: string;
   // A chip start is preferred. Gun is a deliberate per-distance fallback when
   // a crowded start mat misses an otherwise valid finisher.
-  timingMethod?: 'chip' | 'gun';
+  timingMethod?: 'chip' | 'gun' | 'transition';
+  sequenceStartTime?: string;
 }

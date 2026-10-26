@@ -74,14 +74,19 @@ export function computeResults(
     }
   }
 
-  const results: RunnerResult[] = [];
+  const profilesByBib = new Map(runnerProfiles.map((runner) => [runner.bibNumber, runner]));
+  const computed = new Map<string, RunnerResult>();
+  const computing = new Set<string>();
   // A timing read without a current roster record is useful audit data, but
   // it can never be an official result. Iterate the registered roster rather
   // than raw reads so deleted/test/typo bibs cannot become an “Unknown” rank.
   // If the organizer later imports the matching runner with the same bib,
   // their existing reads are automatically picked up on the next calculation.
-  for (const runnerProfile of runnerProfiles) {
+  const computeEntry = (runnerProfile: RunnerProfile): RunnerResult | undefined => {
     const bibNumber = runnerProfile.bibNumber;
+    if (computed.has(bibNumber)) return computed.get(bibNumber);
+    if (computing.has(bibNumber)) return undefined;
+    computing.add(bibNumber);
     const checkpointMap = readsByBib.get(bibNumber) || new Map<string, string>();
     const splits: RunnerSplit[] = orderedCheckpoints
       .filter((cp) => checkpointMap.has(cp.id))
@@ -93,6 +98,14 @@ export function computeResults(
     let chipSeconds: number | undefined;
     let gunTime: string | undefined;
     let gunSeconds: number | undefined;
+    let sequenceStartTime: string | undefined;
+    if (runnerProfile.startsAfterBib) {
+      const previous = profilesByBib.get(runnerProfile.startsAfterBib);
+      const previousResult = previous ? computeEntry(previous) : undefined;
+      if (previousResult?.finishTime && finishCheckpoint) {
+        sequenceStartTime = previousResult.splits.find((split) => split.checkpointId === finishCheckpoint.id)?.timestamp;
+      }
+    }
 
     if (startCheckpoint && finishCheckpoint && startCheckpoint.id !== finishCheckpoint.id && checkpointMap.has(finishCheckpoint.id)) {
       const chipStart = checkpointMap.get(startCheckpoint.id);
@@ -113,11 +126,13 @@ export function computeResults(
       gunSeconds = elapsedFrom(gunStart);
       chipTime = chipSeconds === undefined ? undefined : formatElapsed(chipSeconds);
       gunTime = gunSeconds === undefined ? undefined : formatElapsed(gunSeconds);
-      finishSeconds = chipSeconds ?? gunSeconds;
+      // A linked entry waits for its predecessor's official finish. Never
+      // substitute the division gun or a later chip scan for that handoff.
+      finishSeconds = runnerProfile.startsAfterBib ? elapsedFrom(sequenceStartTime) : chipSeconds ?? gunSeconds;
       finishTime = finishSeconds === undefined ? undefined : formatElapsed(finishSeconds);
     }
 
-    results.push({
+    const result: RunnerResult = {
       bibNumber,
       runnerProfile,
       splits,
@@ -125,9 +140,14 @@ export function computeResults(
       finishSeconds,
       ...(chipTime ? { chipTime, chipSeconds } : {}),
       ...(gunTime ? { gunTime, gunSeconds } : {}),
-      ...(finishTime ? { timingMethod: chipTime ? 'chip' as const : 'gun' as const } : {}),
-    });
-  }
+      ...(sequenceStartTime ? { sequenceStartTime } : {}),
+      ...(finishTime ? { timingMethod: runnerProfile.startsAfterBib ? 'transition' as const : chipTime ? 'chip' as const : 'gun' as const } : {}),
+    };
+    computing.delete(bibNumber);
+    computed.set(bibNumber, result);
+    return result;
+  };
+  const results = runnerProfiles.map(computeEntry).filter((result): result is RunnerResult => !!result);
 
   // Overall rank is within each distance + entry category. A 10K Duo team
   // must never compete in the same official list as a 10K Solo runner.

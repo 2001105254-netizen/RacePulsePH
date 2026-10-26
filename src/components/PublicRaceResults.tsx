@@ -20,6 +20,7 @@ function certificateResult(entry: PublicLeaderboardEntry): RunnerResult {
     categoryRank: entry.categoryRank,
     categoryLabel: entry.categoryLabel,
     timingMethod: entry.timingMethod,
+    sequenceStartTime: entry.sequenceStartTime,
     chipTime: entry.chipTime,
     gunTime: entry.gunTime,
     splits: [],

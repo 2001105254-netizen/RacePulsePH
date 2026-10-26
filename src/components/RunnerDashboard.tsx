@@ -1417,9 +1417,9 @@ function RunnerRacePass({ race, runnerProfile, result, orderedCheckpoints }: {
     ...(start ? [{
       id: 'start',
       label: 'Started',
-      detail: startSplit ? start.label : result?.timingMethod === 'gun' ? 'Official wave gun-time fallback' : start.label,
-      completed: !!startSplit || result?.timingMethod === 'gun',
-      timestamp: startSplit?.timestamp || (result?.timingMethod === 'gun' ? getWaveStartTime(race, runnerProfile.distance, runnerEntryCategory(runnerProfile)) : undefined),
+      detail: result?.sequenceStartTime ? 'Started at previous entry finish' : startSplit ? start.label : result?.timingMethod === 'gun' ? 'Official wave gun-time fallback' : start.label,
+      completed: !!startSplit || !!result?.sequenceStartTime || result?.timingMethod === 'gun',
+      timestamp: result?.sequenceStartTime || startSplit?.timestamp || (result?.timingMethod === 'gun' ? getWaveStartTime(race, runnerProfile.distance, runnerEntryCategory(runnerProfile)) : undefined),
     }] : []),
     ...(finish ? [{ id: 'finish', label: 'Finished', detail: finish.label, completed: !!finishSplit, timestamp: finishSplit?.timestamp }] : []),
     { id: 'result', label: 'Official result', detail: hasOfficialResult ? `Rank #${result!.rank} • ${result!.finishTime}` : 'Available after your finish is recorded', completed: hasOfficialResult, timestamp: hasOfficialResult ? finishSplit?.timestamp : undefined },
@@ -1599,6 +1599,10 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
     if (!localResult || !officialEntry || !resultsArePublic) return localResult;
     return {
       ...localResult,
+      finishTime: officialEntry.finishTime,
+      chipTime: officialEntry.chipTime,
+      gunTime: officialEntry.gunTime,
+      sequenceStartTime: officialEntry.sequenceStartTime,
       rank: officialEntry.overallRank ?? officialEntry.rank,
       overallRank: officialEntry.overallRank ?? officialEntry.rank,
       categoryRank: officialEntry.categoryRank,
@@ -1623,12 +1627,14 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
             {orderedCheckpoints.map((cp, index) => {
               const split = result?.splits.find((s) => s.checkpointId === cp.id);
               const phase = checkpointType(cp, index, orderedCheckpoints.length);
-              const waveStartTime = getWaveStartTime(race, runnerProfile.distance, runnerEntryCategory(runnerProfile));
+              const waveStartTime = runnerProfile.startsAfterBib ? result?.sequenceStartTime
+                : getWaveStartTime(race, runnerProfile.distance, runnerEntryCategory(runnerProfile));
               const cutoffDeadline = cp.cutoffMinutes && waveStartTime
                 ? new Date(new Date(waveStartTime).getTime() + cp.cutoffMinutes * 60_000)
                 : undefined;
               const afterCutoff = !!split && !!cutoffDeadline && new Date(split.timestamp).getTime() > cutoffDeadline.getTime();
               const usesGunFallback = phase === 'start' && !split && result?.timingMethod === 'gun' && !!waveStartTime;
+              const usesSequenceStart = phase === 'start' && !!result?.sequenceStartTime;
               return (
                 <div key={cp.id} className="flex items-center justify-between glass-inset px-4 py-3">
                   <span className="min-w-0">
@@ -1637,8 +1643,9 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
                       {phase === 'checkin' ? 'Check-In' : phase === 'start' ? 'Official Start' : phase === 'finish' ? 'Finish' : cutoffDeadline ? `Cutoff ${cutoffDeadline.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Split'}
                     </span>
                   </span>
-                  <span className={`font-mono text-sm font-black shrink-0 text-right ${afterCutoff ? 'text-amber-500' : split ? 'text-red-500' : usesGunFallback ? 'text-emerald-500' : 'text-[var(--text-muted)]'}`}>
-                    {split ? new Date(split.timestamp).toLocaleTimeString() : usesGunFallback ? `Gun ${new Date(waveStartTime!).toLocaleTimeString()}` : 'Pending'}
+                  <span className={`font-mono text-sm font-black shrink-0 text-right ${afterCutoff ? 'text-amber-500' : usesSequenceStart ? 'text-emerald-500' : split ? 'text-red-500' : usesGunFallback ? 'text-emerald-500' : 'text-[var(--text-muted)]'}`}>
+                    {usesSequenceStart ? new Date(result!.sequenceStartTime!).toLocaleTimeString() : split ? new Date(split.timestamp).toLocaleTimeString() : usesGunFallback ? `Gun ${new Date(waveStartTime!).toLocaleTimeString()}` : 'Pending'}
+                    {usesSequenceStart && <span className="block text-[9px] font-sans uppercase tracking-wide">Previous entry finish</span>}
                     {afterCutoff && <span className="block text-[9px] font-sans uppercase tracking-wide">After cutoff</span>}
                     {usesGunFallback && <span className="block text-[9px] font-sans uppercase tracking-wide">Official fallback</span>}
                   </span>

@@ -429,6 +429,7 @@ service cloud.firestore {
         && (!data.keys().hasAny(['emergencyContactName']) || (data.emergencyContactName is string && data.emergencyContactName.size() >= 1 && data.emergencyContactName.size() <= 100))
         && (!data.keys().hasAny(['emergencyContactPhone']) || (data.emergencyContactPhone is string && data.emergencyContactPhone.size() >= 4 && data.emergencyContactPhone.size() <= 30))
         && (!data.keys().hasAny(['chipId']) || data.chipId is string)
+        && (!data.keys().hasAny(['startsAfterBib']) || (data.startsAfterBib is string && data.startsAfterBib.size() >= 1 && data.startsAfterBib.size() <= 20 && data.startsAfterBib != data.bibNumber))
         && (!data.keys().hasAny(['kitClaimedAt']) || data.kitClaimedAt is string)
         && (!data.keys().hasAny(['shirtSize']) || (data.shirtSize is string && data.shirtSize.size() <= 20))
         && (!data.keys().hasAny(['entryCategory']) || (data.entryCategory is string && (data.entryCategory == 'solo' || data.entryCategory == 'duo' || data.entryCategory == 'trio' || data.entryCategory == 'group')))
@@ -450,6 +451,7 @@ service cloud.firestore {
         || managesRace(resource.data.raceId);
 
       allow create: if isValidRunnerProfile(request.resource.data)
+        && (!request.resource.data.keys().hasAny(['startsAfterBib']) || isStaff() || managesRace(request.resource.data.raceId))
         && hasValidRegistrationId(regId, request.resource.data)
         && (hasNoPaymentMetadata(request.resource.data) || createsManualPaymentReservation(request.resource.data))
         && (isStaff()
@@ -459,6 +461,7 @@ service cloud.firestore {
       // A runner cannot transfer a registration to another account/race. An
       // organizer can edit only a registration in their own race.
       allow update: if isValidRunnerProfile(request.resource.data)
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['startsAfterBib']) || isStaff() || managesRace(resource.data.raceId))
         && hasValidRegistrationId(regId, request.resource.data)
         && (
           // Staff may repair payment metadata; an event organizer may only

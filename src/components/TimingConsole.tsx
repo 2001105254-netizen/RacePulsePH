@@ -4,13 +4,16 @@ import * as XLSX from 'xlsx';
 import { db } from '../firebase';
 import { useDualSync } from '../lib/dualSync';
 import { checkpointType, computeResults, getCheckpointByType, getWaveStartTime } from '../lib/timing';
+import { groupRankingFolders } from '../lib/rankingFolders';
 import { useOfflineScanQueue } from '../lib/offlineScanQueue';
 import { Race, ChipRead, PublicLeaderboardEntry, PublicLiveResults, RaceEntryCategory, RunnerProfile, RunnerResult } from '../types';
 import { groupRunnersByDistance, generateRunnerRosterPdf } from '../lib/runnerReport';
 import { entryCategoryLabels, entryMemberCount, raceEntryCategories, runnerDivisionLabel, runnerEntryCategory, runnerWaveLabel } from '../lib/raceEntry';
-import { Radio, ScanLine, Trophy, Clock, Wifi, WifiOff, QrCode, RefreshCw, ArrowLeft, Cpu, Users2, FileDown, FileUp, Maximize2, X, ListChecks, CheckCircle2, Circle, PlayCircle, RotateCcw, Timer, Keyboard, Smartphone, Search, UserCheck, Undo2 } from 'lucide-react';
+import { Radio, ScanLine, Trophy, Clock, Wifi, WifiOff, QrCode, RefreshCw, ArrowLeft, Cpu, Users2, FileDown, FileUp, Maximize2, X, ListChecks, CheckCircle2, Circle, PlayCircle, RotateCcw, Timer, Keyboard, Smartphone, Search, UserCheck, Undo2, Folder, FolderOpen, ChevronRight } from 'lucide-react';
 import QrScannerModal from './QrScannerModal';
 import RaceList from './RaceList';
+import LiveRankingsScreen from './LiveRankingsScreen';
+import EntrySequencePanel from './EntrySequencePanel';
 
 // Ticks every second so any component reading it re-renders live - backs the
 // gun clock and the wall-clock readout without each caller managing its own timer.
@@ -303,7 +306,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
 
   const results = useMemo(
     () => computeResults(race.checkpoints, chipReads, runnerProfiles, race.ageCategories || [], race),
-    [race.ageCategories, race.checkpoints, chipReads, runnerProfiles]
+    [race.ageCategories, race.checkpoints, race.gunStartTime, race.waveStartTimes, chipReads, runnerProfiles]
   );
 
   const checkpointLabel = (id: string) => orderedCheckpoints.find((c) => c.id === id)?.label || id;
@@ -330,6 +333,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         ...(result.categoryRank ? { categoryRank: result.categoryRank } : {}),
         ...(result.categoryLabel ? { categoryLabel: result.categoryLabel } : {}),
         ...(result.timingMethod ? { timingMethod: result.timingMethod } : {}),
+        ...(result.sequenceStartTime ? { sequenceStartTime: result.sequenceStartTime } : {}),
         ...(result.chipTime ? { chipTime: result.chipTime } : {}),
         ...(result.gunTime ? { gunTime: result.gunTime } : {}),
         finishTime: result.finishTime!,
@@ -347,6 +351,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         ...(result.categoryRank ? { categoryRank: result.categoryRank } : {}),
         ...(result.categoryLabel ? { categoryLabel: result.categoryLabel } : {}),
         ...(result.timingMethod ? { timingMethod: result.timingMethod } : {}),
+        ...(result.sequenceStartTime ? { sequenceStartTime: result.sequenceStartTime } : {}),
         ...(result.chipTime ? { chipTime: result.chipTime } : {}),
         ...(result.gunTime ? { gunTime: result.gunTime } : {}),
         finishTime: result.finishTime!,
@@ -492,7 +497,18 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
     );
     // Each distance may leave at a different time. A legacy/shared gun time
     // remains the fallback so older races still work exactly as before.
-    const waveStartTime = getWaveStartTime(race, matchedRunner.distance, runnerEntryCategory(matchedRunner));
+    const entryResult = results.find((result) => result.bibNumber === matchedRunner.bibNumber);
+    if (matchedRunner.startsAfterBib && selectedCheckpointType !== 'checkin' && !entryResult?.sequenceStartTime) {
+      setFeedback({ type: 'warning', text: `Bib #${matchedRunner.bibNumber} must wait for bib #${matchedRunner.startsAfterBib} to finish its previous entry.` });
+      return false;
+    }
+    const waveStartTime = matchedRunner.startsAfterBib ? entryResult?.sequenceStartTime
+      : getWaveStartTime(race, matchedRunner.distance, runnerEntryCategory(matchedRunner));
+    if (matchedRunner.startsAfterBib && selectedCheckpointType !== 'checkin' && overrideTimestamp
+      && waveStartTime && Date.parse(overrideTimestamp) < Date.parse(waveStartTime)) {
+      setFeedback({ type: 'warning', text: 'This scan cannot precede the previous entry’s finish.' });
+      return false;
+    }
     const cutoffDeadline = selectedCheckpoint.cutoffMinutes && waveStartTime
       ? new Date(new Date(waveStartTime).getTime() + selectedCheckpoint.cutoffMinutes * 60_000)
       : undefined;
@@ -547,7 +563,9 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
       const skippedCheckInNote = selectedCheckpointType === 'start' && !runnerCheckedIn
         ? ' • no check-in (allowed)'
         : '';
-      const gunFallbackNote = selectedCheckpointType === 'finish'
+      const gunFallbackNote = selectedCheckpointType === 'finish' && matchedRunner.startsAfterBib
+        ? ` • timed from bib #${matchedRunner.startsAfterBib}'s finish`
+        : selectedCheckpointType === 'finish'
         && !chipReads.some((read) => read.bibNumber === bibNumber && read.checkpointId === startCheckpoint?.id)
         && waveStartTime
         ? ' • official gun-time fallback'
@@ -873,7 +891,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
           onCheckIn={checkInFromMobile}
         />
       )}
-      {mode === 'roster' && <RunnerRosterPanel race={race} runnerProfiles={runnerProfiles} />}
+      {mode === 'roster' && <div className="space-y-4"><EntrySequencePanel race={race} runners={runnerProfiles} chipReads={chipReads} /><RunnerRosterPanel race={race} runnerProfiles={runnerProfiles} /></div>}
       {mode === 'rankings' && <RaceRankingsPanel race={race} results={results} />}
       {mode === 'rollcall' && (
         <StartRollCallPanel
@@ -1956,6 +1974,10 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
 
   const handleDeleteRunner = async () => {
     if (!foundRunner) return;
+    if (foundRunner.startsAfterBib || runnerProfiles.some((runner) => runner.startsAfterBib === foundRunner.bibNumber)) {
+      setFeedback({ type: 'error', text: 'Unlink consecutive entries in the roster before removing this entry.' });
+      return;
+    }
     if (selectedHasReads) {
       setFeedback({ type: 'error', text: 'This runner cannot be deleted because timing reads already exist. Preserve the record or ask a Super Admin to correct the race data.' });
       return;
@@ -2030,6 +2052,10 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
     }
     if (newBib === foundRunner.bibNumber) {
       setEditingBib(false);
+      return;
+    }
+    if (foundRunner.startsAfterBib || runnerProfiles.some((runner) => runner.startsAfterBib === foundRunner.bibNumber)) {
+      setFeedback({ type: 'error', text: 'Unlink consecutive entries in the roster before changing this bib number.' });
       return;
     }
     if (selectedHasReads) {
@@ -2688,25 +2714,6 @@ function RunnerRosterPanel({ race, runnerProfiles }: RunnerRosterPanelProps) {
 
 // ========== LIVE RANKINGS / BIG-SCREEN DISPLAY ==========
 
-interface DistanceRanking {
-  distance: string;
-  results: RunnerResult[];
-}
-
-function groupResultsByDistance(results: RunnerResult[]): DistanceRanking[] {
-  const groups = new Map<string, RunnerResult[]>();
-  for (const r of results) {
-    if (r.rank === undefined) continue; // only finished runners are ranked
-    const distance = runnerDivisionLabel(r.runnerProfile);
-    const list = groups.get(distance) ?? [];
-    list.push(r);
-    groups.set(distance, list);
-  }
-  return Array.from(groups.entries())
-    .map(([distance, list]) => ({ distance, results: list.sort((a, b) => a.rank! - b.rank!) }))
-    .sort((a, b) => a.distance.localeCompare(b.distance));
-}
-
 interface RaceRankingsPanelProps {
   race: Race;
   results: RunnerResult[];
@@ -2714,11 +2721,17 @@ interface RaceRankingsPanelProps {
 
 function RaceRankingsPanel({ race, results }: RaceRankingsPanelProps) {
   const [presenting, setPresenting] = useState(false);
-  const distanceGroups = useMemo(() => groupResultsByDistance(results), [results]);
-  const totalFinishers = distanceGroups.reduce((sum, g) => sum + g.results.length, 0);
+  const [rankingSearch, setRankingSearch] = useState('');
+  const rankingFolders = useMemo(() => groupRankingFolders(results), [results]);
+  const visibleFolders = useMemo(() => groupRankingFolders(results, rankingSearch), [results, rankingSearch]);
+  const isSearching = rankingSearch.trim().length > 0;
+  const matchCount = visibleFolders.reduce((sum, folder) => sum + folder.finisherCount, 0);
+  const totalFinishers = rankingFolders.reduce((sum, folder) => sum + folder.finisherCount, 0);
+
+  useEffect(() => setRankingSearch(''), [race.id]);
 
   if (presenting) {
-    return <RaceRankingsPresentation race={race} distanceGroups={distanceGroups} onClose={() => setPresenting(false)} />;
+    return <LiveRankingsScreen race={race} results={results} onClose={() => setPresenting(false)} />;
   }
 
   return (
@@ -2738,127 +2751,61 @@ function RaceRankingsPanel({ race, results }: RaceRankingsPanelProps) {
         </button>
       </div>
 
-      {distanceGroups.length === 0 ? (
+      {rankingFolders.length === 0 ? (
         <p className="text-xs text-[var(--text-secondary)]">No finish times recorded yet. Rankings appear once runners cross both the start and finish checkpoints.</p>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {distanceGroups.map((group) => (
-            <div key={group.distance} className="glass-inset p-4">
-              <h4 className="text-[10px] font-black uppercase tracking-widest text-red-500 mb-3">{group.distance} &bull; {group.results.length} finished</h4>
-              <div className="space-y-1.5 max-h-80 overflow-y-auto">
-                {group.results.map((r) => (
-                  <div key={r.bibNumber} className="flex items-center justify-between px-3 py-2 rounded-[14px] bg-[var(--surface-inset)]/40 text-xs gap-2">
-                    <span className={`font-mono font-black w-9 shrink-0 ${r.rank === 1 ? 'text-amber-500' : r.rank === 2 ? 'text-slate-400' : r.rank === 3 ? 'text-orange-600' : 'text-red-500'}`}>#{r.rank}</span>
-                    <span className="flex-1 truncate">
-                      <span className="font-bold text-[var(--text-primary)]">{r.runnerProfile?.fullName || `Bib ${r.bibNumber}`}</span>
-                      <span className="text-[var(--text-muted)]"> &bull; #{r.bibNumber}</span>
-                    </span>
-                    <span className="font-mono font-bold text-[var(--text-primary)] shrink-0">{r.finishTime}</span>
-                  </div>
+        <div className="space-y-3">
+          <div className="relative">
+            <label htmlFor="ranking-search" className="sr-only">Search rankings by name or bib number</label>
+            <Search aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 w-4 h-4 -translate-y-1/2 text-[var(--text-muted)]" />
+            <input id="ranking-search" type="search" value={rankingSearch} onChange={(event) => setRankingSearch(event.target.value)} placeholder="Search name or bib number" className="w-full glass-inset py-3 pl-10 pr-12 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 [&::-webkit-search-cancel-button]:appearance-none" />
+            {rankingSearch && <button type="button" onClick={() => setRankingSearch('')} aria-label="Clear ranking search" className="absolute right-1 top-1/2 -translate-y-1/2 p-3 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"><X aria-hidden="true" className="w-4 h-4" /></button>}
+          </div>
+          <p role="status" className="text-xs text-[var(--text-secondary)]">{isSearching ? `${matchCount} matching finisher${matchCount === 1 ? '' : 's'}. Official ranks are shown.` : 'Open a distance folder to browse entry divisions and age-category rankings.'}</p>
+          {isSearching && visibleFolders.length === 0 && <p className="glass-inset p-5 text-sm text-[var(--text-secondary)]">No rankings match “{rankingSearch.trim()}”. Try another name or bib number.</p>}
+          {visibleFolders.map((folder) => (
+            <details key={`${isSearching ? rankingSearch : 'browse'}-${folder.distance}`} open={isSearching || undefined} className="group/distance glass-inset overflow-hidden">
+              <summary className="flex cursor-pointer list-none items-center gap-3 p-4 [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-500">
+                <Folder aria-hidden="true" className="w-6 h-6 shrink-0 text-red-500 group-open/distance:hidden" />
+                <FolderOpen aria-hidden="true" className="hidden w-6 h-6 shrink-0 text-red-500 group-open/distance:block" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-black text-[var(--text-primary)]">{folder.distance}</span>
+                  <span className="block mt-1 text-xs text-[var(--text-secondary)]">{folder.subcategories.length} subcategor{folder.subcategories.length === 1 ? 'y' : 'ies'} · {folder.finisherCount} {isSearching ? 'matching' : 'finished'}</span>
+                </span>
+                <ChevronRight aria-hidden="true" className="w-4 h-4 shrink-0 text-[var(--text-muted)] group-open/distance:rotate-90" />
+              </summary>
+              <div className="border-t border-[var(--border-default)] px-3 pb-3 sm:px-4">
+                {folder.subcategories.map((category) => (
+                  <details key={category.id} open={isSearching || undefined} className="group/category border-b last:border-b-0 border-[var(--border-default)]">
+                    <summary className="flex cursor-pointer list-none items-center gap-3 py-4 [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 rounded-lg">
+                      <Folder aria-hidden="true" className="w-4 h-4 shrink-0 text-[var(--text-secondary)] group-open/category:hidden" />
+                      <FolderOpen aria-hidden="true" className="hidden w-4 h-4 shrink-0 text-red-500 group-open/category:block" />
+                      <span className="min-w-0 flex-1 text-xs font-bold text-[var(--text-primary)]">{category.label}</span>
+                      <span className="text-[10px] text-[var(--text-secondary)] shrink-0">{category.results.length} {isSearching ? 'matching' : 'finished'}</span>
+                      <ChevronRight aria-hidden="true" className="w-4 h-4 shrink-0 text-[var(--text-muted)] group-open/category:rotate-90" />
+                    </summary>
+                    <ol aria-label={`${folder.distance} ${category.label}`} className="space-y-1.5 max-h-80 overflow-y-auto pb-3">
+                      {category.results.map((r) => {
+                        const rank = category.ranking === 'age' ? r.categoryRank! : (r.overallRank ?? r.rank!);
+                        return (
+                          <li key={r.bibNumber} className="flex items-center justify-between px-2 sm:px-3 py-2 rounded-[14px] bg-[var(--surface-inset)]/40 text-xs gap-2">
+                            <span className={`font-mono font-black w-9 shrink-0 ${rank === 1 ? 'text-amber-500' : rank === 2 ? 'text-slate-400' : rank === 3 ? 'text-orange-600' : 'text-red-500'}`}>#{rank}</span>
+                            <span className="min-w-0 flex-1" title={runnerTimingName(r.runnerProfile, r.bibNumber)}>
+                              <span className="block truncate font-bold text-[var(--text-primary)]">{runnerTimingName(r.runnerProfile, r.bibNumber)}</span>
+                              <span className="text-[var(--text-muted)]">Bib #{r.bibNumber}</span>
+                            </span>
+                            <span className="font-mono font-bold text-[var(--text-primary)] shrink-0">{r.finishTime}</span>
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  </details>
                 ))}
               </div>
-            </div>
+            </details>
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-interface RaceRankingsPresentationProps {
-  race: Race;
-  distanceGroups: DistanceRanking[];
-  onClose: () => void;
-}
-
-// Full-viewport, big-screen-friendly leaderboard meant to be projected at the
-// venue. Cycles through distances automatically when there's more than one so
-// the race-in-charge doesn't have to babysit a laptop between announcements.
-function RaceRankingsPresentation({ race, distanceGroups, onClose }: RaceRankingsPresentationProps) {
-  const [activeIndex, setActiveIndex] = useState(0);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    containerRef.current?.requestFullscreen?.().catch(() => {});
-    return () => {
-      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-    };
-  }, []);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  useEffect(() => {
-    if (distanceGroups.length <= 1) return;
-    const interval = setInterval(() => setActiveIndex((i) => (i + 1) % distanceGroups.length), 10000);
-    return () => clearInterval(interval);
-  }, [distanceGroups.length]);
-
-  const active = distanceGroups[activeIndex] || distanceGroups[0];
-
-  return (
-    <div ref={containerRef} className="fixed inset-0 z-[100] bg-[#0a0a0c] text-white flex flex-col p-8 sm:p-12 overflow-hidden">
-      <div className="absolute -top-32 -left-24 w-[32rem] h-[32rem] bg-red-600/15 rounded-full blur-[140px] pointer-events-none" />
-      <div className="absolute bottom-0 right-0 w-[28rem] h-[28rem] bg-red-900/10 rounded-full blur-[140px] pointer-events-none" />
-
-      <div className="relative flex items-center justify-between shrink-0">
-        <div>
-          <span className="text-xs sm:text-sm tracking-[0.3em] font-black text-red-500 uppercase">{race.name}</span>
-          <h1 className="text-3xl sm:text-5xl font-black font-display uppercase tracking-tight mt-1 flex items-center gap-3">
-            <Trophy className="w-8 h-8 sm:w-10 sm:h-10 text-amber-500" /> Live Rankings
-          </h1>
-        </div>
-        <div className="flex items-center gap-4 sm:gap-6 shrink-0">
-          <LiveClock gunStartTime={race.gunStartTime} size="header" />
-          <button onClick={onClose} className="w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition shrink-0">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-      </div>
-
-      {!active ? (
-        <div className="relative flex-1 flex items-center justify-center">
-          <p className="text-lg text-white/50 uppercase tracking-widest font-bold">Waiting for finishers...</p>
-        </div>
-      ) : (
-        <div className="relative flex-1 flex flex-col mt-6 sm:mt-10 min-h-0">
-          <div className="flex items-center justify-between mb-4 shrink-0">
-            <h2 className="text-2xl sm:text-4xl font-black font-display uppercase tracking-wide text-red-500">{active.distance}</h2>
-            {distanceGroups.length > 1 && (
-              <div className="flex gap-2">
-                {distanceGroups.map((g, idx) => (
-                  <button
-                    key={g.distance}
-                    onClick={() => setActiveIndex(idx)}
-                    className={`w-2.5 h-2.5 rounded-full transition ${idx === activeIndex ? 'bg-red-500' : 'bg-white/20'}`}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="flex-1 overflow-y-auto space-y-2 pr-2">
-            {active.results.map((r) => (
-              <div key={r.bibNumber} className={`flex items-center gap-4 sm:gap-6 px-5 sm:px-7 py-3.5 sm:py-4 rounded-[20px] ${r.rank! <= 3 ? 'bg-white/10 border border-white/10' : 'bg-white/5'}`}>
-                <span className={`font-mono font-black text-2xl sm:text-4xl w-14 sm:w-20 shrink-0 ${r.rank === 1 ? 'text-amber-400' : r.rank === 2 ? 'text-slate-300' : r.rank === 3 ? 'text-orange-500' : 'text-white/70'}`}>
-                  {r.rank}
-                </span>
-                <span className="flex-1 min-w-0">
-                  <span className="block text-lg sm:text-2xl font-bold truncate">{r.runnerProfile?.fullName || `Bib ${r.bibNumber}`}</span>
-                  <span className="block text-xs sm:text-sm text-white/40 font-mono uppercase tracking-wide">Bib #{r.bibNumber}</span>
-                </span>
-                <span className="font-mono font-black text-xl sm:text-3xl shrink-0 text-white">{r.finishTime}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <p className="relative shrink-0 text-center text-[10px] sm:text-xs text-white/30 font-mono uppercase tracking-widest mt-6">
-        Updates live &bull; Press Esc to exit
-      </p>
     </div>
   );
 }

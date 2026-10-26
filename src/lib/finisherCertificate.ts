@@ -106,9 +106,7 @@ export async function createFinisherCertificate(race: Race, runner: CertificateR
   pdf.setFontSize(9.2);
   const chipTimeText = result.chipTime || 'NO START';
   const gunTimeText = result.gunTime || '—';
-  // A valid chip time is always preferred. Existing fallback finishers stay
-  // certifiable, but the certificate never mislabels their time as chip time.
-  const officialTimeText = result.chipTime || result.finishTime;
+  const officialTimeText = result.finishTime;
   pdf.text(runner.distance, 65, raceBottom + 32, { align: 'center' });
   pdf.text(gunTimeText, 93, raceBottom + 32, { align: 'center' });
   pdf.text(chipTimeText, 121, raceBottom + 32, { align: 'center' });
@@ -123,7 +121,9 @@ export async function createFinisherCertificate(race: Race, runner: CertificateR
   const rankText = result.categoryRank && result.categoryLabel
     ? `${result.categoryLabel} category rank #${result.categoryRank}`
     : 'Category rank is not configured for this race';
-  const timingText = result.timingMethod === 'gun'
+  const timingText = result.timingMethod === 'transition'
+    ? "Official time starts at the previous entry's validated finish"
+    : result.timingMethod === 'gun'
     ? 'Official time uses gun-time fallback because no valid chip start was recorded'
     : "Official time uses the runner's validated individual chip time";
   pdf.text(`${raceDate}  •  ${rankText}  •  ${timingText}`, center, raceBottom + 51, { align: 'center' });
