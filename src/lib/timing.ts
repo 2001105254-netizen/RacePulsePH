@@ -37,11 +37,84 @@ export function getCheckpointByType(checkpoints: Checkpoint[], type: CheckpointT
   return ordered.find((checkpoint, index) => checkpointType(checkpoint, index, ordered.length) === type);
 }
 
+export function findRunnerAgeCategory(
+  ageCategories: AgeCategory[],
+  runner: Pick<RunnerProfile, 'gender' | 'age' | 'ageCategoryOverrideId'>,
+): AgeCategory | undefined {
+  const override = runner.ageCategoryOverrideId
+    ? ageCategories.find((category) => category.id === runner.ageCategoryOverrideId && category.gender === runner.gender)
+    : undefined;
+  return override || ageCategories.find((category) => category.gender === runner.gender
+    && runner.age >= category.minAge
+    && runner.age <= category.maxAge);
+}
+
 function formatElapsed(totalSeconds: number): string {
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = Math.floor(totalSeconds % 60);
   return [h, m, s].map((n) => String(n).padStart(2, '0')).join(':');
+}
+
+function validTimestamp(value?: string): number | undefined {
+  if (!value) return undefined;
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? undefined : time;
+}
+
+function compareReadOrder(a: ChipRead, b: ChipRead): number {
+  const crossedA = validTimestamp(a.timestamp);
+  const crossedB = validTimestamp(b.timestamp);
+  if (crossedA !== undefined && crossedB !== undefined && crossedA !== crossedB) return crossedA - crossedB;
+  if (crossedA !== undefined && crossedB === undefined) return -1;
+  if (crossedA === undefined && crossedB !== undefined) return 1;
+  const recordedA = validTimestamp(a.createdAt);
+  const recordedB = validTimestamp(b.createdAt);
+  if (recordedA !== undefined && recordedB !== undefined && recordedA !== recordedB) return recordedA - recordedB;
+  if (recordedA !== undefined && recordedB === undefined) return -1;
+  if (recordedA === undefined && recordedB !== undefined) return 1;
+  return a.id.localeCompare(b.id);
+}
+
+// Results display whole seconds. Keep the actual crossing sequence as the
+// second tie-break so an earlier finisher is never displaced by bib number.
+export function compareResultFinishOrder(a: RunnerResult, b: RunnerResult): number {
+  const crossedA = validTimestamp(a.finishReadAt);
+  const crossedB = validTimestamp(b.finishReadAt);
+  if (crossedA !== undefined && crossedB !== undefined && crossedA !== crossedB) return crossedA - crossedB;
+  if (crossedA !== undefined && crossedB === undefined) return -1;
+  if (crossedA === undefined && crossedB !== undefined) return 1;
+  const recordedA = validTimestamp(a.finishReadRecordedAt);
+  const recordedB = validTimestamp(b.finishReadRecordedAt);
+  if (recordedA !== undefined && recordedB !== undefined && recordedA !== recordedB) return recordedA - recordedB;
+  if (recordedA !== undefined && recordedB === undefined) return -1;
+  if (recordedA === undefined && recordedB !== undefined) return 1;
+  return a.bibNumber.localeCompare(b.bibNumber);
+}
+
+export function orderFemaleOverallResults(
+  results: RunnerResult[],
+  division: string,
+  race?: Pick<Race, 'femaleOverallRankOverrides'>,
+): RunnerResult[] {
+  const automatic = [...results]
+    .filter((result) => result.finishSeconds !== undefined
+      && !result.runnerProfile.isFreeSlot
+      && runnerEntryCategory(result.runnerProfile) === 'solo'
+      && result.runnerProfile.gender === 'female')
+    .sort((a, b) => a.finishSeconds! - b.finishSeconds! || compareResultFinishOrder(a, b));
+  const byBib = new Map(automatic.map((result) => [result.bibNumber.toUpperCase(), result]));
+  const placed = new Set<string>();
+  const manual = (race?.femaleOverallRankOverrides?.[division] || [])
+    .map((bib) => byBib.get(bib.trim().toUpperCase()))
+    .filter((result): result is RunnerResult => !!result)
+    .filter((result) => {
+      const key = result.bibNumber.toUpperCase();
+      if (placed.has(key)) return false;
+      placed.add(key);
+      return true;
+    });
+  return [...manual, ...automatic.filter((result) => !placed.has(result.bibNumber.toUpperCase()))];
 }
 
 // Derives per-runner splits, finish time and rank from raw checkpoint scans.
@@ -52,7 +125,7 @@ export function computeResults(
   chipReads: ChipRead[],
   runnerProfiles: RunnerProfile[],
   ageCategories: AgeCategory[] = [],
-  raceTiming?: Pick<Race, 'gunStartTime' | 'waveStartTimes'>
+  raceTiming?: Pick<Race, 'gunStartTime' | 'waveStartTimes' | 'femaleOverallRankOverrides'>
 ): RunnerResult[] {
   const orderedCheckpoints = [...checkpoints].sort((a, b) => a.order - b.order);
   // Check-in is operational only. It must never become the timing start just
@@ -60,8 +133,8 @@ export function computeResults(
   const startCheckpoint = getCheckpointByType(orderedCheckpoints, 'start') || orderedCheckpoints[0];
   const finishCheckpoint = getCheckpointByType(orderedCheckpoints, 'finish') || orderedCheckpoints[orderedCheckpoints.length - 1];
 
-  // bib -> checkpointId -> earliest recorded timestamp (guards against duplicate scans)
-  const readsByBib = new Map<string, Map<string, string>>();
+  // bib -> checkpointId -> earliest actual scan (guards against duplicates).
+  const readsByBib = new Map<string, Map<string, ChipRead>>();
   for (const read of chipReads) {
     let checkpointMap = readsByBib.get(read.bibNumber);
     if (!checkpointMap) {
@@ -69,8 +142,8 @@ export function computeResults(
       readsByBib.set(read.bibNumber, checkpointMap);
     }
     const existing = checkpointMap.get(read.checkpointId);
-    if (!existing || new Date(read.timestamp).getTime() < new Date(existing).getTime()) {
-      checkpointMap.set(read.checkpointId, read.timestamp);
+    if (!existing || compareReadOrder(read, existing) < 0) {
+      checkpointMap.set(read.checkpointId, read);
     }
   }
 
@@ -87,10 +160,10 @@ export function computeResults(
     if (computed.has(bibNumber)) return computed.get(bibNumber);
     if (computing.has(bibNumber)) return undefined;
     computing.add(bibNumber);
-    const checkpointMap = readsByBib.get(bibNumber) || new Map<string, string>();
+    const checkpointMap = readsByBib.get(bibNumber) || new Map<string, ChipRead>();
     const splits: RunnerSplit[] = orderedCheckpoints
       .filter((cp) => checkpointMap.has(cp.id))
-      .map((cp) => ({ checkpointId: cp.id, timestamp: checkpointMap.get(cp.id)! }));
+      .map((cp) => ({ checkpointId: cp.id, timestamp: checkpointMap.get(cp.id)!.timestamp }));
 
     let finishTime: string | undefined;
     let finishSeconds: number | undefined;
@@ -108,14 +181,15 @@ export function computeResults(
     }
 
     if (startCheckpoint && finishCheckpoint && startCheckpoint.id !== finishCheckpoint.id && checkpointMap.has(finishCheckpoint.id)) {
-      const chipStart = checkpointMap.get(startCheckpoint.id);
-      // Calculate both transparent elapsed views. The chip time stays the
-      // preferred official result whenever its individual Start read is valid;
-      // gun time remains the documented fallback for a missed start scan.
+      const chipStart = checkpointMap.get(startCheckpoint.id)?.timestamp;
+      // The Roll Call gun time is official for normal divisions. A linked
+      // sequence begins at its predecessor's finish, while chip time remains
+      // available only for older races with no saved gun start.
       const gunStart = runnerProfile && raceTiming
         ? getWaveStartTime(raceTiming, runnerProfile.distance, runnerEntryCategory(runnerProfile))
         : undefined;
-      const finishMs = new Date(checkpointMap.get(finishCheckpoint.id)!).getTime();
+      const finishRead = checkpointMap.get(finishCheckpoint.id)!;
+      const finishMs = new Date(finishRead.timestamp).getTime();
       const elapsedFrom = (startTimestamp: string | undefined): number | undefined => {
         if (!startTimestamp || Number.isNaN(finishMs)) return undefined;
         const startMs = new Date(startTimestamp).getTime();
@@ -128,7 +202,7 @@ export function computeResults(
       gunTime = gunSeconds === undefined ? undefined : formatElapsed(gunSeconds);
       // A linked entry waits for its predecessor's official finish. Never
       // substitute the division gun or a later chip scan for that handoff.
-      finishSeconds = runnerProfile.startsAfterBib ? elapsedFrom(sequenceStartTime) : chipSeconds ?? gunSeconds;
+      finishSeconds = runnerProfile.startsAfterBib ? elapsedFrom(sequenceStartTime) : gunSeconds ?? chipSeconds;
       finishTime = finishSeconds === undefined ? undefined : formatElapsed(finishSeconds);
     }
 
@@ -141,7 +215,11 @@ export function computeResults(
       ...(chipTime ? { chipTime, chipSeconds } : {}),
       ...(gunTime ? { gunTime, gunSeconds } : {}),
       ...(sequenceStartTime ? { sequenceStartTime } : {}),
-      ...(finishTime ? { timingMethod: runnerProfile.startsAfterBib ? 'transition' as const : chipTime ? 'chip' as const : 'gun' as const } : {}),
+      ...(finishTime ? { timingMethod: runnerProfile.startsAfterBib ? 'transition' as const : gunTime ? 'gun' as const : 'chip' as const } : {}),
+      ...(checkpointMap.get(finishCheckpoint.id) ? {
+        finishReadAt: checkpointMap.get(finishCheckpoint.id)!.timestamp,
+        finishReadRecordedAt: checkpointMap.get(finishCheckpoint.id)!.createdAt,
+      } : {}),
     };
     computing.delete(bibNumber);
     computed.set(bibNumber, result);
@@ -161,11 +239,24 @@ export function computeResults(
   for (const list of byDivision.values()) {
     list
       .filter((r) => r.finishSeconds !== undefined)
-      .sort((a, b) => a.finishSeconds! - b.finishSeconds! || a.bibNumber.localeCompare(b.bibNumber))
+      .sort((a, b) => a.finishSeconds! - b.finishSeconds! || compareResultFinishOrder(a, b))
       .forEach((r, idx) => {
         r.overallRank = idx + 1;
         r.rank = idx + 1;
       });
+  }
+
+  // Overall top-three and Female Overall top-three do not also receive an age
+  // category award. The following eligible finisher advances to that place.
+  const ageCategoryAwardExclusions = new Set<string>();
+  for (const [division, list] of byDivision.entries()) {
+    list
+      .filter((result) => result.finishSeconds !== undefined && !result.runnerProfile.isFreeSlot && runnerEntryCategory(result.runnerProfile) === 'solo')
+      .sort((a, b) => a.finishSeconds! - b.finishSeconds! || compareResultFinishOrder(a, b))
+      .slice(0, 3)
+      .forEach((result) => ageCategoryAwardExclusions.add(result.bibNumber));
+    orderFemaleOverallResults(list, division, raceTiming).slice(0, 3)
+      .forEach((result) => ageCategoryAwardExclusions.add(result.bibNumber));
   }
 
   // Age-category places are only calculated when the organizer configured
@@ -181,11 +272,8 @@ export function computeResults(
     // not decide the team's ranking. They receive their own overall division
     // rank only (e.g. 10K Duo #1), while age categories stay Solo-only.
     if (runnerEntryCategory(result.runnerProfile) !== 'solo') continue;
-    const category = ageCategories.find((item) =>
-      item.gender === result.runnerProfile!.gender
-      && result.runnerProfile!.age >= item.minAge
-      && result.runnerProfile!.age <= item.maxAge
-    );
+    if (ageCategoryAwardExclusions.has(result.bibNumber)) continue;
+    const category = findRunnerAgeCategory(ageCategories, result.runnerProfile);
     if (!category) continue;
     result.categoryLabel = category.label;
     const key = `${runnerDivisionLabel(result.runnerProfile)}|${category.id}`;
@@ -195,14 +283,14 @@ export function computeResults(
   }
   for (const list of byAgeCategory.values()) {
     list
-      .sort((a, b) => a.finishSeconds! - b.finishSeconds! || a.bibNumber.localeCompare(b.bibNumber))
+      .sort((a, b) => a.finishSeconds! - b.finishSeconds! || compareResultFinishOrder(a, b))
       .forEach((result, index) => {
         result.categoryRank = index + 1;
       });
   }
 
   return results.sort((a, b) => {
-    if (a.finishSeconds !== undefined && b.finishSeconds !== undefined) return a.finishSeconds - b.finishSeconds;
+    if (a.finishSeconds !== undefined && b.finishSeconds !== undefined) return a.finishSeconds - b.finishSeconds || compareResultFinishOrder(a, b);
     if (a.finishSeconds !== undefined) return -1;
     if (b.finishSeconds !== undefined) return 1;
     return b.splits.length - a.splits.length;
@@ -215,7 +303,7 @@ export function getResultForBib(
   runnerProfiles: RunnerProfile[],
   bibNumber: string,
   ageCategories: AgeCategory[] = [],
-  raceTiming?: Pick<Race, 'gunStartTime' | 'waveStartTimes'>
+  raceTiming?: Pick<Race, 'gunStartTime' | 'waveStartTimes' | 'femaleOverallRankOverrides'>
 ): RunnerResult | undefined {
   return computeResults(checkpoints, chipReads, runnerProfiles, ageCategories, raceTiming).find((r) => r.bibNumber === bibNumber);
 }

@@ -1417,7 +1417,7 @@ function RunnerRacePass({ race, runnerProfile, result, orderedCheckpoints }: {
     ...(start ? [{
       id: 'start',
       label: 'Started',
-      detail: result?.sequenceStartTime ? 'Started at previous entry finish' : startSplit ? start.label : result?.timingMethod === 'gun' ? 'Official wave gun-time fallback' : start.label,
+      detail: result?.sequenceStartTime ? 'Started at previous entry finish' : startSplit ? start.label : result?.timingMethod === 'gun' ? 'Official Roll Call gun start' : start.label,
       completed: !!startSplit || !!result?.sequenceStartTime || result?.timingMethod === 'gun',
       timestamp: result?.sequenceStartTime || startSplit?.timestamp || (result?.timingMethod === 'gun' ? getWaveStartTime(race, runnerProfile.distance, runnerEntryCategory(runnerProfile)) : undefined),
     }] : []),
