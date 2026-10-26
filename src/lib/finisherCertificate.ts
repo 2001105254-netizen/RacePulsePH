@@ -124,7 +124,7 @@ export async function createFinisherCertificate(race: Race, runner: CertificateR
   const timingText = result.timingMethod === 'transition'
     ? "Official time starts at the previous entry's validated finish"
     : result.timingMethod === 'gun'
-    ? 'Official time uses gun-time fallback because no valid chip start was recorded'
+    ? 'Official time is based on the Roll Call gun start for this wave'
     : "Official time uses the runner's validated individual chip time";
   pdf.text(`${raceDate}  •  ${rankText}  •  ${timingText}`, center, raceBottom + 51, { align: 'center' });
 

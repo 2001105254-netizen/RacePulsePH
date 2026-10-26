@@ -9,6 +9,7 @@ import { groupRankingFolders } from '../lib/rankingFolders';
 import { useOfflineScanQueue } from '../lib/offlineScanQueue';
 import { Race, ChipRead, PublicLeaderboardEntry, PublicLiveResults, RaceEntryCategory, RunnerProfile, RunnerResult } from '../types';
 import { groupRunnersByDistance, generateRunnerRosterPdf } from '../lib/runnerReport';
+import { generateRankingsReportPdf } from '../lib/rankingsReport';
 import { entryCategoryLabels, entryMemberCount, raceEntryCategories, runnerDivisionLabel, runnerEntryCategory, runnerWaveLabel } from '../lib/raceEntry';
 import { Radio, ScanLine, Trophy, Clock, Wifi, WifiOff, QrCode, RefreshCw, ArrowLeft, Cpu, Users2, FileDown, FileUp, Maximize2, X, ListChecks, CheckCircle2, Circle, PlayCircle, RotateCcw, Timer, Keyboard, Smartphone, Search, UserCheck, Undo2, Folder, FolderOpen, ChevronRight } from 'lucide-react';
 import QrScannerModal from './QrScannerModal';
@@ -774,6 +775,30 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
     }
   };
 
+  const republishResults = async () => {
+    if (!isRaceCompleted || updatingRaceStatus) return;
+    setUpdatingRaceStatus(true);
+    try {
+      const updatedAt = new Date().toISOString();
+      await setDoc(doc(db, 'liveResults', race.id), {
+        raceId: race.id,
+        raceName: race.name,
+        updatedAt,
+        status: 'completed',
+        totalRegistered: runnerProfiles.length,
+        totalStarted: new Set(chipReads.filter((read) => read.checkpointId === startCheckpoint?.id).map((read) => read.bibNumber)).size,
+        totalFinished: finishedCount,
+        leaders: publicLeaders,
+        officialResults: publicOfficialResults,
+      } satisfies PublicLiveResults);
+      setFeedback({ type: 'success', text: `Published ${finishedCount} official finisher${finishedCount === 1 ? '' : 's'} to the public results page.` });
+    } catch (error: any) {
+      setFeedback({ type: 'error', text: error.message || 'Could not republish results. Please try again.' });
+    } finally {
+      setUpdatingRaceStatus(false);
+    }
+  };
+
   const reopenTiming = async () => {
     if (!can('timing.reopen')) return;
     if (!isRaceCompleted || updatingRaceStatus) return;
@@ -800,9 +825,14 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         <div className="flex items-center gap-3">
           <LiveClock gunStartTime={race.gunStartTime} />
           {isRaceCompleted ? (
-            <button hidden={!can('timing.reopen')} type="button" onClick={() => void reopenTiming()} disabled={updatingRaceStatus} className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-emerald-500 hover:bg-emerald-500/20 disabled:opacity-50 transition">
-              {updatingRaceStatus ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />} Race complete · Reopen timing
-            </button>
+            <>
+              <button hidden={!can('results.publish')} type="button" onClick={() => void republishResults()} disabled={updatingRaceStatus} className="inline-flex items-center gap-1.5 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-cyan-500 hover:bg-cyan-500/20 disabled:opacity-50 transition">
+                {updatingRaceStatus ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Trophy className="w-3 h-3" />} Republish results
+              </button>
+              <button hidden={!can('timing.reopen')} type="button" onClick={() => void reopenTiming()} disabled={updatingRaceStatus} className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-emerald-500 hover:bg-emerald-500/20 disabled:opacity-50 transition">
+                {updatingRaceStatus ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />} Race complete · Reopen timing
+              </button>
+            </>
           ) : (
             <button hidden={!can('timing.finish')} type="button" onClick={() => void finishRace()} disabled={updatingRaceStatus} className="inline-flex items-center gap-1.5 rounded-full border border-red-500/35 bg-red-500/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-red-500 hover:bg-red-500 hover:text-white disabled:opacity-50 transition">
               {updatingRaceStatus ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />} Finish race & publish results
@@ -2348,8 +2378,6 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
   const [settingDistance, setSettingDistance] = useState<string | null>(null);
   const [editingGunTimeDistance, setEditingGunTimeDistance] = useState<string | null>(null);
   const [gunTimeInput, setGunTimeInput] = useState('');
-  const [pendingGunStartDistance, setPendingGunStartDistance] = useState<string | null>(null);
-  const now = useNow(1000);
 
   const startedBibs = useMemo(() => {
     if (!startCheckpointId) return new Set<string>();
@@ -2382,6 +2410,10 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
       return;
     }
     setSettingDistance(distance);
+    // Open the scan station immediately.  The Firestore update continues in
+    // the background so a slow network cannot make the starter miss runners
+    // crossing the mat at the gun.
+    onOpenStartScanner(distance);
     try {
       const raceRef = doc(db, 'races', race.id);
       const startedAt = new Date().toISOString();
@@ -2398,7 +2430,6 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
           gunStartTime: currentRace?.gunStartTime || startedAt,
         });
       });
-      onOpenStartScanner(distance);
     } catch (err: any) {
       alert(err.message || `Failed to start the ${distance} clock.`);
     } finally {
@@ -2434,13 +2465,6 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
   const openGunTimeEditor = (distance: string) => {
     setGunTimeInput(toLocalDateTimeInputValue(getWaveStartTime(race, distance), race.date));
     setEditingGunTimeDistance(distance);
-  };
-
-  const confirmGunStart = () => {
-    if (!pendingGunStartDistance) return;
-    const distance = pendingGunStartDistance;
-    setPendingGunStartDistance(null);
-    void handleStartWave(distance);
   };
 
   const handleSaveGunTime = async (distance: string) => {
@@ -2539,11 +2563,11 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
                   </button>
                 ) : (
                   <button
-                    onClick={() => setPendingGunStartDistance(group.distance)}
+                    onClick={() => void handleStartWave(group.distance)}
                     disabled={!!settingDistance}
                     className="w-full text-xs font-black uppercase tracking-widest px-4 py-2.5 rounded-[var(--radius-control)] text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 flex items-center justify-center gap-2 transition disabled:opacity-60"
                   >
-                    {settingThisWave ? <RefreshCw className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />} Start {group.distance} & Arm RFID
+                    {settingThisWave ? <RefreshCw className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />} {settingThisWave ? 'Starting…' : `Start ${group.distance} & Arm RFID`}
                   </button>
                 )}
               </div>
@@ -2551,63 +2575,6 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
           })}
         </div>
       </div>
-
-      {pendingGunStartDistance && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="gun-start-confirmation-title">
-          <div className="w-full max-w-lg overflow-hidden rounded-[24px] border border-red-500/40 bg-[var(--bg-elevated)] shadow-2xl shadow-red-950/40">
-            <div className="border-b border-red-500/25 bg-gradient-to-r from-red-600/25 to-orange-500/10 px-5 py-4 sm:px-6">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow-lg shadow-red-900/50">
-                    <PlayCircle className="h-6 w-6" />
-                  </span>
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-300">Official race action</p>
-                    <h3 id="gun-start-confirmation-title" className="mt-0.5 text-xl font-black font-display text-white">Fire {pendingGunStartDistance} gun?</h3>
-                  </div>
-                </div>
-                <button type="button" onClick={() => setPendingGunStartDistance(null)} className="rounded-xl p-2 text-[var(--text-secondary)] transition hover:bg-white/10 hover:text-white" aria-label="Cancel gun start">
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-4 px-5 py-5 sm:px-6">
-              <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
-                The official <strong className="text-[var(--text-primary)]">{pendingGunStartDistance}</strong> gun clock will start the instant you confirm. Use this only when the runners are leaving the start line.
-              </p>
-
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <div className="rounded-[14px] border border-white/10 bg-black/20 px-3 py-3">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Official start time</p>
-                  <p className="mt-1 font-mono text-lg font-black tabular-nums text-emerald-400">
-                    {new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                  </p>
-                  <p className="text-[10px] text-[var(--text-secondary)]">Your timing device clock</p>
-                </div>
-                <div className="rounded-[14px] border border-white/10 bg-black/20 px-3 py-3">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">After confirmation</p>
-                  <p className="mt-1 text-xs font-bold text-[var(--text-primary)]">Start RFID opens automatically</p>
-                  <p className="mt-1 text-[10px] text-[var(--text-secondary)]">Record Splits switches to Start</p>
-                </div>
-              </div>
-
-              <div className="rounded-[14px] border border-amber-500/25 bg-amber-500/10 px-3 py-2.5 text-xs leading-relaxed text-amber-100">
-                <strong>Important:</strong> This gun time is the fallback for runners whose Start chip read is missed. You can correct it later, but firing it at the real start is best.
-              </div>
-            </div>
-
-            <div className="flex flex-col-reverse gap-2 border-t border-white/10 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
-              <button type="button" onClick={() => setPendingGunStartDistance(null)} disabled={!!settingDistance} className="rounded-[12px] border border-white/10 px-4 py-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-secondary)] transition hover:bg-white/10 hover:text-white disabled:opacity-50">
-                Cancel — not yet
-              </button>
-              <button type="button" onClick={confirmGunStart} disabled={!!settingDistance} className="rounded-[12px] bg-gradient-to-r from-red-600 to-red-700 px-5 py-2.5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-red-900/35 transition hover:from-red-500 hover:to-red-600 disabled:opacity-50">
-                {settingDistance ? 'Starting…' : `Fire ${pendingGunStartDistance} gun & arm RFID`}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="glass-panel p-5">
         <div className="flex items-center justify-between mb-1">
@@ -2756,12 +2723,23 @@ function RaceRankingsPanel({ race, results }: RaceRankingsPanelProps) {
           </h3>
           <p className="text-xs text-[var(--text-secondary)] mt-0.5">{totalFinishers} finisher{totalFinishers === 1 ? '' : 's'} ranked so far</p>
         </div>
-        <button
-          onClick={() => setPresenting(true)}
-          className="text-xs font-black uppercase tracking-widest px-4 py-2.5 rounded-[var(--radius-control)] text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 flex items-center justify-center gap-2 transition shrink-0"
-        >
-          <Maximize2 className="w-4 h-4" /> Present on Screen
-        </button>
+        <div className="flex flex-wrap gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              if (!generateRankingsReportPdf(race, results)) alert('No completed finishers are available for the report yet.');
+            }}
+            className="text-xs font-black uppercase tracking-widest px-4 py-2.5 rounded-[var(--radius-control)] border border-[var(--border-strong)] text-[var(--text-primary)] hover:border-red-500 hover:text-red-500 flex items-center justify-center gap-2 transition"
+          >
+            <FileDown className="w-4 h-4" /> Download PDF
+          </button>
+          <button
+            onClick={() => setPresenting(true)}
+            className="text-xs font-black uppercase tracking-widest px-4 py-2.5 rounded-[var(--radius-control)] text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 flex items-center justify-center gap-2 transition"
+          >
+            <Maximize2 className="w-4 h-4" /> Present on Screen
+          </button>
+        </div>
       </div>
 
       {(authority || can('timing.correct')) && <div className="space-y-2 text-xs">
