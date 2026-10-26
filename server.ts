@@ -326,7 +326,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  app.listen(PORT, process.env.VITE_USE_FIREBASE_EMULATORS === 'true' ? '127.0.0.1' : '0.0.0.0', () => {
     console.log(`\n======================================================`);
     console.log(`🚀 RACEPULSEPH BACKEND HUB RUNNING ONLINE!`);
     console.log(`🔗 Local Terminal Host: http://localhost:${PORT}`);

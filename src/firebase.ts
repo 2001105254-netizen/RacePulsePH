@@ -1,8 +1,10 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, getDocFromServer, enableIndexedDbPersistence } from 'firebase/firestore';
-import { getStorage } from 'firebase/storage';
+import { getFirestore, doc, getDocFromServer, enableIndexedDbPersistence, connectFirestoreEmulator } from 'firebase/firestore';
+import { getStorage, connectStorageEmulator } from 'firebase/storage';
+import { localFirebaseProjectId, useFirebaseEmulators } from './lib/firebaseEnvironment';
 import {
   getAuth,
+  connectAuthEmulator,
   setPersistence,
   browserLocalPersistence,
   createUserWithEmailAndPassword,
@@ -24,14 +26,29 @@ const firebaseConfig = {
   appId: "1:720035436658:web:fb5ffae560bccb70208aeb"
 };
 
-const app = initializeApp(firebaseConfig);
+const app = initializeApp(useFirebaseEmulators ? {
+  ...firebaseConfig,
+  apiKey: 'demo-api-key',
+  projectId: localFirebaseProjectId,
+  authDomain: `${localFirebaseProjectId}.firebaseapp.com`,
+  storageBucket: `${localFirebaseProjectId}.appspot.com`,
+} : firebaseConfig);
 
 // Initialize Firestore on the default database
 export const db = getFirestore(app);
 export const storage = getStorage(app);
+export const auth = getAuth(app);
+
+if (useFirebaseEmulators) {
+  connectAuthEmulator(auth, 'http://127.0.0.1:9099');
+  connectFirestoreEmulator(db, '127.0.0.1', 8080);
+  // Account testing doesn't need Storage. Route it locally as well so a test
+  // account can never accidentally upload to the live bucket.
+  connectStorageEmulator(storage, '127.0.0.1', 9199);
+}
 
 // Enable offline database persistence for resilient offline capabilities
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && !useFirebaseEmulators) {
   enableIndexedDbPersistence(db).catch((err) => {
     if (err.code === 'failed-precondition') {
       console.warn("Firestore offline persistence failed: Multiple tabs open.");
@@ -42,8 +59,6 @@ if (typeof window !== 'undefined') {
 }
 
 // Auth setup - individual accounts for Admin / Organizer / Runner roles
-export const auth = getAuth(app);
-
 if (typeof window !== 'undefined') {
   setPersistence(auth, browserLocalPersistence).catch((err) => {
     console.warn('Firebase Auth persistence failed to configure:', err);

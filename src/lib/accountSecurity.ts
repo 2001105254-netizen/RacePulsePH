@@ -1,6 +1,7 @@
 import { auth } from '../firebase';
+import { useFirebaseEmulators } from './firebaseEnvironment';
 
-const apiUrl = (import.meta.env.VITE_ACCOUNT_API_URL || 'https://asia-southeast1-racepulseph.cloudfunctions.net/accountApi').replace(/\/$/, '');
+const apiUrl = (useFirebaseEmulators ? '/api/account' : import.meta.env.VITE_ACCOUNT_API_URL || 'https://asia-southeast1-racepulseph.cloudfunctions.net/accountApi').replace(/\/$/, '');
 
 export interface CodeDelivery {
   challengeId?: string;

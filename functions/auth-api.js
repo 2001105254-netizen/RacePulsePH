@@ -13,7 +13,7 @@ const smtpUser = defineString('SMTP_USER', { default: 'events@racepulseph.com' }
 exports.accountApi = onRequest({
   region: 'asia-southeast1',
   secrets: [smtpPassword, codeSecret],
-  cors: ['https://racepulseph.com', 'https://www.racepulseph.com', 'https://racepulseph.web.app', 'https://racepulseph.firebaseapp.com', 'http://localhost', 'https://localhost', 'capacitor://localhost', 'http://localhost:3000', 'http://localhost:5173'],
+  cors: ['https://racepulseph.com', 'https://www.racepulseph.com', 'https://racepulseph.web.app', 'https://racepulseph.firebaseapp.com', 'http://localhost', 'https://localhost', 'capacitor://localhost', 'http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:3000', 'http://127.0.0.1:5173'],
   maxInstances: 10,
 }, async (request, response) => {
   response.set('Cache-Control', 'no-store');
