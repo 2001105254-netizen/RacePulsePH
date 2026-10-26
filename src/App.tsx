@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { onAuthStateChanged, User } from 'firebase/auth';
+import { onIdTokenChanged, User } from 'firebase/auth';
 import { doc, onSnapshot, writeBatch } from 'firebase/firestore';
 import { auth, db, signOutUser } from './firebase';
 import AuthGate from './components/AuthGate';
+import { EmailVerificationScreen } from './components/AccountSecurity';
 import AdminDashboard from './components/AdminDashboard';
 import OrganizerDashboard from './components/OrganizerDashboard';
 import RunnerDashboard from './components/RunnerDashboard';
@@ -40,6 +41,7 @@ export default function App() {
   const { theme, toggleTheme } = useTheme();
   const [authUser, setAuthUser] = useState<User | null | undefined>(undefined); // undefined = still checking session
   const [profile, setProfile] = useState<UserProfile | null | undefined>(undefined);
+  const [emailVerified, setEmailVerified] = useState(false);
   const [guestScreen, setGuestScreen] = useState<'landing' | 'login' | 'signup'>(() => registrationRaceIdFromUrl() ? 'signup' : 'landing');
   const [pendingRaceId, setPendingRaceId] = useState<string | null>(() => registrationRaceIdFromUrl());
   const [runnerSignupIntent, setRunnerSignupIntent] = useState(() => !!registrationRaceIdFromUrl());
@@ -69,8 +71,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onIdTokenChanged(auth, (user) => {
       setAuthUser(user);
+      setEmailVerified(!!user?.emailVerified);
+      if (user) setProfile((current) => current?.uid === user.uid ? current : undefined);
       if (!user) {
         const registrationRaceId = registrationRaceIdFromUrl();
         setProfile(null);
@@ -83,7 +87,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!authUser) return;
+    if (!authUser || !emailVerified) { setProfile(null); return; }
+    setProfile(undefined);
     const unsubscribe = onSnapshot(doc(db, 'users', authUser.uid), (docSnap) => {
       setProfile(docSnap.exists() ? (docSnap.data() as UserProfile) : null);
     }, (err) => {
@@ -91,9 +96,9 @@ export default function App() {
       setProfile(null);
     });
     return () => unsubscribe();
-  }, [authUser]);
+  }, [authUser, emailVerified]);
 
-  const stillLoading = authUser === undefined || (!!authUser && profile === undefined);
+  const stillLoading = authUser === undefined || (!!authUser && emailVerified && profile === undefined);
 
   let content: React.ReactNode;
   if (stillLoading) {
@@ -102,6 +107,8 @@ export default function App() {
         <RefreshCw className="w-6 h-6 text-[var(--text-muted)] animate-spin" />
       </div>
     );
+  } else if (authUser && !emailVerified) {
+    content = <EmailVerificationScreen key={authUser.uid} user={authUser} onVerified={() => setEmailVerified(true)} />;
   } else if (!authUser || !profile) {
     content = authUser ? (
       <AuthGate authUser={authUser} signupRoleLocked={runnerSignupIntent} />

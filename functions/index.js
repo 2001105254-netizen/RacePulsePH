@@ -12,6 +12,7 @@ const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret, defineString } = require('firebase-functions/params');
 
 admin.initializeApp();
+exports.accountApi = require('./auth-api').accountApi;
 const db = admin.firestore();
 
 const paymongoSecretKey = defineSecret('PAYMONGO_SECRET_KEY');
@@ -80,7 +81,9 @@ function registrationFromRequest(input) {
 async function requireUser(request) {
   const header = request.get('authorization') || '';
   if (!header.startsWith('Bearer ')) throw new Error('Please sign in to continue.');
-  return admin.auth().verifyIdToken(header.slice(7));
+  const user = await admin.auth().verifyIdToken(header.slice(7), true);
+  if (!user.email_verified) throw new Error('Verify your email before continuing.');
+  return user;
 }
 
 function publicPayment(payment) {

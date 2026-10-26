@@ -1,0 +1,37 @@
+const LOGO_CID = 'racepulse-logo@racepulseph.com';
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
+}
+
+function accountEmail({ purpose, name, code, logoSource = `cid:${LOGO_CID}` }) {
+  const firstName = String(name || 'Runner').trim().split(/\s+/)[0] || 'Runner';
+  const signup = purpose === 'verify';
+  const heading = signup ? `Welcome to Race Pulse, ${firstName}!` : `Let's get you back on track, ${firstName}.`;
+  const instruction = signup ? "Here's your code to verify your account." : "Here's your code to reset your RacePulse password.";
+  const label = signup ? 'VERIFY YOUR ACCOUNT' : 'RESET YOUR PASSWORD';
+  const text = `${heading}\n\n${instruction}\n\n${code}\n\nThis code expires in 10 minutes. Use the most recent code and never share it.\n\nHappy running ka Racepulse!\nThe RacePulsePH Team\n\nIf you didn't request this, you can safely ignore this email.`;
+  // Tables and inline styles keep the layout reliable in Gmail and Outlook.
+  const html = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${label}</title></head>
+<body style="margin:0;padding:0;background:#f5f5f7;font-family:Arial,Helvetica,sans-serif;color:#171719;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(instruction)} Your code expires in 10 minutes.</div>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f5f5f7;"><tr><td align="center" style="padding:32px 16px;">
+<table role="presentation" width="560" cellspacing="0" cellpadding="0" style="width:100%;max-width:560px;border:1px solid #e4e4e7;border-radius:24px;overflow:hidden;background:#fefefe;">
+<tr><td style="padding:16px 32px;background:#0a0a0a;border-radius:24px 24px 0 0;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td><img src="${escapeHtml(logoSource)}" width="96" alt="RacePulsePH" style="display:block;width:96px;max-width:100%;height:auto;border:0;"></td><td align="right" style="color:#f5f5f7;font-size:10px;font-weight:700;letter-spacing:2px;line-height:1.8;">EVERY SECOND<br><span style="color:#ff6259;">COUNTS.</span></td></tr></table></td></tr>
+<tr><td style="padding:36px 32px 16px;"><p style="margin:0 0 16px;color:#c22e25;font-size:11px;font-weight:700;letter-spacing:2px;">${label}</p>
+<h1 style="margin:0 0 16px;font-size:28px;line-height:1.2;letter-spacing:-0.8px;">${escapeHtml(heading)}</h1>
+<p style="margin:0;color:#52525b;font-size:15px;line-height:1.7;">${escapeHtml(instruction)}</p></td></tr>
+<tr><td style="padding:12px 32px 24px;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center" style="padding:28px 8px;background:#fff1f0;border:1px solid #ffe1de;border-radius:16px;">
+<p style="margin:0 0 12px;color:#9e2019;font-size:10px;font-weight:700;letter-spacing:2px;">YOUR ONE-TIME CODE</p>
+<p style="margin:0;font-family:'Courier New',monospace;font-size:40px;line-height:1.2;font-weight:700;letter-spacing:6px;color:#c22e25;white-space:nowrap;">${escapeHtml(code)}</p></td></tr></table>
+<p style="margin:16px 0 0;font-size:12px;line-height:1.7;color:#71717a;">Valid for <strong>10 minutes</strong>. Use your most recent code.<br>For your security, never share this code with anyone.</p></td></tr>
+<tr><td style="padding:0 32px 32px;"><p style="margin:0 0 8px;font-size:16px;line-height:1.5;font-weight:700;">Happy running ka Racepulse!</p>
+<p style="margin:0;color:#71717a;font-size:12px;">The RacePulsePH Team</p></td></tr>
+<tr><td style="padding:20px 32px;border-top:1px solid #edeef0;background:#fafafa;border-radius:0 0 24px 24px;"><p style="margin:0;font-size:11px;line-height:1.7;color:#71717a;">Didn't request this code? You can safely ignore this email.<br>This is an automated email from RacePulsePH.</p></td></tr>
+</table><p style="margin:20px 0 0;font-size:10px;font-weight:700;letter-spacing:2px;color:#86868b;">RACEPULSEPH &nbsp; / &nbsp; EVERY SECOND COUNTS</p>
+</td></tr></table></body></html>`;
+  return { subject: signup ? 'Your RacePulse account verification code' : 'Your RacePulse password reset code', text, html };
+}
+
+module.exports = { accountEmail, LOGO_CID };

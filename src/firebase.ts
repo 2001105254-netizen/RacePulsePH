@@ -9,7 +9,6 @@ import {
   signInWithEmailAndPassword,
   signInWithPopup,
   GoogleAuthProvider,
-  sendPasswordResetEmail,
   signOut as firebaseSignOut,
   updateProfile,
   type User,
@@ -60,12 +59,6 @@ export async function signUpWithEmail(email: string, password: string, displayNa
 export async function signInWithEmail(email: string, password: string): Promise<User> {
   const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
   return credential.user;
-}
-
-// Firebase sends the reset link to the account owner; the app never sees or
-// stores passwords beyond the sign-in form submission itself.
-export async function sendPasswordReset(email: string): Promise<void> {
-  await sendPasswordResetEmail(auth, email.trim());
 }
 
 export async function updateAccountDisplayName(displayName: string): Promise<void> {

@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { doc, getDoc, runTransaction } from 'firebase/firestore';
-import { db, signUpWithEmail, signInWithEmail, signInWithGoogle, signOutUser, sendPasswordReset } from '../firebase';
+import { db, signUpWithEmail, signInWithEmail, signInWithGoogle, signOutUser } from '../firebase';
+import { clearSignupDraft, getSignupDraft, saveSignupDraft } from '../lib/accountSecurity';
+import { PasswordResetFlow } from './AccountSecurity';
 import { isSuperAdminEmail } from '../lib/superAdmin';
 import { UserProfile } from '../types';
 import type { User } from 'firebase/auth';
-import { deleteUser } from 'firebase/auth';
 import { Mail, Lock, User as UserIcon, RefreshCw, AlertTriangle, LogOut, Eye, EyeOff } from 'lucide-react';
 
 type Mode = 'login' | 'signup';
@@ -120,6 +121,7 @@ export default function AuthGate({ authUser, initialMode = 'login', onBackToRace
   const [notice, setNotice] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -136,23 +138,7 @@ export default function AuthGate({ authUser, initialMode = 'login', onBackToRace
     }
   };
 
-  const handleForgotPassword = async () => {
-    setError('');
-    setNotice('');
-    if (!email.trim()) {
-      setError('Enter your email or username first, then tap Forgot password.');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await sendPasswordReset(await resolveLoginEmail(email));
-      setNotice('If this email has a RacePulsePH account, a password reset link has been sent.');
-    } catch (err: any) {
-      setError(err.message?.replace('Firebase: ', '') || 'Could not send the password reset email.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  const handleForgotPassword = () => { setError(''); setNotice(''); setPassword(''); setResettingPassword(true); };
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -173,18 +159,13 @@ export default function AuthGate({ authUser, initialMode = 'login', onBackToRace
     }
 
     setSubmitting(true);
-    let newUser: User | null = null;
     try {
-      newUser = await signUpWithEmail(email, password, displayName);
-      await createUserProfileForRole(newUser, signupRole, displayName, username);
-      // onAuthStateChanged in App.tsx picks up the new session and routes by role.
+      // Save only profile details before the Auth listener opens verification.
+      // The profile is created only after the backend verifies email ownership.
+      saveSignupDraft(email, { displayName: displayName.trim(), username: normalizeUsername(username), role: signupRoleLocked ? 'runner' : signupRole });
+      await signUpWithEmail(email, password, displayName);
+      setPassword('');
     } catch (err: any) {
-      // A duplicate username can only be detected after Firebase Auth creates
-      // the email account. Remove that just-created account so the email can
-      // immediately be retried with a different username.
-      if (newUser) {
-        try { await deleteUser(newUser); } catch { /* preserve the original error */ }
-      }
       setError(err.message?.replace('Firebase: ', '') || 'Failed to create account.');
     } finally {
       setSubmitting(false);
@@ -207,6 +188,10 @@ export default function AuthGate({ authUser, initialMode = 'login', onBackToRace
 
   if (authUser) {
     return <CompleteProfileForm user={authUser} signupRoleLocked={signupRoleLocked} />;
+  }
+
+  if (resettingPassword) {
+    return <div className="hero-glow flex-grow flex items-center justify-center py-12 px-4"><PasswordResetFlow initialEmail={email.includes('@') ? email : ''} onBack={() => { setResettingPassword(false); setMode('login'); setPassword(''); }} /></div>;
   }
 
   return (
@@ -392,12 +377,13 @@ function RoleSelector({ role, onChange }: { role: SignupRole; onChange: (r: Sign
   );
 }
 
-// Shown right after a first-time Google sign-in: the Firebase Auth session
-// already exists, but there's no Firestore profile/role for it yet.
+// Shown after verified signup or first-time Google sign-in when the Firebase
+// session exists but the account still needs its profile/role.
 function CompleteProfileForm({ user, signupRoleLocked = false }: { user: User; signupRoleLocked?: boolean }) {
-  const [role, setRole] = useState<SignupRole>('runner');
-  const [displayName, setDisplayName] = useState(user.displayName || '');
-  const [username, setUsername] = useState('');
+  const [draft] = useState(() => getSignupDraft(user.email || ''));
+  const [role, setRole] = useState<SignupRole>(signupRoleLocked ? 'runner' : draft?.role || 'runner');
+  const [displayName, setDisplayName] = useState(draft?.displayName || user.displayName || '');
+  const [username, setUsername] = useState(draft?.username || '');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -415,7 +401,8 @@ function CompleteProfileForm({ user, signupRoleLocked = false }: { user: User; s
     }
     setSubmitting(true);
     try {
-      await createUserProfileForRole(user, role, displayName, username);
+      await createUserProfileForRole(user, signupRoleLocked ? 'runner' : role, displayName, username);
+      clearSignupDraft(user.email || '');
       // onAuthStateChanged's profile listener in App.tsx picks this up and routes by role.
     } catch (err: any) {
       setError(err.message?.replace('Firebase: ', '') || 'Failed to finish setting up your account.');
@@ -423,6 +410,15 @@ function CompleteProfileForm({ user, signupRoleLocked = false }: { user: User; s
       setSubmitting(false);
     }
   };
+
+  // Resume the submitted signup automatically after email verification.
+  // A username collision leaves the populated form available for correction.
+  const attemptedDraft = React.useRef(false);
+  useEffect(() => {
+    if (!draft || attemptedDraft.current) return;
+    attemptedDraft.current = true;
+    void handleSubmit({ preventDefault() {} } as React.FormEvent);
+  }, []);
 
   return (
     <div className="hero-glow flex-grow flex items-center justify-center py-14 px-4 animate-fadeIn">

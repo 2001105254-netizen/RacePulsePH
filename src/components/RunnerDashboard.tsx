@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { collection, doc, getDoc, getDocs, onSnapshot, query, runTransaction, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
-import { db, sendPasswordReset, signOutUser, updateAccountDisplayName } from '../firebase';
+import { db, signOutUser, updateAccountDisplayName } from '../firebase';
+import { PasswordResetFlow } from './AccountSecurity';
 import { checkpointType, computeResults, getWaveStartTime } from '../lib/timing';
 import { downloadFinisherCertificate } from '../lib/finisherCertificate';
 import { resizeImageToDataUrl } from '../lib/image';
@@ -1710,7 +1711,7 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
   const [shirtSize, setShirtSize] = useState(profile.shirtSize || '');
   const [medicalNotes, setMedicalNotes] = useState(profile.medicalNotes || '');
   const [saving, setSaving] = useState(false);
-  const [sendingPasswordReset, setSendingPasswordReset] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
@@ -1850,21 +1851,15 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
     }
   };
 
-  const handlePasswordReset = async () => {
-    setSendingPasswordReset(true);
-    setError('');
-    setNotice('');
-    try {
-      await sendPasswordReset(profile.email);
-      setNotice(`Password reset link sent to ${profile.email}.`);
-    } catch (err: any) {
-      setError(err.message || 'Could not send the password reset link.');
-    } finally {
-      setSendingPasswordReset(false);
-    }
-  };
-
   const recentRace = mostRecentPast ? raceById.get(mostRecentPast.raceId) : undefined;
+
+  if (resettingPassword) return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn">
+      <div className="w-full max-w-md max-h-[calc(100vh-2rem)] overflow-y-auto">
+        <PasswordResetFlow initialEmail={profile.email} backLabel="Back to profile" onBack={() => setResettingPassword(false)} onDone={() => void signOutUser()} />
+      </div>
+    </div>
+  );
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn">
@@ -1966,7 +1961,7 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
 
         <div className="glass-inset p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div><p className="text-xs font-black text-[var(--text-primary)]">Password</p><p className="text-[10px] text-[var(--text-secondary)] mt-0.5">We’ll send a secure reset link to your email.</p></div>
-          <button type="button" onClick={() => void handlePasswordReset()} disabled={sendingPasswordReset} className="text-[10px] font-black uppercase tracking-wide px-3 py-2.5 rounded-[14px] bg-red-500/10 text-red-500 border border-red-500/25 hover:bg-red-500 hover:text-white transition disabled:opacity-60">{sendingPasswordReset ? 'Sending...' : 'Reset password'}</button>
+          <button type="button" onClick={() => setResettingPassword(true)} className="text-[10px] font-black uppercase tracking-wide px-3 py-2.5 rounded-[14px] bg-red-500/10 text-red-500 border border-red-500/25 hover:bg-red-500 hover:text-white transition">Reset password</button>
         </div>
 
         <div>

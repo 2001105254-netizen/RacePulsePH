@@ -7,6 +7,7 @@ coverage/
 *.log
 .env*
 !.env.example
+.secret*
 local_orders.json
 local_chip_reads.json
 local_rfid_events.json
