@@ -17,8 +17,8 @@ completes signup verification when it signs in.
 - Firebase function: `accountApi`, region `asia-southeast1`.
 - `SMTP_USER` is a Firebase string parameter, defaulting to the sender above.
 - `SMTP_APP_PASSWORD` and `AUTH_CODE_SECRET` are Firebase Secret Manager secrets.
-- The private, Git-ignored `functions/.secret.local` file configures local
-  Functions emulation and the secret upload script. It must never be committed,
+- The private, Git-ignored `functions/.secret.local` file supplies the secret
+  upload script. It must never be committed,
   copied into browser configuration or displayed in logs.
   Firebase deployment excludes private configuration files, and the local
   Vite preview denies HTTP access to them.
@@ -29,47 +29,9 @@ invalidates outstanding codes and grants.
 
 ## Enable in Firebase
 
-### Test locally before deployment
-
-```powershell
-npm run dev:local
-```
-
-This starts the pinned Firebase CLI's Auth, Firestore and Functions emulators
-using the **demo-racepulseph** project, then opens the local server at
-`http://127.0.0.1:3000`. The emulator dashboard is at
-`http://127.0.0.1:4000`. The first run downloads the emulator tooling and
-requires Java 21 or newer. No Firebase login or cloud deployment is needed.
-
-Local signup creates disposable accounts on this computer. Use a test
-password, not your Gmail password. Verification and password reset use the
-same account function and email templates as the deployed app; emails are
-really delivered to the address you enter through the configured SMTP sender.
-The SMTP app password and code secret stay in `functions/.secret.local`.
-The launcher adds inert local payment-secret placeholders when missing so
-emulator startup never tries to download cloud payment secrets.
-
-This mode routes account requests through `/api/account` to local Functions
-and connects the browser to local Auth and Firestore. Storage also points
-locally but its emulator is not started by this account workflow, so uploads
-are unavailable. Online checkout is disabled for local account testing.
-The local server listens only on the loopback address. Account/database data
-is temporary and resets when the emulators stop; received Gmail messages
-remain in the recipient's mailbox.
-
-Use **Create Account** to test the full flow, including automatic profile
-creation after verification. Existing live accounts are separate from local
-accounts even when you use the same email address. Stop with Ctrl+C.
-
-Local delivery was checked on 27 October 2026 using a disposable emulator
-account and real Google SMTP delivery. Signup reached the runner dashboard
-after the received code was confirmed. Password recovery accepted the emailed
-code, rejected mismatched passwords, invalidated the old password and allowed
-sign-in with the replacement. Both messages included the embedded logo and
-passed SPF/DKIM, but Gmail placed both in Spam. No live Firebase deployment
-or live account changes were made during this check.
-
-### Deploy when authorized
+The app always uses real Firebase authentication, including Google's real
+account chooser for **Continue with Google**. No demo accounts, authentication
+emulator, or local account-service substitute is enabled by the app.
 
 Use an account that can deploy to the `racepulseph` Firebase project. Cloud
 Functions requires the Blaze plan and Secret Manager permissions. The SMTP

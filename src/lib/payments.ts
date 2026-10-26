@@ -1,5 +1,4 @@
 import { auth } from '../firebase';
-import { useFirebaseEmulators } from './firebaseEnvironment';
 import { Gender, RaceEntryCategory } from '../types';
 
 export interface PendingRegistrationPayload {
@@ -35,7 +34,6 @@ export interface PaymentStatusResponse {
 const paymentsApiUrl = (import.meta.env.VITE_PAYMENTS_API_URL || 'https://asia-southeast1-racepulseph.cloudfunctions.net/paymentsApi').replace(/\/$/, '');
 
 async function paymentRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  if (useFirebaseEmulators) throw new Error('Online checkout is unavailable while testing accounts locally.');
   const user = auth.currentUser;
   if (!user) throw new Error('Please sign in before paying for a race registration.');
   const token = await user.getIdToken();
