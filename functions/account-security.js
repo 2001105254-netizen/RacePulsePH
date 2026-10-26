@@ -77,7 +77,7 @@ function createAccountSecurity({ db, auth, sendCode, secret, now = Date.now }) {
           const current = await transaction.get(ref);
           if (current.data()?.id === id) transaction.update(ref, { used: true });
         });
-        throw new AccountError(503, 'Email delivery is temporarily unavailable. Please try again in a minute.');
+        throw new AccountError(503, 'Email delivery is temporarily unavailable. Please try again in a minute.', COOLDOWN / 1000);
       }
     }
     // Unknown reset addresses get the same response and cooldown as real accounts.

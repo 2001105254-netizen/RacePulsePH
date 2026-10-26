@@ -1,10 +1,9 @@
 const admin = require('firebase-admin');
 const nodemailer = require('nodemailer');
-const path = require('node:path');
 const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret, defineString } = require('firebase-functions/params');
 const { createAccountSecurity, AccountError } = require('./account-security');
-const { accountEmail, LOGO_CID } = require('./account-email');
+const { accountMessage } = require('./account-email');
 
 const smtpPassword = defineSecret('SMTP_APP_PASSWORD');
 const codeSecret = defineSecret('AUTH_CODE_SECRET');
@@ -31,11 +30,7 @@ exports.accountApi = onRequest({
           connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 30000,
           logger: false, debug: false,
         });
-        await transporter.sendMail({
-          from: { name: 'RacePulsePH', address: smtpUser.value() }, to: { address: email },
-          ...accountEmail({ purpose, name, code }),
-          attachments: [{ filename: 'racepulse-logo.png', path: path.join(__dirname, 'assets/racepulse-email-logo.png'), cid: LOGO_CID }],
-        });
+        await transporter.sendMail(accountMessage({ sender: smtpUser.value(), email, purpose, name, code }));
       },
     });
     const input = { ...request.body, ip: request.ip, uid: undefined };

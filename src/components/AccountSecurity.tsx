@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { reload, type User } from 'firebase/auth';
-import { ArrowLeft, CheckCircle2, Eye, EyeOff, LogOut, Mail, RefreshCw, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Eye, EyeOff, Inbox, LogOut, Mail, RefreshCw, ShieldCheck } from 'lucide-react';
 import { signOutUser } from '../firebase';
 import { AccountRequestError, completePasswordReset, confirmPasswordCode, confirmVerificationCode, getSignupDraft, requestPasswordCode, requestVerificationCode } from '../lib/accountSecurity';
 
@@ -36,9 +36,19 @@ function CodeInput({ code, setCode, disabled }: { code: string; setCode: (code: 
     <label htmlFor="account-code" className="block text-xs font-bold text-[var(--text-secondary)]">Six-digit code</label>
     <input id="account-code" type="text" inputMode="numeric" autoComplete="one-time-code" autoFocus required pattern="[0-9]{6}" maxLength={6} value={code}
       onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} disabled={disabled}
-      placeholder="000000" className={`${inputClass} text-center !text-3xl font-mono font-bold tracking-[0.3em] tabular-nums placeholder:text-[var(--text-muted)]/40`} aria-describedby="account-code-help" />
-    <p id="account-code-help" className="text-[11px] leading-relaxed text-[var(--text-muted)]">Use the latest code. It expires in 10 minutes. Check your spam folder too.</p>
+      placeholder="000000" className={`${inputClass} text-center !text-3xl font-mono font-bold tracking-[0.3em] tabular-nums placeholder:text-[var(--text-muted)]/40`} aria-describedby="account-code-help account-email-guidance" />
+    <p id="account-code-help" className="text-xs leading-relaxed text-[var(--text-muted)]">Use the latest code. It expires in 10 minutes.</p>
   </div>;
+}
+
+function SpamGuidance() {
+  return <aside id="account-email-guidance" className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4 flex items-start gap-3" aria-label="Where to find your code">
+    <Inbox size={18} className="text-red-500 shrink-0 mt-0.5" aria-hidden="true" />
+    <div className="space-y-1 text-xs leading-relaxed">
+      <p className="font-bold text-[var(--text-primary)]">Nothing in your inbox? Check Spam or Junk.</p>
+      <p className="text-[var(--text-secondary)]">Look for an email from <span className="font-semibold break-all text-[var(--text-primary)]">events@racepulseph.com</span>. If you find it in Spam, choose “Not spam” to move it to your inbox.</p>
+    </div>
+  </aside>;
 }
 
 function Resend({ seconds, busy, onClick }: { seconds: number; busy: boolean; onClick: () => void }) {
@@ -59,6 +69,7 @@ export function EmailVerificationScreen({ user, onVerified }: { user: User; onVe
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [operation, setOperation] = useState<'send' | 'confirm'>('send');
   const started = useRef(false);
   const cooldown = useCountdown();
 
@@ -71,6 +82,7 @@ export function EmailVerificationScreen({ user, onVerified }: { user: User; onVe
   }
 
   async function sendCode() {
+    setOperation('send');
     setBusy(true); setError(''); setNotice('');
     try {
       const delivery = await requestVerificationCode(getSignupDraft(user.email || '')?.displayName);
@@ -83,6 +95,10 @@ export function EmailVerificationScreen({ user, onVerified }: { user: User; onVe
       setNotice('Your verification code is on its way.');
     } catch (error) {
       if (error instanceof AccountRequestError && error.retryAfter) cooldown.start(error.retryAfter);
+      if (error instanceof AccountRequestError && error.status === 503) {
+        setChallengeId(''); setCode('');
+        try { sessionStorage.removeItem(`racepulse_verification:${user.uid}`); } catch { /* Storage may be blocked. */ }
+      }
       setError(error instanceof Error ? error.message : 'Could not send your code.');
     } finally { setBusy(false); }
   }
@@ -98,7 +114,10 @@ export function EmailVerificationScreen({ user, onVerified }: { user: User; onVe
   }, []);
 
   async function confirm(event: React.FormEvent) {
-    event.preventDefault(); setBusy(true); setError(''); setNotice('');
+    event.preventDefault();
+    if (!challengeId) return void sendCode();
+    setOperation('confirm');
+    setBusy(true); setError(''); setNotice('');
     try {
       await confirmVerificationCode(challengeId, code);
       await finishVerification();
@@ -107,14 +126,17 @@ export function EmailVerificationScreen({ user, onVerified }: { user: User; onVe
   }
 
   return <div className="hero-glow flex-grow flex items-center justify-center px-4 py-12">
-    <SecurityFrame title="Check your inbox" detail={<>One more step to your starting line. Enter the code sent to <strong className="text-[var(--text-primary)]">{user.email}</strong> to verify your account.</>}>
+    <SecurityFrame title={challengeId ? 'Check your inbox' : 'Verify your email'} detail={challengeId
+      ? <>Enter the code sent to <strong className="text-[var(--text-primary)]">{user.email}</strong> to finish creating your account.</>
+      : <>Confirm that you own <strong className="text-[var(--text-primary)]">{user.email}</strong> to finish creating your account.</>}>
       <div className="flex items-center gap-3 text-[10px] uppercase tracking-wide font-bold text-[var(--text-muted)]"><span className="flex items-center gap-1"><CheckCircle2 size={13} /> Account details</span><span className="h-px flex-1 bg-[var(--border-default)]" /><span className="text-red-500">02 Verify email</span></div>
+      <SpamGuidance />
       <form onSubmit={confirm} className="space-y-4" aria-busy={busy}>
-        <CodeInput code={code} setCode={setCode} disabled={busy || !challengeId} />
+        {challengeId && <CodeInput code={code} setCode={setCode} disabled={busy} />}
         {error && <p role="alert" className="text-xs text-red-500 leading-relaxed">{error}</p>}
         {notice && <p role="status" className="text-xs text-[var(--text-secondary)]">{notice}</p>}
-        <button className={buttonClass} disabled={busy || code.length !== 6 || !challengeId}>{busy ? <RefreshCw size={16} className="animate-spin" /> : <ShieldCheck size={16} />} Verify & continue</button>
-        <Resend seconds={cooldown.seconds} busy={busy} onClick={() => void sendCode()} />
+        <button className={buttonClass} disabled={busy || (challengeId ? code.length !== 6 : cooldown.seconds > 0)}>{busy ? <RefreshCw size={16} className="animate-spin" /> : <ShieldCheck size={16} />}{busy ? (operation === 'confirm' ? 'Verifying…' : 'Sending code…') : challengeId ? 'Verify & continue' : cooldown.seconds > 0 ? `Try again in ${cooldown.seconds}s` : 'Send verification code'}</button>
+        {challengeId && <Resend seconds={cooldown.seconds} busy={busy} onClick={() => void sendCode()} />}
       </form>
       <button type="button" onClick={() => void signOutUser()} disabled={busy} className="w-full flex items-center justify-center gap-2 text-xs text-[var(--text-secondary)] hover:text-red-500"><LogOut size={14} /> Use a different account</button>
     </SecurityFrame>
@@ -172,6 +194,7 @@ export function PasswordResetFlow({ initialEmail = '', onBack, onDone, backLabel
   };
 
   return <SecurityFrame title={titles[stage]} detail={details[stage]}>
+    {(stage === 'email' || stage === 'code') && <SpamGuidance />}
     {stage === 'done' ? <><CheckCircle2 className="text-red-500" size={36} /><button type="button" onClick={onDone || onBack} className={buttonClass}>Return to sign in</button></> : <form onSubmit={submit} className="space-y-4" aria-busy={busy}>
       {stage === 'email' && <div className="space-y-2"><label htmlFor="reset-email" className="block text-xs font-bold text-[var(--text-secondary)]">Email address</label><input id="reset-email" type="email" autoComplete="email" autoFocus required maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} className={inputClass} placeholder="you@email.com" disabled={busy} /></div>}
       {stage === 'code' && <CodeInput code={code} setCode={setCode} disabled={busy} />}

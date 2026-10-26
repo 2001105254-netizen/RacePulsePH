@@ -10,8 +10,10 @@ export interface CodeDelivery {
 }
 
 export class AccountRequestError extends Error {
-  constructor(message: string, public retryAfter = 0) { super(message); }
+  constructor(message: string, public retryAfter = 0, public status = 0) { super(message); }
 }
+
+const unavailableMessage = 'RacePulse email delivery is temporarily unavailable. Please try again later. If this continues, contact events@racepulseph.com.';
 
 async function request<T>(path: string, body: object, authenticated = false): Promise<T> {
   const token = authenticated ? await auth.currentUser?.getIdToken() : null;
@@ -25,18 +27,43 @@ async function request<T>(path: string, body: object, authenticated = false): Pr
       signal: AbortSignal.timeout(60000),
     });
   } catch {
-    throw new Error('Could not reach the email service. Check your connection and try again.');
+    const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    throw new AccountRequestError(offline ? 'You’re offline. Reconnect to the internet, then try again.' : unavailableMessage);
   }
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new AccountRequestError(result.error || 'Could not complete this request. Please try again.', Number(result.retryAfter) || 0);
+  const result = await response.json().catch(() => null);
+  if (!response.ok) {
+    const unavailable = response.status === 404 || response.status >= 500;
+    throw new AccountRequestError(unavailable ? unavailableMessage : result?.error || 'Could not complete this request. Please try again.', Number(result?.retryAfter) || 0, response.status);
+  }
+  if (!result || typeof result !== 'object') throw new AccountRequestError(unavailableMessage);
   return result as T;
 }
 
-export const requestVerificationCode = (name?: string) => request<CodeDelivery>('/verification/request', { name }, true);
-export const confirmVerificationCode = (challengeId: string, code: string) => request('/verification/confirm', { challengeId, code }, true);
-export const requestPasswordCode = (email: string) => request<CodeDelivery>('/password/request', { email });
-export const confirmPasswordCode = (email: string, challengeId: string, code: string) => request<{ resetToken: string }>('/password/confirm', { email, challengeId, code });
-export const completePasswordReset = (resetToken: string, password: string) => request('/password/complete', { resetToken, password });
+function validateDelivery(delivery: CodeDelivery, allowVerified = false): CodeDelivery {
+  if (allowVerified && delivery.alreadyVerified === true) return delivery;
+  if (typeof delivery.challengeId !== 'string' || !/^[a-f0-9]{48}$/.test(delivery.challengeId)
+    || !Number.isFinite(delivery.expiresIn) || delivery.expiresIn <= 0
+    || !Number.isFinite(delivery.retryAfter) || delivery.retryAfter < 0) throw new AccountRequestError(unavailableMessage);
+  return delivery;
+}
+
+export const requestVerificationCode = async (name?: string) => validateDelivery(await request<CodeDelivery>('/verification/request', { name }, true), true);
+export const confirmVerificationCode = async (challengeId: string, code: string) => {
+  const result = await request<{ verified: boolean }>('/verification/confirm', { challengeId, code }, true);
+  if (result.verified !== true) throw new AccountRequestError(unavailableMessage);
+  return result;
+};
+export const requestPasswordCode = async (email: string) => validateDelivery(await request<CodeDelivery>('/password/request', { email }));
+export const confirmPasswordCode = async (email: string, challengeId: string, code: string) => {
+  const result = await request<{ resetToken: string }>('/password/confirm', { email, challengeId, code });
+  if (typeof result.resetToken !== 'string' || !/^[a-f0-9]{64}$/.test(result.resetToken)) throw new AccountRequestError(unavailableMessage);
+  return result;
+};
+export const completePasswordReset = async (resetToken: string, password: string) => {
+  const result = await request<{ reset: boolean }>('/password/complete', { resetToken, password });
+  if (result.reset !== true) throw new AccountRequestError(unavailableMessage);
+  return result;
+};
 
 export interface SignupDraft { displayName: string; username: string; role: 'runner' | 'organizer' | 'superadmin' }
 const draftKey = (email: string) => `racepulse_signup:${email.trim().toLowerCase()}`;

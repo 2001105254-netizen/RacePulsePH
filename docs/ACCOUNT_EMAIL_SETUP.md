@@ -5,6 +5,11 @@ the user profile or permits dashboard access. Existing unverified accounts
 also verify their email on their next visit. Google accounts that already
 have a verified email continue directly to profile setup or their dashboard.
 
+For sender authentication, the missing DMARC DNS record and Gmail placement,
+see [Email deliverability](EMAIL_DELIVERABILITY.md). The email uses the public
+HTTPS brand mark and a visible text wordmark so its identity survives image
+blocking and HTML-only mail previews.
+
 Forgot password sends a branded code, verifies that code, then permits a new
 password. Completing a reset revokes the account's refresh tokens. Password
 reset does not mark an unverified account verified; that account still
