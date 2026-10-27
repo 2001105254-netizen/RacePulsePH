@@ -43,6 +43,9 @@ Functions requires the Blaze plan and Secret Manager permissions. The SMTP
 app password must belong to the sender mailbox above, with Google two-step
 verification enabled.
 
+The Functions runtime is Node.js 22. Keep `firebase.json`,
+`functions/package.json` and its lockfile aligned when changing the runtime.
+
 From PowerShell in the project directory:
 
 ```powershell
@@ -52,6 +55,10 @@ npm install --prefix functions
 npm run build
 npx --yes firebase-tools deploy --only functions:accountApi,firestore:rules,storage,hosting --project racepulseph
 ```
+
+For a release, deploy `functions:accountApi` successfully first, then publish
+the updated Firestore/Storage rules and Hosting build. This avoids enforcing
+verification before the email endpoint is available.
 
 The setup script uploads the two secrets through temporary ignored files;
 secret values are never passed as command-line arguments. If the system npm

@@ -53,9 +53,9 @@ and the Inbox correction do not publish DMARC or guarantee future Inbox placemen
   to Inbox at the user's request. This corrects that mailbox's existing messages;
   it does not force future delivery or override Gmail for other recipients.
 
-The cloud `accountApi` and its secrets still need deployment before users can
-request real signup/password-reset codes. The live deployment remains on hold
-until authorized. A frontend-only QA update cannot create that backend endpoint.
+Deploy the cloud `accountApi` and its secrets before publishing the updated
+frontend and security rules so users can request signup/password-reset codes.
+A frontend-only Git update cannot create that backend endpoint.
 
 ## Operating guidance
 

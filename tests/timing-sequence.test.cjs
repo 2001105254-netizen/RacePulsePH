@@ -41,10 +41,12 @@ const duo = runner('D', 'duo', { startsAfterBib: 'S', teamMembers: ['Michiron', 
 const compute = (runners, reads) => computeResults(race.checkpoints, reads, runners, [], race);
 const byBib = (results, bib) => results.find((result) => result.bibNumber === bib);
 
-test('unlinked entries keep chip timing and division gun fallback', () => {
+test('unlinked entries use official gun time and retain the separate chip time', () => {
   const results = compute([solo, runner('U', 'duo')], [read('S', 'start', 1), read('S', 'finish', 31), read('U', 'finish', 40)]);
-  assert.equal(byBib(results, 'S').finishTime, '00:30:00');
-  assert.equal(byBib(results, 'S').timingMethod, 'chip');
+  assert.equal(byBib(results, 'S').finishTime, '00:31:00');
+  assert.equal(byBib(results, 'S').gunTime, '00:31:00');
+  assert.equal(byBib(results, 'S').chipTime, '00:30:00');
+  assert.equal(byBib(results, 'S').timingMethod, 'gun');
   assert.equal(byBib(results, 'U').finishTime, '00:30:00');
   assert.equal(byBib(results, 'U').timingMethod, 'gun');
 });
