@@ -174,6 +174,9 @@ export interface Race {
   // RFC3339 start time per distance label (e.g. "10K", "5K"). Falls back to
   // gunStartTime for legacy races and races with one shared start.
   waveStartTimes?: Record<string, string>;
+  // Optional organizer-confirmed Female Overall order per Solo division
+  // (for example { "5K Solo": ["5-154", "5-157", "5-145"] }).
+  femaleOverallRankOverrides?: Record<string, string[]>;
   // Set explicitly by the organizer after the last timing check. This is the
   // source of truth for moving an event to Done Races; it does not depend on
   // waiting for the calendar date to roll over.
@@ -305,6 +308,10 @@ export interface RunnerResult {
   splits: RunnerSplit[];
   finishTime?: string; // formatted HH:MM:SS elapsed from 'start' checkpoint to 'finish'
   finishSeconds?: number;
+  // Preserve the actual crossing order when results have the same displayed
+  // elapsed second. This is used only as a deterministic ranking tie-break.
+  finishReadAt?: string;
+  finishReadRecordedAt?: string;
   // Kept independently so a certificate can show both elapsed measurements.
   // Chip time exists only if the runner has a valid individual Start read.
   chipTime?: string;
@@ -318,8 +325,8 @@ export interface RunnerResult {
   overallRank?: number;
   categoryRank?: number;
   categoryLabel?: string;
-  // A chip start is preferred. Gun is a deliberate per-distance fallback when
-  // a crowded start mat misses an otherwise valid finisher.
+  // Roll Call gun time is the official basis for a normal wave. A transition
+  // entry starts at the prior entry's validated finish; chip is legacy fallback.
   timingMethod?: 'chip' | 'gun' | 'transition';
   sequenceStartTime?: string;
 }
