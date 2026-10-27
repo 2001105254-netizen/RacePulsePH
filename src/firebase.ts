@@ -29,6 +29,7 @@ const app = initializeApp(firebaseConfig);
 // Initialize Firestore on the default database
 export const db = getFirestore(app);
 export const storage = getStorage(app);
+export const auth = getAuth(app);
 
 // Enable offline database persistence for resilient offline capabilities
 if (typeof window !== 'undefined') {
@@ -42,8 +43,6 @@ if (typeof window !== 'undefined') {
 }
 
 // Auth setup - individual accounts for Admin / Organizer / Runner roles
-export const auth = getAuth(app);
-
 if (typeof window !== 'undefined') {
   setPersistence(auth, browserLocalPersistence).catch((err) => {
     console.warn('Firebase Auth persistence failed to configure:', err);

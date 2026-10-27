@@ -5,6 +5,11 @@ the user profile or permits dashboard access. Existing unverified accounts
 also verify their email on their next visit. Google accounts that already
 have a verified email continue directly to profile setup or their dashboard.
 
+For sender authentication, the missing DMARC DNS record and Gmail placement,
+see [Email deliverability](EMAIL_DELIVERABILITY.md). The email uses the public
+HTTPS brand mark and a visible text wordmark so its identity survives image
+blocking and HTML-only mail previews.
+
 Forgot password sends a branded code, verifies that code, then permits a new
 password. Completing a reset revokes the account's refresh tokens. Password
 reset does not mark an unverified account verified; that account still
@@ -17,8 +22,8 @@ completes signup verification when it signs in.
 - Firebase function: `accountApi`, region `asia-southeast1`.
 - `SMTP_USER` is a Firebase string parameter, defaulting to the sender above.
 - `SMTP_APP_PASSWORD` and `AUTH_CODE_SECRET` are Firebase Secret Manager secrets.
-- The private, Git-ignored `functions/.secret.local` file configures local
-  Functions emulation and the secret upload script. It must never be committed,
+- The private, Git-ignored `functions/.secret.local` file supplies the secret
+  upload script. It must never be committed,
   copied into browser configuration or displayed in logs.
   Firebase deployment excludes private configuration files, and the local
   Vite preview denies HTTP access to them.
@@ -28,6 +33,10 @@ codes and reset grants. Keep it stable across deployments. Rotating it
 invalidates outstanding codes and grants.
 
 ## Enable in Firebase
+
+The app always uses real Firebase authentication, including Google's real
+account chooser for **Continue with Google**. No demo accounts, authentication
+emulator, or local account-service substitute is enabled by the app.
 
 Use an account that can deploy to the `racepulseph` Firebase project. Cloud
 Functions requires the Blaze plan and Secret Manager permissions. The SMTP

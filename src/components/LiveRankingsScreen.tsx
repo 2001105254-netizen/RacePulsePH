@@ -6,21 +6,10 @@ import { finishScanOrder } from '../lib/liveRankings';
 import { runnerDivisionLabel, runnerEntryCategory } from '../lib/raceEntry';
 import { getWaveStartTime } from '../lib/timing';
 
-const distanceColors = [
-  'bg-sky-400/15 text-sky-200 border-sky-300/40',
-  'bg-amber-400/15 text-amber-200 border-amber-300/40',
-  'bg-emerald-400/15 text-emerald-200 border-emerald-300/40',
-  'bg-rose-400/15 text-rose-200 border-rose-300/40',
-  'bg-violet-400/15 text-violet-200 border-violet-300/40',
-  'bg-orange-400/15 text-orange-200 border-orange-300/40',
-];
 const badge = 'inline-flex items-center rounded-md border px-2 py-1 text-xs sm:text-sm font-bold';
-const divisionColors = {
-  solo: 'border-slate-300/40 bg-slate-400/15 text-slate-200',
-  duo: 'border-teal-300/40 bg-teal-400/15 text-teal-200',
-  trio: 'border-indigo-300/40 bg-indigo-400/15 text-indigo-200',
-  group: 'border-orange-300/40 bg-orange-400/15 text-orange-200',
-};
+const distanceColor = 'border-red-500/35 bg-red-500/10 text-red-300';
+const divisionColor = 'border-white/15 bg-white/[0.06] text-white/80';
+const ageColor = 'border-white/25 bg-white/[0.08] text-white/75';
 
 export default function LiveRankingsScreen({ race, results, onClose }: {
   race: Race; results: RunnerResult[]; onClose: () => void;
@@ -70,7 +59,6 @@ export default function LiveRankingsScreen({ race, results, onClose }: {
   };
   const name = (result: RunnerResult) => result.runnerProfile?.isFreeSlot
     ? `Bib ${result.bibNumber}` : result.runnerProfile?.fullName || `Bib ${result.bibNumber}`;
-  const color = (label: string) => distanceColors[Math.max(0, distanceLabels.indexOf(label)) % distanceColors.length];
   const waveStart = (result: RunnerResult) => result.runnerProfile
     ? getWaveStartTime(race, result.runnerProfile.distance, runnerEntryCategory(result.runnerProfile)) : undefined;
   const formatTime = (timestamp?: string | number) => timestamp !== undefined && Number.isFinite(new Date(timestamp).getTime())
@@ -114,8 +102,8 @@ export default function LiveRankingsScreen({ race, results, onClose }: {
         </label>
       </nav>
 
-      <div className="flex flex-wrap gap-2 mt-4 shrink-0" aria-label="Distance color legend">{distanceLabels.map((label) => <button key={label} type="button" onClick={() => changeDistance(label)} aria-pressed={distance === label} className={`${badge} ${color(label)} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white ${distance === label ? 'ring-1 ring-current' : ''}`}>{label}</button>)}</div>
-      <p className="mt-2 text-[11px] text-white/50">Distance colors identify each entry · Pink: age ranking · Amber: next entry running · Green: next entry finished</p>
+      <div className="flex flex-wrap gap-2 mt-4 shrink-0" aria-label="Choose a distance">{distanceLabels.map((label) => <button key={label} type="button" onClick={() => changeDistance(label)} aria-pressed={distance === label} className={`${badge} ${distanceColor} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 ${distance === label ? 'ring-1 ring-red-400' : ''}`}>{label}</button>)}</div>
+      <p className="mt-2 text-[11px] text-white/50">Red identifies race categories · 1st, 2nd, and 3rd places use podium colors · Amber: next entry running · Green: next entry finished</p>
       <div className="flex flex-wrap items-baseline justify-between gap-2 mt-5 mb-3 shrink-0">
         <h2 className="text-lg sm:text-2xl font-black font-display">{title}</h2>
         <p role="status" className="text-xs text-white/60">{visibleEntries.length} finisher{visibleEntries.length === 1 ? '' : 's'} · {category ? 'Official category places' : 'Scan # is arrival order, not an overall rank'}</p>
@@ -127,15 +115,15 @@ export default function LiveRankingsScreen({ race, results, onClose }: {
           const distanceLabel = result.runnerProfile?.distance || 'Unknown';
           const nextEntry = nextByBib.get(result.bibNumber);
           return (
-            <div key={result.bibNumber} className="flex flex-wrap sm:flex-nowrap items-center gap-3 sm:gap-5 px-4 sm:px-6 py-4 rounded-2xl bg-white/5 border border-white/10">
-              <div className="w-14 sm:w-20 shrink-0 text-center"><span className="block text-[10px] uppercase tracking-wider text-white/50">{category ? 'Place' : 'Scan'}</span><span className={`font-mono font-black text-2xl sm:text-3xl ${category && rank <= 3 ? 'text-amber-300' : 'text-white/80'}`}>{category ? rank : scanOrder}</span></div>
+            <div key={result.bibNumber} className={`flex flex-wrap sm:flex-nowrap items-center gap-3 sm:gap-5 px-4 sm:px-6 py-4 rounded-2xl ${category && rank <= 3 ? 'bg-white/10 border border-white/10' : 'bg-white/5'}`}>
+              <div className="w-14 sm:w-20 shrink-0 text-center"><span className="block text-[10px] uppercase tracking-wider text-white/50">{category ? 'Place' : 'Scan'}</span><span className={`font-mono font-black text-2xl sm:text-3xl ${rank === 1 ? 'text-red-400' : rank === 2 ? 'text-slate-300' : rank === 3 ? 'text-orange-500' : 'text-white/70'}`}>{category ? rank : scanOrder}</span></div>
               <div className="flex-1 min-w-0">
                 <p className="text-base sm:text-xl font-bold break-words">{name(result)}</p>
                 <p className="text-xs text-white/50 mt-1">Bib #{result.bibNumber} · Finish scan {formatTime(finishedAt)}</p>
                 <div className="flex flex-wrap gap-1.5 mt-2">
-                  <span className={`${badge} ${color(distanceLabel)}`}>{distanceLabel}</span>
-                  <span className={`${badge} ${divisionColors[runnerEntryCategory(result.runnerProfile)]}`}>{runnerDivisionLabel(result.runnerProfile)} · #{result.overallRank ?? result.rank}</span>
-                  {result.categoryRank !== undefined && result.categoryLabel && <span className={`${badge} border-fuchsia-300/40 bg-fuchsia-400/15 text-fuchsia-200`}>{result.categoryLabel} · #{result.categoryRank}</span>}
+                  <span className={`${badge} ${distanceColor}`}>{distanceLabel}</span>
+                  <span className={`${badge} ${divisionColor}`}>{runnerDivisionLabel(result.runnerProfile)} · #{result.overallRank ?? result.rank}</span>
+                  {result.categoryRank !== undefined && result.categoryLabel && <span className={`${badge} ${ageColor}`}>{result.categoryLabel} · #{result.categoryRank}</span>}
                   {result.runnerProfile?.startsAfterBib && <span className={`${badge} border-amber-300/40 bg-amber-400/15 text-amber-200`}>Started after bib #{result.runnerProfile.startsAfterBib}</span>}
                   {nextEntry && <span className={`${badge} ${nextEntry.finishTime ? 'border-emerald-300/40 bg-emerald-400/15 text-emerald-200' : 'border-amber-300/40 bg-amber-400/15 text-amber-200'}`}>Next: {runnerDivisionLabel(nextEntry.runnerProfile)} · Bib #{nextEntry.bibNumber} · {nextEntry.finishTime ? `Finished ${nextEntry.finishTime}` : nextEntry.sequenceStartTime ? `Running ${elapsed(nextEntry.sequenceStartTime)}` : 'Waiting'}</span>}
                 </div>

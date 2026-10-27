@@ -326,7 +326,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  app.listen(PORT, '0.0.0.0', () => {
     console.log(`\n======================================================`);
     console.log(`🚀 RACEPULSEPH BACKEND HUB RUNNING ONLINE!`);
     console.log(`🔗 Local Terminal Host: http://localhost:${PORT}`);

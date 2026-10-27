@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const { createAccountSecurity } = require('../functions/account-security');
-const { accountEmail } = require('../functions/account-email');
+const { accountEmail, accountMessage, LOGO_URL } = require('../functions/account-email');
 
 function fixture() {
   const documents = new Map();
@@ -166,9 +166,22 @@ test('both email templates include brand, personalized greeting, big code and sa
   assert.match(signup.text, /Welcome to Race Pulse, Juan!/);
   assert.match(signup.text, /Happy running ka Racepulse!/);
   assert.match(signup.html, /font-size:40px/);
-  assert.match(signup.html, /cid:racepulse-logo@racepulseph.com/);
+  assert.ok(signup.html.includes(LOGO_URL));
+  assert.match(signup.html, /width="64" height="64"/);
+  assert.match(signup.html, /RacePulse<span[^>]*>PH<\/span>/);
   assert.match(signup.html, /123456/);
   const reset = accountEmail({ purpose: 'reset', name: '<script>alert(1)</script>', code: '654321' });
   assert.match(reset.text, /reset your RacePulse password/);
   assert.ok(!reset.html.includes('<script>'));
+});
+
+test('transactional messages align sender, envelope and reply address without CID attachments', () => {
+  const message = accountMessage({ email: 'runner@example.com', purpose: 'verify', name: 'Juan', code: '123456' });
+  assert.equal(message.from.address, 'events@racepulseph.com');
+  assert.equal(message.envelope.from, message.from.address);
+  assert.equal(message.replyTo.address, message.from.address);
+  assert.equal(message.headers['Auto-Submitted'], 'auto-generated');
+  assert.equal(message.attachments, undefined);
+  assert.ok(!message.html.includes('cid:'));
+  assert.equal(message.disableFileAccess, true);
 });
