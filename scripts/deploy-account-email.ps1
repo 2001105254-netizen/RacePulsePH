@@ -2,9 +2,9 @@ param([string]$Project = 'racepulseph')
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $functionsRoot = Join-Path $projectRoot 'functions'
-$stagingName = ".secret-account-release-$([guid]::NewGuid().ToString('N'))"
+$stagingName = "account-release-$([guid]::NewGuid().ToString('N'))"
 $stagingRoot = Join-Path $functionsRoot $stagingName
-$configPath = Join-Path $functionsRoot "$stagingName.json"
+$configPath = Join-Path $functionsRoot ".secret-$stagingName.json"
 $nodeCommand = (Get-Command node).Source
 $npxCommand = Join-Path (Split-Path $nodeCommand) 'npx.cmd'
 $previousDiscoveryTimeout = $env:FUNCTIONS_DISCOVERY_TIMEOUT
@@ -16,6 +16,7 @@ try {
   # Firebase inspects every export before selecting functions. Package the email
   # entry point alone so its deployment never requires unrelated payment secrets.
   [System.IO.File]::WriteAllText((Join-Path $stagingRoot 'index.js'), "require('firebase-admin').initializeApp();`nexports.accountApi = require('./auth-api').accountApi;`n")
+  [System.IO.File]::WriteAllText((Join-Path $stagingRoot '.env'), "SMTP_USER=events@racepulseph.com`n")
   $deploymentConfig = @{ functions = @{ source = $stagingName; runtime = 'nodejs22'; ignore = @('node_modules', '.secret*', '.env*', '*.log') } }
   [System.IO.File]::WriteAllText($configPath, ($deploymentConfig | ConvertTo-Json -Depth 5))
   $env:FUNCTIONS_DISCOVERY_TIMEOUT = '60'
@@ -24,7 +25,7 @@ try {
 } finally {
   $env:FUNCTIONS_DISCOVERY_TIMEOUT = $previousDiscoveryTimeout
   # The stage contains only the fixed list of copied source files above.
-  foreach ($file in @('index.js', 'auth-api.js', 'account-security.js', 'account-email.js', 'package.json', 'package-lock.json')) {
+  foreach ($file in @('index.js', '.env', 'auth-api.js', 'account-security.js', 'account-email.js', 'package.json', 'package-lock.json')) {
     $stagedFile = Join-Path $stagingRoot $file
     if (Test-Path -LiteralPath $stagedFile) { Remove-Item -LiteralPath $stagedFile }
   }
