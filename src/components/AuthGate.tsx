@@ -6,7 +6,7 @@ import { PasswordResetFlow } from './AccountSecurity';
 import { isSuperAdminEmail } from '../lib/superAdmin';
 import { UserProfile } from '../types';
 import type { User } from 'firebase/auth';
-import { Mail, Lock, User as UserIcon, RefreshCw, AlertTriangle, LogOut, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, User as UserIcon, RefreshCw, AlertTriangle, LogOut, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 
 type Mode = 'login' | 'signup';
 type SignupRole = 'runner' | 'organizer' | 'superadmin';
@@ -50,6 +50,7 @@ function GoogleIcon({ className }: { className?: string }) {
 // Google), applying the same role/approval rules and one-time admin claim
 // regardless of which auth method they used.
 async function createUserProfileForRole(user: User, role: SignupRole, displayNameOverride: string | undefined, usernameInput: string): Promise<void> {
+  if (!user.emailVerified) throw new Error('Verify your email with the six-digit code before completing your account.');
   const username = normalizeUsername(usernameInput);
   const invalidUsername = usernameError(username);
   if (invalidUsername) throw new Error(invalidUsername);
@@ -209,7 +210,7 @@ export default function AuthGate({ authUser, initialMode = 'login', onBackToRace
           </div>
           <div>
             <p className="text-sm text-[var(--text-secondary)] mt-3 max-w-md mx-auto leading-relaxed">
-              Sign in to continue as Runner or Organizer.
+              {mode === 'signup' ? 'Create your account, then verify your email to join RacePulse.' : 'Sign in to continue as Runner or Organizer.'}
             </p>
             {onBackToRaces && (
               <button
@@ -295,6 +296,9 @@ export default function AuthGate({ authUser, initialMode = 'login', onBackToRace
             </form>
           ) : (
             <form onSubmit={handleSignup} className="space-y-4">
+              <div aria-label="Account creation steps" className="flex items-center gap-3 text-[10px] uppercase tracking-wide font-bold text-[var(--text-muted)]">
+                <span aria-current="step" className="text-red-500">01 Account details</span><span className="h-px flex-1 bg-[var(--border-default)]" /><span>02 Verify email</span>
+              </div>
               <div>
                 <label htmlFor="signupName" className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Full Name</label>
                 <div className="relative">
@@ -316,9 +320,10 @@ export default function AuthGate({ authUser, initialMode = 'login', onBackToRace
                 <label htmlFor="signupEmail" className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Email</label>
                 <div className="relative">
                   <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
-                  <input id="signupEmail" type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+                  <input id="signupEmail" type="email" autoComplete="email" required aria-describedby="signup-email-help" value={email} onChange={(e) => setEmail(e.target.value)}
                     className="w-full glass-inset pl-10 pr-4 py-3.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/60 transition" />
                 </div>
+                <p id="signup-email-help" className="mt-2 text-xs leading-relaxed text-[var(--text-secondary)]">We’ll send a six-digit code to this address. Enter it on the next screen to verify your email.</p>
               </div>
               <div>
                 <label htmlFor="signupPassword" className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Password</label>
@@ -346,8 +351,9 @@ export default function AuthGate({ authUser, initialMode = 'login', onBackToRace
 
               <button type="submit" disabled={submitting}
                 className={`w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-black uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 ${submitting ? 'bg-[var(--surface-hover)] text-[var(--text-secondary)] cursor-not-allowed' : 'text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-red-900/30'}`}>
-                {submitting ? <><RefreshCw className="w-4 h-4 animate-spin" /> Creating Account...</> : 'Create Account'}
+                {submitting ? <><RefreshCw className="w-4 h-4 animate-spin" /> Preparing verification…</> : <><ShieldCheck className="w-4 h-4 shrink-0" /> Continue to email verification</>}
               </button>
+              <p className="text-xs text-center leading-relaxed text-[var(--text-muted)]">Verify your email before accessing your RacePulse account.</p>
             </form>
           )}
         </div>

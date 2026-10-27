@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { reload, type User } from 'firebase/auth';
-import { ArrowLeft, CheckCircle2, Eye, EyeOff, Inbox, LogOut, Mail, RefreshCw, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, BookOpen, CheckCircle2, ChevronDown, Eye, EyeOff, Inbox, LogOut, Mail, Menu, Monitor, RefreshCw, ShieldCheck, Smartphone } from 'lucide-react';
 import { signOutUser } from '../firebase';
 import { AccountRequestError, completePasswordReset, confirmPasswordCode, confirmVerificationCode, getSignupDraft, requestPasswordCode, requestVerificationCode } from '../lib/accountSecurity';
 
@@ -42,11 +42,40 @@ function CodeInput({ code, setCode, disabled }: { code: string; setCode: (code: 
 }
 
 function SpamGuidance() {
+  const [showTutorial, setShowTutorial] = useState(false);
+  const tutorialId = useId();
   return <aside id="account-email-guidance" className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4 flex items-start gap-3" aria-label="Where to find your code">
     <Inbox size={18} className="text-red-500 shrink-0 mt-0.5" aria-hidden="true" />
-    <div className="space-y-1 text-xs leading-relaxed">
+    <div className="min-w-0 flex-1 space-y-1 text-xs leading-relaxed">
       <p className="font-bold text-[var(--text-primary)]">Nothing in your inbox? Check Spam or Junk.</p>
       <p className="text-[var(--text-secondary)]">Look for an email from <span className="font-semibold break-all text-[var(--text-primary)]">events@racepulseph.com</span>. If you find it in Spam, choose “Not spam” to move it to your inbox.</p>
+      <button type="button" onClick={() => setShowTutorial(!showTutorial)} aria-expanded={showTutorial} aria-controls={tutorialId}
+        className="!mt-3 min-h-11 w-full flex items-center gap-2 rounded-lg border border-red-500/25 px-3 py-2 text-left font-bold text-[var(--text-primary)] hover:bg-red-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500">
+        <BookOpen size={15} className="shrink-0 text-red-500" aria-hidden="true" />
+        <span className="flex-1">{showTutorial ? 'Hide Gmail Spam tutorial' : 'Where is Spam in Gmail?'}</span>
+        <ChevronDown size={15} className={`shrink-0 ${showTutorial ? 'rotate-180' : ''}`} aria-hidden="true" />
+      </button>
+      <div id={tutorialId} hidden={!showTutorial} className="!mt-4 space-y-4 border-t border-red-500/20 pt-4 text-[var(--text-secondary)]">
+        <p>First, make sure Gmail is open to the email address you used for RacePulse.</p>
+        <div className="space-y-2">
+          <h2 className="flex items-center gap-2 font-bold text-[var(--text-primary)]"><Smartphone size={15} aria-hidden="true" /> On your phone · Gmail app</h2>
+          <ol className="list-decimal pl-5 space-y-1.5 marker:text-red-500 marker:font-bold">
+            <li>Open Gmail and tap <strong className="text-[var(--text-primary)]">Menu</strong> <Menu size={13} className="inline align-text-bottom" aria-label="three horizontal lines" /> at the top left.</li>
+            <li>Scroll down the menu and tap <strong className="text-[var(--text-primary)]">Spam</strong>.</li>
+            <li>Open the RacePulsePH email from <span className="break-all">events@racepulseph.com</span> to find your code.</li>
+          </ol>
+        </div>
+        <div className="space-y-2">
+          <h2 className="flex items-center gap-2 font-bold text-[var(--text-primary)]"><Monitor size={15} aria-hidden="true" /> On your computer · Gmail website</h2>
+          <ol className="list-decimal pl-5 space-y-1.5 marker:text-red-500 marker:font-bold">
+            <li>Open Gmail. If the left menu is collapsed, click <strong className="text-[var(--text-primary)]">Menu</strong> at the top left.</li>
+            <li>In the left menu, click <strong className="text-[var(--text-primary)]">More</strong>, then <strong className="text-[var(--text-primary)]">Spam</strong>.</li>
+            <li>Open the RacePulsePH email to find your code, then click <strong className="text-[var(--text-primary)]">Report not spam</strong>.</li>
+          </ol>
+        </div>
+        <p>On the Gmail app, open the email’s three-dot menu and choose <strong className="text-[var(--text-primary)]">Report not spam</strong>. Return to RacePulse and enter the latest six-digit code.</p>
+        <a href="https://support.google.com/mail/answer/1366858?hl=en" target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center font-semibold text-red-500 underline underline-offset-4 hover:text-red-400">Gmail’s official Spam guide <span className="sr-only">(opens in a new tab)</span></a>
+      </div>
     </div>
   </aside>;
 }
