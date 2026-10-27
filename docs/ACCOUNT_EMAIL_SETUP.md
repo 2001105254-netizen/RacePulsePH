@@ -53,12 +53,18 @@ npx --yes firebase-tools login
 npm install --prefix functions
 ./scripts/configure-account-email.ps1
 npm run build
-npx --yes firebase-tools deploy --only functions:accountApi,firestore:rules,storage,hosting --project racepulseph
+./scripts/deploy-account-email.ps1
+npx --yes firebase-tools deploy --only firestore:rules,storage,hosting --project racepulseph
 ```
 
 For a release, deploy `functions:accountApi` successfully first, then publish
 the updated Firestore/Storage rules and Hosting build. This avoids enforcing
 verification before the email endpoint is available.
+
+The email deployment script packages only the account service exports in a
+temporary ignored directory. Firebase otherwise validates the unrelated
+PayMongo secrets even when only `accountApi` is selected. It copies the exact
+account source and dependency lockfile, without credentials or test files.
 
 The setup script uploads the two secrets through temporary ignored files;
 secret values are never passed as command-line arguments. If the system npm
