@@ -26,6 +26,7 @@ export interface EngravingStats {
 export type UserRole = 'superadmin' | 'admin' | 'organizer' | 'runner';
 
 export interface UserProfile {
+  accessRemoved?: boolean;
   uid: string;
   email: string;
   displayName: string;

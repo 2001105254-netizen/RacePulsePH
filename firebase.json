@@ -1,7 +1,8 @@
 {
-  "functions": {
+  "functions": [{
+    "codebase": "default",
     "source": "functions",
-    "runtime": "nodejs20",
+    "runtime": "nodejs22",
     "ignore": [
       "node_modules",
       ".git",
@@ -10,13 +11,15 @@
       ".secret*",
       ".env*"
     ]
-  },
+  }, { "codebase": "rbac", "source": "functions/rbac", "runtime": "nodejs22", "ignore": ["node_modules", "*.log", ".env*", ".secret*"] }],
   "firestore": {
-    "rules": "firestore.rules"
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
   },
   "storage": {
     "rules": "storage.rules"
   },
+  "emulators": { "firestore": { "port": 8080 }, "storage": { "port": 9199 }, "ui": { "enabled": false } },
   "hosting": {
     "public": "dist",
     "ignore": [

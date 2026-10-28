@@ -1,3 +1,4 @@
+import { useAccess, authenticatedFetch } from '../lib/access';
 import React, { useState, useEffect, useRef } from 'react';
 import { collection, query, onSnapshot, doc, updateDoc, deleteDoc, writeBatch, getDocs } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
@@ -13,24 +14,25 @@ import autoTable from 'jspdf-autotable';
 import QrScannerModal from './QrScannerModal';
 
 export default function OperatorDashboard() {
+  const { can, authority } = useAccess();
   const [orders, setOrders] = useState<EngravingOrder[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   // Filtering and Searching State
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | EngravingStatus>('all');
-  
+
   // Double-Check helper input
   const [doubleCheckCode, setDoubleCheckCode] = useState('');
-  
+
   // State for showing copy triggers check mark feedback per-field (e.g. { 'orderId_field': true })
   const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
-  
+
   // Sound Notification Toggle
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [newOrderAlert, setNewOrderAlert] = useState<string | null>(null);
   const [showLightBurnModal, setShowLightBurnModal] = useState(false);
-  
+
   // Offline & QR Sync States
   const [showQrScanModal, setShowQrScanModal] = useState(false);
   const [qrScanSuccessMessage, setQrScanSuccessMessage] = useState('');
@@ -62,7 +64,7 @@ export default function OperatorDashboard() {
 
   const firestoreOrdersRef = useRef<EngravingOrder[]>([]);
   const localOrdersRef = useRef<EngravingOrder[]>([]);
-  
+
   // Track previous count to sound alert on new arrivals
   const prevCountRef = useRef<number>(0);
   const ordersRef = useRef<EngravingOrder[]>([]);
@@ -103,7 +105,7 @@ export default function OperatorDashboard() {
       };
       const weightA = orderWeight[a.status] || 99;
       const weightB = orderWeight[b.status] || 99;
-      
+
       if (weightA !== weightB) {
         return weightA - weightB;
       }
@@ -116,7 +118,7 @@ export default function OperatorDashboard() {
       if (newlyAdded) {
         setNewOrderAlert(`New Order Loaded: ${newlyAdded.runnerName} [Code: ${newlyAdded.id}]`);
         setTimeout(() => setNewOrderAlert(null), 5000);
-        
+
         if (soundEnabledRef.current) {
           triggerBeepSound();
         }
@@ -136,7 +138,7 @@ export default function OperatorDashboard() {
       snapshot.forEach((docSnap) => {
         ordersList.push(docSnap.data() as EngravingOrder);
       });
-      
+
       firestoreOrdersRef.current = ordersList;
       mergeAndPublish();
     }, (error) => {
@@ -151,7 +153,7 @@ export default function OperatorDashboard() {
   useEffect(() => {
     const pollLocalServer = async () => {
       try {
-        const res = await fetch('/api/orders');
+        const res = await authenticatedFetch('/api/orders');
         if (!res.ok) {
           setLanConnected(false);
           return;
@@ -177,15 +179,15 @@ export default function OperatorDashboard() {
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const oscillator = audioCtx.createOscillator();
       const gainNode = audioCtx.createGain();
-      
+
       oscillator.type = 'sine';
       oscillator.frequency.value = 880; // High frequency beep
       gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
       gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
-      
+
       oscillator.connect(gainNode);
       gainNode.connect(audioCtx.destination);
-      
+
       oscillator.start();
       oscillator.stop(audioCtx.currentTime + 0.3);
     } catch (e) {
@@ -197,10 +199,10 @@ export default function OperatorDashboard() {
   const stats: EngravingStats = orders.reduce((acc, order) => {
     acc.total += 1;
     acc[order.status] += 1;
-    
+
     const dist = order.distance || 'Other';
     acc.byDistance[dist] = (acc.byDistance[dist] || 0) + 1;
-    
+
     return acc;
   }, {
     total: 0,
@@ -215,7 +217,7 @@ export default function OperatorDashboard() {
   const handleUpdateStatus = async (orderId: string, nextStatus: EngravingStatus) => {
     const docPath = `orders/${orderId}`;
     const timestamp = new Date().toISOString();
-    
+
     // 1. Cloud write (ignore error if offline)
     try {
       const docRef = doc(db, 'orders', orderId);
@@ -236,7 +238,7 @@ export default function OperatorDashboard() {
           status: nextStatus,
           updatedAt: timestamp
         };
-        await fetch('/api/orders', {
+        await authenticatedFetch('/api/orders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(updatedOrder)
@@ -282,7 +284,7 @@ export default function OperatorDashboard() {
 
     // 2. Local LAN delete
     try {
-      await fetch(`/api/orders/${orderId}`, {
+      await authenticatedFetch(`/api/orders/${orderId}`, {
         method: 'DELETE'
       });
       console.log("LAN Server sync: Deleted order offline successfully.");
@@ -301,16 +303,16 @@ export default function OperatorDashboard() {
     setShowPurgeConfirm(false);
     try {
       setLoading(true);
-      
+
       // 1. Cloud purge
       const q = query(collection(db, 'orders'));
       const snapshot = await getDocs(q);
       const batch = writeBatch(db);
-      
+
       snapshot.forEach((docSnap) => {
         batch.delete(docSnap.ref);
       });
-      
+
       await batch.commit();
     } catch (e) {
       console.warn("Cloud database purge skipped/offline:", e);
@@ -318,7 +320,7 @@ export default function OperatorDashboard() {
 
     // 2. Local LAN express server purge
     try {
-      await fetch('/api/orders/reset', {
+      await authenticatedFetch('/api/orders/reset', {
         method: 'POST'
       });
     } catch (laneErr) {
@@ -341,7 +343,7 @@ export default function OperatorDashboard() {
 
     // CSV headers to easy bind in LightBurn: RefCode, Name, Bib, Time, Distance, Rank, Inscription, Status
     const headers = ["Index", "RefCode", "RunnerName", "BibNumber", "FinishingTime", "Distance", "Rank", "CustomInscription", "Status"];
-    
+
     const rows = sortedOrders.map((order, idx) => [
       idx + 1,
       order.id,
@@ -355,7 +357,7 @@ export default function OperatorDashboard() {
     ]);
 
     const csvContent = [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
-    
+
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -368,8 +370,8 @@ export default function OperatorDashboard() {
 
   // Generate branded PDF report with custom race name
   const handleGeneratePdfReport = () => {
-    const ordersToExport = pdfReportFilter === 'all' 
-      ? orders 
+    const ordersToExport = pdfReportFilter === 'all'
+      ? orders
       : orders.filter(o => o.status === pdfReportFilter);
 
     if (ordersToExport.length === 0) {
@@ -378,16 +380,16 @@ export default function OperatorDashboard() {
     }
 
     const doc = new jsPDF({ orientation: 'landscape' });
-    
+
     // Add Header Banner
     doc.setFillColor(20, 20, 20);
     doc.rect(0, 0, 297, 30, 'F');
-    
+
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(18);
     doc.setFont('helvetica', 'bold');
     doc.text(pdfRaceName.toUpperCase() || 'RACE MEDAL ENGRAVING REPORT', 14, 15);
-    
+
     doc.setFontSize(10);
     doc.setTextColor(245, 158, 11); // Amber
     const dateStr = new Date().toLocaleString();
@@ -571,12 +573,12 @@ export default function OperatorDashboard() {
 
       let count = 0;
       const { setDoc } = await import('firebase/firestore');
-      
+
       for (const item of imported) {
         if (!item.id || !item.runnerName || !item.bibNumber) {
           continue; // skip corrupt items
         }
-        
+
         // Save using setDoc so it merges into indexDB and Firestore seamlessly
         await setDoc(doc(db, 'orders', item.id), {
           ...item,
@@ -604,32 +606,32 @@ export default function OperatorDashboard() {
       order.rank || '',
       order.customInscription || ''
     ].join('\t'); // Tab separated is optimal for Excel paste!
-    
+
     handleCopyText(`${order.id}_tsv_all`, row);
   };
 
   // Filters application
   const filteredOrders = orders.filter(o => {
     // Search match
-    const matchSearch = 
+    const matchSearch =
       o.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       o.runnerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       o.bibNumber.includes(searchTerm);
-      
+
     // Status match
     const matchStatus = statusFilter === 'all' ? true : o.status === statusFilter;
-    
+
     return matchSearch && matchStatus;
   });
 
   // Isolated matched record for double check input
-  const foundDoubleCheckOrder = doubleCheckCode.trim() 
+  const foundDoubleCheckOrder = doubleCheckCode.trim()
     ? orders.find(o => o.id.toUpperCase() === doubleCheckCode.trim().toUpperCase())
     : null;
 
   return (
     <div id="operator_flow_main" className="w-full max-w-7xl mx-auto px-4 py-4 space-y-6">
-      
+
       {/* Alert bar for live arrivals */}
       {newOrderAlert && (
         <div className="bg-gradient-to-r from-amber-600 to-amber-500 text-black px-5 py-3 rounded-[20px] font-black font-display shadow-2xl border border-amber-400 flex items-center justify-between text-xs tracking-wider uppercase animate-bounce">
@@ -671,7 +673,7 @@ export default function OperatorDashboard() {
         {/* Action Controls right */}
         <div className="flex flex-wrap items-center gap-2">
           {/* LightBurn Guide Button */}
-          <button
+          <button hidden={!can('engraving.export')}
             onClick={() => setShowLightBurnModal(true)}
             className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-[20px] bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-default)] text-[var(--text-primary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)] transition duration-150 uppercase tracking-wider"
             title="Open interactive manual for LightBurn Variable Text integration"
@@ -680,7 +682,7 @@ export default function OperatorDashboard() {
           </button>
 
           {/* Export CSV for LightBurn */}
-          <button
+          <button hidden={!can('engraving.export')}
             onClick={handleDownloadCSV}
             className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-[20px] bg-[var(--surface-card)]/72 backdrop-blur-2xl hover:bg-[var(--surface-inset)]/75 backdrop-blur-md text-amber-500 border border-[var(--border-default)] hover:border-[var(--border-default)] font-extrabold transition duration-150 uppercase tracking-wider active:scale-95"
             title="Download formatted CSV file to sync with LightBurn's Variable Text pane"
@@ -689,7 +691,7 @@ export default function OperatorDashboard() {
           </button>
 
           {/* Generate PDF Report Button */}
-          <button
+          <button hidden={!can('engraving.export')}
             onClick={() => setShowPdfModal(true)}
             className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-[20px] bg-[var(--surface-card)]/72 backdrop-blur-2xl hover:bg-[var(--surface-inset)]/75 backdrop-blur-md text-red-400 border border-[var(--border-default)] hover:border-[var(--border-default)] font-extrabold transition duration-150 uppercase tracking-wider active:scale-95"
             title="Generate and download a printable PDF report of registered athletes and medal status"
@@ -711,7 +713,7 @@ export default function OperatorDashboard() {
           </button>
 
           {/* Offline Sync Backup Buttons */}
-          <button
+          <button hidden={!can('engraving.backup')}
             onClick={() => {
               setBackupSuccessMessage('');
               setBackupErrorMessage('');
@@ -730,8 +732,8 @@ export default function OperatorDashboard() {
               triggerBeepSound();
             }}
             className={`flex items-center gap-2 text-xs font-bold px-3 py-2 rounded-[20px] border transition duration-150 uppercase tracking-wider ${
-              soundEnabled 
-                ? 'bg-amber-500/10 border-amber-500/30 text-amber-500' 
+              soundEnabled
+                ? 'bg-amber-500/10 border-amber-500/30 text-amber-500'
                 : 'bg-[var(--surface-inset)]/75 backdrop-blur-md border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
             }`}
             title="Toggle buzzer sound when new customer submits engraving request"
@@ -741,7 +743,7 @@ export default function OperatorDashboard() {
           </button>
 
           {/* Purge / Clear DB */}
-          <button
+          <button hidden={!authority}
             onClick={handlePurgeDatabase}
             className="text-xs text-[var(--text-secondary)] hover:text-red-400 hover:bg-red-950/20 border border-[var(--border-default)] hover:border-red-900 font-bold px-3.5 py-2 rounded-[20px] transition duration-150 flex items-center gap-1.5 uppercase tracking-wider"
             title="Deletes all database documents for a completely fresh queue."
@@ -754,7 +756,7 @@ export default function OperatorDashboard() {
 
       {/* Tally and Metrics section */}
       <div id="operator_stats_grid" className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-4">
-        
+
         {/* Total Avails */}
         <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-subtle)] rounded-[20px] p-4 shadow-sm flex items-center gap-3">
           <div className="p-3 bg-amber-500/10 text-amber-500 rounded-lg">
@@ -878,7 +880,7 @@ export default function OperatorDashboard() {
               className="w-full bg-[var(--surface-inset)]/75 backdrop-blur-md text-[var(--text-primary)] border border-[var(--border-default)] rounded-[20px] px-3.5 py-2.5 text-xs font-bold font-mono tracking-widest placeholder-[var(--text-muted)] focus:outline-none focus:ring-1 focus:ring-amber-500"
             />
             {doubleCheckCode && (
-              <button 
+              <button
                 onClick={() => setDoubleCheckCode('')}
                 className="absolute right-3.5 top-3 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
               >
@@ -891,7 +893,7 @@ export default function OperatorDashboard() {
         {/* Found Result Panel */}
         {foundDoubleCheckOrder ? (
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center bg-[var(--surface-inset)]/75 backdrop-blur-md border border-amber-500/20 rounded-[20px] p-4 animate-fadeIn">
-            
+
             {/* Short Code badge */}
             <div className="md:col-span-2 text-center md:border-r border-[var(--border-subtle)] pr-2">
               <span className="text-[9px] text-[var(--text-secondary)] font-bold block uppercase tracking-wider">Matched Ref</span>
@@ -903,7 +905,7 @@ export default function OperatorDashboard() {
 
             {/* Huge copier display fields */}
             <div className="md:col-span-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              
+
               {/* Runner name */}
               <div className="bg-[var(--surface-card)]/60 border border-[var(--border-subtle)] rounded-[20px] p-3 relative group">
                 <span className="block text-[9px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">1. Runner Full Name</span>
@@ -1007,10 +1009,10 @@ export default function OperatorDashboard() {
                   </>
                 )}
               </button>
-              
+
               <div className="flex gap-1.5">
                 {foundDoubleCheckOrder.status === 'queued' && (
-                  <button
+                  <button hidden={!can('engraving.status')}
                     onClick={() => handleUpdateStatus(foundDoubleCheckOrder.id, 'inprogress')}
                     className="flex-1 text-[9px] font-bold py-2 bg-orange-600 hover:bg-orange-500 rounded-lg transition text-white uppercase text-center"
                   >
@@ -1018,7 +1020,7 @@ export default function OperatorDashboard() {
                   </button>
                 )}
                 {foundDoubleCheckOrder.status === 'inprogress' && (
-                  <button
+                  <button hidden={!can('engraving.status')}
                     onClick={() => handleUpdateStatus(foundDoubleCheckOrder.id, 'ready')}
                     className="flex-1 text-[9px] font-bold py-2 bg-blue-600 hover:bg-blue-500 rounded-lg transition text-white uppercase text-center"
                   >
@@ -1026,7 +1028,7 @@ export default function OperatorDashboard() {
                   </button>
                 )}
                 {foundDoubleCheckOrder.status === 'ready' && (
-                  <button
+                  <button hidden={!can('engraving.status')}
                     onClick={() => handleUpdateStatus(foundDoubleCheckOrder.id, 'completed')}
                     className="flex-1 text-[9px] font-bold py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg transition text-white uppercase text-center"
                   >
@@ -1039,8 +1041,8 @@ export default function OperatorDashboard() {
           </div>
         ) : (
           <div className="bg-[var(--surface-inset)]/75 backdrop-blur-md p-4 rounded-[20px] text-center text-xs text-[var(--text-secondary)] font-sans border border-[var(--border-subtle)] leading-normal">
-            {doubleCheckCode.trim() 
-              ? `No active order found matched code: "${doubleCheckCode.toUpperCase()}"` 
+            {doubleCheckCode.trim()
+              ? `No active order found matched code: "${doubleCheckCode.toUpperCase()}"`
               : "READY FOR DUAL SCREEN VERIFICATION. ENTER OR SCAN RUNNER'S PASSCODE TO ALIGN EXACT NAME AND PREVENTS MISTAKES."
             }
           </div>
@@ -1049,7 +1051,7 @@ export default function OperatorDashboard() {
 
       {/* Orders Filter & Search bar */}
       <div className="flex flex-col md:flex-row items-center justify-between border border-[var(--border-subtle)] bg-[var(--surface-card)]/72 backdrop-blur-2xl rounded-[20px] p-4 shadow-xl gap-4">
-        
+
         {/* Search Input Left */}
         <div className="relative w-full md:w-80">
           <Search className="w-4 h-4 text-[var(--text-secondary)] absolute left-3.5 top-3.5" />
@@ -1065,7 +1067,7 @@ export default function OperatorDashboard() {
         {/* Tab Filters right */}
         <div className="flex items-center gap-1 w-full md:w-auto overflow-x-auto py-1">
           <span className="text-[var(--text-secondary)] text-xs font-bold mr-2.5 whitespace-nowrap"><Filter className="w-3.5 h-3.5 inline mr-1 text-amber-500" /> STATUS:</span>
-          
+
           {(['all', 'queued', 'inprogress', 'ready', 'completed'] as const).map((filterOpt) => (
             <button
               key={filterOpt}
@@ -1082,10 +1084,10 @@ export default function OperatorDashboard() {
             >
               {filterOpt === 'all' ? 'All Orders' : filterOpt}
               <span className="ml-1.5 px-1.5 py-[1px] bg-[var(--surface-inset)]/75 backdrop-blur-md rounded font-mono text-[9px] text-[var(--text-secondary)]">
-                {filterOpt === 'all' ? stats.total 
-                  : filterOpt === 'queued' ? stats.queued 
-                  : filterOpt === 'inprogress' ? stats.inprogress 
-                  : filterOpt === 'ready' ? stats.ready 
+                {filterOpt === 'all' ? stats.total
+                  : filterOpt === 'queued' ? stats.queued
+                  : filterOpt === 'inprogress' ? stats.inprogress
+                  : filterOpt === 'ready' ? stats.ready
                   : stats.completed
                 }
               </span>
@@ -1112,7 +1114,7 @@ export default function OperatorDashboard() {
         <div id="orders_cards_list" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredOrders.map((order) => {
             const isTsvCopied = copiedStates[`${order.id}_tsv_all`];
-            
+
             // Status-specific card accent colors
             const accents = {
               queued: 'border-l-4 border-l-amber-500 bg-amber-550/5',
@@ -1129,16 +1131,16 @@ export default function OperatorDashboard() {
             };
 
             return (
-              <div 
-                key={order.id} 
+              <div
+                key={order.id}
                 className={`bg-[var(--surface-card)]/90 rounded-[20px] border border-[var(--border-subtle)] p-5 flex flex-col justify-between shadow-xl relative overflow-hidden transition-all duration-200 hover:border-[var(--border-default)] ${accents[order.status]}`}
               >
-                
+
                 {/* Upper row: ID and Status badges */}
                 <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3 mb-3">
                   <div className="flex items-center gap-2">
                     <span className="text-[9px] font-bold text-[var(--text-secondary)] font-mono">CODE</span>
-                    <span 
+                    <span
                       onClick={() => setDoubleCheckCode(order.id)}
                       className="text-lg font-black font-mono text-amber-500 hover:bg-amber-500/10 px-2 py-0.5 rounded cursor-pointer transition border border-dashed border-amber-500/25"
                       title="Click to double check this record in deep isolated panel"
@@ -1154,7 +1156,7 @@ export default function OperatorDashboard() {
 
                 {/* Core Field Contents */}
                 <div className="space-y-3 flex-grow">
-                  
+
                   {/* Runner Name Block */}
                   <div className="relative group/copy pr-6">
                     <span className="block text-[8px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">Runner Name</span>
@@ -1242,10 +1244,10 @@ export default function OperatorDashboard() {
                 {/* Lower Action Workflow Controllers */}
                 <div className="border-t border-[var(--border-subtle)] pt-3 mt-4 space-y-2">
                   <div className="flex gap-1.5">
-                    
+
                     {/* Workflow status progressor */}
                     {order.status === 'queued' && (
-                      <button
+                      <button hidden={!can('engraving.status')}
                         onClick={() => handleUpdateStatus(order.id, 'inprogress')}
                         className="flex-1 text-xs font-bold font-display uppercase tracking-widest py-2 bg-gradient-to-r from-orange-600 to-orange-500 hover:brightness-110 text-white rounded-[20px] shadow-sm transition flex items-center justify-center gap-1 active:scale-95"
                       >
@@ -1254,7 +1256,7 @@ export default function OperatorDashboard() {
                     )}
 
                     {order.status === 'inprogress' && (
-                      <button
+                      <button hidden={!can('engraving.status')}
                         onClick={() => handleUpdateStatus(order.id, 'ready')}
                         className="flex-1 text-xs font-bold font-display uppercase tracking-widest py-2 bg-gradient-to-r from-blue-600 to-blue-550 hover:brightness-110 text-white rounded-[20px] shadow-sm transition flex items-center justify-center gap-1 active:scale-95"
                       >
@@ -1263,7 +1265,7 @@ export default function OperatorDashboard() {
                     )}
 
                     {order.status === 'ready' && (
-                      <button
+                      <button hidden={!can('engraving.status')}
                         onClick={() => handleUpdateStatus(order.id, 'completed')}
                         className="flex-1 text-xs font-bold font-display uppercase tracking-widest py-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:brightness-110 text-white rounded-[20px] shadow-sm transition flex items-center justify-center gap-1 active:scale-95"
                       >
@@ -1274,7 +1276,7 @@ export default function OperatorDashboard() {
                     {order.status === 'completed' && (
                       <div className="flex-grow flex justify-between items-center bg-[var(--surface-inset)]/75 backdrop-blur-md rounded-lg px-3 py-1.5 border border-[var(--border-subtle)] text-[var(--text-secondary)] text-[11px] font-semibold">
                         <span className="uppercase text-[9px] tracking-wider text-emerald-500">Done &bull; Safe Handed over</span>
-                        <button 
+                        <button hidden={!can('engraving.status')}
                           onClick={() => handleUpdateStatus(order.id, 'queued')}
                           className="text-xs text-[var(--text-secondary)] hover:text-amber-500 transition font-bold"
                           title="Put back in queue"
@@ -1297,8 +1299,8 @@ export default function OperatorDashboard() {
                       {isTsvCopied ? <Check className="w-2.5 text-emerald-500" /> : <Copy className="w-2.5" />}
                       {isTsvCopied ? 'Row Copied!' : 'Copy Row (TSV)'}
                     </button>
-                    
-                    <button
+
+                    <button hidden={!authority}
                       onClick={() => handleDeleteOrder(order.id, order.runnerName)}
                       className="text-[9px] font-bold text-[var(--text-secondary)] hover:text-red-400 p-1 flex items-center gap-0.5 hover:bg-red-950/10 rounded transition"
                       title="Delete / cancel order"
@@ -1352,7 +1354,7 @@ export default function OperatorDashboard() {
                   <p className="text-[10px] text-[var(--text-secondary)] font-mono">AUTOMATED medal ENGRAVING PIPELINE</p>
                 </div>
               </div>
-              <button 
+              <button hidden={!can('engraving.export')}
                 onClick={() => setShowLightBurnModal(false)}
                 className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-default)] hover:border-[var(--border-default)] p-2 rounded-[20px] text-xs font-bold uppercase tracking-wider px-3"
               >
@@ -1377,7 +1379,7 @@ export default function OperatorDashboard() {
               {/* Step-by-step instructions */}
               <div className="space-y-4">
                 <h3 className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-widest border-b border-[var(--border-subtle)] pb-2">Step-by-step Connection process</h3>
-                
+
                 {/* Step 1 */}
                 <div className="flex gap-3">
                   <div className="text-xs font-mono font-bold w-5 h-5 bg-[var(--surface-hover)] text-amber-500 rounded-full flex items-center justify-center shrink-0 border border-[var(--border-default)]">1</div>
@@ -1469,7 +1471,7 @@ export default function OperatorDashboard() {
             {/* Modal Footer actions */}
             <div className="p-4 bg-[var(--surface-inset)]/75 backdrop-blur-md border-t border-[var(--border-subtle)] flex justify-between items-center">
               <span className="text-[10px] text-[var(--text-secondary)] font-mono tracking-wider">LOUD & CLEAR CUSTOM ENGRAVING APPARATUS</span>
-              <button 
+              <button hidden={!can('engraving.export')}
                 onClick={handleDownloadCSV}
                 className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold uppercase text-[10px] py-1.5 px-4 rounded-[20px] tracking-wider transition-all flex items-center gap-1"
               >
@@ -1505,7 +1507,7 @@ export default function OperatorDashboard() {
                   <p className="text-[11px] text-[var(--text-secondary)]">Export race finisher records and laser status</p>
                 </div>
               </div>
-              <button 
+              <button hidden={!can('engraving.export')}
                 onClick={() => setShowPdfModal(false)}
                 className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] p-1.5 rounded-lg hover:bg-[var(--surface-inset)]/75 backdrop-blur-md transition"
               >
@@ -1564,14 +1566,14 @@ export default function OperatorDashboard() {
 
             {/* Modal Footer */}
             <div className="p-5 border-t border-[var(--border-subtle)] bg-[var(--surface-inset)]/75 backdrop-blur-md flex items-center justify-end gap-3">
-              <button
+              <button hidden={!can('engraving.export')}
                 type="button"
                 onClick={() => setShowPdfModal(false)}
                 className="px-4 py-2.5 rounded-[20px] text-xs font-bold text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-inset)]/75 backdrop-blur-md transition"
               >
                 Cancel
               </button>
-              <button
+              <button hidden={!can('engraving.export')}
                 type="button"
                 onClick={handleGeneratePdfReport}
                 className="px-5 py-2.5 rounded-[20px] text-xs font-extrabold bg-red-500 hover:bg-red-400 text-black uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-red-500/20 transition active:scale-95"
@@ -1596,7 +1598,7 @@ export default function OperatorDashboard() {
                   <p className="text-[10px] text-[var(--text-secondary)] font-mono">DUAL-LAPTOP OFFLINE OVER BRIDGE</p>
                 </div>
               </div>
-              <button 
+              <button hidden={!can('engraving.backup')}
                 onClick={() => setShowBackupModal(false)}
                 className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-default)] hover:border-[var(--border-default)] p-2 rounded-[20px] text-xs font-bold uppercase tracking-wider px-3"
               >
@@ -1621,7 +1623,7 @@ export default function OperatorDashboard() {
               <div className="space-y-2 p-4 bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-subtle)] rounded-[20px]">
                 <h4 className="text-[10px] font-extrabold text-[var(--text-primary)] uppercase tracking-widest font-mono">1. Export Active Queue</h4>
                 <p className="text-[10px] text-[var(--text-secondary)]">Download all registered active engraving orders as a backup JSON file.</p>
-                <button
+                <button hidden={!can('engraving.backup')}
                   type="button"
                   onClick={handleExportOfflineBackup}
                   className="w-full flex items-center justify-center gap-1.5 text-xs text-black bg-green-500 hover:bg-green-400 font-black py-2.5 rounded-[20px] transition uppercase tracking-wider shadow"
@@ -1634,7 +1636,7 @@ export default function OperatorDashboard() {
               <div className="space-y-2.5 p-4 bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-subtle)] rounded-[20px]">
                 <h4 className="text-[10px] font-extrabold text-[var(--text-primary)] uppercase tracking-widest font-mono">2. Import / Restore Queue</h4>
                 <p className="text-[10px] text-[var(--text-secondary)]">Upload a `.json` backup file to merge offline entries into this laptop's local queue.</p>
-                
+
                 <input
                   type="file"
                   accept=".json"
@@ -1666,14 +1668,14 @@ export default function OperatorDashboard() {
       {deleteConfirmOrder && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn">
           <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-red-500/20 rounded-[26px] p-6 sm:p-8 max-w-md w-full text-center space-y-6 shadow-2xl relative animate-slideUp overflow-hidden">
-            
+
             {/* Top red warning border gradient decoration */}
             <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-650 via-red-500 to-amber-500" />
-            
+
             <div className="mx-auto w-14 h-14 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center shadow-lg shadow-red-500/5 animate-pulse">
               <Trash2 className="w-6 h-6 text-red-500" />
             </div>
-            
+
             <div className="space-y-1">
               <h3 className="heading-float text-lg font-black font-display text-[var(--text-primary)] uppercase tracking-widest">Delete Registration?</h3>
               <p className="text-[11px] text-[var(--text-secondary)] font-medium">
@@ -1684,7 +1686,7 @@ export default function OperatorDashboard() {
             {/* Premium Interactive Ticket Mockup Summary */}
             <div className="bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-subtle)] rounded-[20px] p-4 text-left relative overflow-hidden shadow-inner space-y-3">
               <div className="absolute top-0 right-0 bottom-0 w-1 bg-red-500/40" />
-              
+
               <div className="flex justify-between items-center text-[10px] font-mono font-bold">
                 <span className="bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-default)] text-[var(--text-secondary)] px-2 py-0.5 rounded uppercase">
                   BIB #{deleteConfirmOrder.bibNumber || 'N/A'}
@@ -1732,13 +1734,13 @@ export default function OperatorDashboard() {
 
             {/* Beautiful, responsive buttons with visual cues */}
             <div className="grid grid-cols-2 gap-3.5 pt-2">
-              <button 
+              <button
                 onClick={() => setDeleteConfirmOrder(null)}
                 className="w-full bg-[var(--surface-inset)]/75 backdrop-blur-md hover:bg-[var(--surface-hover)] text-[var(--text-primary)] font-extrabold py-3 px-4 rounded-[20px] text-[10px] uppercase tracking-widest border border-[var(--border-default)] transition duration-150 active:scale-95"
               >
                 Abort & Keep
               </button>
-              <button 
+              <button hidden={!authority}
                 onClick={handleExecuteDeleteOrder}
                 className="w-full bg-gradient-to-r from-red-650 to-red-600 hover:brightness-110 text-white font-extrabold py-3 px-4 rounded-[20px] text-[10px] uppercase tracking-widest transition duration-150 active:scale-95 shadow-md shadow-red-950/20 flex items-center justify-center gap-1.5"
               >
@@ -1786,13 +1788,13 @@ export default function OperatorDashboard() {
             </p>
 
             <div className="grid grid-cols-2 gap-3.5 pt-2">
-              <button 
+              <button
                 onClick={() => setShowPurgeConfirm(false)}
                 className="w-full bg-[var(--surface-inset)]/75 backdrop-blur-md hover:bg-[var(--surface-hover)] text-[var(--text-primary)] font-bold py-3 px-4 rounded-[20px] text-xs uppercase tracking-wider border border-[var(--border-default)] transition active:scale-95"
               >
                 Cancel, Keep DB
               </button>
-              <button 
+              <button hidden={!authority}
                 onClick={handleExecutePurgeDatabase}
                 className="w-full bg-gradient-to-r from-red-600 to-red-500 hover:brightness-110 text-white font-bold py-3 px-4 rounded-[20px] text-xs uppercase tracking-wider transition active:scale-95 shadow-md shadow-red-900/10"
               >

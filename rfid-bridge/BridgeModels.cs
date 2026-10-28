@@ -14,6 +14,7 @@ namespace RacePulseRfidBridge
         public int[] Antennas { get; set; } = new[] { 1 };
         public string RacePulseEndpoint { get; set; } = "http://localhost:3000/api/rfid-events";
         public int DedupeMilliseconds { get; set; } = 4000;
+        public string BridgeKey { get; set; } = "";
 
         public static void Validate(BridgeConfig config)
         {

@@ -1,3 +1,4 @@
+import { useAccess, useScopedRaces, authenticatedFetch } from '../lib/access';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { collection, doc, onSnapshot, query, setDoc, updateDoc, where } from 'firebase/firestore';
 import { CirclePlay, ExternalLink, MapPinned, Radio, RefreshCw, Save, Trophy, Users2 } from 'lucide-react';
@@ -15,7 +16,8 @@ interface LiveBroadcastPanelProps {
 // spectators; private raw reads and registration data stay in their protected
 // collections.
 export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
-  const [races, setRaces] = useState<Race[]>([]);
+  const { can, authority, version } = useAccess();
+  const races = useScopedRaces();
   const [activeRaceId, setActiveRaceId] = useState('');
   const [runnerProfiles, setRunnerProfiles] = useState<RunnerProfile[]>([]);
   const [chipReads, setChipReads] = useState<ChipRead[]>([]);
@@ -27,30 +29,9 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
   const [message, setMessage] = useState('');
   const publishingRef = useRef(false);
 
-  useEffect(() => {
-    let owned: Race[] = [];
-    let shared: Race[] = [];
-    const publish = () => {
-      const unique = new Map<string, Race>();
-      [...owned, ...shared].forEach((race) => unique.set(race.id, race));
-      const list = Array.from(unique.values()).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      setRaces(list);
-      setActiveRaceId((current) => current && list.some((race) => race.id === current) ? current : (list[0]?.id || ''));
-    };
-    const ownedUnsubscribe = onSnapshot(query(collection(db, 'races'), where('createdBy', '==', uid)), (snapshot) => {
-      owned = snapshot.docs.map((raceDoc) => raceDoc.data() as Race);
-      publish();
-    }, (error) => console.warn('Owned broadcast races listener failed:', error.message));
-    const sharedUnsubscribe = onSnapshot(query(collection(db, 'races'), where('organizerIds', 'array-contains', uid)), (snapshot) => {
-      shared = snapshot.docs.map((raceDoc) => raceDoc.data() as Race);
-      publish();
-    }, (error) => console.warn('Shared broadcast races listener failed:', error.message));
-    return () => {
-      ownedUnsubscribe();
-      sharedUnsubscribe();
-    };
-  }, [uid]);
 
+
+  useEffect(() => { if (!races.some(r => r.id === activeRaceId)) setActiveRaceId(races[0]?.id || ''); }, [races, activeRaceId]);
   const activeRace = races.find((race) => race.id === activeRaceId);
 
   useEffect(() => {
@@ -61,7 +42,7 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
   }, [activeRace?.id, activeRace?.liveBroadcastEnabled, activeRace?.livestreamUrl, activeRace?.routeMapUrl]);
 
   useEffect(() => {
-    if (!activeRace) {
+    if (!activeRace || !can('roster.view') || !can('timing.view')) {
       setRunnerProfiles([]);
       setChipReads([]);
       return;
@@ -94,7 +75,7 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
   const finishedCount = results.filter((result) => !!result.finishTime).length;
 
   const publishResults = useCallback(async (quiet = false) => {
-    if (!activeRace || publishingRef.current) return;
+    if (!activeRace || activeRace.completedAt || !can('results.publish') || publishingRef.current) return;
     publishingRef.current = true;
     setPublishing(true);
     try {
@@ -177,9 +158,8 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
     setMessage('');
     try {
       await updateDoc(doc(db, 'races', activeRace.id), {
-        liveBroadcastEnabled: enabled,
-        livestreamUrl: cleanStream,
-        routeMapUrl: cleanMap,
+        ...(can('hub.publish') ? { liveBroadcastEnabled: enabled } : {}),
+        ...(can('hub.manage') ? { livestreamUrl: cleanStream, routeMapUrl: cleanMap } : {}),
       });
       setMessage(enabled ? 'Live Race Hub is public. Timing updates will publish automatically.' : 'Live Race Hub is hidden from public visitors.');
     } catch (error: any) {
@@ -247,7 +227,7 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
               <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2"><Users2 className="w-4 h-4 text-red-500" /> Live Timing Feed</h3>
               <p className="text-sm font-black text-[var(--text-primary)]">{startedCount} started · {finishedCount} finished</p>
               <p className="text-xs text-[var(--text-secondary)]">{runnerProfiles.length} registered runners. When public live mode is on, every new checkpoint scan refreshes the spectator leaderboard.</p>
-              <button onClick={() => void publishResults()} disabled={!enabled || publishing} className="w-full text-xs font-black uppercase tracking-widest px-4 py-2.5 rounded-[var(--radius-control)] bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center gap-2 transition disabled:opacity-50">
+              <button hidden={!can('results.publish')} onClick={() => void publishResults()} disabled={!enabled || publishing} className="w-full text-xs font-black uppercase tracking-widest px-4 py-2.5 rounded-[var(--radius-control)] bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center gap-2 transition disabled:opacity-50">
                 {publishing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trophy className="w-4 h-4" />} Publish Leaderboard Now
               </button>
             </div>

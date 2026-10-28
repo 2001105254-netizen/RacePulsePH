@@ -1,6 +1,8 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import crypto from 'crypto';
+import * as lanPolicy from './functions/lan-policy.js';
 import { createServer as createViteServer } from "vite";
 
 interface EngravingOrder {
@@ -14,6 +16,7 @@ interface EngravingOrder {
   updatedAt: string;
   rank?: string;
   customInscription?: string;
+  ownerUid?: string;
 }
 
 interface ChipRead {
@@ -32,6 +35,7 @@ interface ChipRead {
 // not contain a race, bib, or user ID: the authenticated Timing Console owns
 // that matching and persists the final checkpoint result.
 interface RfidBridgeEvent {
+  raceId?: string;
   id: string;
   epc: string;
   antenna: number;
@@ -39,7 +43,7 @@ interface RfidBridgeEvent {
   receivedAt: string;
 }
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
 // Timing Station.exe runs the local server from Program Files, which Windows
 // intentionally protects from normal writes.  The desktop wrapper supplies a
 // user-writable RACEPULSE_DATA_DIR; the normal developer workflow keeps using
@@ -151,11 +155,34 @@ async function startServer() {
     next();
   });
 
+  app.use('/api', async (req, res, next) => {
+    const route = '/api' + req.path;
+    if (route === '/api/rfid-events' && req.method === 'POST') {
+      const expected = process.env.RACEPULSE_BRIDGE_KEY || '';
+      const supplied = req.get('X-RacePulse-Bridge-Key') || '';
+      if (expected.length < 32 || supplied.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(expected)) || !process.env.RACEPULSE_BRIDGE_RACE_ID) return res.status(401).json({ error: 'Bridge pairing is required.' });
+      return next();
+    }
+    try {
+      const bearer = req.get('Authorization');
+      if (!bearer?.startsWith('Bearer ')) return res.status(401).json({ error: 'Sign in to use race-day services.' });
+      const endpoint = process.env.RACEPULSE_ACCESS_API_URL || 'https://asia-southeast1-racepulseph.cloudfunctions.net/accessApi';
+      const response = await fetch(endpoint + '/session', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: bearer }, body: JSON.stringify(route === '/api/chip-reads' && req.method === 'POST' ? { scanningRaceId: req.body?.raceId } : {}), signal: AbortSignal.timeout(8000) });
+      if (!response.ok) return res.status(response.status).json({ error: 'Current authorization could not be confirmed. Work remains queued.' });
+      const session = await response.json();
+      const id = route.split('/').at(-1);
+      const existing = route.startsWith('/api/orders') ? orders[id!] || orders[req.body?.id] : chipReads[id!] || chipReads[req.body?.id];
+      if (!lanPolicy.authorize(session, req.method, route, { ...req.body, raceId: req.query.raceId || req.body?.raceId }, existing)) return res.status(403).json({ error: 'This action is disabled for your account or race.' });
+      res.locals.accessSession = session;
+      next();
+    } catch { return res.status(503).json({ error: 'Authorization is unavailable. Captured scans remain queued.' }); }
+  });
+
   // ========== LOCAL SYNC APIS ==========
 
   // GET/Read order queue
   app.get("/api/orders", (req, res) => {
-    const ordersList = Object.values(orders);
+    const ordersList = Object.values(orders).filter(record => lanPolicy.visible(res.locals.accessSession, 'orders', record));
     res.json({ orders: ordersList });
   });
 
@@ -182,6 +209,7 @@ async function startServer() {
       updatedAt: timestamp,
       rank: orderData.rank?.trim() || (existing ? existing.rank : undefined),
       customInscription: orderData.customInscription?.trim() || (existing ? existing.customInscription : undefined),
+      ownerUid: existing?.ownerUid || orderData.ownerUid,
     };
 
     orders[orderId] = merged;
@@ -219,7 +247,7 @@ async function startServer() {
 
   // GET/Read all recorded checkpoint reads
   app.get("/api/chip-reads", (req, res) => {
-    res.json({ chipReads: Object.values(chipReads) });
+    res.json({ chipReads: Object.values(chipReads).filter(record => lanPolicy.visible(res.locals.accessSession, 'chipReads', record)) });
   });
 
   // POST/Create a new chip read
@@ -282,7 +310,7 @@ async function startServer() {
       .filter((event) => Number.isNaN(after) || Date.parse(event.receivedAt) >= after)
       .sort((a, b) => Date.parse(a.receivedAt) - Date.parse(b.receivedAt) || a.id.localeCompare(b.id))
       .slice(-500);
-    res.json({ events });
+    res.json({ events: events.filter(event => event.raceId === req.query.raceId) });
   });
 
   app.post("/api/rfid-events", (req, res) => {
@@ -298,6 +326,7 @@ async function startServer() {
     }
 
     const event: RfidBridgeEvent = {
+      raceId: process.env.RACEPULSE_BRIDGE_RACE_ID,
       id,
       epc,
       antenna,

@@ -31,6 +31,7 @@ namespace RacePulseTimingStation
         private readonly Button _startConsoleButton = new Button();
         private readonly Button _openConsoleButton = new Button();
         private Process _localConsoleProcess;
+        private string _bridgeKey = "";
 
         private string SettingsPath
         {
@@ -246,6 +247,7 @@ namespace RacePulseTimingStation
 
         private void ApplyConfig(BridgeConfig config)
         {
+            _bridgeKey = config.BridgeKey ?? "";
             _readerIp.Text = config.ReaderIp ?? "192.168.0.128";
             _readerPort.Value = Math.Max(_readerPort.Minimum, Math.Min(_readerPort.Maximum, config.ReaderPort));
             _endpoint.Text = config.RacePulseEndpoint ?? "http://localhost:3000/api/rfid-events";
@@ -262,7 +264,8 @@ namespace RacePulseTimingStation
                 ReaderPort = Decimal.ToInt32(_readerPort.Value),
                 RacePulseEndpoint = _endpoint.Text.Trim(),
                 DedupeMilliseconds = Decimal.ToInt32(_dedupe.Value),
-                Antennas = _antennas.CheckedItems.Cast<int>().OrderBy(antenna => antenna).ToArray()
+                Antennas = _antennas.CheckedItems.Cast<int>().OrderBy(antenna => antenna).ToArray(),
+                BridgeKey = _bridgeKey
             };
         }
 

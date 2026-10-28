@@ -1,3 +1,4 @@
+import { useAccess } from '../lib/access';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { collection, doc, getDoc, getDocs, onSnapshot, query, runTransaction, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
@@ -37,6 +38,7 @@ function normalizedUsername(value: string): string {
 }
 
 function ShirtSizePicker({ value, onChange, emptyLabel }: { value: string; onChange: (value: string) => void; emptyLabel: string }) {
+  const { can, authority } = useAccess();
   const [customMode, setCustomMode] = useState(() => Boolean(value && !standardShirtSizes.includes(value)));
   const usesCustomSize = customMode || Boolean(value && !standardShirtSizes.includes(value));
   return (
@@ -191,8 +193,9 @@ function mostRecent(profiles: RunnerProfile[]): RunnerProfile | undefined {
 }
 
 export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceHandled }: RunnerDashboardProps) {
+  const { can, authority } = useAccess();
   const [runnerProfiles, setRunnerProfiles] = useState<RunnerProfile[] | undefined>(undefined); // undefined = loading
-  const [tab, setTab] = useState<RunnerTab>('events');
+  const [tab, setTab] = useState<RunnerTab>(can('personal.register') ? 'events' : can('personal.results') || can('personal.bibs') ? 'myraces' : can('personal.friends') ? 'friends' : 'engraving');
   const [showProfile, setShowProfile] = useState(false);
   const [showEventQrScanner, setShowEventQrScanner] = useState(false);
   const [scannedRaceId, setScannedRaceId] = useState<string | null>(null);
@@ -213,6 +216,7 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
   }, [initialRaceId, onInitialRaceHandled]);
 
   useEffect(() => {
+    if (!['personal.register','personal.results','personal.bibs','personal.certificates'].some(can)) { setRunnerProfiles([]); return; }
     const unsubscribe = onSnapshot(query(collection(db, 'runners'), where('uid', '==', profile.uid)), (snapshot) => {
       const list: RunnerProfile[] = [];
       snapshot.forEach((docSnap) => list.push(docSnap.data() as RunnerProfile));
@@ -342,7 +346,7 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
         </div>
       )}
 
-      {runnerProfiles !== undefined && tab === 'events' && (
+      {runnerProfiles !== undefined && tab === 'events' && can('personal.register') && (
         <>
           <RunnerReminderCenter runnerProfiles={runnerProfiles} />
           <RaceRegistrationForm
@@ -365,11 +369,11 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
         </>
       )}
 
-      {runnerProfiles !== undefined && tab === 'friends' && (
+      {runnerProfiles !== undefined && tab === 'friends' && can('personal.friends') && (
         <FriendsView profile={profile} onOpenRace={(raceId) => { setScannedRaceId(raceId); setTab('events'); }} />
       )}
 
-      {runnerProfiles !== undefined && tab === 'engraving' && (
+      {runnerProfiles !== undefined && tab === 'engraving' && can('personal.engraving') && (
         <CustomerForm
           onBackToRoleSelection={() => setTab('myraces')}
           backLabel="← Back to My Races"
@@ -386,7 +390,7 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
             { key: 'myraces', icon: <ClipboardList className="w-4 h-4" />, label: 'My Races', active: tab === 'myraces', onClick: () => setTab('myraces') },
             { key: 'friends', icon: <Users2 className="w-4 h-4" />, label: 'Friends', active: tab === 'friends', onClick: () => setTab('friends') },
             { key: 'engraving', icon: <Award className="w-4 h-4" />, label: 'Engraving', active: tab === 'engraving', onClick: () => setTab('engraving') },
-          ]}
+          ].filter(item => item.key === 'myraces' || can(({ events: 'personal.register', friends: 'personal.friends', engraving: 'personal.engraving' })[item.key]))}
         />
       )}
       {showEventQrScanner && (
@@ -413,6 +417,7 @@ interface MyRacesViewProps {
 }
 
 function MyRacesView({ runnerProfiles, onBrowseEvents }: MyRacesViewProps) {
+  const { can, authority } = useAccess();
   const [races, setRaces] = useState<Race[]>([]);
   const [viewingProfile, setViewingProfile] = useState<RunnerProfile | null>(null);
 
@@ -435,7 +440,7 @@ function MyRacesView({ runnerProfiles, onBrowseEvents }: MyRacesViewProps) {
         >
           <ArrowLeft className="w-3.5 h-3.5" /> Back to My Races
         </button>
-        <RunnerSplitsView runnerProfile={viewingProfile} />
+        {can('personal.results') ? <RunnerSplitsView runnerProfile={viewingProfile} /> : races.find(r => r.id === viewingProfile.raceId) && can('personal.bibs') ? <DigitalRaceBib race={races.find(r => r.id === viewingProfile.raceId)!} runnerProfile={viewingProfile} /> : <p>Results access is disabled for this account.</p>}
       </div>
     );
   }
@@ -502,6 +507,7 @@ interface RaceInviteRecord {
 }
 
 function FriendsView({ profile, onOpenRace }: { profile: UserProfile; onOpenRace: (raceId: string) => void }) {
+  const { can, authority } = useAccess();
   const [searchUsername, setSearchUsername] = useState('');
   const [searchResult, setSearchResult] = useState<FriendProfile | null>(null);
   const [friends, setFriends] = useState<FriendProfile[]>([]);
@@ -665,6 +671,7 @@ function FriendsView({ profile, onOpenRace }: { profile: UserProfile; onOpenRace
 }
 
 function InviteFriendsToRace({ uid, senderName, race }: { uid: string; senderName: string; race: Race }) {
+  const { can, authority } = useAccess();
   const [open, setOpen] = useState(false);
   const [friends, setFriends] = useState<FriendProfile[]>([]);
   const [sendingTo, setSendingTo] = useState<string | null>(null);
@@ -733,6 +740,7 @@ function RaceProfileSection({
   onSelect: (p: RunnerProfile) => void;
   emptyText: string;
 }) {
+  const { can, authority } = useAccess();
   return (
     <div className="glass-panel p-5">
       <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] mb-3">{title}</h3>
@@ -804,7 +812,7 @@ async function generateBibNumber(raceId: string, distanceLabel: string, km: numb
   const sequence = await runTransaction(db, async (tx) => {
     const snap = await tx.get(counterRef);
     const next = (snap.exists() ? (snap.data().count as number) : 0) + 1;
-    tx.set(counterRef, { count: next });
+    tx.set(counterRef, { count: next, raceId });
     return next;
   });
   const basePrefix = km !== null ? String(km) : 'CUSTOM';
@@ -814,6 +822,7 @@ async function generateBibNumber(raceId: string, distanceLabel: string, km: numb
 }
 
 function RegistrationProgress({ currentStep }: { currentStep: 1 | 2 | 3 }) {
+  const { can, authority } = useAccess();
   const steps = ['Choose race', 'Runner details', 'Confirmed'];
   return (
     <ol className="grid grid-cols-3 gap-1.5 max-w-xl mx-auto" aria-label="Registration progress">
@@ -841,6 +850,7 @@ function RegistrationConfirmation({ race, registration, updated, onViewMyRace, o
   onViewMyRace: () => void;
   onRegisterAnother: () => void;
 }) {
+  const { can, authority } = useAccess();
   return (
     <div className="max-w-xl mx-auto space-y-5 animate-fadeIn">
       <RegistrationProgress currentStep={3} />
@@ -880,6 +890,7 @@ function RegistrationConfirmation({ race, registration, updated, onViewMyRace, o
 }
 
 function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShirtSize, initialRaceId, requestedRaceId, onRequestedRaceHandled, onSaved, onCancel }: RaceRegistrationFormProps) {
+  const { can, authority } = useAccess();
   const latest = mostRecent(runnerProfiles);
   const [races, setRaces] = useState<Race[]>([]);
   const [raceId, setRaceId] = useState(initialRaceId || '');
@@ -996,6 +1007,7 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!can('personal.register')) return setError('Registration is disabled for your account.');
     setError('');
     if (!fullName.trim()) return setError('Please enter your full name.');
     if (!raceId) return setError('Please select which race you are registering for.');
@@ -1236,7 +1248,7 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
         <p className="text-xs text-[var(--text-secondary)] mt-1">This links your account to your bib so organizers can record your checkpoint times.</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4"><fieldset className="contents" disabled={!can('personal.register')} >
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Full Name</label>
             <div className="relative">
@@ -1378,7 +1390,7 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
             className="w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-black uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-red-900/30 disabled:opacity-60">
             {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ClipboardList className="w-4 h-4" />} {existingForRace ? 'Update Registration' : selectedRace.onlinePaymentEnabled && (raceDistances.find((item) => item.label === distance)?.price || 0) > 0 ? `Continue to payment • ₱${(raceDistances.find((item) => item.label === distance)?.price || 0).toFixed(2)}` : selectedRace.manualPaymentEnabled && (raceDistances.find((item) => item.label === distance)?.price || 0) > 0 ? `Reserve slot • Manual payment ₱${(raceDistances.find((item) => item.label === distance)?.price || 0).toFixed(2)}` : 'Save Race Profile'}
           </button>
-      </form>
+      </fieldset></form>
     </div>
   );
 }
@@ -1403,6 +1415,7 @@ function RunnerRacePass({ race, runnerProfile, result, orderedCheckpoints }: {
   result: ReturnType<typeof computeResults>[number] | undefined;
   orderedCheckpoints: Race['checkpoints'];
 }) {
+  const { can, authority } = useAccess();
   const splitFor = (checkpointId?: string) => result?.splits.find((split) => split.checkpointId === checkpointId);
   const checkin = orderedCheckpoints.find((checkpoint, index) => checkpointType(checkpoint, index, orderedCheckpoints.length) === 'checkin');
   const start = orderedCheckpoints.find((checkpoint, index) => checkpointType(checkpoint, index, orderedCheckpoints.length) === 'start');
@@ -1472,6 +1485,7 @@ function RunnerRacePass({ race, runnerProfile, result, orderedCheckpoints }: {
 }
 
 function DigitalRaceBib({ race, runnerProfile }: { race: Race; runnerProfile: RunnerProfile }) {
+  const { can, authority } = useAccess();
   const bibRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState('');
@@ -1536,7 +1550,7 @@ function DigitalRaceBib({ race, runnerProfile }: { race: Race; runnerProfile: Ru
         <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${layout.bibNumberX}%`, top: `${layout.bibNumberY}%`, fontSize: `${layout.bibNumberSize ?? 12}cqw`, color: layout.bibNumberColor ?? '#FFFFFF', fontFamily: raceBibFontFamily(layout.bibNumberFont, race.raceBibCustomFont), WebkitTextStroke: `${layout.bibNumberStrokeWidth ?? 0}cqw ${layout.bibNumberStrokeColor ?? '#000000'}`, paintOrder: 'stroke fill' }}>{runnerProfile.bibNumber}</span>
         <div className="absolute -translate-x-1/2 -translate-y-1/2 w-[90%] text-center leading-[1.16] font-black tracking-wide drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)]" style={{ left: `${layout.runnerNameX}%`, top: `${layout.runnerNameY}%`, fontSize: `${previewNameSize}cqw`, color: layout.runnerNameColor ?? '#FFFFFF', fontFamily: raceBibFontFamily(layout.runnerNameFont, race.raceBibCustomFont), WebkitTextStroke: `${layout.runnerNameStrokeWidth ?? 0}cqw ${layout.runnerNameStrokeColor ?? '#000000'}`, paintOrder: 'stroke fill' }}>{nameLines.map((name, index) => <span key={`${name}-${index}`} className="block">{name}</span>)}</div>
       </div>
-      <button type="button" onClick={handleDownload} disabled={downloading} className="w-full py-2.5 px-4 rounded-[var(--radius-control)] font-display font-black uppercase text-[10px] tracking-widest text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 transition disabled:opacity-60 flex items-center justify-center gap-2">
+      <button hidden={!can('personal.bibs')} type="button" onClick={handleDownload} disabled={downloading} className="w-full py-2.5 px-4 rounded-[var(--radius-control)] font-display font-black uppercase text-[10px] tracking-widest text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 transition disabled:opacity-60 flex items-center justify-center gap-2">
         {downloading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />} {downloading ? 'Preparing Bib...' : 'Download Race Bib'}
       </button>
       {downloadError && <p className="text-[10.5px] text-red-500 text-center">{downloadError}</p>}
@@ -1545,6 +1559,7 @@ function DigitalRaceBib({ race, runnerProfile }: { race: Race; runnerProfile: Ru
 }
 
 function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
+  const { can, authority } = useAccess();
   const [race, setRace] = useState<Race | null | undefined>(undefined);
   const [chipReads, setChipReads] = useState<ChipRead[]>([]);
   const [officialEntry, setOfficialEntry] = useState<PublicLeaderboardEntry | null>(null);
@@ -1663,7 +1678,7 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
               {race && (
                 <button
                   type="button"
-                  onClick={() => downloadFinisherCertificate(race, runnerProfile, result)}
+                  hidden={!can('personal.certificates')} onClick={() => downloadFinisherCertificate(race, runnerProfile, result)}
                   className="mt-4 w-full sm:w-auto px-4 py-2.5 rounded-[var(--radius-control)] font-display font-black uppercase text-[10px] tracking-widest text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 transition inline-flex items-center justify-center gap-2"
                 >
                   <FileDown className="w-4 h-4" /> Download E-Certificate
@@ -1701,6 +1716,7 @@ interface ProfileModalProps {
 }
 
 function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
+  const { can, authority } = useAccess();
   const [races, setRaces] = useState<Race[]>([]);
   const [displayName, setDisplayName] = useState(profile.displayName);
   const [username, setUsername] = useState(profile.username || '');

@@ -3,6 +3,8 @@ import { onIdTokenChanged, User } from 'firebase/auth';
 import { doc, onSnapshot, writeBatch } from 'firebase/firestore';
 import { auth, db, signOutUser } from './firebase';
 import AuthGate from './components/AuthGate';
+import { AccessProvider } from './lib/access';
+import AuthorizedWorkspace from './components/AuthorizedWorkspace';
 import { EmailVerificationScreen } from './components/AccountSecurity';
 import AdminDashboard from './components/AdminDashboard';
 import OrganizerDashboard from './components/OrganizerDashboard';
@@ -41,6 +43,7 @@ export default function App() {
   const { theme, toggleTheme } = useTheme();
   const [authUser, setAuthUser] = useState<User | null | undefined>(undefined); // undefined = still checking session
   const [profile, setProfile] = useState<UserProfile | null | undefined>(undefined);
+  const [profileError, setProfileError] = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
   const [guestScreen, setGuestScreen] = useState<'landing' | 'login' | 'signup'>(() => registrationRaceIdFromUrl() ? 'signup' : 'landing');
   const [pendingRaceId, setPendingRaceId] = useState<string | null>(() => registrationRaceIdFromUrl());
@@ -89,11 +92,12 @@ export default function App() {
   useEffect(() => {
     if (!authUser) { setProfile(null); return; }
     setProfile(undefined);
+    setProfileError(false);
     const unsubscribe = onSnapshot(doc(db, 'users', authUser.uid), (docSnap) => {
       setProfile(docSnap.exists() ? (docSnap.data() as UserProfile) : null);
     }, (err) => {
       console.warn('User profile listener failed:', err.message);
-      setProfile(null);
+      setProfileError(true);
     });
     return () => unsubscribe();
   }, [authUser, emailVerified]);
@@ -101,7 +105,15 @@ export default function App() {
   const stillLoading = authUser === undefined || (!!authUser && profile === undefined);
 
   let content: React.ReactNode;
-  if (stillLoading) {
+  if (profileError && authUser) {
+    content = (
+      <div className="flex-grow flex flex-col items-center justify-center gap-4 px-4 py-20 text-center">
+        <p role="alert">Could not load your account. Please try again.</p>
+        <button onClick={() => window.location.reload()} className="rounded-xl bg-red-600 px-5 py-3 font-bold text-white">Try again</button>
+        <button onClick={() => signOutUser()} className="text-sm text-[var(--text-secondary)]">Sign out</button>
+      </div>
+    );
+  } else if (stillLoading) {
     content = (
       <div className="flex-grow flex items-center justify-center py-20">
         <RefreshCw className="w-6 h-6 text-[var(--text-muted)] animate-spin" />
@@ -126,19 +138,13 @@ export default function App() {
         signupRoleLocked={runnerSignupIntent}
       />
     );
-  } else if (isSuperAdminEmail(profile.email) && profile.role !== 'superadmin') {
-    content = <SuperAdminClaimScreen profile={profile} />;
-  } else if (profile.role === 'admin' || profile.role === 'superadmin') {
-    content = <AdminDashboard profile={profile} />;
-  } else if (profile.role === 'organizer') {
-    content = profile.approved ? <OrganizerDashboard profile={profile} /> : <PendingApprovalScreen displayName={profile.displayName} />;
   } else {
-    content = <RunnerDashboard profile={profile} initialRaceId={pendingRaceId} onInitialRaceHandled={() => {
+    content = <AccessProvider profile={profile}><AuthorizedWorkspace profile={profile} raceId={pendingRaceId} onRaceHandled={() => {
       setPendingRaceId(null);
       const url = new URL(window.location.href);
       url.searchParams.delete('register');
       window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
-    }} />;
+    }} /></AccessProvider>;
   }
 
   return (

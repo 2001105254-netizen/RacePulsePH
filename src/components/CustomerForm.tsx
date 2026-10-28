@@ -1,3 +1,4 @@
+import { useAccess, authenticatedFetch } from '../lib/access';
 import React, { useState, useEffect } from 'react';
 import { doc, setDoc, onSnapshot, collection, query, where, getDocs, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
@@ -20,6 +21,7 @@ export default function CustomerForm({
   initialRunnerName = '',
   initialBibNumber = '',
 }: CustomerFormProps) {
+  const { can } = useAccess();
   // Navigation / screen states
   const [viewState, setViewState] = useState<'form' | 'confirmed'>('form');
   const [submitting, setSubmitting] = useState(false);
@@ -84,7 +86,7 @@ export default function CustomerForm({
     let active = true;
     const interval = setInterval(async () => {
       try {
-        const res = await fetch('/api/orders');
+        const res = await authenticatedFetch('/api/orders');
         if (!res.ok) {
           if (active) setLanConnected(false);
           return;
@@ -181,14 +183,11 @@ export default function CustomerForm({
       }
 
       // Write strictly to Firestore in the background (fully non-blocking)
-      setDoc(doc(db, 'orders', orderCode), newOrder).then(() => {
-        console.log("Firestore background write confirmed.");
-      }).catch((writeErr) => {
-        console.warn("Firestore write queued offline:", writeErr);
-      });
+      if (!can('personal.engraving') && !can('engraving.create')) throw new Error('Engraving requests are disabled.');
+      await setDoc(doc(db, 'orders', orderCode), newOrder);
 
       // Simultaneously sync to local LAN backup server in background (fully non-blocking)
-      fetch('/api/orders', {
+      authenticatedFetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newOrder)
@@ -221,7 +220,7 @@ export default function CustomerForm({
       console.warn("Cloud Firestore delete offline or deferred:", e);
     });
 
-    fetch(`/api/orders/${createdOrder.id}`, {
+    authenticatedFetch(`/api/orders/${createdOrder.id}`, {
       method: 'DELETE'
     }).catch((laneErr) => {
       console.warn("LAN Server sync delete skipped:", laneErr);

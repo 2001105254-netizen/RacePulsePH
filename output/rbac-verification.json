@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "at": "2026-10-28T09:26:52.763Z",
+  "sourceHash": "64034020bd809ecc5a7c6ee14753485ce030fe1eeea3367ca7bf80ba47c10524",
+  "checks": [
+    "npm run lint",
+    "npm run build",
+    "node --test tests/access-policy.test.cjs tests/lan-access.test.cjs tests/account-client.test.cjs tests/account-security.test.cjs tests/timing-sequence.test.cjs",
+    "node --test tests/lan-http.test.cjs",
+    "npx --yes firebase-tools emulators:exec --only firestore,storage --project demo-racepulse-rbac node --test tests/access-rules.test.cjs tests/access-service.test.cjs tests/storage-access.test.cjs"
+  ]
+}

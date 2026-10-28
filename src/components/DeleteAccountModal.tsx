@@ -26,6 +26,7 @@ export default function DeleteAccountModal({ profile, onClose }: DeleteAccountMo
   const usesPassword = useMemo(() => user?.providerData.some((provider) => provider.providerId === 'password') ?? false, [user]);
 
   const handleDelete = async () => {
+    if (profile.role === 'superadmin') { setError('Ask another Super Admin to change your role before deleting this account.'); return; }
     if (!user || user.uid !== profile.uid) {
       setError('Your session has expired. Please sign in again.');
       return;

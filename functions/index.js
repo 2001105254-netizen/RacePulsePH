@@ -7,6 +7,7 @@
  * and its race bib.
  */
 const crypto = require('crypto');
+const accessPolicy = require('./access-policy');
 const admin = require('firebase-admin');
 const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret, defineString } = require('firebase-functions/params');
@@ -78,11 +79,13 @@ function registrationFromRequest(input) {
   };
 }
 
-async function requireUser(request) {
+async function requireUser(request, action) {
   const header = request.get('authorization') || '';
   if (!header.startsWith('Bearer ')) throw new Error('Please sign in to continue.');
   const user = await admin.auth().verifyIdToken(header.slice(7), true);
-  if (!user.email_verified) throw new Error('Verify your email before continuing.');
+  const [profile, access] = await Promise.all([db.doc(`users/${user.uid}`).get(), db.doc(`userAccess/${user.uid}`).get()]);
+  if (!profile.exists) throw new Error('Finish creating your account before continuing.');
+  if (action && !accessPolicy.can(profile.data(), access.data(), action)) throw new Error('This action is disabled for your account.');
   return user;
 }
 
@@ -133,7 +136,7 @@ async function createCheckout(request, response) {
   let decoded;
   let registration;
   try {
-    decoded = await requireUser(request);
+    decoded = await requireUser(request, 'personal.checkout');
     registration = registrationFromRequest(request.body?.registration);
   } catch (error) {
     return sendJson(response, 400, { error: error.message || 'Invalid registration.' });

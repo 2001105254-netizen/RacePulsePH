@@ -180,7 +180,9 @@ namespace RacePulseRfidBridge
                 try
                 {
                     var content = new StringContent(_json.Serialize(read), Encoding.UTF8, "application/json");
-                    var response = _http.PostAsync(_config.RacePulseEndpoint, content).GetAwaiter().GetResult();
+                    var message = new HttpRequestMessage(HttpMethod.Post, _config.RacePulseEndpoint) { Content = content };
+                    message.Headers.Add("X-RacePulse-Bridge-Key", _config.BridgeKey);
+                    var response = _http.SendAsync(message).GetAwaiter().GetResult();
                     if (!response.IsSuccessStatusCode)
                         throw new InvalidOperationException("RacePulse returned HTTP " + (int)response.StatusCode);
                     WriteLog("  ↳ delivered to RacePulse");

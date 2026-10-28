@@ -1,27 +1,30 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Race bibs are downloadable by the registered runner, so the referenced
-    // font must be readable without exposing any private profile data. Only
-    // the signed-in uploader may create, replace, or remove their own fonts.
-    match /race-bib-fonts/{ownerUid}/{fontFile} {
-      allow read: if true;
-      allow create, update: if request.auth != null && request.auth.token.email_verified == true
-        && request.auth.uid == ownerUid
-        && request.resource.size < 2 * 1024 * 1024;
-      allow delete: if request.auth != null && request.auth.token.email_verified == true && request.auth.uid == ownerUid;
+    function profile() { return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data; }
+    function access() { return firestore.exists(/databases/(default)/documents/userAccess/$(request.auth.uid)) ? firestore.get(/databases/(default)/documents/userAccess/$(request.auth.uid)).data : {'status':'active','overrides':{},'scope':profile().role in ['admin','superadmin'] ? 'all' : 'owned-assigned','raceIds':[]}; }
+    function can(action) {
+      return request.auth != null && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)) && access().status == 'active'
+        && (profile().role != 'organizer' || profile().approved)
+        && access().get('overrides', {}).get(action, profile().role in ['admin','superadmin','organizer']) == true
+        && access().get('overrides', {}).get('race.view', profile().role in ['admin','superadmin','organizer']) == true;
     }
-
-    // Public race artwork is displayed in event cards, payment instructions,
-    // digital bibs, and printable bib PDFs. The uploader owns the folder,
-    // which also lets a co-organizer upload a replacement safely.
-    match /race-assets/{ownerUid}/{raceId}/{assetFile} {
+    function scope(raceId) {
+      let race = firestore.get(/databases/(default)/documents/races/$(raceId)).data;
+      return access().scope == 'all' || (access().scope == 'selected' && raceId in access().raceIds)
+        || (access().scope == 'owned-assigned' && (race.createdBy == request.auth.uid || request.auth.uid in race.get('organizerIds', [])));
+    }
+    match /race-bib-fonts/{ownerUid}/{file} {
       allow read: if true;
-      allow create, update: if request.auth != null && request.auth.token.email_verified == true
-        && request.auth.uid == ownerUid
-        && request.resource.contentType.matches('image/.*')
-        && request.resource.size < 8 * 1024 * 1024;
-      allow delete: if request.auth != null && request.auth.token.email_verified == true && request.auth.uid == ownerUid;
+      allow create, update: if request.auth != null && request.auth.uid == ownerUid && can('race.bibs') && request.resource.size < 2 * 1024 * 1024;
+      allow delete: if request.auth != null && request.auth.uid == ownerUid && can('race.bibs');
+    }
+    match /race-assets/{ownerUid}/{raceId}/{file} {
+      allow read: if true;
+      function assetAction() { return file.matches('payment-qr.*') ? 'payment.configure' : file.matches('bib-.*') ? 'race.bibs' : 'race.artwork'; }
+      function writeAllowed() { return request.auth != null && request.auth.uid == ownerUid && can(assetAction()) && (firestore.exists(/databases/(default)/documents/races/$(raceId)) ? scope(raceId) : can('race.create')); }
+      allow create, update: if writeAllowed() && request.resource.contentType.matches('image/.*') && request.resource.size < 8 * 1024 * 1024;
+      allow delete: if writeAllowed();
     }
   }
 }

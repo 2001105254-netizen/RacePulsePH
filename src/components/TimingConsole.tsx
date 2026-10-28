@@ -1,3 +1,4 @@
+import { useAccess, useScopedRaces, authenticatedFetch } from '../lib/access';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, query, where, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch, deleteField, runTransaction } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
@@ -105,6 +106,7 @@ interface LiveClockProps {
 // Gun-time clock: counts up from the moment the race-in-charge fires the
 // official start (race.gunStartTime), independent of any individual chip read.
 function LiveClock({ gunStartTime, size = 'compact' }: LiveClockProps) {
+  const { can, authority } = useAccess();
   const now = useNow(1000);
   const wallClock = new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
@@ -152,7 +154,8 @@ interface TimingConsoleProps {
 // The operator's browser validates and saves reads.  A local Windows bridge can
 // feed it live EPC sightings from a VF-787P reader through /api/rfid-events.
 export default function TimingConsole({ uid, canSeeAllRaces }: TimingConsoleProps) {
-  const [races, setRaces] = useState<Race[]>([]);
+  const { can, authority, version } = useAccess();
+  const races = useScopedRaces();
   const [activeRaceId, setActiveRaceId] = useState<string>(() => localStorage.getItem('racepulse_active_race') || '');
 
   useEffect(() => {
@@ -164,37 +167,7 @@ export default function TimingConsole({ uid, canSeeAllRaces }: TimingConsoleProp
     return () => window.removeEventListener('racepulse:back', goBackToRaceList);
   }, []);
 
-  useEffect(() => {
-    const publish = (list: Race[]) => {
-      list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      setRaces(list);
-    };
-    if (canSeeAllRaces) {
-      return onSnapshot(query(collection(db, 'races')), (snapshot) => {
-        publish(snapshot.docs.map((docSnap) => docSnap.data() as Race));
-      }, (error) => console.warn('Races listener failed:', error.message));
-    }
 
-    let owned: Race[] = [];
-    let shared: Race[] = [];
-    const publishTeamRaces = () => {
-      const unique = new Map<string, Race>();
-      [...owned, ...shared].forEach((race) => unique.set(race.id, race));
-      publish(Array.from(unique.values()));
-    };
-    const ownedUnsubscribe = onSnapshot(query(collection(db, 'races'), where('createdBy', '==', uid)), (snapshot) => {
-      owned = snapshot.docs.map((docSnap) => docSnap.data() as Race);
-      publishTeamRaces();
-    }, (error) => console.warn('Owned races listener failed:', error.message));
-    const sharedUnsubscribe = onSnapshot(query(collection(db, 'races'), where('organizerIds', 'array-contains', uid)), (snapshot) => {
-      shared = snapshot.docs.map((docSnap) => docSnap.data() as Race);
-      publishTeamRaces();
-    }, (error) => console.warn('Shared races listener failed:', error.message));
-    return () => {
-      ownedUnsubscribe();
-      sharedUnsubscribe();
-    };
-  }, [canSeeAllRaces, uid]);
 
   useEffect(() => {
     if (activeRaceId) {
@@ -242,7 +215,8 @@ interface TimingConsoleForRaceProps {
 }
 
 function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
-  const [mode, setMode] = useState<'record' | 'mobile-checkin' | 'assign' | 'roster' | 'rankings' | 'rollcall'>('record');
+  const { can, authority } = useAccess();
+  const [mode, setMode] = useState<'record' | 'mobile-checkin' | 'assign' | 'roster' | 'rankings' | 'rollcall'>(can('timing.view') ? 'record' : 'assign');
   const orderedCheckpoints = useMemo(() => [...race.checkpoints].sort((a, b) => a.order - b.order), [race.checkpoints]);
   const [selectedCheckpointId, setSelectedCheckpointId] = useState(orderedCheckpoints[0]?.id || '');
   const [bibInput, setBibInput] = useState('');
@@ -275,13 +249,14 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   const finishCheckpoint = getCheckpointByType(orderedCheckpoints, 'finish') || orderedCheckpoints[orderedCheckpoints.length - 1];
 
   const { items: chipReads, lanConnected } = useDualSync<ChipRead>({
+    enabled: can('timing.view'),
     firestoreQuery: query(collection(db, 'chipReads'), where('raceId', '==', race.id)),
     lanEndpoint: '/api/chip-reads',
     lanResponseKey: 'chipReads',
     getId: (r) => r.id,
     getUpdatedAt: (r) => r.createdAt,
   });
-  const { pendingCount: pendingScanCount, enqueue: enqueueScan, discard: discardQueuedScan } = useOfflineScanQueue(race.id);
+  const { pendingCount: pendingScanCount, enqueue: enqueueScan, discard: discardQueuedScan, queueError } = useOfflineScanQueue(race.id);
 
   const [runnerProfiles, setRunnerProfiles] = useState<RunnerProfile[]>([]);
   const [runnerProfilesError, setRunnerProfilesError] = useState('');
@@ -367,7 +342,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
     // timing-console tab may still hold an offline/stale snapshot; it must
     // never overwrite the reviewed final leaderboard after the race closes.
     // `finishRace` is the one deliberate publish at completion time.
-    if (isRaceCompleted) return;
+    if (isRaceCompleted || !can('results.publish')) return;
 
     const timeout = window.setTimeout(() => {
       const summary: PublicLiveResults = {
@@ -459,6 +434,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   };
 
   const submitRead = async (scanRaw: string, overrideTimestamp?: string, source: 'keyboard' | 'vf787p' | 'camera' = 'keyboard') => {
+    if (!can('timing.scan') || (source === 'keyboard' && !can('timing.manual'))) { setFeedback({ type: 'error', text: 'Recording is disabled for your account.' }); return false; }
     if (isRaceCompleted) {
       setFeedback({ type: 'warning', text: 'Race timing is closed. Reopen timing first before recording another scan.' });
       return false;
@@ -602,7 +578,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
       if (polling) return;
       polling = true;
       try {
-        const response = await fetch(`/api/rfid-events?after=${encodeURIComponent(after)}`, { cache: 'no-store' });
+        const response = await authenticatedFetch(`/api/rfid-events?raceId=${encodeURIComponent(race.id)}&after=${encodeURIComponent(after)}`, { cache: 'no-store' });
         if (!response.ok) return;
         const payload = await response.json() as { events?: RfidBridgeEvent[] };
         if (!active) return;
@@ -636,6 +612,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   };
 
   const undoTimingRead = async (read: ChipRead) => {
+    if (!authority && !can('timing.correct')) return;
     const canUndoAtStation = selectedCheckpointType === 'checkin' || !!selectedCheckpoint?.cutoffMinutes;
     if (!canUndoAtStation || read.checkpointId !== selectedCheckpointId) return;
     const stationTypeLabel = selectedCheckpointType === 'checkin' ? 'check-in' : 'cutoff';
@@ -748,6 +725,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   const [updatingRaceStatus, setUpdatingRaceStatus] = useState(false);
 
   const finishRace = async () => {
+    if (!can('timing.finish') || !can('results.publish')) return;
     if (isRaceCompleted || updatingRaceStatus) return;
     const missingFinishers = Math.max(0, runnerProfiles.length - finishedCount);
     const warning = missingFinishers > 0
@@ -783,6 +761,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   };
 
   const reopenTiming = async () => {
+    if (!can('timing.reopen')) return;
     if (!isRaceCompleted || updatingRaceStatus) return;
     if (!window.confirm(`Reopen timing for ${race.name}? This keeps all recorded results, but allows new scans and corrections. Registration stays closed.`)) return;
     setUpdatingRaceStatus(true);
@@ -807,11 +786,11 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         <div className="flex items-center gap-3">
           <LiveClock gunStartTime={race.gunStartTime} />
           {isRaceCompleted ? (
-            <button type="button" onClick={() => void reopenTiming()} disabled={updatingRaceStatus} className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-emerald-500 hover:bg-emerald-500/20 disabled:opacity-50 transition">
+            <button hidden={!can('timing.reopen')} type="button" onClick={() => void reopenTiming()} disabled={updatingRaceStatus} className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-emerald-500 hover:bg-emerald-500/20 disabled:opacity-50 transition">
               {updatingRaceStatus ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />} Race complete · Reopen timing
             </button>
           ) : (
-            <button type="button" onClick={() => void finishRace()} disabled={updatingRaceStatus} className="inline-flex items-center gap-1.5 rounded-full border border-red-500/35 bg-red-500/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-red-500 hover:bg-red-500 hover:text-white disabled:opacity-50 transition">
+            <button hidden={!can('timing.finish')} type="button" onClick={() => void finishRace()} disabled={updatingRaceStatus} className="inline-flex items-center gap-1.5 rounded-full border border-red-500/35 bg-red-500/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-red-500 hover:bg-red-500 hover:text-white disabled:opacity-50 transition">
               {updatingRaceStatus ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />} Finish race & publish results
             </button>
           )}
@@ -905,6 +884,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
 
       {mode === 'record' && (
       <>
+      {queueError && <p role="alert" className="text-amber-500">{queueError}</p>}
       {/* Recording console */}
       <div className="glass-panel p-5 space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -930,7 +910,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
               const phase = checkpointType(cp, index, orderedCheckpoints.length);
               const phaseLabel = phase === 'checkin' ? 'Check-In' : phase === 'start' ? 'Start' : phase === 'finish' ? 'Finish' : cp.cutoffMinutes ? `Cutoff ${cp.cutoffMinutes}m` : 'Split';
               return (
-              <button
+              <button hidden={!can('timing.scan')}
                 key={cp.id}
                 onClick={() => { setSelectedCheckpointId(cp.id); setScannerArmed(false); setFeedback(null); }}
                 className={`text-xs font-bold uppercase tracking-wide px-3.5 py-2 rounded-[16px] border transition ${selectedCheckpointId === cp.id ? 'bg-red-600 border-red-600 text-white shadow-lg shadow-red-900/30' : 'glass-inset border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
@@ -945,7 +925,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         <div>
           <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Scanner input</label>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <button
+            <button hidden={!can('timing.scan')}
               type="button"
               onClick={() => {
                 setScanSource('keyboard');
@@ -957,7 +937,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
               <span className="flex items-center gap-2 text-xs font-black uppercase tracking-wide"><Keyboard className="w-4 h-4" /> Keyboard scanner</span>
               <span className="block text-[10.5px] mt-1 opacity-80">USB/Bluetooth scanner types then sends Enter.</span>
             </button>
-            <button
+            <button hidden={!can('timing.scan')}
               type="button"
               onClick={() => {
                 setScanSource('vf787p');
@@ -1096,7 +1076,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
           >
             {recording ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Clock className="w-5 h-5" />} {actionLabel}
           </button>
-          <button
+          <button hidden={!can('timing.scan')}
             type="button"
             onClick={() => { setFeedback(null); setShowScanModal(true); }}
             className="min-h-[68px] text-sm font-black uppercase tracking-widest px-7 py-4 rounded-[var(--radius-control)] bg-violet-600 hover:bg-violet-500 text-white shadow-xl shadow-violet-950/30 flex items-center justify-center gap-2 transition active:scale-[0.98]"
@@ -1128,7 +1108,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
                 <span className="text-[var(--text-secondary)]">{checkpointLabel(r.checkpointId)}</span>
                 <span className="font-mono text-[var(--text-muted)]">{new Date(r.timestamp).toLocaleTimeString()}</span>
                 {(selectedCheckpointType === 'checkin' || selectedCheckpoint?.cutoffMinutes) && r.checkpointId === selectedCheckpointId && (
-                  <button
+                  <button hidden={!can('timing.correct')}
                     type="button"
                     onClick={() => { void undoTimingRead(r); }}
                     className="shrink-0 rounded-lg border border-amber-500/35 bg-amber-500/10 px-2 py-1 text-[9px] font-black uppercase tracking-wide text-amber-500 transition hover:bg-amber-500 hover:text-black"
@@ -1213,6 +1193,7 @@ function MobileCheckInPanel({
   feedback,
   onCheckIn,
 }: MobileCheckInPanelProps) {
+  const { can, authority } = useAccess();
   const [search, setSearch] = useState('');
   const normalizedSearch = normalizeScanValue(search);
   const checkedInBibs = useMemo(() => new Set(
@@ -1547,6 +1528,7 @@ interface ManualRunnerPanelProps {
 // timing-only registrations: they deliberately do not create Firebase Auth
 // accounts or send login emails.
 function ManualRunnerPanel({ race, runnerProfiles }: ManualRunnerPanelProps) {
+  const { can, authority } = useAccess();
   const categories = raceEntryCategories(race);
   const [fullName, setFullName] = useState('');
   const [bibNumber, setBibNumber] = useState('');
@@ -1652,7 +1634,7 @@ function ManualRunnerPanel({ race, runnerProfiles }: ManualRunnerPanelProps) {
         <p className="text-xs text-[var(--text-secondary)] mt-1">For late registrations or paper-form entries. This adds a race roster entry only—no login account is created.</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-3"><fieldset className="contents" disabled={!can('roster.add')} >
         <div className="sm:col-span-2">
           <label className="block text-[10px] font-black uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">{entryCategory === 'solo' ? 'Runner name' : 'Team representative / member 1'}</label>
           <input required value={fullName} onChange={(event) => setFullName(event.target.value.toUpperCase())} placeholder="FULL NAME" className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
@@ -1709,7 +1691,7 @@ function ManualRunnerPanel({ race, runnerProfiles }: ManualRunnerPanelProps) {
         <button type="submit" disabled={saving} className="sm:col-span-2 w-full text-xs font-black uppercase tracking-widest px-5 py-3 rounded-[var(--radius-control)] text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 flex items-center justify-center gap-2 transition disabled:opacity-60">
           {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Users2 className="w-4 h-4" />} {saving ? 'Adding runner…' : 'Add runner to roster'}
         </button>
-      </form>
+      </fieldset></form>
       {feedback && <p className={`text-xs font-semibold ${feedback.type === 'success' ? 'text-emerald-500' : 'text-red-500'}`}>{feedback.type === 'success' ? '✅' : '⚠️'} {feedback.text}</p>}
     </div>
   );
@@ -1721,6 +1703,7 @@ interface RosterImportPanelProps {
 }
 
 function RosterImportPanel({ race, runnerProfiles }: RosterImportPanelProps) {
+  const { can, authority } = useAccess();
   const [preview, setPreview] = useState<RosterImportPreview | null>(null);
   const [importing, setImporting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -1851,7 +1834,7 @@ function RosterImportPanel({ race, runnerProfiles }: RosterImportPanelProps) {
             {preview.runners.slice(0, 10).map((runner) => <div key={`${runner.distance}-${runner.bibNumber}`} className="flex items-center gap-2 text-[10px] text-[var(--text-secondary)]"><span className="font-mono font-bold text-[var(--text-primary)] w-16">#{runner.bibNumber}</span><span className="truncate flex-1">{runner.fullName}</span><span>{runner.distance}</span></div>)}
             {preview.runners.length > 10 && <p className="text-[10px] text-[var(--text-muted)]">+ {preview.runners.length - 10} more runners</p>}
           </div>
-          <button type="button" onClick={handleImport} disabled={importing || preview.runners.length === 0} className="w-full text-xs font-black uppercase tracking-widest px-5 py-3 rounded-[var(--radius-control)] text-white bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 flex items-center justify-center gap-2 transition disabled:opacity-60">
+          <button hidden={!can('roster.import')} type="button" onClick={handleImport} disabled={importing || preview.runners.length === 0} className="w-full text-xs font-black uppercase tracking-widest px-5 py-3 rounded-[var(--radius-control)] text-white bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 flex items-center justify-center gap-2 transition disabled:opacity-60">
             {importing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Users2 className="w-4 h-4" />} {importing ? 'Importing roster…' : `Import ${preview.runners.length} runners`}
           </button>
         </div>
@@ -1869,6 +1852,7 @@ interface ChipAssignmentPanelProps {
 }
 
 function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignmentPanelProps) {
+  const { can, authority } = useAccess();
   const [bibInput, setBibInput] = useState('');
   const [chipInput, setChipInput] = useState('');
   const [rosterSearch, setRosterSearch] = useState('');
@@ -2123,8 +2107,8 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
 
   return (
     <div className="space-y-6">
-      <ManualRunnerPanel race={race} runnerProfiles={runnerProfiles} />
-      <RosterImportPanel race={race} runnerProfiles={runnerProfiles} />
+      {can('roster.add') && <ManualRunnerPanel race={race} runnerProfiles={runnerProfiles} />}
+      {can('roster.import') && <RosterImportPanel race={race} runnerProfiles={runnerProfiles} />}
 
       <div className="glass-panel p-5 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -2141,7 +2125,7 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
           <div className="h-full rounded-full bg-gradient-to-r from-red-600 to-emerald-500 transition-all" style={{ width: `${runnerProfiles.length ? (assignedCount / runnerProfiles.length) * 100 : 0}%` }} />
         </div>
 
-        <form onSubmit={handleAssign} className="space-y-3">
+        <form onSubmit={handleAssign} className="space-y-3"><fieldset className="contents" disabled={!can('roster.chips')} >
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Bib Number</label>
             <div className="flex gap-2">
@@ -2153,7 +2137,7 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
                 onChange={(e) => { setBibInput(e.target.value.toUpperCase()); setFeedback(null); }}
                 className="min-w-0 flex-1 glass-inset px-4 py-3 text-sm font-bold font-mono tracking-wider text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
               />
-              <button type="button" onClick={() => setShowBibScanner(true)} className="w-12 rounded-[var(--radius-control)] bg-violet-600 hover:bg-violet-500 text-white flex items-center justify-center transition" title="Scan race bib QR">
+              <button hidden={!can('roster.chips')} type="button" onClick={() => setShowBibScanner(true)} className="w-12 rounded-[var(--radius-control)] bg-violet-600 hover:bg-violet-500 text-white flex items-center justify-center transition" title="Scan race bib QR">
                 <QrCode className="w-4 h-4" />
               </button>
             </div>
@@ -2220,7 +2204,7 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
           >
             {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Cpu className="w-4 h-4" />} Assign Chip
           </button>
-        </form>
+        </fieldset></form>
 
         {foundRunner && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
@@ -2229,7 +2213,7 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Correct race bib</label>
                 <div className="flex gap-2">
                   <input value={nextBib} onChange={(e) => setNextBib(e.target.value.toUpperCase())} className="min-w-0 flex-1 glass-inset px-3 py-2 text-xs font-bold font-mono text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
-                  <button type="button" onClick={handleBibUpdate} disabled={saving} className="px-3 rounded-[14px] bg-red-600 text-white text-[10px] font-black uppercase tracking-wide disabled:opacity-60">Save</button>
+                  <button hidden={!can('roster.bibs')} type="button" onClick={handleBibUpdate} disabled={saving} className="px-3 rounded-[14px] bg-red-600 text-white text-[10px] font-black uppercase tracking-wide disabled:opacity-60">Save</button>
                   <button type="button" onClick={() => { setEditingBib(false); setNextBib(foundRunner.bibNumber); }} className="px-3 rounded-[14px] glass-inset text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)]">Cancel</button>
                 </div>
                 {selectedHasReads && <p className="text-[10px] text-amber-500">Bib is locked because timing reads already exist.</p>}
@@ -2240,22 +2224,22 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
               </button>
             )}
             {foundRunner.chipId && !editingBib && (
-              <button type="button" onClick={handleUnassign} disabled={saving} className="glass-inset px-3 py-2.5 text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)] hover:text-red-500 disabled:opacity-50 transition">
+              <button hidden={!can('roster.chips')} type="button" onClick={handleUnassign} disabled={saving} className="glass-inset px-3 py-2.5 text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)] hover:text-red-500 disabled:opacity-50 transition">
                 Remove assigned chip
               </button>
             )}
             {!editingBib && (
-              <button type="button" onClick={handleKitClaim} disabled={saving} className={`glass-inset px-3 py-2.5 text-[10px] font-black uppercase tracking-wide disabled:opacity-50 transition ${foundRunner.kitClaimedAt ? 'text-emerald-500 hover:text-red-500' : 'text-[var(--text-secondary)] hover:text-emerald-500'}`}>
+              <button hidden={!can('roster.kits')} type="button" onClick={handleKitClaim} disabled={saving} className={`glass-inset px-3 py-2.5 text-[10px] font-black uppercase tracking-wide disabled:opacity-50 transition ${foundRunner.kitClaimedAt ? 'text-emerald-500 hover:text-red-500' : 'text-[var(--text-secondary)] hover:text-emerald-500'}`}>
                 {foundRunner.kitClaimedAt ? 'Undo kit claimed' : 'Mark kit claimed'}
               </button>
             )}
             {!editingBib && foundRunner.paymentStatus === 'pending' && foundRunner.paymentMethod === 'manual' && (
-              <button type="button" onClick={handleConfirmManualPayment} disabled={saving} className="glass-inset px-3 py-2.5 text-[10px] font-black uppercase tracking-wide text-amber-500 hover:text-emerald-500 disabled:opacity-50 transition">
+              <button hidden={!can('payment.confirm')} type="button" onClick={handleConfirmManualPayment} disabled={saving} className="glass-inset px-3 py-2.5 text-[10px] font-black uppercase tracking-wide text-amber-500 hover:text-emerald-500 disabled:opacity-50 transition">
                 Confirm manual payment
               </button>
             )}
             {!editingBib && (
-              <button type="button" onClick={handleDeleteRunner} disabled={saving || selectedHasReads} className="sm:col-span-2 glass-inset px-3 py-2.5 text-[10px] font-black uppercase tracking-wide text-red-500 hover:bg-red-500/10 disabled:opacity-50 transition">
+              <button hidden={!can('roster.remove')} type="button" onClick={handleDeleteRunner} disabled={saving || selectedHasReads} className="sm:col-span-2 glass-inset px-3 py-2.5 text-[10px] font-black uppercase tracking-wide text-red-500 hover:bg-red-500/10 disabled:opacity-50 transition">
                 {selectedHasReads ? 'Runner locked after timing reads' : 'Delete runner from race'}
               </button>
             )}
@@ -2346,6 +2330,7 @@ interface StartRollCallPanelProps {
 // instant their chip crosses the start mat, so the race-in-charge can spot at
 // a glance who the reader missed and needs a manual re-scan.
 function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId, onOpenStartScanner }: StartRollCallPanelProps) {
+  const { can, authority } = useAccess();
   const [settingDistance, setSettingDistance] = useState<string | null>(null);
   const [editingGunTimeDistance, setEditingGunTimeDistance] = useState<string | null>(null);
   const [gunTimeInput, setGunTimeInput] = useState('');
@@ -2508,7 +2493,7 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
                     />
                     <p className="text-[9px] leading-relaxed text-[var(--text-secondary)]">Only runners with a Finish read but no individual Start read will use this fallback. Chip-start results stay unchanged.</p>
                     <div className="flex gap-2">
-                      <button type="button" onClick={() => void handleSaveGunTime(group.distance)} disabled={!!settingDistance} className="flex-1 rounded-[12px] bg-amber-500 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-black disabled:opacity-60">
+                      <button hidden={!can('timing.reset')} type="button" onClick={() => void handleSaveGunTime(group.distance)} disabled={!!settingDistance} className="flex-1 rounded-[12px] bg-amber-500 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-black disabled:opacity-60">
                         {settingThisWave ? 'Saving…' : 'Save gun time'}
                       </button>
                       <button type="button" onClick={() => { setEditingGunTimeDistance(null); setGunTimeInput(''); }} disabled={!!settingDistance} className="rounded-[12px] glass-inset px-3 py-2 text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)] disabled:opacity-60">Cancel</button>
@@ -2520,7 +2505,7 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
                     <div className="flex items-center gap-2">
                       <button onClick={() => onOpenStartScanner(group.distance)} disabled={!!settingDistance} className="text-[10px] font-black uppercase tracking-wide text-emerald-500 hover:text-emerald-400 disabled:opacity-50 transition">Arm Start RFID</button>
                       <button type="button" onClick={() => openGunTimeEditor(group.distance)} disabled={!!settingDistance} className="text-[10px] font-black uppercase tracking-wide text-amber-500 hover:text-amber-400 disabled:opacity-50 transition">Correct gun time</button>
-                      <button
+                      <button hidden={!can('timing.reset')}
                         onClick={() => handleResetWave(group.distance)}
                         disabled={!!settingDistance}
                         className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-secondary)] hover:text-red-500 disabled:opacity-50 flex items-center gap-1 transition"
@@ -2663,6 +2648,7 @@ interface RunnerRosterPanelProps {
 }
 
 function RunnerRosterPanel({ race, runnerProfiles }: RunnerRosterPanelProps) {
+  const { can, authority } = useAccess();
   const distanceGroups = useMemo(() => groupRunnersByDistance(runnerProfiles), [runnerProfiles]);
 
   const handleDownload = () => {
@@ -2680,7 +2666,7 @@ function RunnerRosterPanel({ race, runnerProfiles }: RunnerRosterPanelProps) {
           </h3>
           <p className="text-xs text-[var(--text-secondary)] mt-0.5">{runnerProfiles.length} total registered</p>
         </div>
-        <button
+        <button hidden={!can('roster.export')}
           onClick={handleDownload}
           className="text-xs font-black uppercase tracking-widest px-4 py-2.5 rounded-[var(--radius-control)] bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center gap-2 transition shrink-0"
         >
@@ -2720,6 +2706,7 @@ interface RaceRankingsPanelProps {
 }
 
 function RaceRankingsPanel({ race, results }: RaceRankingsPanelProps) {
+  const { can, authority } = useAccess();
   const [presenting, setPresenting] = useState(false);
   const [rankingSearch, setRankingSearch] = useState('');
   const rankingFolders = useMemo(() => groupRankingFolders(results), [results]);

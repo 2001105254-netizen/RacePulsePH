@@ -1,0 +1,571 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 64 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isSignedIn() {
+      return request.auth != null && (request.auth.token.email_verified == true
+        || exists(/databases/$(database)/documents/users/$(request.auth.uid)));
+    }
+
+    // One-time codes, reset grants and delivery limits are backend-only.
+    match /accountChallenges/{id} { allow read, write: if false; }
+    match /accountResetGrants/{id} { allow read, write: if false; }
+    match /accountRateLimits/{id} { allow read, write: if false; }
+
+    function callerDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isAdmin() {
+      return isSignedIn() && callerDoc().data.role == 'admin';
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && callerDoc().data.role == 'superadmin';
+    }
+
+    // Admins retain operational access; irreversible and account-management
+    // actions are reserved for the Super Admin account alone.
+    function isStaff() {
+      return isAdmin() || isSuperAdmin();
+    }
+
+    function isSuperAdminEmail() {
+      return isSignedIn() && request.auth.token.email == 'kiahzeh@gmail.com';
+    }
+
+    function superAdminAlreadyClaimed() {
+      return exists(/databases/$(database)/documents/system/meta)
+        && get(/databases/$(database)/documents/system/meta).data.keys().hasAll(['superAdminClaimed'])
+        && get(/databases/$(database)/documents/system/meta).data.superAdminClaimed == true;
+    }
+
+    function canBootstrapSuperAdmin(data) {
+      return isSuperAdminEmail()
+        && !superAdminAlreadyClaimed()
+        && data.role == 'superadmin'
+        && data.approved == true;
+    }
+
+    function isOrganizer() {
+      return isSignedIn()
+        && callerDoc().data.role == 'organizer'
+        && callerDoc().data.approved == true;
+    }
+
+    // An approved organizer may operate a race they created or a race whose
+    // owner explicitly added their account to its organizer team.
+    function managesRace(raceId) {
+      return isOrganizer()
+        && exists(/databases/$(database)/documents/races/$(raceId))
+        && (
+          get(/databases/$(database)/documents/races/$(raceId)).data.createdBy == request.auth.uid
+          || (
+            get(/databases/$(database)/documents/races/$(raceId)).data.keys().hasAny(['organizerIds'])
+            && get(/databases/$(database)/documents/races/$(raceId)).data.organizerIds is list
+            && get(/databases/$(database)/documents/races/$(raceId)).data.organizerIds.hasAny([request.auth.uid])
+          )
+        );
+    }
+
+    function hasValidRegistrationId(regId, data) {
+      return regId == data.uid + '_' + data.raceId;
+    }
+
+    function isRemovedAccount(uid) {
+      return exists(/databases/$(database)/documents/removedAccounts/$(uid));
+    }
+
+    function ownsRecordedSplit(raceId, bibNumber) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/runners/$(request.auth.uid + '_' + raceId))
+        && get(/databases/$(database)/documents/runners/$(request.auth.uid + '_' + raceId)).data.bibNumber == bibNumber;
+    }
+
+    // ========== USERS / ROLES ==========
+
+    function isValidUsername(username) {
+      return username is string
+        && username.size() >= 3 && username.size() <= 24
+        && username.matches('^[a-z0-9][a-z0-9_.-]*$');
+    }
+
+    // Friendship documents are directional (request sender first), so this
+    // checks both possible IDs. It is used only for the small, safe friend
+    // profile/activity documents below—not for private user or runner docs.
+    function isFriendOf(uid) {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/friendships/$(request.auth.uid + '_' + uid))
+        || exists(/databases/$(database)/documents/friendships/$(uid + '_' + request.auth.uid))
+      );
+    }
+
+    // When a username exists on a profile, it must be backed by the immutable
+    // index document in the same transaction/batch. This prevents a profile
+    // from claiming a username that resolves to someone else's login.
+    function hasValidUsernameBinding(uid, data) {
+      return !data.keys().hasAny(['username']) || (
+        isValidUsername(data.username)
+        && existsAfter(/databases/$(database)/documents/usernameIndex/$(data.username))
+        && getAfter(/databases/$(database)/documents/usernameIndex/$(data.username)).data.uid == uid
+        && getAfter(/databases/$(database)/documents/usernameIndex/$(data.username)).data.email == data.email
+      );
+    }
+
+    function isValidUserCreate(data) {
+      return data.keys().hasAll(['email', 'displayName', 'role', 'approved', 'createdAt'])
+        && data.email is string && data.displayName is string
+        && data.role is string && (data.role == 'superadmin' || data.role == 'admin' || data.role == 'organizer' || data.role == 'runner')
+        && data.approved is bool
+        && data.createdAt is string
+        // Runner accounts are always auto-approved.
+        && (data.role != 'runner' || data.approved == true)
+        // Organizer accounts always start unapproved; only a Super Admin can flip that later.
+        && (data.role != 'organizer' || data.approved == false)
+        // The one-time Super Admin bootstrap is restricted to the owner email.
+        && (data.role != 'superadmin' || canBootstrapSuperAdmin(data))
+        && hasValidUsernameBinding(data.uid, data);
+    }
+
+    function hasSafeProfileDetails(data) {
+      return (!data.keys().hasAny(['nickname']) || (data.nickname is string && data.nickname.size() <= 30))
+        && (!data.keys().hasAny(['photoURL']) || (data.photoURL is string && data.photoURL.size() <= 100000))
+        && (!data.keys().hasAny(['emergencyContactName']) || (data.emergencyContactName is string && data.emergencyContactName.size() <= 100))
+        && (!data.keys().hasAny(['emergencyContactPhone']) || (data.emergencyContactPhone is string && data.emergencyContactPhone.size() <= 30))
+        && (!data.keys().hasAny(['shirtSize']) || (data.shirtSize is string && data.shirtSize.size() <= 20))
+        && (!data.keys().hasAny(['medicalNotes']) || (data.medicalNotes is string && data.medicalNotes.size() <= 600))
+        && (!data.keys().hasAny(['username']) || isValidUsername(data.username));
+    }
+
+    match /users/{uid} {
+      // Approved organizers can select other approved organizer accounts when
+      // building a race team. The client query is restricted to those profiles.
+      allow read: if isSignedIn() && (
+        request.auth.uid == uid
+        || isStaff()
+        || (isOrganizer() && resource.data.role == 'organizer' && resource.data.approved == true)
+      );
+      allow create: if isSignedIn() && request.auth.token.email_verified == true && request.auth.uid == uid
+        && !isRemovedAccount(uid)
+        && isValidUserCreate(request.resource.data);
+      // Self-updates may not change role/approved. Only Super Admins may
+      // approve organizers or manage other accounts. The owner email gets one
+      // strictly constrained bootstrap transition into Super Admin.
+      allow update: if isSuperAdmin()
+        || canBootstrapSuperAdmin(request.resource.data)
+        || (
+        isSignedIn() && request.auth.uid == uid
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.approved == resource.data.approved
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() >= 1
+        && request.resource.data.displayName.size() <= 100
+        && hasSafeProfileDetails(request.resource.data)
+        && hasValidUsernameBinding(uid, request.resource.data)
+      );
+      // People can permanently remove their own profile through the in-app
+      // account deletion flow. Admins retain account-management access.
+      allow delete: if isSuperAdmin() || (isSignedIn() && request.auth.uid == uid);
+    }
+
+    // Firebase Auth uses email/password internally. This immutable directory
+    // lets the sign-in form resolve an exact username without exposing the
+    // private user profile collection. Only direct document gets are public;
+    // username enumeration/listing is blocked.
+    match /usernameIndex/{username} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if isSignedIn()
+        && username == request.resource.data.username
+        && isValidUsername(username)
+        && request.resource.data.keys().hasOnly(['username', 'uid', 'email', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.createdAt is string;
+      allow update: if false;
+      // A username may only be released in the same batch that removes its
+      // matching account profile; this prevents users from changing handles.
+      allow delete: if isSignedIn()
+        && resource.data.uid == request.auth.uid
+        && !existsAfter(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    // A tombstone prevents a removed Firebase login from recreating a profile
+    // in the app. Full Firebase Auth deletion additionally requires a trusted
+    // Firebase Admin backend, never browser code.
+    match /removedAccounts/{uid} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    // ========== RUNNER FRIENDS (SAFE, CONSENT-BASED VIEW) ==========
+
+    function isSafeFriendProfile(data, uid, username) {
+      return data.keys().hasAll(['uid', 'username', 'displayName', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'username', 'displayName', 'nickname', 'photoURL', 'updatedAt'])
+        && data.uid == uid && data.username == username
+        && isValidUsername(data.username)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100
+        && (!data.keys().hasAny(['nickname']) || (data.nickname is string && data.nickname.size() <= 30))
+        && (!data.keys().hasAny(['photoURL']) || (data.photoURL is string && data.photoURL.size() <= 100000))
+        && data.updatedAt is string;
+    }
+
+    // Username search uses a direct document read, not a query, to avoid
+    // directory enumeration. This directory deliberately excludes email.
+    match /friendDirectory/{username} {
+      allow get: if isSignedIn();
+      allow list: if false;
+      allow create, update: if isSignedIn()
+        && request.resource.data.uid == request.auth.uid
+        && isSafeFriendProfile(request.resource.data, request.auth.uid, username);
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    match /friendProfiles/{uid} {
+      allow get: if isSignedIn() && (request.auth.uid == uid || isFriendOf(uid));
+      allow list: if false;
+      allow create, update: if isSignedIn()
+        && request.auth.uid == uid
+        && isSafeFriendProfile(request.resource.data, uid, request.resource.data.username);
+      allow delete: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    match /friendActivities/{uid} {
+      allow get: if isSignedIn() && (request.auth.uid == uid || isFriendOf(uid));
+      allow list: if false;
+      allow create, update: if isSignedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['uid', 'recentRaces', 'updatedAt'])
+        && request.resource.data.uid == uid
+        && request.resource.data.recentRaces is list && request.resource.data.recentRaces.size() <= 6
+        && request.resource.data.updatedAt is string;
+      allow delete: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    match /friendRequests/{requestId} {
+      allow read: if isSignedIn() && (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
+      allow create: if isSignedIn()
+        && requestId == request.resource.data.fromUid + '_' + request.resource.data.toUid
+        && request.resource.data.keys().hasOnly(['fromUid', 'toUid', 'fromUsername', 'fromDisplayName', 'status', 'createdAt'])
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.toUid is string && request.resource.data.toUid != request.auth.uid
+        && isValidUsername(request.resource.data.fromUsername)
+        && request.resource.data.fromDisplayName is string && request.resource.data.fromDisplayName.size() >= 1 && request.resource.data.fromDisplayName.size() <= 100
+        && request.resource.data.status == 'pending' && request.resource.data.createdAt is string;
+      allow update: if isSignedIn() && resource.data.toUid == request.auth.uid
+        && request.resource.data.fromUid == resource.data.fromUid
+        && request.resource.data.toUid == resource.data.toUid
+        && request.resource.data.fromUsername == resource.data.fromUsername
+        && request.resource.data.fromDisplayName == resource.data.fromDisplayName
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.status in ['accepted', 'declined']
+        && request.resource.data.respondedAt is string
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'respondedAt']);
+      allow delete: if isSignedIn() && (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
+    }
+
+    match /friendships/{friendshipId} {
+      allow read: if isSignedIn() && resource.data.members.hasAny([request.auth.uid]);
+      allow create: if isSignedIn()
+        && friendshipId == request.resource.data.fromUid + '_' + request.resource.data.toUid
+        && request.resource.data.keys().hasOnly(['fromUid', 'toUid', 'members', 'createdAt'])
+        && request.resource.data.toUid == request.auth.uid
+        && request.resource.data.fromUid is string && request.resource.data.fromUid != request.auth.uid
+        && request.resource.data.members is list && request.resource.data.members.size() == 2
+        && request.resource.data.members.hasAll([request.resource.data.fromUid, request.resource.data.toUid])
+        && request.resource.data.createdAt is string
+        && existsAfter(/databases/$(database)/documents/friendRequests/$(request.resource.data.fromUid + '_' + request.resource.data.toUid))
+        && getAfter(/databases/$(database)/documents/friendRequests/$(request.resource.data.fromUid + '_' + request.resource.data.toUid)).data.status == 'accepted';
+      allow delete: if isSignedIn() && resource.data.members.hasAny([request.auth.uid]);
+      allow update: if false;
+    }
+
+    match /raceInvites/{inviteId} {
+      allow read: if isSignedIn() && (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
+      allow create: if isSignedIn()
+        && inviteId == request.resource.data.fromUid + '_' + request.resource.data.toUid + '_' + request.resource.data.raceId
+        && request.resource.data.keys().hasOnly(['fromUid', 'toUid', 'raceId', 'raceName', 'raceDate', 'fromDisplayName', 'createdAt', 'status'])
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.toUid is string && request.resource.data.toUid != request.auth.uid
+        && isFriendOf(request.resource.data.toUid)
+        && request.resource.data.raceId is string
+        && exists(/databases/$(database)/documents/races/$(request.resource.data.raceId))
+        && request.resource.data.raceName is string && request.resource.data.raceName.size() >= 1 && request.resource.data.raceName.size() <= 150
+        && request.resource.data.raceDate is string
+        && request.resource.data.fromDisplayName is string && request.resource.data.fromDisplayName.size() >= 1 && request.resource.data.fromDisplayName.size() <= 100
+        && request.resource.data.createdAt is string && request.resource.data.status == 'pending';
+      allow update: if isSignedIn() && resource.data.toUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.status == 'opened';
+      allow delete: if isSignedIn() && (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
+    }
+
+    // ========== SYSTEM / SUPER ADMIN BOOTSTRAP ==========
+
+    match /system/meta {
+      allow read: if true;
+      // Only the configured owner email can mark the one-time claim complete.
+      allow create, update: if isSuperAdminEmail()
+        && !superAdminAlreadyClaimed()
+        && request.resource.data.superAdminClaimed == true;
+    }
+
+    // ========== RACES & CHECKPOINTS ==========
+
+    match /races/{raceId} {
+      // Public read so runners can browse/register for every organizer's races.
+      allow get: if true;
+      allow list: if true;
+      // An organizer team can collaboratively operate a race. The primary
+      // creator and creation time stay immutable for organizer-originated edits.
+      allow create: if isStaff() || (isOrganizer() && request.resource.data.createdBy == request.auth.uid);
+      allow update: if isStaff() || (
+        managesRace(raceId)
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt
+        // A collaborator can edit race operations, but only the primary
+        // creator may change who is on the organizer team.
+        && (
+          resource.data.createdBy == request.auth.uid
+          || (
+            request.resource.data.keys().hasAny(['organizerIds']) == resource.data.keys().hasAny(['organizerIds'])
+            && (!resource.data.keys().hasAny(['organizerIds']) || request.resource.data.organizerIds == resource.data.organizerIds)
+          )
+        )
+      );
+      allow delete: if isSuperAdmin();
+    }
+
+    // ========== RUNNER PROFILES ==========
+
+    // Payment state is written exclusively by the trusted PayMongo webhook
+    // function (Firebase Admin SDK bypasses these browser rules). This keeps a
+    // runner from marking a free/pending registration as paid in DevTools.
+    function paymentFields() {
+      return ['paymentStatus', 'paymentId', 'paymentMethod', 'paymentAmount', 'paymentReference', 'paymentPaidAt'];
+    }
+
+    function hasNoPaymentMetadata(data) {
+      return !data.keys().hasAny(paymentFields());
+    }
+
+    function hasValidPaymentMetadata(data) {
+      return !data.keys().hasAny(paymentFields()) || (
+        data.paymentStatus is string
+        && data.paymentMethod is string && data.paymentMethod.size() >= 1 && data.paymentMethod.size() <= 40
+        && data.paymentAmount is number && data.paymentAmount >= 0
+        && (
+          // A runner may reserve a slot through the organizer's approved
+          // manual-payment flow. It is intentionally not a paid result.
+          (data.paymentStatus == 'pending'
+            && data.paymentMethod == 'manual'
+            // Older pending reservations predate the reference-number field;
+            // keep them operable while requiring it for all new reservations.
+            && (!data.keys().hasAny(['paymentReference']) || (data.paymentReference is string && data.paymentReference.size() >= 4 && data.paymentReference.size() <= 100))
+            && !data.keys().hasAny(['paymentId', 'paymentPaidAt']))
+          ||
+          (data.paymentStatus == 'paid'
+            && data.paymentId is string && data.paymentId.size() >= 8 && data.paymentId.size() <= 120
+            && data.paymentPaidAt is string
+            // Online payments do not carry a manual reference, while a paid
+            // manual reservation must retain the reference supplied by runner.
+            && (!data.keys().hasAny(['paymentReference']) || (data.paymentReference is string && data.paymentReference.size() >= 4 && data.paymentReference.size() <= 100)))
+        )
+      );
+    }
+
+    function paymentMetadataUnchanged() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(paymentFields());
+    }
+
+    function organizerConfirmsManualPayment() {
+      return managesRace(resource.data.raceId)
+        && resource.data.paymentStatus == 'pending'
+        && resource.data.paymentMethod == 'manual'
+        && request.resource.data.paymentStatus == 'paid'
+        && request.resource.data.paymentMethod == 'manual'
+        && request.resource.data.paymentAmount == resource.data.paymentAmount
+        && (!resource.data.keys().hasAny(['paymentReference'])
+          || request.resource.data.paymentReference == resource.data.paymentReference)
+        && request.resource.data.paymentId is string
+        && request.resource.data.paymentId.size() >= 8 && request.resource.data.paymentId.size() <= 120
+        && request.resource.data.paymentPaidAt is string
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(paymentFields());
+    }
+
+    function createsManualPaymentReservation(data) {
+      return data.paymentStatus == 'pending'
+        && data.paymentMethod == 'manual'
+        && data.paymentAmount is number && data.paymentAmount >= 0
+        && data.paymentReference is string && data.paymentReference.size() >= 4 && data.paymentReference.size() <= 100
+        && !data.keys().hasAny(['paymentId', 'paymentPaidAt'])
+        && exists(/databases/$(database)/documents/races/$(data.raceId))
+        && get(/databases/$(database)/documents/races/$(data.raceId)).data.manualPaymentEnabled == true;
+    }
+
+    function isValidRunnerProfile(data) {
+      return data.keys().hasAll(['uid', 'raceId', 'fullName', 'bibNumber', 'distance', 'gender', 'age', 'createdAt'])
+        && data.uid is string
+        && data.raceId is string
+        // Team records keep the combined member names in fullName. A five
+        // person Group can naturally exceed the normal individual-name limit,
+        // while Solo names retain the tighter 100-character validation.
+        && data.fullName is string && data.fullName.size() >= 1
+        && (
+          data.fullName.size() <= 100
+          || (
+            data.keys().hasAny(['entryCategory'])
+            && data.entryCategory is string
+            && (data.entryCategory == 'duo' || data.entryCategory == 'trio' || data.entryCategory == 'group')
+            && data.fullName.size() <= 500
+          )
+        )
+        && data.bibNumber is string && data.bibNumber.size() >= 1 && data.bibNumber.size() <= 20
+        && data.distance is string
+        && data.gender is string && (data.gender == 'male' || data.gender == 'female')
+        && data.age is int && data.age >= 1 && data.age <= 120
+        && (!data.keys().hasAny(['ageNotProvided']) || data.ageNotProvided is bool)
+        && (!data.keys().hasAny(['isFreeSlot']) || data.isFreeSlot is bool)
+        && data.createdAt is string
+        && (!data.keys().hasAny(['emergencyContactName']) || (data.emergencyContactName is string && data.emergencyContactName.size() >= 1 && data.emergencyContactName.size() <= 100))
+        && (!data.keys().hasAny(['emergencyContactPhone']) || (data.emergencyContactPhone is string && data.emergencyContactPhone.size() >= 4 && data.emergencyContactPhone.size() <= 30))
+        && (!data.keys().hasAny(['chipId']) || data.chipId is string)
+        && (!data.keys().hasAny(['startsAfterBib']) || (data.startsAfterBib is string && data.startsAfterBib.size() >= 1 && data.startsAfterBib.size() <= 20 && data.startsAfterBib != data.bibNumber))
+        && (!data.keys().hasAny(['kitClaimedAt']) || data.kitClaimedAt is string)
+        && (!data.keys().hasAny(['shirtSize']) || (data.shirtSize is string && data.shirtSize.size() <= 20))
+        && (!data.keys().hasAny(['entryCategory']) || (data.entryCategory is string && (data.entryCategory == 'solo' || data.entryCategory == 'duo' || data.entryCategory == 'trio' || data.entryCategory == 'group')))
+        && (!data.keys().hasAny(['teamName']) || (data.teamName is string && data.teamName.size() >= 1 && data.teamName.size() <= 100))
+        // Imported Group rosters can have more than the four members used by
+        // the standard online-registration form. Keep a practical cap while
+        // allowing five-member (and other larger) shared-bib Group teams.
+        && (!data.keys().hasAny(['teamMembers']) || (data.teamMembers is list && data.teamMembers.size() >= 2 && data.teamMembers.size() <= 12))
+        && hasValidPaymentMetadata(data);
+    }
+
+    // Doc id is {uid}_{raceId} - one entry per registration, so a runner can hold
+    // many concurrent race registrations instead of a single overwritten profile.
+    match /runners/{regId} {
+      // Runners see only their own registrations; organizers see registrations
+      // only for events they created; admins retain full event oversight.
+      allow read: if isStaff()
+        || (isSignedIn() && resource.data.uid == request.auth.uid)
+        || managesRace(resource.data.raceId);
+
+      allow create: if isValidRunnerProfile(request.resource.data)
+        && (!request.resource.data.keys().hasAny(['startsAfterBib']) || isStaff() || managesRace(request.resource.data.raceId))
+        && hasValidRegistrationId(regId, request.resource.data)
+        && (hasNoPaymentMetadata(request.resource.data) || createsManualPaymentReservation(request.resource.data))
+        && (isStaff()
+          || (isSignedIn() && request.resource.data.uid == request.auth.uid)
+          || managesRace(request.resource.data.raceId));
+
+      // A runner cannot transfer a registration to another account/race. An
+      // organizer can edit only a registration in their own race.
+      allow update: if isValidRunnerProfile(request.resource.data)
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['startsAfterBib']) || isStaff() || managesRace(resource.data.raceId))
+        && hasValidRegistrationId(regId, request.resource.data)
+        && (
+          // Staff may repair payment metadata; an event organizer may only
+          // promote their own pending manual reservation to paid. All other
+          // browser edits must leave the payment data untouched.
+          isStaff()
+          || organizerConfirmsManualPayment()
+          || (paymentMetadataUnchanged()
+            && ((isSignedIn()
+              && resource.data.uid == request.auth.uid
+              && request.resource.data.uid == resource.data.uid
+              && request.resource.data.raceId == resource.data.raceId)
+            || (managesRace(resource.data.raceId)
+              && request.resource.data.raceId == resource.data.raceId))));
+      // Race organizers may remove a roster entry from a race they own before
+      // timing begins. The UI locks entries with reads; Super Admin retains
+      // authority for exceptional data correction.
+      allow delete: if isSuperAdmin()
+        || managesRace(resource.data.raceId)
+        || (isSignedIn() && resource.data.uid == request.auth.uid);
+    }
+
+    // Per race+distance sequence counters, incremented transactionally when a
+    // runner registers so two simultaneous registrations can't land on the
+    // same bib number. No PII - just an integer, same trust level as chipReads.
+    match /bibCounters/{counterId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // ========== TIMING CHIP READS ==========
+
+    function isValidChipRead(data) {
+      return data.keys().hasAll(['raceId', 'bibNumber', 'checkpointId', 'timestamp', 'source', 'recordedBy', 'createdAt'])
+        && data.raceId is string
+        && data.bibNumber is string && data.bibNumber.size() >= 1 && data.bibNumber.size() <= 20
+        && data.checkpointId is string
+        && data.timestamp is string
+        && data.source is string && (data.source == 'manual' || data.source == 'rfid-bridge')
+        && data.recordedBy is string
+        && data.createdAt is string
+        && (!data.keys().hasAny(['chipId']) || data.chipId is string);
+    }
+
+    match /chipReads/{readId} {
+      // A runner can only access splits tied to their own race registration.
+      // Race operators are constrained to races they created.
+      allow read: if isStaff()
+        || managesRace(resource.data.raceId)
+        || ownsRecordedSplit(resource.data.raceId, resource.data.bibNumber);
+      allow create, update: if isValidChipRead(request.resource.data)
+        && (isStaff() || managesRace(request.resource.data.raceId));
+      allow delete: if isSuperAdmin();
+    }
+
+    // A compact, organizer-published scoreboard for spectators. Raw timing
+    // scans never become public: only the owner of the race (or an admin) can
+    // write this collection, while anyone may read its non-sensitive summary.
+    match /liveResults/{raceId} {
+      allow read: if true;
+      // Once a race is completed, an old organizer browser tab can still hold
+      // stale in-memory scans. It must not be able to publish those back over
+      // the reviewed final leaderboard. The completion batch remains allowed:
+      // it writes the race's completedAt and the matching summary updatedAt
+      // atomically. Staff retain correction access for exceptional cases.
+      allow create, update: if request.resource.data.raceId == raceId
+        && (isStaff() || (
+          managesRace(raceId)
+          && (
+            !getAfter(/databases/$(database)/documents/races/$(raceId)).data.keys().hasAny(['completedAt'])
+            || request.resource.data.updatedAt == getAfter(/databases/$(database)/documents/races/$(raceId)).data.completedAt
+          )
+        ));
+      allow delete: if isSuperAdmin() || managesRace(raceId);
+    }
+
+    // ========== MEDAL ENGRAVING ORDERS ==========
+
+    function isValidOrder(data) {
+      return data.keys().hasAll(['runnerName', 'bibNumber', 'distance', 'finishingTime', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().size() >= 7 && data.keys().size() <= 10
+        && data.runnerName is string && data.runnerName.size() >= 1 && data.runnerName.size() <= 100
+        && data.bibNumber is string && data.bibNumber.size() >= 1 && data.bibNumber.size() <= 20
+        && data.distance is string && data.distance.size() >= 1 && data.distance.size() <= 50
+        && data.finishingTime is string && data.finishingTime.size() >= 1 && data.finishingTime.size() <= 20
+        && data.status is string && (data.status == 'queued' || data.status == 'inprogress' || data.status == 'ready' || data.status == 'completed')
+        && data.createdAt is string
+        && data.updatedAt is string
+        && (!data.keys().hasAny(['rank']) || (data.rank is string && data.rank.size() <= 50))
+        && (!data.keys().hasAny(['customInscription']) || (data.customInscription is string && data.customInscription.size() <= 150))
+        && (!data.keys().hasAny(['ownerUid']) || data.ownerUid is string);
+    }
+
+    match /orders/{orderId} {
+      allow get: if isSignedIn() && isValidId(orderId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(orderId) && isValidOrder(request.resource.data);
+      allow update: if isSignedIn() && isValidId(orderId) && isValidOrder(request.resource.data);
+      allow delete: if isSuperAdmin();
+    }
+  }
+}

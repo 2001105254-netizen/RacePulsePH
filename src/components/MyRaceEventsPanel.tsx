@@ -1,3 +1,4 @@
+import { useAccess, useScopedRaces, authenticatedFetch } from '../lib/access';
 import { useEffect, useMemo, useState } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -13,30 +14,11 @@ interface MyRaceEventsPanelProps {
 // and Timing (the operational console). It includes races they created and
 // races whose owner added them to the organizer team.
 export default function MyRaceEventsPanel({ uid, onManageRace }: MyRaceEventsPanelProps) {
-  const [races, setRaces] = useState<Race[]>([]);
+  const { can, authority, version } = useAccess();
+  const races = useScopedRaces();
   const [runners, setRunners] = useState<RunnerProfile[]>([]);
 
-  useEffect(() => {
-    let owned: Race[] = [];
-    let shared: Race[] = [];
-    const publish = () => {
-      const unique = new Map<string, Race>();
-      [...owned, ...shared].forEach((race) => unique.set(race.id, race));
-      setRaces(Array.from(unique.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-    };
-    const ownedUnsubscribe = onSnapshot(query(collection(db, 'races'), where('createdBy', '==', uid)), (snapshot) => {
-      owned = snapshot.docs.map((docSnap) => docSnap.data() as Race);
-      publish();
-    }, (err) => console.warn('Owned races listener failed:', err.message));
-    const sharedUnsubscribe = onSnapshot(query(collection(db, 'races'), where('organizerIds', 'array-contains', uid)), (snapshot) => {
-      shared = snapshot.docs.map((docSnap) => docSnap.data() as Race);
-      publish();
-    }, (err) => console.warn('Shared races listener failed:', err.message));
-    return () => {
-      ownedUnsubscribe();
-      sharedUnsubscribe();
-    };
-  }, [uid]);
+
 
   // Read registrations one authorized race at a time. This keeps each query
   // scoped to the race team rather than exposing the entire runners collection.
@@ -44,7 +26,7 @@ export default function MyRaceEventsPanel({ uid, onManageRace }: MyRaceEventsPan
   const raceIdsKey = raceIds.join('|');
 
   useEffect(() => {
-    if (raceIds.length === 0) {
+    if (raceIds.length === 0 || !can('roster.view')) {
       setRunners([]);
       return;
     }
@@ -128,10 +110,10 @@ export default function MyRaceEventsPanel({ uid, onManageRace }: MyRaceEventsPan
 
                   <div className="flex gap-4">
                     <div className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
-                      <Users2 className="w-3.5 h-3.5 text-red-500" /> <span className="font-bold text-[var(--text-primary)]">{raceRunners.length}</span> registered
+                      <Users2 className="w-3.5 h-3.5 text-red-500" /> <span className="font-bold text-[var(--text-primary)]">{can('roster.view') ? raceRunners.length : '—'}</span> registered
                     </div>
                     <div className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
-                      <Coins className="w-3.5 h-3.5 text-red-500" /> <span className="font-bold text-[var(--text-primary)]">₱{revenue.toFixed(0)}</span> est.
+                      <Coins className="w-3.5 h-3.5 text-red-500" /> <span className="font-bold text-[var(--text-primary)]">₱{can('revenue.view') ? revenue.toFixed(0) : '—'}</span> est.
                     </div>
                   </div>
 
@@ -143,7 +125,7 @@ export default function MyRaceEventsPanel({ uid, onManageRace }: MyRaceEventsPan
                     </div>
                   )}
 
-                  <button
+                  <button hidden={!can('timing.view')}
                     onClick={() => onManageRace(race.id)}
                     className="w-full text-xs font-black uppercase tracking-widest px-4 py-2.5 rounded-[var(--radius-control)] text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 flex items-center justify-center gap-2 transition"
                   >
