@@ -314,7 +314,7 @@ export interface RunnerResult {
   runnerProfile?: RunnerProfile;
   splits: RunnerSplit[];
   finishReviewRequired?: boolean;
-  finishTime?: string; // formatted HH:MM:SS.ffffff elapsed from 'start' checkpoint to 'finish'
+  finishTime?: string; // formatted HH:MM:SSfffff elapsed from 'start' checkpoint to 'finish'
   finishSeconds?: number;
   // Kept independently so a certificate can show both elapsed measurements.
   // Chip time exists only if the runner has a valid individual Start read.

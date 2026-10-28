@@ -140,7 +140,7 @@ export default function LiveRankingsScreen({ race, results, onClose }: {
           );
         })}
       </div>
-      <p className="shrink-0 text-center text-[10px] sm:text-xs text-white/40 mt-4">Six decimals show recorded precision; accuracy depends on equipment · Updates live · Selection stays on screen · Press Esc to exit</p>
+      <p className="shrink-0 text-center text-[10px] sm:text-xs text-white/40 mt-4">Updates live · Selection stays on screen · Press Esc to exit</p>
     </div>
   );
 }

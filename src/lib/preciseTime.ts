@@ -18,11 +18,11 @@ export function elapsedSeconds(start: string | undefined, finish: string): numbe
 }
 
 export function formatElapsed(totalSeconds: number): string {
-  // Round back to source ticks first to avoid floating-point underflow, then
-  // truncate to six display digits. Ranking retains the seventh source digit.
-  const micros = Math.floor(Math.round(totalSeconds * 10000000) / 10);
-  const seconds = Math.floor(micros / 1000000);
+  // Seven digits after the final colon: two seconds plus five fractional
+  // digits. Ranking retains all seven fractional source digits.
+  const units = Math.floor(Math.round(totalSeconds * 10000000) / 100);
+  const seconds = Math.floor(units / 100000);
   return [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60]
     .map(value => String(value).padStart(2, '0')).join(':')
-    + '.' + String(micros % 1000000).padStart(6, '0');
+    + String(units % 100000).padStart(5, '0');
 }

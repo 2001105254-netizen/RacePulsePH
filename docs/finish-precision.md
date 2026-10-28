@@ -1,6 +1,6 @@
 # Finish precision and close finishes
 
-Finish, chip and gun elapsed times display six fractional seconds. All seven fractional digits supplied by the Windows bridge are retained for calculations and arrival ordering. Existing raw timestamps are recalculated automatically; previously published summaries must be republished by an authorized operator. Previously rounded data cannot recover lost precision.
+Finish, chip and gun elapsed times display HH:MM:SSSSSSS: seven digits after the last colon, comprising two seconds digits followed by five fractional digits, without a decimal point (for example, 00:30:0012345). Full fractional seconds remain available internally for ranking. All seven fractional digits supplied by the Windows bridge are retained for calculations and arrival ordering. Existing raw timestamps are recalculated automatically; previously published summaries must be republished by an authorized operator. Previously rounded data cannot recover lost precision.
 
 Equal measured elapsed times share competition places (1, 1, 3), including age places, and require finish review. A different bib number never breaks a sporting tie. Close results are provisional in the presentation, organizer rankings, public feed and certificates.
 
@@ -10,4 +10,4 @@ Bridge events retain original UTC receipt timestamp, sequence number, monotonic 
 
 Deployment requires the updated web app/server and Firestore rules. Rebuild the Windows bridge/Timing Station with the vendor SDK DLLs to emit the additional diagnostics. Old bridge messages remain supported. The vendor DLLs are absent from this checkout, so the bridge build and actual reader accuracy must be verified with the device.
 
-Hardware timestamps, continuous raw sightings before duplicate suppression, camera synchronization, video review and finish-order adjudication require a further integration with verified equipment capabilities. Six decimal places do not imply microsecond detection accuracy.
+Hardware timestamps, continuous raw sightings before duplicate suppression, camera synchronization, video review and finish-order adjudication require a further integration with verified equipment capabilities. The displayed seconds do not limit the precision used to rank runners, and retained timestamp precision does not establish detection accuracy.
