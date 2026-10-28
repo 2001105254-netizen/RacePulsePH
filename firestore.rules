@@ -7,7 +7,8 @@ service cloud.firestore {
     }
 
     function isSignedIn() {
-      return request.auth != null && request.auth.token.email_verified == true;
+      return request.auth != null && (request.auth.token.email_verified == true
+        || exists(/databases/$(database)/documents/users/$(request.auth.uid)));
     }
 
     // One-time codes, reset grants and delivery limits are backend-only.
@@ -148,7 +149,7 @@ service cloud.firestore {
         || isStaff()
         || (isOrganizer() && resource.data.role == 'organizer' && resource.data.approved == true)
       );
-      allow create: if isSignedIn() && request.auth.uid == uid
+      allow create: if isSignedIn() && request.auth.token.email_verified == true && request.auth.uid == uid
         && !isRemovedAccount(uid)
         && isValidUserCreate(request.resource.data);
       // Self-updates may not change role/approved. Only Super Admins may

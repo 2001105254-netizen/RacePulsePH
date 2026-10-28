@@ -87,7 +87,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!authUser || !emailVerified) { setProfile(null); return; }
+    if (!authUser) { setProfile(null); return; }
     setProfile(undefined);
     const unsubscribe = onSnapshot(doc(db, 'users', authUser.uid), (docSnap) => {
       setProfile(docSnap.exists() ? (docSnap.data() as UserProfile) : null);
@@ -98,7 +98,7 @@ export default function App() {
     return () => unsubscribe();
   }, [authUser, emailVerified]);
 
-  const stillLoading = authUser === undefined || (!!authUser && emailVerified && profile === undefined);
+  const stillLoading = authUser === undefined || (!!authUser && profile === undefined);
 
   let content: React.ReactNode;
   if (stillLoading) {
@@ -107,7 +107,7 @@ export default function App() {
         <RefreshCw className="w-6 h-6 text-[var(--text-muted)] animate-spin" />
       </div>
     );
-  } else if (authUser && !emailVerified) {
+  } else if (authUser && !emailVerified && !profile) {
     content = <EmailVerificationScreen key={authUser.uid} user={authUser} onVerified={() => setEmailVerified(true)} />;
   } else if (!authUser || !profile) {
     content = authUser ? (
