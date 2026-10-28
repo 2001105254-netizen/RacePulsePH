@@ -86,3 +86,11 @@ test('selected-race restriction also applies to protected race deletion',async()
  await env.withSecurityRulesDisabled(ctx=>setDoc(doc(ctx.firestore(),'userAccess','superadmin'),{...state,permissions:Object.fromEntries(policy.keys.map(key=>[key,policy.can(user,state,key)]))}));
  await assertFails(deleteDoc(doc(db('superadmin'),'races','race_b')));
 });
+
+test('finish review window requires correction permission and a bounded numeric value', async()=>{
+ await assertFails(updateDoc(doc(db('organizer'),'races','race_a'),{finishReviewWindowMs:10}));
+ await assertSucceeds(updateDoc(doc(db('admin'),'races','race_a'),{finishReviewWindowMs:10}));
+ await assertFails(updateDoc(doc(db('admin'),'races','race_a'),{finishReviewWindowMs:-1}));
+ await assertFails(updateDoc(doc(db('admin'),'races','race_a'),{finishReviewWindowMs:60001}));
+ await assertFails(updateDoc(doc(db('admin'),'races','race_a'),{finishReviewWindowMs:'10'}));
+});

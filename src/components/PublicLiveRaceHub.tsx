@@ -145,7 +145,7 @@ export default function PublicLiveRaceHub({ races }: PublicLiveRaceHubProps) {
                     <div key={`${leader.distance}_${leader.rank}_${leader.bibNumber}`} className="glass-inset px-4 py-3 flex items-center gap-3">
                       <span className="w-7 h-7 rounded-full bg-red-500/10 text-red-500 flex items-center justify-center text-xs font-mono font-black shrink-0">{leader.rank}</span>
                       <span className="min-w-0 flex-1"><span className="block text-sm font-bold text-[var(--text-primary)] truncate">{leader.fullName}</span><span className="block text-[11px] text-[var(--text-secondary)]">{leader.distance} · #{leader.bibNumber}</span></span>
-                      <span className="font-mono font-black text-sm text-emerald-500 shrink-0">{leader.finishTime}</span>
+                      <span className="font-mono font-black text-sm text-emerald-500 shrink-0">{leader.finishTime}{leader.finishReviewRequired && " · Provisional"}</span>
                     </div>
                   ))}
                 </div>
@@ -170,7 +170,7 @@ export default function PublicLiveRaceHub({ races }: PublicLiveRaceHubProps) {
                       <div key={`${result.distance}_${result.rank}_${result.bibNumber}`} className="glass-inset px-4 py-3 flex items-center gap-3">
                         <span className="w-7 text-center font-mono font-black text-red-500 shrink-0">#{result.rank}</span>
                         <span className="min-w-0 flex-1"><span className="block text-sm font-bold text-[var(--text-primary)] truncate">{result.fullName}</span><span className="block text-[11px] text-[var(--text-secondary)]">{result.distance} · Bib #{result.bibNumber}</span></span>
-                        <span className="font-mono font-black text-sm text-emerald-500 shrink-0">{result.finishTime}</span>
+                        <span className="font-mono font-black text-sm text-emerald-500 shrink-0">{result.finishTime}{result.finishReviewRequired && " · Provisional"}</span>
                       </div>
                     ))}
                   </div>

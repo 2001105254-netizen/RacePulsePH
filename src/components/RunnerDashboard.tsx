@@ -1616,6 +1616,7 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
     return {
       ...localResult,
       finishTime: officialEntry.finishTime,
+      finishReviewRequired: officialEntry.finishReviewRequired,
       chipTime: officialEntry.chipTime,
       gunTime: officialEntry.gunTime,
       sequenceStartTime: officialEntry.sequenceStartTime,
@@ -1673,7 +1674,7 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
           {result?.finishTime && (
             <div className="mt-4 bg-emerald-950/20 border border-emerald-800/40 p-4 rounded-2xl text-center">
               <p className="text-[10px] uppercase font-bold tracking-widest text-emerald-500">Finish Time</p>
-              <p className="text-2xl font-mono font-black text-emerald-400 mt-1">{result.finishTime}</p>
+              <p className="text-2xl font-mono font-black text-emerald-400 mt-1">{result.finishTime}</p>{result.finishReviewRequired && <p className="text-amber-500 text-xs">Provisional place · Needs finish review</p>}
               {result.overallRank && <p className="text-xs text-emerald-500 mt-1">Overall #{result.overallRank} in {runnerDivisionLabel(runnerProfile)}{result.categoryRank ? ` · ${result.categoryLabel || 'Category'} #${result.categoryRank}` : ''}</p>}
               {race && (
                 <button

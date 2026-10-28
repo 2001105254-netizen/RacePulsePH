@@ -98,12 +98,12 @@ export async function createFinisherCertificate(race: Race, runner: CertificateR
   pdf.text('DISTANCE', 65, raceBottom + 22, { align: 'center' });
   pdf.text('GUN TIME', 93, raceBottom + 22, { align: 'center' });
   pdf.text('CHIP TIME', 121, raceBottom + 22, { align: 'center' });
-  pdf.text('OFFICIAL TIME', 150, raceBottom + 22, { align: 'center' });
+  pdf.text(result.finishReviewRequired ? 'PROVISIONAL TIME' : 'OFFICIAL TIME', 150, raceBottom + 22, { align: 'center' });
   pdf.text('OVERALL', 180, raceBottom + 22, { align: 'center' });
   pdf.text('CATEGORY', 208, raceBottom + 22, { align: 'center' });
   pdf.text('BIB', 232, raceBottom + 22, { align: 'center' });
   pdf.setTextColor(255, 230, 230);
-  pdf.setFontSize(9.2);
+  pdf.setFontSize(7);
   const chipTimeText = result.chipTime || 'NO START';
   const gunTimeText = result.gunTime || '—';
   const officialTimeText = result.finishTime;

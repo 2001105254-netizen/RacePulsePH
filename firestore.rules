@@ -311,7 +311,8 @@ service cloud.firestore {
       let fields = request.resource.data.diff(resource.data).affectedKeys();
       let scoped = true;
       return request.auth != null && access().status == 'active' && raceScope(raceId) && request.resource.data.createdBy == resource.data.createdBy && request.resource.data.createdAt == resource.data.createdAt
-        && fields.hasOnly(['name','date','inclusions','checkpoints','ageCategories','distances','entryCategories','registrationOpen','registrationCloseDate','onlinePaymentEnabled','paymentFeeMode','manualPaymentEnabled','manualPaymentInstructions','manualPaymentQrImage','posterImage','inclusionImage','raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','organizerIds','gunStartTime','waveStartTimes','completedAt','liveBroadcastEnabled','livestreamUrl','routeMapUrl'])
+        && fields.hasOnly(['name','date','inclusions','checkpoints','ageCategories','distances','entryCategories','registrationOpen','registrationCloseDate','onlinePaymentEnabled','paymentFeeMode','manualPaymentEnabled','manualPaymentInstructions','manualPaymentQrImage','posterImage','inclusionImage','raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','organizerIds','gunStartTime','waveStartTimes','completedAt','liveBroadcastEnabled','livestreamUrl','routeMapUrl','finishReviewWindowMs'])
+        && (!fields.hasAny(['finishReviewWindowMs']) || (p.get('timing.correct', false) && request.resource.data.finishReviewWindowMs is number && request.resource.data.finishReviewWindowMs >= 0 && request.resource.data.finishReviewWindowMs <= 60000))
         && (!fields.hasAny(['name','date','inclusions']) || p.get('race.edit', false))
         && (!fields.hasAny(['checkpoints','ageCategories','entryCategories']) || p.get('race.categories', false))
         && (!fields.hasAny(['distances']) || (p.get('race.categories', false) && p.get('payment.configure', false)))

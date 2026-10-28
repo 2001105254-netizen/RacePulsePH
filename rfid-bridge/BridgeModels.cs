@@ -35,6 +35,10 @@ namespace RacePulseRfidBridge
         public string Epc { get; set; }
         public int Antenna { get; set; }
         public string Timestamp { get; set; }
+        public long ReaderSequence { get; set; }
+        public string MonotonicTicks { get; set; }
+        public string MonotonicFrequency { get; set; }
+        public string ClockSource { get; set; } = "bridge-receipt";
     }
 
     public sealed class BridgeLogEventArgs : EventArgs

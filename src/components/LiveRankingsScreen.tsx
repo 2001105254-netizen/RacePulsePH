@@ -130,6 +130,7 @@ export default function LiveRankingsScreen({ race, results, onClose }: {
               </div>
               <div className="w-full sm:w-auto sm:text-right sm:shrink-0 pl-[4.25rem] sm:pl-0">
                 <p className="font-mono font-black text-xl sm:text-3xl">{result.finishTime}</p>
+                {result.finishReviewRequired && <p role="status" className="text-sm font-bold text-amber-200">Provisional place · Needs finish review</p>}
                 <p className="text-[11px] text-white/55">Official {result.timingMethod === 'transition' ? 'consecutive entry' : result.timingMethod === 'gun' ? 'gun' : 'chip'} time</p>
                 {result.sequenceStartTime && <p className="text-xs text-amber-200 mt-1">Entry start {formatTime(result.sequenceStartTime)}</p>}
                 <p className="text-xs text-amber-200 mt-1">Gun elapsed {result.gunTime || '—'}</p>
@@ -139,7 +140,7 @@ export default function LiveRankingsScreen({ race, results, onClose }: {
           );
         })}
       </div>
-      <p className="shrink-0 text-center text-[10px] sm:text-xs text-white/40 mt-4">Updates live · Selection stays on screen · Press Esc to exit</p>
+      <p className="shrink-0 text-center text-[10px] sm:text-xs text-white/40 mt-4">Six decimals show recorded precision; accuracy depends on equipment · Updates live · Selection stays on screen · Press Esc to exit</p>
     </div>
   );
 }

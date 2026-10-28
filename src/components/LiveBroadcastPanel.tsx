@@ -96,6 +96,7 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
           ...(result.chipTime ? { chipTime: result.chipTime } : {}),
           ...(result.gunTime ? { gunTime: result.gunTime } : {}),
           finishTime: result.finishTime!,
+          finishReviewRequired: !!result.finishReviewRequired,
         }))
       );
       const officialResults: PublicLeaderboardEntry[] = results
@@ -114,6 +115,7 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
           ...(result.chipTime ? { chipTime: result.chipTime } : {}),
           ...(result.gunTime ? { gunTime: result.gunTime } : {}),
           finishTime: result.finishTime!,
+          finishReviewRequired: !!result.finishReviewRequired,
         }))
         .sort((a, b) => a.distance.localeCompare(b.distance) || a.rank - b.rank);
       const hasWaveStarted = Object.keys(activeRace.waveStartTimes || {}).length > 0 || !!activeRace.gunStartTime;

@@ -15,6 +15,7 @@ function certificateResult(entry: PublicLeaderboardEntry): RunnerResult {
   return {
     bibNumber: entry.bibNumber,
     finishTime: entry.finishTime,
+    finishReviewRequired: entry.finishReviewRequired,
     rank: entry.rank,
     overallRank: entry.overallRank ?? entry.rank,
     categoryRank: entry.categoryRank,
@@ -121,7 +122,7 @@ export default function PublicRaceResults({ race, onRegister }: PublicRaceResult
                   <div key={`${entry.distance}_${entry.rank}_${entry.bibNumber}`} className="glass-inset px-3 py-3 sm:px-4 flex items-center gap-3">
                     <span className="w-8 text-center font-mono font-black text-red-500 shrink-0">#{entry.overallRank ?? entry.rank}</span>
                     <span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold text-[var(--text-primary)]">{entry.isFreeSlot ? `Bib ${entry.bibNumber}` : entry.fullName}</span><span className="block mt-0.5 text-[10.5px] text-[var(--text-secondary)]">{entry.distance} · Bib #{entry.bibNumber}{entry.categoryRank ? ` · ${entry.categoryLabel || 'Category'} #${entry.categoryRank}` : ''}{entry.timingMethod === 'gun' ? ' · Gun time' : ''}</span></span>
-                    <span className="hidden sm:block shrink-0 font-mono text-sm font-black text-emerald-500">{entry.finishTime}</span>
+                    <span className="hidden sm:block shrink-0 font-mono text-sm font-black text-emerald-500">{entry.finishTime}{entry.finishReviewRequired && <span className="block text-xs text-amber-500">Provisional · finish review</span>}</span>
                     <button type="button" onClick={() => downloadFinisherCertificate(race, entry, certificateResult(entry))} className="shrink-0 rounded-xl border border-red-500/25 bg-red-500/10 p-2 text-red-500 hover:bg-red-500 hover:text-white transition" title={`Download ${entry.isFreeSlot ? `Bib ${entry.bibNumber}` : entry.fullName}'s certificate`} aria-label={`Download certificate for ${entry.isFreeSlot ? `Bib ${entry.bibNumber}` : entry.fullName}`}><FileDown className="w-4 h-4" /></button>
                   </div>
                 ))}

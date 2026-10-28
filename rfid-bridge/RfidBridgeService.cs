@@ -1,4 +1,6 @@
 using System;
+using System.Diagnostics;
+using System.Globalization;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -24,8 +26,9 @@ namespace RacePulseRfidBridge
         private readonly ConcurrentQueue<BridgeEvent> _pendingEvents = new ConcurrentQueue<BridgeEvent>();
         private readonly AutoResetEvent _queueSignal = new AutoResetEvent(false);
         private readonly object _dedupeLock = new object();
-        private readonly Dictionary<string, DateTime> _lastSeen = new Dictionary<string, DateTime>();
+        private readonly Dictionary<string, long> _lastSeen = new Dictionary<string, long>();
 
+        private long _readSequence;
         private BridgeConfig _config;
         private VupReader _reader;
         private CancellationTokenSource _stopSource;
@@ -142,15 +145,17 @@ namespace RacePulseRfidBridge
             var epc = (rawEpc ?? string.Empty).Trim().ToUpperInvariant();
             if (!Regex.IsMatch(epc, "^[0-9A-F]{8,128}$")) return;
 
+            var monotonic = Stopwatch.GetTimestamp();
             var now = DateTime.UtcNow;
+            var sequence = Interlocked.Increment(ref _readSequence);
             var key = epc + "|" + antenna;
             lock (_dedupeLock)
             {
-                DateTime last;
-                if (_lastSeen.TryGetValue(key, out last) && (now - last).TotalMilliseconds < _config.DedupeMilliseconds)
+                long last;
+                if (_lastSeen.TryGetValue(key, out last) && (monotonic - last) * 1000.0 / Stopwatch.Frequency < _config.DedupeMilliseconds)
                     return;
-                _lastSeen[key] = now;
-                foreach (var stale in _lastSeen.Where(entry => (now - entry.Value).TotalMinutes > 10).Select(entry => entry.Key).ToArray())
+                _lastSeen[key] = monotonic;
+                foreach (var stale in _lastSeen.Where(entry => (monotonic - entry.Value) / (double)Stopwatch.Frequency > 600).Select(entry => entry.Key).ToArray())
                     _lastSeen.Remove(stale);
             }
 
@@ -159,7 +164,10 @@ namespace RacePulseRfidBridge
                 Id = Guid.NewGuid().ToString("N"),
                 Epc = epc,
                 Antenna = antenna,
-                Timestamp = now.ToString("O")
+                Timestamp = now.ToString("O"),
+                ReaderSequence = sequence,
+                MonotonicTicks = monotonic.ToString(CultureInfo.InvariantCulture),
+                MonotonicFrequency = Stopwatch.Frequency.ToString(CultureInfo.InvariantCulture)
             };
             _pendingEvents.Enqueue(read);
             _queueSignal.Set();
@@ -179,7 +187,13 @@ namespace RacePulseRfidBridge
                 }
                 try
                 {
-                    var content = new StringContent(_json.Serialize(read), Encoding.UTF8, "application/json");
+                    var content = new StringContent(_json.Serialize(new {
+                        id = read.Id, epc = read.Epc, antenna = read.Antenna,
+                        timestamp = read.Timestamp, readerSequence = read.ReaderSequence,
+                        monotonicTicks = read.MonotonicTicks,
+                        monotonicFrequency = read.MonotonicFrequency,
+                        clockSource = read.ClockSource
+                    }), Encoding.UTF8, "application/json");
                     var message = new HttpRequestMessage(HttpMethod.Post, _config.RacePulseEndpoint) { Content = content };
                     message.Headers.Add("X-RacePulse-Bridge-Key", _config.BridgeKey);
                     var response = _http.SendAsync(message).GetAwaiter().GetResult();

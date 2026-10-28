@@ -1,10 +1,11 @@
+import { elapsedSeconds, formatElapsed, timestampTicks } from './preciseTime';
 import { AgeCategory, Checkpoint, CheckpointType, ChipRead, Race, RaceEntryCategory, RunnerProfile, RunnerResult, RunnerSplit } from '../types';
 import { entryCategoryLabels, runnerDivisionLabel, runnerEntryCategory } from './raceEntry';
 
 // A staggered race stores one gun time for each distance. When no wave has
 // been started yet, retain the old single gun time behavior for legacy races.
 export function getWaveStartTime(
-  race: Pick<Race, 'gunStartTime' | 'waveStartTimes'>,
+  race: Pick<Race, 'gunStartTime' | 'waveStartTimes' | 'finishReviewWindowMs'>,
   distance: string,
   entryCategory?: RaceEntryCategory,
 ): string | undefined {
@@ -37,13 +38,6 @@ export function getCheckpointByType(checkpoints: Checkpoint[], type: CheckpointT
   return ordered.find((checkpoint, index) => checkpointType(checkpoint, index, ordered.length) === type);
 }
 
-function formatElapsed(totalSeconds: number): string {
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = Math.floor(totalSeconds % 60);
-  return [h, m, s].map((n) => String(n).padStart(2, '0')).join(':');
-}
-
 // Derives per-runner splits, finish time and rank from raw checkpoint scans.
 // Works identically whether the ChipRead came from manual/QR entry today or a
 // real RFID reader bridge later (source is irrelevant to the computation).
@@ -52,7 +46,7 @@ export function computeResults(
   chipReads: ChipRead[],
   runnerProfiles: RunnerProfile[],
   ageCategories: AgeCategory[] = [],
-  raceTiming?: Pick<Race, 'gunStartTime' | 'waveStartTimes'>
+  raceTiming?: Pick<Race, 'gunStartTime' | 'waveStartTimes' | 'finishReviewWindowMs'>
 ): RunnerResult[] {
   const orderedCheckpoints = [...checkpoints].sort((a, b) => a.order - b.order);
   // Check-in is operational only. It must never become the timing start just
@@ -63,13 +57,14 @@ export function computeResults(
   // bib -> checkpointId -> earliest recorded timestamp (guards against duplicate scans)
   const readsByBib = new Map<string, Map<string, string>>();
   for (const read of chipReads) {
+    if (timestampTicks(read.timestamp) === undefined) continue;
     let checkpointMap = readsByBib.get(read.bibNumber);
     if (!checkpointMap) {
       checkpointMap = new Map();
       readsByBib.set(read.bibNumber, checkpointMap);
     }
     const existing = checkpointMap.get(read.checkpointId);
-    if (!existing || new Date(read.timestamp).getTime() < new Date(existing).getTime()) {
+    if (!existing || timestampTicks(read.timestamp)! < timestampTicks(existing)!) {
       checkpointMap.set(read.checkpointId, read.timestamp);
     }
   }
@@ -115,12 +110,7 @@ export function computeResults(
       const gunStart = runnerProfile && raceTiming
         ? getWaveStartTime(raceTiming, runnerProfile.distance, runnerEntryCategory(runnerProfile))
         : undefined;
-      const finishMs = new Date(checkpointMap.get(finishCheckpoint.id)!).getTime();
-      const elapsedFrom = (startTimestamp: string | undefined): number | undefined => {
-        if (!startTimestamp || Number.isNaN(finishMs)) return undefined;
-        const startMs = new Date(startTimestamp).getTime();
-        return !Number.isNaN(startMs) && finishMs >= startMs ? Math.round((finishMs - startMs) / 1000) : undefined;
-      };
+      const elapsedFrom = (start: string | undefined) => elapsedSeconds(start, checkpointMap.get(finishCheckpoint.id)!);
 
       chipSeconds = elapsedFrom(chipStart);
       gunSeconds = elapsedFrom(gunStart);
@@ -159,13 +149,15 @@ export function computeResults(
     byDivision.set(division, list);
   }
   for (const list of byDivision.values()) {
-    list
-      .filter((r) => r.finishSeconds !== undefined)
-      .sort((a, b) => a.finishSeconds! - b.finishSeconds! || a.bibNumber.localeCompare(b.bibNumber))
-      .forEach((r, idx) => {
-        r.overallRank = idx + 1;
-        r.rank = idx + 1;
-      });
+    const ranked = list.filter(r => r.finishSeconds !== undefined)
+      .sort((a, b) => a.finishSeconds! - b.finishSeconds! || a.bibNumber.localeCompare(b.bibNumber));
+    ranked.forEach((r, idx) => {
+      const previous = ranked[idx - 1];
+      r.overallRank = previous?.finishSeconds === r.finishSeconds ? previous.overallRank : idx + 1;
+      r.rank = r.overallRank;
+      const threshold = Math.max(0, raceTiming?.finishReviewWindowMs ?? 0) / 1000;
+      if ([previous, ranked[idx + 1]].some(other => other && Math.abs(Math.round(other.finishSeconds! * 10000000) - Math.round(r.finishSeconds! * 10000000)) <= Math.round(threshold * 10000000))) r.finishReviewRequired = true;
+    });
   }
 
   // Age-category places are only calculated when the organizer configured
@@ -197,7 +189,8 @@ export function computeResults(
     list
       .sort((a, b) => a.finishSeconds! - b.finishSeconds! || a.bibNumber.localeCompare(b.bibNumber))
       .forEach((result, index) => {
-        result.categoryRank = index + 1;
+        const previous = list[index - 1];
+        result.categoryRank = previous?.finishSeconds === result.finishSeconds ? previous.categoryRank : index + 1;
       });
   }
 
@@ -215,7 +208,7 @@ export function getResultForBib(
   runnerProfiles: RunnerProfile[],
   bibNumber: string,
   ageCategories: AgeCategory[] = [],
-  raceTiming?: Pick<Race, 'gunStartTime' | 'waveStartTimes'>
+  raceTiming?: Pick<Race, 'gunStartTime' | 'waveStartTimes' | 'finishReviewWindowMs'>
 ): RunnerResult | undefined {
   return computeResults(checkpoints, chipReads, runnerProfiles, ageCategories, raceTiming).find((r) => r.bibNumber === bibNumber);
 }

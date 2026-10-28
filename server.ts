@@ -20,6 +20,13 @@ interface EngravingOrder {
 }
 
 interface ChipRead {
+  bridgeEventId?: string;
+  antenna?: number;
+  readerSequence?: number;
+  monotonicTicks?: string;
+  monotonicFrequency?: string;
+  clockSource?: string;
+
   id: string;
   raceId: string;
   bibNumber: string;
@@ -35,6 +42,12 @@ interface ChipRead {
 // not contain a race, bib, or user ID: the authenticated Timing Console owns
 // that matching and persists the final checkpoint result.
 interface RfidBridgeEvent {
+  bridgeEventId?: string;
+  readerSequence?: number;
+  monotonicTicks?: string;
+  monotonicFrequency?: string;
+  clockSource?: string;
+
   raceId?: string;
   id: string;
   epc: string;
@@ -123,9 +136,7 @@ function pruneRfidEvents(): void {
     }
   }
 
-  const newestFirst = Object.values(rfidEvents)
-    .sort((a, b) => Date.parse(b.receivedAt) - Date.parse(a.receivedAt));
-  for (const event of newestFirst.slice(2_000)) delete rfidEvents[event.id];
+  // Retain every event within the recovery window, including large bursts.
 }
 
 function saveRfidEventsDB(): void {
@@ -266,6 +277,7 @@ async function startServer() {
       chipId: readData.chipId?.trim() || undefined,
       checkpointId: readData.checkpointId,
       timestamp: readData.timestamp,
+      ...(readData.bridgeEventId ? { bridgeEventId: readData.bridgeEventId, antenna: readData.antenna, readerSequence: readData.readerSequence, monotonicTicks: readData.monotonicTicks, monotonicFrequency: readData.monotonicFrequency, clockSource: readData.clockSource } : {}),
       source: readData.source || 'manual',
       recordedBy: readData.recordedBy || 'unknown',
       createdAt: timestamp,
@@ -307,9 +319,8 @@ async function startServer() {
     const afterRaw = typeof req.query.after === 'string' ? req.query.after : '';
     const after = Date.parse(afterRaw);
     const events = Object.values(rfidEvents)
-      .filter((event) => Number.isNaN(after) || Date.parse(event.receivedAt) >= after)
-      .sort((a, b) => Date.parse(a.receivedAt) - Date.parse(b.receivedAt) || a.id.localeCompare(b.id))
-      .slice(-500);
+      .filter((event) => event.raceId === req.query.raceId && (Number.isNaN(after) || Date.parse(event.receivedAt) >= after))
+      .sort((a, b) => Date.parse(a.receivedAt) - Date.parse(b.receivedAt) || a.id.localeCompare(b.id));
     res.json({ events: events.filter(event => event.raceId === req.query.raceId) });
   });
 
@@ -325,7 +336,12 @@ async function startServer() {
       return;
     }
 
+    if (rfidEvents[id]) { res.json({ success: true, event: rfidEvents[id] }); return; }
     const event: RfidBridgeEvent = {
+      ...(Number.isSafeInteger(eventData.readerSequence) ? { readerSequence: eventData.readerSequence } : {}),
+      ...(typeof eventData.monotonicTicks === 'string' ? { monotonicTicks: eventData.monotonicTicks } : {}),
+      ...(typeof eventData.monotonicFrequency === 'string' ? { monotonicFrequency: eventData.monotonicFrequency } : {}),
+      clockSource: 'bridge-receipt',
       raceId: process.env.RACEPULSE_BRIDGE_RACE_ID,
       id,
       epc,

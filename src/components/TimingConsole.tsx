@@ -62,6 +62,12 @@ function runnerTimingName(runner: Pick<RunnerProfile, 'fullName' | 'bibNumber' |
 type ScanFeedback = { type: 'success' | 'error' | 'warning'; text: string };
 
 interface RfidBridgeEvent {
+  bridgeEventId?: string;
+  readerSequence?: number;
+  monotonicTicks?: string;
+  monotonicFrequency?: string;
+  clockSource?: string;
+
   id: string;
   epc: string;
   antenna: number;
@@ -236,7 +242,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   const [armStartOnEnter, setArmStartOnEnter] = useState(false);
   const scanInputRef = useRef<HTMLInputElement>(null);
   const lastRecordedScanRef = useRef<{ key: string; at: number } | null>(null);
-  const submitReadRef = useRef<(scanRaw: string, overrideTimestamp?: string, source?: 'keyboard' | 'vf787p' | 'camera') => Promise<boolean>>(async () => false);
+  const submitReadRef = useRef<(scanRaw: string, overrideTimestamp?: string, source?: 'keyboard' | 'vf787p' | 'camera', bridgeEvent?: RfidBridgeEvent) => Promise<boolean>>(async () => false);
   const processedBridgeEventsRef = useRef(new Set<string>());
   const [bridgeEndpointReady, setBridgeEndpointReady] = useState(false);
   const selectedCheckpoint = orderedCheckpoints.find((checkpoint) => checkpoint.id === selectedCheckpointId);
@@ -312,6 +318,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         ...(result.chipTime ? { chipTime: result.chipTime } : {}),
         ...(result.gunTime ? { gunTime: result.gunTime } : {}),
         finishTime: result.finishTime!,
+          finishReviewRequired: !!result.finishReviewRequired,
       })));
   }, [results]);
   const publicOfficialResults = useMemo<PublicLeaderboardEntry[]>(() => results
@@ -330,6 +337,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         ...(result.chipTime ? { chipTime: result.chipTime } : {}),
         ...(result.gunTime ? { gunTime: result.gunTime } : {}),
         finishTime: result.finishTime!,
+          finishReviewRequired: !!result.finishReviewRequired,
     }))
     .sort((a, b) => a.distance.localeCompare(b.distance) || a.rank - b.rank), [results]);
 
@@ -433,7 +441,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
     setFeedback({ type: 'success', text: `${distance} gun started. Opening and arming the Start RFID station…` });
   };
 
-  const submitRead = async (scanRaw: string, overrideTimestamp?: string, source: 'keyboard' | 'vf787p' | 'camera' = 'keyboard') => {
+  const submitRead = async (scanRaw: string, overrideTimestamp?: string, source: 'keyboard' | 'vf787p' | 'camera' = 'keyboard', bridgeEvent?: RfidBridgeEvent) => {
     if (!can('timing.scan') || (source === 'keyboard' && !can('timing.manual'))) { setFeedback({ type: 'error', text: 'Recording is disabled for your account.' }); return false; }
     if (isRaceCompleted) {
       setFeedback({ type: 'warning', text: 'Race timing is closed. Reopen timing first before recording another scan.' });
@@ -517,7 +525,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
       const nowIso = new Date().toISOString();
       const recordedTimestamp = overrideTimestamp || nowIso;
       const lateForCutoff = !!cutoffDeadline && new Date(recordedTimestamp).getTime() > cutoffDeadline.getTime();
-      const readId = `${race.id}_${bibNumber}_${selectedCheckpointId}_${Date.now()}`;
+      const readId = `${race.id}_${bibNumber}_${selectedCheckpointId}_${bridgeEvent?.id || Date.now()}`;
       const record: ChipRead = {
         id: readId,
         raceId: race.id,
@@ -525,6 +533,10 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         ...(scannedChip ? { chipId: matchedRunner.chipId } : {}),
         checkpointId: selectedCheckpointId,
         timestamp: recordedTimestamp,
+        ...(bridgeEvent ? { bridgeEventId: bridgeEvent.id, antenna: bridgeEvent.antenna, clockSource: bridgeEvent.clockSource || 'bridge-receipt',
+          ...(bridgeEvent.readerSequence !== undefined ? { readerSequence: bridgeEvent.readerSequence } : {}),
+          ...(bridgeEvent.monotonicTicks ? { monotonicTicks: bridgeEvent.monotonicTicks } : {}),
+          ...(bridgeEvent.monotonicFrequency ? { monotonicFrequency: bridgeEvent.monotonicFrequency } : {}) } : {}),
         source: source === 'vf787p' ? 'rfid-bridge' : 'manual',
         recordedBy: uid,
         createdAt: nowIso,
@@ -586,10 +598,12 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
 
         for (const event of payload.events || []) {
           const cursor = event.receivedAt || event.timestamp;
-          if (cursor && Date.parse(cursor) >= Date.parse(after)) after = cursor;
           if (processedBridgeEventsRef.current.has(event.id)) continue;
+          await submitReadRef.current(event.epc, event.timestamp, 'vf787p', event);
+          // Only acknowledge after validation and durable local enqueue. A
+          // thrown storage failure leaves this event available for retry.
           processedBridgeEventsRef.current.add(event.id);
-          await submitReadRef.current(event.epc, event.timestamp, 'vf787p');
+          if (cursor && Date.parse(cursor) >= Date.parse(after)) after = cursor;
         }
       } catch {
         if (active) setBridgeEndpointReady(false);
@@ -2708,6 +2722,18 @@ interface RaceRankingsPanelProps {
 function RaceRankingsPanel({ race, results }: RaceRankingsPanelProps) {
   const { can, authority } = useAccess();
   const [presenting, setPresenting] = useState(false);
+  const [reviewWindow, setReviewWindow] = useState(String(race.finishReviewWindowMs ?? 0));
+  const [reviewError, setReviewError] = useState('');
+  const [savingReview, setSavingReview] = useState(false);
+  useEffect(() => setReviewWindow(String(race.finishReviewWindowMs ?? 0)), [race.id, race.finishReviewWindowMs]);
+  const saveReviewWindow = async () => {
+    const value = Number(reviewWindow);
+    if (!reviewWindow.trim() || !Number.isFinite(value) || value < 0 || value > 60000) { setReviewError('Enter a window from 0 to 60000 milliseconds.'); return; }
+    setSavingReview(true);
+    try { await updateDoc(doc(db, 'races', race.id), { finishReviewWindowMs: value }); setReviewError(''); }
+    catch { setReviewError('Could not save the review window.'); }
+    finally { setSavingReview(false); }
+  };
   const [rankingSearch, setRankingSearch] = useState('');
   const rankingFolders = useMemo(() => groupRankingFolders(results), [results]);
   const visibleFolders = useMemo(() => groupRankingFolders(results, rankingSearch), [results, rankingSearch]);
@@ -2738,6 +2764,14 @@ function RaceRankingsPanel({ race, results }: RaceRankingsPanelProps) {
         </button>
       </div>
 
+      {(authority || can('timing.correct')) && <div className="space-y-2 text-xs">
+        <label className="block">Calibrated finish review window (milliseconds)
+          <input type="number" min="0" max="60000" step="any" value={reviewWindow} onChange={event => setReviewWindow(event.target.value)} className="ml-2 w-28 glass-inset p-2" />
+        </label>
+        <p>0 flags identical times only. Set a wider window after comparing reader detections with finish-line video. Flagged places remain provisional.</p>
+        <button type="button" disabled={savingReview} onClick={() => void saveReviewWindow()} className="glass-inset px-3 py-2">{savingReview ? 'Saving…' : 'Save review window'}</button>
+        {reviewError && <p role="alert">{reviewError}</p>}
+      </div>}
       {rankingFolders.length === 0 ? (
         <p className="text-xs text-[var(--text-secondary)]">No finish times recorded yet. Rankings appear once runners cross both the start and finish checkpoints.</p>
       ) : (
@@ -2781,7 +2815,7 @@ function RaceRankingsPanel({ race, results }: RaceRankingsPanelProps) {
                               <span className="block truncate font-bold text-[var(--text-primary)]">{runnerTimingName(r.runnerProfile, r.bibNumber)}</span>
                               <span className="text-[var(--text-muted)]">Bib #{r.bibNumber}</span>
                             </span>
-                            <span className="font-mono font-bold text-[var(--text-primary)] shrink-0">{r.finishTime}</span>
+                            <span className="font-mono font-bold text-[var(--text-primary)] shrink-0">{r.finishTime}{r.finishReviewRequired && <span className="block text-xs text-amber-500">Needs finish review · provisional place</span>}</span>
                           </li>
                         );
                       })}

@@ -143,6 +143,7 @@ export interface RaceBibTemplate {
 }
 
 export interface Race {
+  finishReviewWindowMs?: number;
   id: string;
   name: string;
   date: string;
@@ -218,6 +219,7 @@ export interface PublicLeaderboardEntry {
   chipTime?: string;
   gunTime?: string;
   finishTime: string;
+  finishReviewRequired?: boolean;
 }
 
 // Deliberately contains only publishable result data. Raw chip reads remain
@@ -284,6 +286,13 @@ export interface RunnerProfile {
 export type ChipReadSource = 'manual' | 'rfid-bridge';
 
 export interface ChipRead {
+  bridgeEventId?: string;
+  antenna?: number;
+  readerSequence?: number;
+  monotonicTicks?: string;
+  monotonicFrequency?: string;
+  clockSource?: string;
+
   id: string;
   raceId: string;
   bibNumber: string;
@@ -304,7 +313,8 @@ export interface RunnerResult {
   bibNumber: string;
   runnerProfile?: RunnerProfile;
   splits: RunnerSplit[];
-  finishTime?: string; // formatted HH:MM:SS elapsed from 'start' checkpoint to 'finish'
+  finishReviewRequired?: boolean;
+  finishTime?: string; // formatted HH:MM:SS.ffffff elapsed from 'start' checkpoint to 'finish'
   finishSeconds?: number;
   // Kept independently so a certificate can show both elapsed measurements.
   // Chip time exists only if the runner has a valid individual Start read.
