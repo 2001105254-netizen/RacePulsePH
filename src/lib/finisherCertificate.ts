@@ -1,3 +1,4 @@
+import { formatRaceTime } from './preciseTime';
 import { jsPDF } from 'jspdf';
 import { Race, RunnerProfile, RunnerResult } from '../types';
 
@@ -104,9 +105,9 @@ export async function createFinisherCertificate(race: Race, runner: CertificateR
   pdf.text('BIB', 232, raceBottom + 22, { align: 'center' });
   pdf.setTextColor(255, 230, 230);
   pdf.setFontSize(7);
-  const chipTimeText = result.chipTime || 'NO START';
-  const gunTimeText = result.gunTime || '—';
-  const officialTimeText = result.finishTime;
+  const chipTimeText = result.chipTime ? formatRaceTime(result.chipTime) : 'NO START';
+  const gunTimeText = formatRaceTime(result.gunTime);
+  const officialTimeText = formatRaceTime(result.finishTime);
   pdf.text(runner.distance, 65, raceBottom + 32, { align: 'center' });
   pdf.text(gunTimeText, 93, raceBottom + 32, { align: 'center' });
   pdf.text(chipTimeText, 121, raceBottom + 32, { align: 'center' });

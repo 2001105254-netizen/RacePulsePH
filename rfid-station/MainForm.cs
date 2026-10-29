@@ -406,7 +406,7 @@ namespace RacePulseTimingStation
         {
             SafeUi(() =>
             {
-                _logs.Items.Add("[" + DateTime.Now.ToString("HH:mm:ss") + "] " + (isError ? "ERROR  " : "") + message);
+                _logs.Items.Add("[" + DateTime.Now.ToString("HH:mm:ssfffff") + "] " + (isError ? "ERROR  " : "") + message);
                 while (_logs.Items.Count > 400) _logs.Items.RemoveAt(0);
                 _logs.TopIndex = _logs.Items.Count - 1;
             });

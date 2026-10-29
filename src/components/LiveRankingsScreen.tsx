@@ -1,3 +1,4 @@
+import { formatClockTime, formatRaceTime, formatElapsed } from '../lib/preciseTime';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Search, Trophy, X } from 'lucide-react';
 import { Race, RunnerResult } from '../types';
@@ -50,7 +51,7 @@ export default function LiveRankingsScreen({ race, results, onClose }: {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
   useEffect(() => { listRef.current?.scrollTo({ top: 0 }); }, [distance, categoryId, search]);
-  useEffect(() => { const interval = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(interval); }, []);
+  useEffect(() => { const interval = window.setInterval(() => setNow(Date.now()), 100); return () => window.clearInterval(interval); }, []);
 
   const changeDistance = (value: string) => { setDistance(value); setCategoryId('all'); };
   const navigate = (step: number) => {
@@ -61,13 +62,11 @@ export default function LiveRankingsScreen({ race, results, onClose }: {
     ? `Bib ${result.bibNumber}` : result.runnerProfile?.fullName || `Bib ${result.bibNumber}`;
   const waveStart = (result: RunnerResult) => result.runnerProfile
     ? getWaveStartTime(race, result.runnerProfile.distance, runnerEntryCategory(result.runnerProfile)) : undefined;
-  const formatTime = (timestamp?: string | number) => timestamp !== undefined && Number.isFinite(new Date(timestamp).getTime())
-    ? new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) : '—';
+  const formatTime = formatClockTime;
   const title = distance === 'all' ? 'All categories · Finish scan order' : `${distance} · ${category?.label || 'Finish scan order'}`;
   const elapsed = (timestamp: string | undefined) => {
     if (!timestamp || !Number.isFinite(Date.parse(timestamp))) return '—';
-    const seconds = Math.max(0, Math.floor((now - Date.parse(timestamp)) / 1000));
-    return [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map((value) => String(value).padStart(2, '0')).join(':');
+    return formatElapsed(Math.max(0, now - Date.parse(timestamp)) / 1000);
   };
   const clockStarts = (category ? category.results.map(waveStart) : Object.values(race.waveStartTimes || {}))
     .filter((value): value is string => !!value && Number.isFinite(Date.parse(value)));
@@ -110,7 +109,7 @@ export default function LiveRankingsScreen({ race, results, onClose }: {
       </div>
       <div ref={listRef} className="flex-1 min-h-40 overflow-y-auto space-y-2 pr-1" aria-label={title}>
         {visibleEntries.length === 0 && <p className="py-10 text-center text-white/60">{search ? 'No finishers match your search.' : 'Waiting for finishers in this view…'}</p>}
-        {visibleEntries.map(({ result, scanOrder, finishedAt }) => {
+        {visibleEntries.map(({ result, scanOrder, finishedAt, finishedTimestamp }) => {
           const rank = category?.ranking === 'age' ? result.categoryRank! : result.overallRank ?? result.rank!;
           const distanceLabel = result.runnerProfile?.distance || 'Unknown';
           const nextEntry = nextByBib.get(result.bibNumber);
@@ -119,21 +118,21 @@ export default function LiveRankingsScreen({ race, results, onClose }: {
               <div className="w-14 sm:w-20 shrink-0 text-center"><span className="block text-[10px] uppercase tracking-wider text-white/50">{category ? 'Place' : 'Scan'}</span><span className={`font-mono font-black text-2xl sm:text-3xl ${rank === 1 ? 'text-red-400' : rank === 2 ? 'text-slate-300' : rank === 3 ? 'text-orange-500' : 'text-white/70'}`}>{category ? rank : scanOrder}</span></div>
               <div className="flex-1 min-w-0">
                 <p className="text-base sm:text-xl font-bold break-words">{name(result)}</p>
-                <p className="text-xs text-white/50 mt-1">Bib #{result.bibNumber} · Finish scan {formatTime(finishedAt)}</p>
+                <p className="text-xs text-white/50 mt-1">Bib #{result.bibNumber} · Finish scan {formatTime(finishedTimestamp ?? finishedAt)}</p>
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   <span className={`${badge} ${distanceColor}`}>{distanceLabel}</span>
                   <span className={`${badge} ${divisionColor}`}>{runnerDivisionLabel(result.runnerProfile)} · #{result.overallRank ?? result.rank}</span>
                   {result.categoryRank !== undefined && result.categoryLabel && <span className={`${badge} ${ageColor}`}>{result.categoryLabel} · #{result.categoryRank}</span>}
                   {result.runnerProfile?.startsAfterBib && <span className={`${badge} border-amber-300/40 bg-amber-400/15 text-amber-200`}>Started after bib #{result.runnerProfile.startsAfterBib}</span>}
-                  {nextEntry && <span className={`${badge} ${nextEntry.finishTime ? 'border-emerald-300/40 bg-emerald-400/15 text-emerald-200' : 'border-amber-300/40 bg-amber-400/15 text-amber-200'}`}>Next: {runnerDivisionLabel(nextEntry.runnerProfile)} · Bib #{nextEntry.bibNumber} · {nextEntry.finishTime ? `Finished ${nextEntry.finishTime}` : nextEntry.sequenceStartTime ? `Running ${elapsed(nextEntry.sequenceStartTime)}` : 'Waiting'}</span>}
+                  {nextEntry && <span className={`${badge} ${nextEntry.finishTime ? 'border-emerald-300/40 bg-emerald-400/15 text-emerald-200' : 'border-amber-300/40 bg-amber-400/15 text-amber-200'}`}>Next: {runnerDivisionLabel(nextEntry.runnerProfile)} · Bib #{nextEntry.bibNumber} · {nextEntry.finishTime ? `Finished ${formatRaceTime(nextEntry.finishTime)}` : nextEntry.sequenceStartTime ? `Running ${elapsed(nextEntry.sequenceStartTime)}` : 'Waiting'}</span>}
                 </div>
               </div>
               <div className="w-full sm:w-auto sm:text-right sm:shrink-0 pl-[4.25rem] sm:pl-0">
-                <p className="font-mono font-black text-xl sm:text-3xl">{result.finishTime}</p>
+                <p className="font-mono font-black text-xl sm:text-3xl">{formatRaceTime(result.finishTime)}</p>
                 {result.finishReviewRequired && <p role="status" className="text-sm font-bold text-amber-200">Provisional place · Needs finish review</p>}
                 <p className="text-[11px] text-white/55">Official {result.timingMethod === 'transition' ? 'consecutive entry' : result.timingMethod === 'gun' ? 'gun' : 'chip'} time</p>
                 {result.sequenceStartTime && <p className="text-xs text-amber-200 mt-1">Entry start {formatTime(result.sequenceStartTime)}</p>}
-                <p className="text-xs text-amber-200 mt-1">Gun elapsed {result.gunTime || '—'}</p>
+                <p className="text-xs text-amber-200 mt-1">Gun elapsed {formatRaceTime(result.gunTime)}</p>
                 <p className="text-[11px] text-white/50">Division start {formatTime(waveStart(result))}</p>
               </div>
             </div>

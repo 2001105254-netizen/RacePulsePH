@@ -1,3 +1,4 @@
+import { formatRaceTime } from './src/lib/preciseTime';
 import express from "express";
 import path from "path";
 import fs from "fs";
@@ -214,7 +215,7 @@ async function startServer() {
       runnerName: orderData.runnerName.trim(),
       bibNumber: orderData.bibNumber.trim(),
       distance: orderData.distance || (existing ? existing.distance : "Marathon"),
-      finishingTime: orderData.finishingTime || (existing ? existing.finishingTime : "00:00:00"),
+      finishingTime: formatRaceTime(orderData.finishingTime || (existing ? existing.finishingTime : "00:00:0000000")),
       status: orderData.status || (existing ? existing.status : "queued"),
       createdAt: existing ? existing.createdAt : (orderData.createdAt || timestamp),
       updatedAt: timestamp,

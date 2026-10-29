@@ -172,3 +172,35 @@ test('offset timestamps, midnight rollover and fractional start retain precision
   assert.equal(formatElapsed(60), '00:01:0000000');
   assert.equal(elapsedSeconds(time(30), time(0)), undefined);
 });
+
+test('legacy result times normalize without changing compact times or placeholders', () => {
+ const {formatRaceTime} = loadTs(path.join(root, 'src/lib/preciseTime.ts'));
+ assert.equal(formatRaceTime('01:02:03'), '01:02:0300000');
+ assert.equal(formatRaceTime('01:02:03.1234567'), '01:02:0312345');
+ assert.equal(formatRaceTime('01:02:0312345'), '01:02:0312345');
+ assert.equal(formatRaceTime('125:59:59.9'), '125:59:5990000');
+ assert.equal(formatRaceTime(undefined), '—');
+ assert.equal(formatRaceTime('Pending'), 'Pending');
+});
+test('wall clock preserves source fractions and local time across offsets', () => {
+ const {formatClockTime, formatDateTime} = loadTs(path.join(root, 'src/lib/preciseTime.ts'));
+ const value='2026-10-29T00:01:02.1234567+08:00';
+ const date=new Date(value);
+ const expected=[date.getHours(),date.getMinutes(),date.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':')+'12345';
+ assert.equal(formatClockTime(value),expected);
+ assert.equal(formatClockTime(date),expected.slice(0,-5)+'12300');
+ assert.equal(formatClockTime('invalid'),'—');
+ assert.equal(formatClockTime(undefined),'—');
+ assert.equal(formatDateTime(value), date.toLocaleDateString()+' '+expected);
+});
+test('presentation normalizes old result strings and keeps original finish-scan fractions', () => {
+ const React=require('react');
+ const {renderToStaticMarkup}=require('react-dom/server');
+ const Screen=loadTs(path.join(root,'src/components/LiveRankingsScreen.tsx')).default;
+ const results=compute([solo],[preciseRead('S','2026-10-26T00:30:00.1234567Z')]);
+ results[0].finishTime='00:30:00.123456';
+ const html=renderToStaticMarkup(React.createElement(Screen,{race,results,onClose:()=>{}}));
+ assert.ok(html.includes('00:30:0012345'));
+ assert.ok(!html.includes('00:30:00.123456'));
+ assert.ok(html.includes('12345'));
+});

@@ -1,3 +1,4 @@
+import { formatClockTime, formatRaceTime } from '../lib/preciseTime';
 import { useAccess } from '../lib/access';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -1406,7 +1407,7 @@ interface RaceProgressStep {
 }
 
 function formatScanTime(timestamp?: string): string | undefined {
-  return timestamp ? new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined;
+  return timestamp ? formatClockTime(timestamp) : undefined;
 }
 
 function RunnerRacePass({ race, runnerProfile, result, orderedCheckpoints }: {
@@ -1436,7 +1437,7 @@ function RunnerRacePass({ race, runnerProfile, result, orderedCheckpoints }: {
       timestamp: result?.sequenceStartTime || startSplit?.timestamp || (result?.timingMethod === 'gun' ? getWaveStartTime(race, runnerProfile.distance, runnerEntryCategory(runnerProfile)) : undefined),
     }] : []),
     ...(finish ? [{ id: 'finish', label: 'Finished', detail: finish.label, completed: !!finishSplit, timestamp: finishSplit?.timestamp }] : []),
-    { id: 'result', label: 'Official result', detail: hasOfficialResult ? `Rank #${result!.rank} • ${result!.finishTime}` : 'Available after your finish is recorded', completed: hasOfficialResult, timestamp: hasOfficialResult ? finishSplit?.timestamp : undefined },
+    { id: 'result', label: 'Official result', detail: hasOfficialResult ? `Rank #${result!.rank} • ${formatRaceTime(result!.finishTime)}` : 'Available after your finish is recorded', completed: hasOfficialResult, timestamp: hasOfficialResult ? finishSplit?.timestamp : undefined },
   ];
   const currentStep = [...steps].reverse().find((step) => step.completed)?.label || 'Registered';
 
@@ -1469,7 +1470,7 @@ function RunnerRacePass({ race, runnerProfile, result, orderedCheckpoints }: {
             <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)]">Race status</h3>
             <p className="text-xs text-[var(--text-primary)] font-bold mt-1">Current: <span className="text-red-500">{currentStep}</span></p>
           </div>
-          {result?.finishTime && <span className="text-xs font-mono font-black text-emerald-400 border border-emerald-500/25 bg-emerald-500/10 rounded-full px-3 py-1.5">Official time {result.finishTime}</span>}
+          {result?.finishTime && <span className="text-xs font-mono font-black text-emerald-400 border border-emerald-500/25 bg-emerald-500/10 rounded-full px-3 py-1.5">Official time {formatRaceTime(result.finishTime)}</span>}
         </div>
         <ol className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-2">
           {steps.map((step, index) => (
@@ -1615,10 +1616,10 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
     if (!localResult || !officialEntry || !resultsArePublic) return localResult;
     return {
       ...localResult,
-      finishTime: officialEntry.finishTime,
+      finishTime: formatRaceTime(officialEntry.finishTime),
       finishReviewRequired: officialEntry.finishReviewRequired,
-      chipTime: officialEntry.chipTime,
-      gunTime: officialEntry.gunTime,
+      chipTime: officialEntry.chipTime ? formatRaceTime(officialEntry.chipTime) : undefined,
+      gunTime: officialEntry.gunTime ? formatRaceTime(officialEntry.gunTime) : undefined,
       sequenceStartTime: officialEntry.sequenceStartTime,
       rank: officialEntry.overallRank ?? officialEntry.rank,
       overallRank: officialEntry.overallRank ?? officialEntry.rank,
@@ -1657,11 +1658,11 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
                   <span className="min-w-0">
                     <span className="block text-sm font-bold text-[var(--text-primary)]">{cp.label}</span>
                     <span className="block text-[9px] font-bold uppercase tracking-wide text-[var(--text-muted)] mt-0.5">
-                      {phase === 'checkin' ? 'Check-In' : phase === 'start' ? 'Official Start' : phase === 'finish' ? 'Finish' : cutoffDeadline ? `Cutoff ${cutoffDeadline.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Split'}
+                      {phase === 'checkin' ? 'Check-In' : phase === 'start' ? 'Official Start' : phase === 'finish' ? 'Finish' : cutoffDeadline ? `Cutoff ${formatClockTime(cutoffDeadline)}` : 'Split'}
                     </span>
                   </span>
                   <span className={`font-mono text-sm font-black shrink-0 text-right ${afterCutoff ? 'text-amber-500' : usesSequenceStart ? 'text-emerald-500' : split ? 'text-red-500' : usesGunFallback ? 'text-emerald-500' : 'text-[var(--text-muted)]'}`}>
-                    {usesSequenceStart ? new Date(result!.sequenceStartTime!).toLocaleTimeString() : split ? new Date(split.timestamp).toLocaleTimeString() : usesGunFallback ? `Gun ${new Date(waveStartTime!).toLocaleTimeString()}` : 'Pending'}
+                    {usesSequenceStart ? formatClockTime(result!.sequenceStartTime!) : split ? formatClockTime(split.timestamp) : usesGunFallback ? `Gun ${formatClockTime(waveStartTime!)}` : 'Pending'}
                     {usesSequenceStart && <span className="block text-[9px] font-sans uppercase tracking-wide">Previous entry finish</span>}
                     {afterCutoff && <span className="block text-[9px] font-sans uppercase tracking-wide">After cutoff</span>}
                     {usesGunFallback && <span className="block text-[9px] font-sans uppercase tracking-wide">Official fallback</span>}
@@ -1674,7 +1675,7 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
           {result?.finishTime && (
             <div className="mt-4 bg-emerald-950/20 border border-emerald-800/40 p-4 rounded-2xl text-center">
               <p className="text-[10px] uppercase font-bold tracking-widest text-emerald-500">Finish Time</p>
-              <p className="text-2xl font-mono font-black text-emerald-400 mt-1">{result.finishTime}</p>{result.finishReviewRequired && <p className="text-amber-500 text-xs">Provisional place · Needs finish review</p>}
+              <p className="text-2xl font-mono font-black text-emerald-400 mt-1">{formatRaceTime(result.finishTime)}</p>{result.finishReviewRequired && <p className="text-amber-500 text-xs">Provisional place · Needs finish review</p>}
               {result.overallRank && <p className="text-xs text-emerald-500 mt-1">Overall #{result.overallRank} in {runnerDivisionLabel(runnerProfile)}{result.categoryRank ? ` · ${result.categoryLabel || 'Category'} #${result.categoryRank}` : ''}</p>}
               {race && (
                 <button
@@ -2000,7 +2001,7 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
                 </div>
                 <div>
                   <span className="block text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Finish Time</span>
-                  <span className="text-lg font-mono font-black text-red-500">{recentResult?.finishTime || '—'}</span>
+                  <span className="text-lg font-mono font-black text-red-500">{formatRaceTime(recentResult?.finishTime)}</span>
                 </div>
               </div>
             </div>

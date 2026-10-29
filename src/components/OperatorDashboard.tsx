@@ -1,3 +1,4 @@
+import { formatDateTime, formatRaceTime } from '../lib/preciseTime';
 import { useAccess, authenticatedFetch } from '../lib/access';
 import React, { useState, useEffect, useRef } from 'react';
 import { collection, query, onSnapshot, doc, updateDoc, deleteDoc, writeBatch, getDocs } from 'firebase/firestore';
@@ -261,7 +262,7 @@ export default function OperatorDashboard() {
         runnerName: runner,
         bibNumber: 'N/A',
         distance: 'Unknown',
-        finishingTime: '00:00:00',
+        finishingTime: '00:00:0000000',
         status: 'queued',
         createdAt: new String(new Date().toISOString()).toString(),
         updatedAt: new String(new Date().toISOString()).toString()
@@ -349,7 +350,7 @@ export default function OperatorDashboard() {
       order.id,
       `"${order.runnerName.replace(/"/g, '""')}"`,
       `"${order.bibNumber.replace(/"/g, '""')}"`,
-      `"${order.finishingTime.replace(/"/g, '""')}"`,
+      `"${formatRaceTime(order.finishingTime).replace(/"/g, '""')}"`,
       `"${order.distance.replace(/"/g, '""')}"`,
       `"${(order.rank || '').replace(/"/g, '""')}"`,
       `"${(order.customInscription || '').replace(/"/g, '""')}"`,
@@ -392,7 +393,7 @@ export default function OperatorDashboard() {
 
     doc.setFontSize(10);
     doc.setTextColor(245, 158, 11); // Amber
-    const dateStr = new Date().toLocaleString();
+    const dateStr = formatDateTime(new Date());
     doc.text(`Generated: ${dateStr}   |   Total Athletes: ${ordersToExport.length}   |   Status Filter: ${pdfReportFilter.toUpperCase()}`, 14, 24);
 
     // Prepare table rows
@@ -401,7 +402,7 @@ export default function OperatorDashboard() {
       o.bibNumber,
       o.runnerName,
       o.distance,
-      o.finishingTime,
+      formatRaceTime(o.finishingTime),
       o.rank || '-',
       o.customInscription || '-',
       o.status.toUpperCase()
@@ -469,7 +470,7 @@ export default function OperatorDashboard() {
             runnerName: parts[2],
             bibNumber: parts[3],
             distance: parts[4] || 'Marathon',
-            finishingTime: parts[5] || '00:00:00',
+            finishingTime: formatRaceTime(parts[5] || '00:00:0000000'),
             rank: parts[6] || '',
             customInscription: parts[7] || '',
             status: 'queued'
@@ -487,7 +488,7 @@ export default function OperatorDashboard() {
           runnerName: data.rn,
           bibNumber: data.bn,
           distance: data.ds || 'Marathon',
-          finishingTime: data.ft || '00:00:00',
+          finishingTime: formatRaceTime(data.ft || '00:00:0000000'),
           rank: data.rk || '',
           customInscription: data.ci || '',
           status: data.st || 'queued'
@@ -504,7 +505,7 @@ export default function OperatorDashboard() {
         runnerName: parsedOrder.runnerName,
         bibNumber: parsedOrder.bibNumber,
         distance: parsedOrder.distance || 'Marathon',
-        finishingTime: parsedOrder.finishingTime || '00:00:00',
+        finishingTime: formatRaceTime(parsedOrder.finishingTime || '00:00:0000000'),
         rank: parsedOrder.rank || '',
         customInscription: parsedOrder.customInscription || '',
         status: parsedOrder.status || 'queued',
@@ -602,7 +603,7 @@ export default function OperatorDashboard() {
       order.runnerName,
       order.bibNumber,
       order.distance,
-      order.finishingTime,
+      formatRaceTime(order.finishingTime),
       order.rank || '',
       order.customInscription || ''
     ].join('\t'); // Tab separated is optimal for Excel paste!
@@ -922,9 +923,9 @@ export default function OperatorDashboard() {
               {/* Finishing Time */}
               <div className="bg-[var(--surface-card)]/60 border border-[var(--border-subtle)] rounded-[20px] p-3 relative group">
                 <span className="block text-[9px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">2. Finishing Time</span>
-                <span className="block text-xl font-mono font-black text-amber-500 pr-7 mt-0.5">{foundDoubleCheckOrder.finishingTime}</span>
+                <span className="block text-xl font-mono font-black text-amber-500 pr-7 mt-0.5">{formatRaceTime(foundDoubleCheckOrder.finishingTime)}</span>
                 <button
-                  onClick={() => handleCopyText('lookup_time', foundDoubleCheckOrder.finishingTime)}
+                  onClick={() => handleCopyText('lookup_time', formatRaceTime(foundDoubleCheckOrder.finishingTime))}
                   className="absolute right-2.5 bottom-2.5 text-[var(--text-secondary)] hover:text-amber-500 p-1.5 bg-[var(--surface-inset)]/75 backdrop-blur-md hover:bg-[var(--surface-hover)] rounded transition"
                   title="Copy Time"
                 >
@@ -1189,11 +1190,11 @@ export default function OperatorDashboard() {
                     <div>
                       <span className="block text-[8px] uppercase font-bold text-[var(--text-secondary)] tracking-wider leading-none">Finishing Time</span>
                       <span className="text-base font-black font-mono text-[var(--text-primary)] mt-1 block">
-                        {order.finishingTime}
+                        {formatRaceTime(order.finishingTime)}
                       </span>
                     </div>
                     <button
-                      onClick={() => handleCopyText(`${order.id}_time`, order.finishingTime)}
+                      onClick={() => handleCopyText(`${order.id}_time`, formatRaceTime(order.finishingTime))}
                       className="text-[10px] font-bold text-[var(--text-primary)] bg-[var(--surface-inset)]/75 backdrop-blur-md hover:bg-[var(--surface-hover)] border border-[var(--border-default)] rounded-lg py-1 px-2.5 flex items-center gap-1 transition"
                       title="Copy Time Only"
                     >
@@ -1713,7 +1714,7 @@ export default function OperatorDashboard() {
                 <div>
                   <span className="block text-[8px] uppercase font-extrabold text-[var(--text-secondary)] tracking-wider">Finish Time</span>
                   <span className="text-xs font-mono font-bold text-[var(--text-primary)] block mt-0.5">
-                    ⏱️ {deleteConfirmOrder.finishingTime}
+                    ⏱️ {formatRaceTime(deleteConfirmOrder.finishingTime)}
                   </span>
                 </div>
               </div>

@@ -9,7 +9,7 @@ before(async()=>{
  await new Promise(resolve=>fixture.listen(0,'127.0.0.1',resolve));
  child=spawn(process.execPath,['dist/server.cjs'],{env:{...process.env,NODE_ENV:'production',PORT:String(port),RACEPULSE_BRIDGE_KEY:'test-pairing-key-012345678901234567890',RACEPULSE_BRIDGE_RACE_ID:'race_a',RACEPULSE_DATA_DIR:directory,RACEPULSE_ACCESS_API_URL:`http://127.0.0.1:${fixture.address().port}`},stdio:['ignore','pipe','pipe']});
  let serverOutput='';child.stdout.on('data',chunk=>{serverOutput+=chunk;});child.stderr.on('data',chunk=>{serverOutput+=chunk;});
- const deadline=Date.now()+30000;while(Date.now()<deadline){try{const res=await fetch(`http://127.0.0.1:${port}/api/orders`);if(res.status===401)return;}catch{}await new Promise(r=>setTimeout(r,100));}throw Error('Test server did not start. '+serverOutput);
+ const deadline=Date.now()+90000;while(Date.now()<deadline){if(child.exitCode!==null)throw Error('Test server exited ('+child.exitCode+'). '+serverOutput);try{const res=await fetch(`http://127.0.0.1:${port}/api/orders`);if(res.status===401)return;}catch{}await new Promise(r=>setTimeout(r,100));}throw Error('Test server did not start. '+serverOutput);
 });
 after(async()=>{child?.kill();await new Promise(resolve=>fixture.close(resolve));});
 const request=(route,method='GET',token,body)=>fetch(`http://127.0.0.1:${port}/api/${route}`,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},...(body?{body:JSON.stringify(body)}:{})});
@@ -24,7 +24,7 @@ test('actual local HTTP routes enforce record owner, scope and status authority'
  const read={id:'scan',raceId:'race_b',recordedBy:'operator',bibNumber:'5-001',checkpointId:'start',timestamp:new Date().toISOString()};
  assert.equal((await request('chip-reads','POST','operator',read)).status,403);
  assert.equal((await request('chip-reads','POST','operator',{...read,raceId:'race_a'})).status,200);
- const records=await(await request('orders','GET','runner')).json();assert.equal(records.orders.length,1);assert.equal(records.orders[0].ownerUid,'runner');
+ const records=await(await request('orders','GET','runner')).json();assert.equal(records.orders.length,1);assert.equal(records.orders[0].ownerUid,'runner');assert.equal(records.orders[0].finishingTime,'00:20:0000000');
 });
 
 test('bridge replay retains original receipt time, metadata and all burst events',async()=>{

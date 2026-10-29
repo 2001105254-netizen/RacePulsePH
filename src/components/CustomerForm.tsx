@@ -1,3 +1,4 @@
+import { formatRaceTime } from '../lib/preciseTime';
 import { useAccess, authenticatedFetch } from '../lib/access';
 import React, { useState, useEffect } from 'react';
 import { doc, setDoc, onSnapshot, collection, query, where, getDocs, deleteDoc } from 'firebase/firestore';
@@ -40,6 +41,7 @@ export default function CustomerForm({
   const [timeHour, setTimeHour] = useState('02');
   const [timeMin, setTimeMin] = useState('45');
   const [timeSec, setTimeSec] = useState('00');
+  const [timeFraction, setTimeFraction] = useState('00000');
 
   const [rank, setRank] = useState('');
   const [customInscription, setCustomInscription] = useState('');
@@ -137,7 +139,7 @@ export default function CustomerForm({
     try {
       // Assemble core inputs
       const finalDistance = distance === 'Custom' ? (customDistance || 'Custom Run') : distance;
-      const formattedTime = `${timeHour.padStart(2, '0')}:${timeMin.padStart(2, '0')}:${timeSec.padStart(2, '0')}`;
+      const formattedTime = `${timeHour.padStart(2, '0')}:${timeMin.padStart(2, '0')}:${timeSec.padStart(2, '0')}${timeFraction.padEnd(5, '0')}`;
 
       // Determine a unique document ID
       let orderCode = generateShortCode();
@@ -467,9 +469,10 @@ export default function CustomerForm({
                         </select>
                       </div>
                     </div>
-                    <p className="text-[11px] text-[var(--text-secondary)] italic mt-1.5 pl-1">
-                      * Dynamic selectors ensure error-free numerical input transfer.
-                    </p>
+                    <label htmlFor="timeFraction" className="block text-xs mt-2">Fractional seconds (five digits)
+                      <input id="timeFraction" inputMode="numeric" pattern="[0-9]{1,5}" maxLength={5} value={timeFraction} onChange={event => setTimeFraction(event.target.value.replace(/[^0-9]/g, '').slice(0, 5))} className="ml-2 w-24 glass-inset p-2 font-mono" />
+                    </label>
+                    <p className="text-[11px] text-[var(--text-secondary)] mt-1.5">Time preview: {timeHour}:{timeMin}:{timeSec}{timeFraction.padEnd(5, '0')}</p>
                   </div>
                 </div>
 
@@ -636,7 +639,7 @@ export default function CustomerForm({
                     createdOrder?.runnerName || '',
                     createdOrder?.bibNumber || '',
                     createdOrder?.distance || '',
-                    createdOrder?.finishingTime || '',
+                    formatRaceTime(createdOrder?.finishingTime),
                     createdOrder?.rank || '',
                     createdOrder?.customInscription || ''
                   ].map(val => String(val).replace(/\|/g, " ")).join('|')}
@@ -686,7 +689,7 @@ export default function CustomerForm({
                         createdOrder?.runnerName || '',
                         createdOrder?.bibNumber || '',
                         createdOrder?.distance || '',
-                        createdOrder?.finishingTime || '',
+                        formatRaceTime(createdOrder?.finishingTime),
                         createdOrder?.rank || '',
                         createdOrder?.customInscription || ''
                       ].map(val => String(val).replace(/\|/g, " ")).join('|')}
@@ -799,7 +802,7 @@ export default function CustomerForm({
               </div>
               <div>
                 <span className="text-[var(--text-secondary)] text-[10px] uppercase block mb-0.5">Finishing Time</span>
-                <span className="font-mono font-extrabold text-[var(--text-primary)] block">{createdOrder?.finishingTime}</span>
+                <span className="font-mono font-extrabold text-[var(--text-primary)] block">{formatRaceTime(createdOrder?.finishingTime)}</span>
               </div>
               {createdOrder?.rank && (
                 <div className="col-span-2 border-t border-[var(--border-subtle)] pt-2.5 mt-1">

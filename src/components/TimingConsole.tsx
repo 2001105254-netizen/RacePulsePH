@@ -1,3 +1,4 @@
+import { formatClockTime, formatDateTime, formatRaceTime, formatElapsed } from '../lib/preciseTime';
 import { useAccess, useScopedRaces, authenticatedFetch } from '../lib/access';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, query, where, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch, deleteField, runTransaction } from 'firebase/firestore';
@@ -16,9 +17,9 @@ import RaceList from './RaceList';
 import LiveRankingsScreen from './LiveRankingsScreen';
 import EntrySequencePanel from './EntrySequencePanel';
 
-// Ticks every second so any component reading it re-renders live - backs the
+// Ticks ten times per second so any component reading it re-renders live - backs the
 // gun clock and the wall-clock readout without each caller managing its own timer.
-function useNow(intervalMs = 1000): number {
+function useNow(intervalMs = 100): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), intervalMs);
@@ -28,11 +29,7 @@ function useNow(intervalMs = 1000): number {
 }
 
 function formatClockElapsed(totalMs: number): string {
-  const totalSeconds = Math.max(0, Math.floor(totalMs / 1000));
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  return [h, m, s].map((n) => String(n).padStart(2, '0')).join(':');
+  return formatElapsed(Math.max(0, totalMs) / 1000);
 }
 
 // datetime-local inputs use the operator's local clock while Firestore stores
@@ -44,7 +41,7 @@ function toLocalDateTimeInputValue(isoTimestamp: string | undefined, fallbackRac
     : new Date(`${fallbackRaceDate || new Date().toISOString().slice(0, 10)}T06:00:00`);
   if (Number.isNaN(candidate.getTime())) return '';
   const local = new Date(candidate.getTime() - candidate.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
+  return local.toISOString().slice(0, 23);
 }
 
 // RFID readers commonly send an EPC as keyboard text. Normalising both the
@@ -113,14 +110,14 @@ interface LiveClockProps {
 // official start (race.gunStartTime), independent of any individual chip read.
 function LiveClock({ gunStartTime, size = 'compact' }: LiveClockProps) {
   const { can, authority } = useAccess();
-  const now = useNow(1000);
-  const wallClock = new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const now = useNow(100);
+  const wallClock = formatClockTime(now);
 
   if (size === 'large') {
     return (
       <div className="text-center">
         <p className="text-[10px] sm:text-xs font-black uppercase tracking-[0.25em] text-[var(--text-muted)]">{gunStartTime ? 'Gun Time' : 'Current Time'}</p>
-        <p className="font-mono font-black text-4xl sm:text-6xl text-[var(--text-primary)] tabular-nums">
+        <p className="font-mono font-black text-[clamp(1.25rem,6vw,3.75rem)] text-[var(--text-primary)] tabular-nums">
           {gunStartTime ? formatClockElapsed(now - new Date(gunStartTime).getTime()) : wallClock}
         </p>
       </div>
@@ -513,7 +510,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
     // so stop it and show exactly when the first valid read was recorded.
     const priorRead = chipReads.find((read) => read.bibNumber === bibNumber && read.checkpointId === selectedCheckpointId);
     if (priorRead && ['checkin', 'start', 'finish'].includes(selectedCheckpointType)) {
-      setFeedback({ type: 'warning', text: `Duplicate scan: bib #${bibNumber} already has a ${checkpointLabel(selectedCheckpointId)} record at ${new Date(priorRead.timestamp).toLocaleTimeString()}. No new read was saved.` });
+      setFeedback({ type: 'warning', text: `Duplicate scan: bib #${bibNumber} already has a ${checkpointLabel(selectedCheckpointId)} record at ${formatClockTime(priorRead.timestamp)}. No new read was saved.` });
       setBibInput('');
       scanInputRef.current?.focus();
       return false;
@@ -632,7 +629,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
     const stationTypeLabel = selectedCheckpointType === 'checkin' ? 'check-in' : 'cutoff';
     const runner = runnerProfiles.find((profile) => profile.bibNumber === read.bibNumber);
     const runnerLabel = runner ? runnerTimingName(runner) : `Bib ${read.bibNumber}`;
-    if (!window.confirm(`Undo the ${stationTypeLabel} read for ${runnerLabel} (#${read.bibNumber}) at ${new Date(read.timestamp).toLocaleTimeString()}?\n\nOnly this one timing entry will be removed.`)) return;
+    if (!window.confirm(`Undo the ${stationTypeLabel} read for ${runnerLabel} (#${read.bibNumber}) at ${formatClockTime(read.timestamp)}?\n\nOnly this one timing entry will be removed.`)) return;
 
     try {
       // Also remove an offline copy before deleting Firestore. This prevents a
@@ -703,7 +700,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
     }
     const previousRead = chipReads.find((read) => read.bibNumber === runner.bibNumber && read.checkpointId === checkInCheckpoint.id);
     if (previousRead) {
-      setFeedback({ type: 'warning', text: `${runnerTimingName(runner)}${runner.isFreeSlot ? '' : ` • bib ${runner.bibNumber}`} is already checked in at ${new Date(previousRead.timestamp).toLocaleTimeString()}.` });
+      setFeedback({ type: 'warning', text: `${runnerTimingName(runner)}${runner.isFreeSlot ? '' : ` • bib ${runner.bibNumber}`} is already checked in at ${formatClockTime(previousRead.timestamp)}.` });
       return;
     }
 
@@ -1120,7 +1117,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
               <div key={r.id} className="flex items-center justify-between gap-2 glass-inset px-3 py-2 text-xs">
                 <span className="font-mono font-bold text-[var(--text-primary)] flex items-center gap-1.5"><span>#{r.bibNumber}</span>{r.source === 'rfid-bridge' && <Cpu className="w-3 h-3 text-emerald-500" aria-label="RFID scan" />}</span>
                 <span className="text-[var(--text-secondary)]">{checkpointLabel(r.checkpointId)}</span>
-                <span className="font-mono text-[var(--text-muted)]">{new Date(r.timestamp).toLocaleTimeString()}</span>
+                <span className="font-mono text-[var(--text-muted)]">{formatClockTime(r.timestamp)}</span>
                 {(selectedCheckpointType === 'checkin' || selectedCheckpoint?.cutoffMinutes) && r.checkpointId === selectedCheckpointId && (
                   <button hidden={!can('timing.correct')}
                     type="button"
@@ -1156,7 +1153,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
                     <span className="text-[var(--text-muted)]"> &bull; #{r.bibNumber}</span>
                   </span>
                   <span className={`font-mono font-bold text-right shrink-0 ${r.finishTime ? 'text-[var(--text-primary)]' : 'text-amber-500'}`}>
-                    {r.finishTime || (missingCheckpoints.length ? `Missing: ${missingCheckpoints.join(', ')}` : 'Needs review')}
+                    {r.finishTime ? formatRaceTime(r.finishTime) : (missingCheckpoints.length ? `Missing: ${missingCheckpoints.join(', ')}` : 'Needs review')}
                   </span>
                 </div>
               );
@@ -1330,7 +1327,7 @@ function MobileCheckInPanel({
               <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-500" />
               <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--text-primary)]">{runnerTimingName(runnerByBib.get(read.bibNumber), read.bibNumber)}</span>
               <span className="font-mono text-xs font-bold text-[var(--text-secondary)]">#{read.bibNumber}</span>
-              <span className="text-[10px] text-[var(--text-muted)] shrink-0">{new Date(read.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              <span className="text-[10px] text-[var(--text-muted)] shrink-0">{formatClockTime(read.timestamp)}</span>
             </div>
           ))}
         </div>
@@ -2449,7 +2446,7 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
       alert('Enter the verified gun start date and time first.');
       return;
     }
-    if (!window.confirm(`Save ${parsedTime.toLocaleString()} as the official ${distance} gun time? Finishers without an individual Start read will be recalculated using this time.`)) return;
+    if (!window.confirm(`Save ${formatDateTime(parsedTime)} as the official ${distance} gun time? Finishers without an individual Start read will be recalculated using this time.`)) return;
 
     setSettingDistance(distance);
     try {
@@ -2500,11 +2497,13 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
                     <label className="block text-[9px] font-black uppercase tracking-widest text-amber-500">Verified official gun time</label>
                     <input
                       type="datetime-local"
+                      step="0.001"
                       value={gunTimeInput}
                       onChange={(event) => setGunTimeInput(event.target.value)}
                       disabled={!!settingDistance}
                       className="w-full glass-inset px-3 py-2 text-xs font-bold font-mono text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-amber-500/50 disabled:opacity-60"
                     />
+                    <p className="text-xs font-mono">{gunTimeInput ? formatClockTime(new Date(gunTimeInput)) : '—'}</p>
                     <p className="text-[9px] leading-relaxed text-[var(--text-secondary)]">Only runners with a Finish read but no individual Start read will use this fallback. Chip-start results stay unchanged.</p>
                     <div className="flex gap-2">
                       <button hidden={!can('timing.reset')} type="button" onClick={() => void handleSaveGunTime(group.distance)} disabled={!!settingDistance} className="flex-1 rounded-[12px] bg-amber-500 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-black disabled:opacity-60">
@@ -2515,7 +2514,7 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
                   </div>
                 ) : waveStartTime ? (
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-bold text-emerald-500">Gun: {new Date(waveStartTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                    <span className="text-[10px] font-bold text-emerald-500">Gun: {formatClockTime(waveStartTime)}</span>
                     <div className="flex items-center gap-2">
                       <button onClick={() => onOpenStartScanner(group.distance)} disabled={!!settingDistance} className="text-[10px] font-black uppercase tracking-wide text-emerald-500 hover:text-emerald-400 disabled:opacity-50 transition">Arm Start RFID</button>
                       <button type="button" onClick={() => openGunTimeEditor(group.distance)} disabled={!!settingDistance} className="text-[10px] font-black uppercase tracking-wide text-amber-500 hover:text-amber-400 disabled:opacity-50 transition">Correct gun time</button>
@@ -2581,7 +2580,7 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
                 <div className="rounded-[14px] border border-white/10 bg-black/20 px-3 py-3">
                   <p className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Official start time</p>
                   <p className="mt-1 font-mono text-lg font-black tabular-nums text-emerald-400">
-                    {new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    {formatClockTime(now)}
                   </p>
                   <p className="text-[10px] text-[var(--text-secondary)]">Your timing device clock</p>
                 </div>
@@ -2815,7 +2814,7 @@ function RaceRankingsPanel({ race, results }: RaceRankingsPanelProps) {
                               <span className="block truncate font-bold text-[var(--text-primary)]">{runnerTimingName(r.runnerProfile, r.bibNumber)}</span>
                               <span className="text-[var(--text-muted)]">Bib #{r.bibNumber}</span>
                             </span>
-                            <span className="font-mono font-bold text-[var(--text-primary)] shrink-0">{r.finishTime}{r.finishReviewRequired && <span className="block text-xs text-amber-500">Needs finish review · provisional place</span>}</span>
+                            <span className="font-mono font-bold text-[var(--text-primary)] shrink-0">{formatRaceTime(r.finishTime)}{r.finishReviewRequired && <span className="block text-xs text-amber-500">Needs finish review · provisional place</span>}</span>
                           </li>
                         );
                       })}

@@ -26,3 +26,29 @@ export function formatElapsed(totalSeconds: number): string {
     .map(value => String(value).padStart(2, '0')).join(':')
     + String(units % 100000).padStart(5, '0');
 }
+
+/** Normalize both legacy HH:MM:SS.fffffff and current HH:MM:SSfffff values. */
+export function formatRaceTime(value: string | undefined | null): string {
+  if (!value) return '—';
+  const match = /^(\d{2,}):([0-5]\d):([0-5]\d)(?:\.(\d{1,7})|(\d{5}))?$/.exec(value.trim());
+  if (!match) return value;
+  return `${match[1]}:${match[2]}:${match[3]}${(match[4] || match[5] || '').padEnd(5, '0').slice(0, 5)}`;
+}
+
+/** Local wall time; retain source fractional digits rather than Date's 3 digits. */
+export function formatClockTime(value: string | number | Date | undefined): string {
+  if (value === undefined) return '—';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '—';
+  const fraction = typeof value === 'string'
+    ? /\.(\d+)(?:Z|[+-]\d{2}:\d{2})$/.exec(value)?.[1]
+    : undefined;
+  const digits = (fraction ?? String(date.getMilliseconds()).padStart(3, '0')).padEnd(5, '0').slice(0, 5);
+  return [date.getHours(), date.getMinutes(), date.getSeconds()]
+    .map(part => String(part).padStart(2, '0')).join(':') + digits;
+}
+
+export function formatDateTime(value: string | number | Date): string {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? `${date.toLocaleDateString()} ${formatClockTime(value)}` : '—';
+}

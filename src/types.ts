@@ -5,7 +5,7 @@ export interface EngravingOrder {
   runnerName: string;
   bibNumber: string;
   distance: string; // e.g. "5K", "10K", "Half Marathon", "Full Marathon", "Custom"
-  finishingTime: string; // format "HH:MM:SS"
+  finishingTime: string; // format "HH:MM:SSfffff"
   status: EngravingStatus;
   createdAt: string; // RFC3339
   updatedAt: string; // RFC3339

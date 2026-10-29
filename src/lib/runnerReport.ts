@@ -1,3 +1,4 @@
+import { formatDateTime } from './preciseTime';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { AgeCategory, Gender, Race, RunnerProfile } from '../types';
@@ -90,7 +91,7 @@ export function generateRunnerRosterPdf(race: Race, runners: RunnerProfile[]): b
   pdf.text(race.name.toUpperCase(), 14, 12);
   pdf.setFontSize(8.5);
   pdf.setTextColor(245, 158, 11);
-  pdf.text(`RUNNER ROSTER & KIT INVENTORY  |  ${runners.length} TOTAL RUNNERS  |  GENERATED ${new Date().toLocaleString()}`, 14, 19);
+  pdf.text(`RUNNER ROSTER & KIT INVENTORY  |  ${runners.length} TOTAL RUNNERS  |  GENERATED ${formatDateTime(new Date())}`, 14, 19);
 
   const distanceGroups = groupRunnersByDistance(runners);
   pdf.setFontSize(11);

@@ -1,3 +1,4 @@
+import { formatRaceTime } from '../lib/preciseTime';
 import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { Bell, BellRing, CalendarDays, CheckCircle2, PackageCheck, Trophy, X } from 'lucide-react';
@@ -84,7 +85,7 @@ export default function RunnerReminderCenter({ runnerProfiles }: { runnerProfile
         all.push({
           id: `result_${profile.raceId}_${profile.bibNumber}`,
           title: 'Official result ready',
-          detail: `${race.name} • ${officialEntry.distance} • Rank #${officialEntry.rank} • ${officialEntry.finishTime}`,
+          detail: `${race.name} • ${officialEntry.distance} • Rank #${officialEntry.rank} • ${formatRaceTime(officialEntry.finishTime)}`,
           kind: 'result',
         });
       }
