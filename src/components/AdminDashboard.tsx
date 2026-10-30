@@ -10,11 +10,12 @@ import TimingConsole from './TimingConsole';
 import RaceSetupPanel from './RaceSetupPanel';
 import BottomNav from './BottomNav';
 import AccessPanel from './AccessPanel';
+import BibStudioPanel from './BibStudioPanel';
 import {
-  Award, Radio, Flag, Users, Users2, LogOut, CheckCircle, XCircle, ShieldCheck, Search, Trash2,
+  Award, Radio, Flag, Users, Users2, LogOut, CheckCircle, XCircle, ShieldCheck, Search, Trash2, Printer,
 } from 'lucide-react';
 
-type AdminTab = 'engraving' | 'timing' | 'race' | 'organizers' | 'runners' | 'access' | 'events' | 'hub';
+type AdminTab = 'engraving' | 'timing' | 'race' | 'bibstudio' | 'organizers' | 'runners' | 'access' | 'events' | 'hub';
 
 interface AdminDashboardProps {
   profile: UserProfile;
@@ -23,7 +24,7 @@ interface AdminDashboardProps {
 export default function AdminDashboard({ profile }: AdminDashboardProps) {
   const { can, authority: isSuperAdmin, state } = useAccess();
   const [tab, setTab] = useState<AdminTab>(can('engraving.view') ? 'engraving' : 'events');
-  const allowed: Record<AdminTab, boolean> = { engraving: can('engraving.view'), timing: can('timing.view') || can('roster.view'), race: can('race.view') || can('race.create'), organizers: can('users.view') || isSuperAdmin, runners: can('users.view') || isSuperAdmin, access: isSuperAdmin, events: can('race.view'), hub: can('hub.manage') || can('hub.publish') };
+  const allowed: Record<AdminTab, boolean> = { engraving: can('engraving.view'), timing: can('timing.view') || can('roster.view'), race: can('race.view') || can('race.create'), bibstudio: isSuperAdmin, organizers: can('users.view') || isSuperAdmin, runners: can('users.view') || isSuperAdmin, access: isSuperAdmin, events: can('race.view'), hub: can('hub.manage') || can('hub.publish') };
   const active = allowed[tab] ? tab : (Object.keys(allowed).find(key => allowed[key]) as AdminTab);
 
   useEffect(() => {
@@ -51,6 +52,7 @@ export default function AdminDashboard({ profile }: AdminDashboardProps) {
       {active === 'engraving' && <OperatorDashboard />}
       {active === 'timing' && <TimingConsole uid={profile.uid} canSeeAllRaces />}
       {active === 'race' && <RaceSetupPanel uid={profile.uid} canSeeAllRaces canDeleteRaces={isSuperAdmin} />}
+      {active === 'bibstudio' && <BibStudioPanel />}
       {active === 'events' && <MyRaceEventsPanel uid={profile.uid} onManageRace={id => { localStorage.setItem('racepulse_active_race', id); setTab('timing'); }} />}
       {active === 'hub' && <LiveBroadcastPanel uid={profile.uid} />}
       {active === 'organizers' && <OrganizersPanel canManageAccounts={isSuperAdmin} currentUserId={profile.uid} />}
@@ -64,6 +66,7 @@ export default function AdminDashboard({ profile }: AdminDashboardProps) {
           { key: 'engraving', icon: <Award className="w-4 h-4" />, label: 'Engraving', active: active === 'engraving', onClick: () => setTab('engraving') },
           { key: 'timing', icon: <Radio className="w-4 h-4" />, label: 'Timing', active: active === 'timing', onClick: () => setTab('timing') },
           { key: 'race', icon: <Flag className="w-4 h-4" />, label: 'Race Setup', active: active === 'race', onClick: () => setTab('race') },
+          { key: 'bibstudio', icon: <Printer className="w-4 h-4" />, label: 'Bib Studio', active: active === 'bibstudio', onClick: () => setTab('bibstudio') },
           { key: 'organizers', icon: <Users className="w-4 h-4" />, label: 'Organizers', active: active === 'organizers', onClick: () => setTab('organizers') },
           { key: 'runners', icon: <Users2 className="w-4 h-4" />, label: 'Runners', active: active === 'runners', onClick: () => setTab('runners') },
           { key: 'access', icon: <ShieldCheck className="w-4 h-4" />, label: 'Access', active: active === 'access', onClick: () => setTab('access') },
