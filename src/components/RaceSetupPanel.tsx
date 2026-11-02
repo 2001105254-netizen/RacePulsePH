@@ -476,9 +476,14 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
   // separate bib designs can easily push a Firestore document past its 1 MiB
   // limit, so keep the files in Storage and retain only their download URLs.
   // Existing base64 artwork is migrated the next time its race is saved.
-  const storeRaceImage = async (image: string, raceId: string, assetName: string): Promise<string> => {
+  const storeRaceImage = async (image: string, raceId: string, assetName: string, existingImage = ''): Promise<string> => {
     const permission = assetName.startsWith('bib-') ? 'race.bibs' : assetName === 'payment-qr' ? 'payment.configure' : 'race.artwork';
     if (editingId && !can(permission)) return image;
+    // Legacy races can still contain a base64 image in Firestore. Do not try
+    // to migrate that image again when the organizer only changes a price,
+    // date, or another non-artwork setting. It stays untouched until they
+    // intentionally choose a replacement image.
+    if (image === existingImage) return image;
     if (!image || !image.startsWith('data:')) return image;
 
     const response = await fetch(image);
@@ -529,10 +534,10 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
         .slice(0, 20);
       const savedDistances = [...distances].sort((a, b) => a.km - b.km).map(draftToDistance);
       const [storedPosterImage, storedInclusionImage, storedManualPaymentQrImage, storedRaceBibTemplateImage] = await Promise.all([
-        storeRaceImage(posterImage, raceId, 'poster'),
-        storeRaceImage(inclusionImage, raceId, 'inclusion'),
-        storeRaceImage(manualPaymentQrImage, raceId, 'payment-qr'),
-        storeRaceImage(raceBibTemplateImage, raceId, 'bib-default'),
+        storeRaceImage(posterImage, raceId, 'poster', existing?.posterImage),
+        storeRaceImage(inclusionImage, raceId, 'inclusion', existing?.inclusionImage),
+        storeRaceImage(manualPaymentQrImage, raceId, 'payment-qr', existing?.manualPaymentQrImage),
+        storeRaceImage(raceBibTemplateImage, raceId, 'bib-default', existing?.raceBibTemplateImage),
       ]);
       // Ignore templates from a distance that an organizer has removed before
       // saving. Matching uses the runner's stored distance label, e.g. "12K".
@@ -544,7 +549,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
             const template = raceBibTemplatesByDistance[distance.label];
             return [distance.label, {
               ...template,
-              image: await storeRaceImage(template.image, raceId, `bib-${distance.label}`),
+              image: await storeRaceImage(template.image, raceId, `bib-${distance.label}`, existing?.raceBibTemplatesByDistance?.[distance.label]?.image),
             }] as const;
           }),
       )) as Record<string, RaceBibTemplate>;
@@ -555,7 +560,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
             const template = raceBibTemplatesByEntryCategory[entryCategory]!;
             return [entryCategory, {
               ...template,
-              image: await storeRaceImage(template.image, raceId, `bib-${entryCategory}`),
+              image: await storeRaceImage(template.image, raceId, `bib-${entryCategory}`, existing?.raceBibTemplatesByEntryCategory?.[entryCategory]?.image),
             }] as const;
           }),
       )) as Partial<Record<RaceEntryCategory, RaceBibTemplate>>;
