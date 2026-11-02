@@ -35,7 +35,9 @@ const helpers = `${markerStart}
     }
     function raceScope(raceId) {
       let race = get(/databases/$(database)/documents/races/$(raceId)).data;
-      return access().scope == 'all'
+      // Super Admin remains global even if an older userAccess document has
+      // an obsolete selected/owned scope.
+      return callerDoc().data.role == 'superadmin' || access().scope == 'all'
         || (access().scope == 'selected' && raceId in access().raceIds)
         || (access().scope == 'owned-assigned' && (race.createdBy == request.auth.uid || request.auth.uid in race.get('organizerIds', [])));
     }
@@ -63,11 +65,11 @@ block('match /races/{raceId}',`match /races/{raceId} {
       allow create: if permission('race.create') && request.resource.data.createdBy == request.auth.uid && request.resource.data.id == raceId
         && !request.resource.data.keys().hasAny(['gunStartTime','waveStartTimes','completedAt'])
         && (!request.resource.data.keys().hasAny(['posterImage','inclusionImage']) || permission('race.artwork'))
-        && (!request.resource.data.keys().hasAny(['raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance']) || permission('race.bibs'))
+        && (!request.resource.data.keys().hasAny(['raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','raceBibTemplatesByEntryCategory','raceBibShowRaffleNumber']) || permission('race.bibs'))
         && (request.resource.data.get('organizerIds', []).size() == 0 || permission('race.team'))
         && (!(request.resource.data.get('onlinePaymentEnabled', false) || request.resource.data.get('manualPaymentEnabled', false)) || permission('payment.configure'));
       allow update: if raceScope(raceId) && request.resource.data.createdBy == resource.data.createdBy && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','date','inclusions','checkpoints','ageCategories','distances','entryCategories','registrationOpen','registrationCloseDate','onlinePaymentEnabled','paymentFeeMode','manualPaymentEnabled','manualPaymentInstructions','manualPaymentQrImage','posterImage','inclusionImage','raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','organizerIds','gunStartTime','waveStartTimes','completedAt','liveBroadcastEnabled','livestreamUrl','routeMapUrl','finishReviewWindowMs'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','date','inclusions','checkpoints','ageCategories','distances','entryCategories','registrationOpen','registrationCloseDate','onlinePaymentEnabled','paymentFeeMode','manualPaymentEnabled','manualPaymentInstructions','manualPaymentQrImage','posterImage','inclusionImage','raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','raceBibTemplatesByEntryCategory','raceBibShowRaffleNumber','organizerIds','gunStartTime','waveStartTimes','completedAt','liveBroadcastEnabled','livestreamUrl','routeMapUrl','finishReviewWindowMs'])
         && (!changed(['finishReviewWindowMs']) || (permission('timing.correct') && request.resource.data.finishReviewWindowMs is number && request.resource.data.finishReviewWindowMs >= 0 && request.resource.data.finishReviewWindowMs <= 60000))
         && (!changed(['name','date','inclusions']) || permission('race.edit'))
         && (!changed(['checkpoints','ageCategories','entryCategories']) || permission('race.categories'))
@@ -75,7 +77,7 @@ block('match /races/{raceId}',`match /races/{raceId} {
         && (!changed(['registrationOpen','registrationCloseDate']) || permission('race.registration') || (permission('timing.finish') && changed(['completedAt']) && request.resource.data.registrationOpen == false))
         && (!changed(['onlinePaymentEnabled','paymentFeeMode','manualPaymentEnabled','manualPaymentInstructions','manualPaymentQrImage']) || permission('payment.configure'))
         && (!changed(['posterImage','inclusionImage']) || permission('race.artwork'))
-        && (!changed(['raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance']) || permission('race.bibs'))
+        && (!changed(['raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','raceBibTemplatesByEntryCategory','raceBibShowRaffleNumber']) || permission('race.bibs'))
         && (!changed(['organizerIds']) || (permission('race.team') && (resource.data.createdBy == request.auth.uid || isSuperAdmin())))
         && (!changed(['liveBroadcastEnabled']) || permission('hub.publish'))
         && (!changed(['livestreamUrl','routeMapUrl']) || permission('hub.manage'))

@@ -22,7 +22,10 @@ export function AccessProvider({ profile, children }: { profile: UserProfile; ch
     const active = ready && state.status !== 'suspended';
     const permissions = { ...defaults(profile.role), ...(state.overrides || {}) };
     const can = (key: string) => active && permissions[key] === true && (key.startsWith('personal.') || profile.role !== 'organizer' || profile.approved) && (catalog.dependencies[key] || []).every((dep: string) => permissions[dep] === true);
-    const scope = state.scope || (['admin','superadmin'].includes(profile.role) ? 'all' : 'owned-assigned');
+    // A Super Admin is the platform owner. Older access documents may still
+    // contain a selected or owned-only scope from before the role was changed;
+    // that must never hide races or lock the Super Admin out of Race Setup.
+    const scope = profile.role === 'superadmin' ? 'all' : (state.scope || (profile.role === 'admin' ? 'all' : 'owned-assigned'));
     return { ready, suspended: state.status === 'suspended', can, authority: active && profile.role === 'superadmin', state, version: `${profile.uid}:${profile.role}:${profile.approved}:${state.revision || 0}`,
       inScope: race => active && (scope === 'all' || (scope === 'selected' && (state.raceIds || []).includes(race.id)) || (scope === 'owned-assigned' && (race.createdBy === profile.uid || (race.organizerIds || []).includes(profile.uid)))) };
   }, [profile, state, ready]);

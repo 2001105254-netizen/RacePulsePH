@@ -116,21 +116,30 @@ export interface RaceBibCustomFont {
 export interface RaceBibLayout {
   bibNumberX: number;
   bibNumberY: number;
+  // Optional duplicate of the bib number, normally positioned in the lower
+  // section so the detached raffle stub keeps a matching ticket number.
+  raffleNumberX?: number;
+  raffleNumberY?: number;
   runnerNameX: number;
   runnerNameY: number;
   // Sizes use container-width units (cqw), so the same layout scales neatly
   // in the organizer preview, runner PWA, and downloaded bib image.
   bibNumberSize?: number;
+  raffleNumberSize?: number;
   runnerNameSize?: number;
   bibNumberColor?: string;
+  raffleNumberColor?: string;
   runnerNameColor?: string;
   // Outline widths use container-width units (cqw), matching the text sizes.
   // A value of 0 keeps the legacy no-outline appearance.
   bibNumberStrokeColor?: string;
+  raffleNumberStrokeColor?: string;
   bibNumberStrokeWidth?: number;
+  raffleNumberStrokeWidth?: number;
   runnerNameStrokeColor?: string;
   runnerNameStrokeWidth?: number;
   bibNumberFont?: RaceBibFont;
+  raffleNumberFont?: RaceBibFont;
   runnerNameFont?: RaceBibFont;
 }
 
@@ -195,10 +204,14 @@ export interface Race {
   // overlaid on this template using the organizer-configured positions.
   raceBibTemplateImage?: string;
   raceBibLayout?: RaceBibLayout;
+  raceBibShowRaffleNumber?: boolean;
   raceBibCustomFont?: RaceBibCustomFont;
   // Keyed by the distance label stored on registrations (for example, "5K").
   // Falls back to the original single raceBibTemplateImage for old races.
   raceBibTemplatesByDistance?: Record<string, RaceBibTemplate>;
+  // Optional artwork for Solo, Duo, Trio, or Group entries. This takes
+  // priority over a distance template, then falls back to the default bib.
+  raceBibTemplatesByEntryCategory?: Partial<Record<RaceEntryCategory, RaceBibTemplate>>;
 }
 
 export interface PublicLeaderboardEntry {

@@ -1565,7 +1565,7 @@ function DigitalRaceBib({ race, runnerProfile }: { race: Race; runnerProfile: Ru
   const bibRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState('');
-  const bibTemplate = resolveRaceBibTemplate(race, runnerProfile.distance);
+  const bibTemplate = resolveRaceBibTemplate(race, runnerProfile.distance, runnerProfile.entryCategory || 'solo');
   const layout = bibTemplate?.layout;
   const nameLines = raceBibNameLines(runnerProfile);
   const previewNameSize = Math.min(layout?.runnerNameSize ?? 5, 11 / Math.max(1, nameLines.length));
@@ -1593,6 +1593,13 @@ function DigitalRaceBib({ race, runnerProfile }: { race: Race; runnerProfile: Ru
         layout.bibNumberX, layout.bibNumberY, layout.bibNumberSize ?? 12,
         layout.bibNumberColor ?? '#FFFFFF', layout.bibNumberStrokeColor ?? '#000000', layout.bibNumberStrokeWidth ?? 0, raceBibFontFamily(layout.bibNumberFont, race.raceBibCustomFont, true),
       );
+      if (race.raceBibShowRaffleNumber) {
+        drawFittedRaceBibText(
+          ctx, runnerProfile.bibNumber, canvas.width, canvas.height,
+          layout.raffleNumberX ?? 50, layout.raffleNumberY ?? 88, layout.raffleNumberSize ?? 7,
+          layout.raffleNumberColor ?? '#FFFFFF', layout.raffleNumberStrokeColor ?? '#000000', layout.raffleNumberStrokeWidth ?? 0, raceBibFontFamily(layout.raffleNumberFont ?? 'mono', race.raceBibCustomFont, true),
+        );
+      }
       drawFittedRaceBibTextLines(
         ctx, nameLines, canvas.width, canvas.height,
         layout.runnerNameX, layout.runnerNameY, layout.runnerNameSize ?? 5,
@@ -1624,6 +1631,7 @@ function DigitalRaceBib({ race, runnerProfile }: { race: Race; runnerProfile: Ru
       <div ref={bibRef} className="relative w-full aspect-[3/2] overflow-hidden rounded-xl bg-[var(--surface-inset)] select-none" style={{ containerType: 'inline-size' }}>
         <img src={bibTemplate.image} alt={`${race.name} personalized race bib`} className="absolute inset-0 w-full h-full object-cover" />
         <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${layout.bibNumberX}%`, top: `${layout.bibNumberY}%`, fontSize: `${layout.bibNumberSize ?? 12}cqw`, color: layout.bibNumberColor ?? '#FFFFFF', fontFamily: raceBibFontFamily(layout.bibNumberFont, race.raceBibCustomFont), WebkitTextStroke: `${layout.bibNumberStrokeWidth ?? 0}cqw ${layout.bibNumberStrokeColor ?? '#000000'}`, paintOrder: 'stroke fill' }}>{runnerProfile.bibNumber}</span>
+        {race.raceBibShowRaffleNumber && <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${layout.raffleNumberX ?? 50}%`, top: `${layout.raffleNumberY ?? 88}%`, fontSize: `${layout.raffleNumberSize ?? 7}cqw`, color: layout.raffleNumberColor ?? '#FFFFFF', fontFamily: raceBibFontFamily(layout.raffleNumberFont ?? 'mono', race.raceBibCustomFont), WebkitTextStroke: `${layout.raffleNumberStrokeWidth ?? 0}cqw ${layout.raffleNumberStrokeColor ?? '#000000'}`, paintOrder: 'stroke fill' }}>{runnerProfile.bibNumber}</span>}
         <div className="absolute -translate-x-1/2 -translate-y-1/2 w-[90%] text-center leading-[1.16] font-black tracking-wide drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)]" style={{ left: `${layout.runnerNameX}%`, top: `${layout.runnerNameY}%`, fontSize: `${previewNameSize}cqw`, color: layout.runnerNameColor ?? '#FFFFFF', fontFamily: raceBibFontFamily(layout.runnerNameFont, race.raceBibCustomFont), WebkitTextStroke: `${layout.runnerNameStrokeWidth ?? 0}cqw ${layout.runnerNameStrokeColor ?? '#000000'}`, paintOrder: 'stroke fill' }}>{nameLines.map((name, index) => <span key={`${name}-${index}`} className="block">{name}</span>)}</div>
       </div>
       <button hidden={!can('personal.bibs')} type="button" onClick={handleDownload} disabled={downloading} className="w-full py-2.5 px-4 rounded-[var(--radius-control)] font-display font-black uppercase text-[10px] tracking-widest text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 transition disabled:opacity-60 flex items-center justify-center gap-2">

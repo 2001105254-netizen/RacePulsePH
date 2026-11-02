@@ -138,11 +138,20 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
   const [inclusionUploading, setInclusionUploading] = useState(false);
   const [raceBibTemplateImage, setRaceBibTemplateImage] = useState('');
   const [raceBibTemplatesByDistance, setRaceBibTemplatesByDistance] = useState<Record<string, RaceBibTemplate>>({});
+  const [raceBibTemplatesByEntryCategory, setRaceBibTemplatesByEntryCategory] = useState<Partial<Record<RaceEntryCategory, RaceBibTemplate>>>({});
   const [raceBibUploading, setRaceBibUploading] = useState(false);
   const [raceBibCustomFont, setRaceBibCustomFont] = useState<RaceBibCustomFont | undefined>(undefined);
   const [raceBibFontUploading, setRaceBibFontUploading] = useState(false);
   const [bibNumberX, setBibNumberX] = useState(50);
   const [bibNumberY, setBibNumberY] = useState(48);
+  const [showRaffleNumber, setShowRaffleNumber] = useState(false);
+  const [raffleNumberX, setRaffleNumberX] = useState(50);
+  const [raffleNumberY, setRaffleNumberY] = useState(88);
+  const [raffleNumberSize, setRaffleNumberSize] = useState(7);
+  const [raffleNumberColor, setRaffleNumberColor] = useState('#FFFFFF');
+  const [raffleNumberStrokeColor, setRaffleNumberStrokeColor] = useState('#000000');
+  const [raffleNumberStrokeWidth, setRaffleNumberStrokeWidth] = useState(0);
+  const [raffleNumberFont, setRaffleNumberFont] = useState<RaceBibFont>('mono');
   const [runnerNameX, setRunnerNameX] = useState(50);
   const [runnerNameY, setRunnerNameY] = useState(70);
   const [bibNumberSize, setBibNumberSize] = useState(12);
@@ -167,6 +176,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
   const raceBibInputRef = useRef<HTMLInputElement>(null);
   const raceBibFontInputRef = useRef<HTMLInputElement>(null);
   const raceBibDistanceInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const raceBibEntryCategoryInputRefs = useRef<Partial<Record<RaceEntryCategory, HTMLInputElement | null>>>({});
   const manualPaymentQrInputRef = useRef<HTMLInputElement>(null);
   const registrationQrRef = useRef<SVGSVGElement>(null);
 
@@ -209,9 +219,18 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     setInclusionImage('');
     setRaceBibTemplateImage('');
     setRaceBibTemplatesByDistance({});
+    setRaceBibTemplatesByEntryCategory({});
     setRaceBibCustomFont(undefined);
     setBibNumberX(50);
     setBibNumberY(48);
+    setShowRaffleNumber(false);
+    setRaffleNumberX(50);
+    setRaffleNumberY(88);
+    setRaffleNumberSize(7);
+    setRaffleNumberColor('#FFFFFF');
+    setRaffleNumberStrokeColor('#000000');
+    setRaffleNumberStrokeWidth(0);
+    setRaffleNumberFont('mono');
     setRunnerNameX(50);
     setRunnerNameY(70);
     setBibNumberSize(12);
@@ -259,10 +278,19 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     setInclusionImage(race.inclusionImage || '');
     setRaceBibTemplateImage(race.raceBibTemplateImage || '');
     setRaceBibTemplatesByDistance(race.raceBibTemplatesByDistance || {});
+    setRaceBibTemplatesByEntryCategory(race.raceBibTemplatesByEntryCategory || {});
     setRaceBibCustomFont(race.raceBibCustomFont);
     void ensureRaceBibCustomFont(race.raceBibCustomFont).catch((err) => console.warn('Unable to load custom race bib font:', err));
     setBibNumberX(race.raceBibLayout?.bibNumberX ?? 50);
     setBibNumberY(race.raceBibLayout?.bibNumberY ?? 48);
+    setShowRaffleNumber(race.raceBibShowRaffleNumber === true);
+    setRaffleNumberX(race.raceBibLayout?.raffleNumberX ?? 50);
+    setRaffleNumberY(race.raceBibLayout?.raffleNumberY ?? 88);
+    setRaffleNumberSize(race.raceBibLayout?.raffleNumberSize ?? 7);
+    setRaffleNumberColor(race.raceBibLayout?.raffleNumberColor ?? '#FFFFFF');
+    setRaffleNumberStrokeColor(race.raceBibLayout?.raffleNumberStrokeColor ?? '#000000');
+    setRaffleNumberStrokeWidth(race.raceBibLayout?.raffleNumberStrokeWidth ?? 0);
+    setRaffleNumberFont(race.raceBibLayout?.raffleNumberFont ?? 'mono');
     setRunnerNameX(race.raceBibLayout?.runnerNameX ?? 50);
     setRunnerNameY(race.raceBibLayout?.runnerNameY ?? 70);
     setBibNumberSize(race.raceBibLayout?.bibNumberSize ?? 12);
@@ -337,6 +365,22 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
       setRaceBibTemplatesByDistance((current) => ({ ...current, [distanceLabel]: { image } }));
     } catch (err: any) {
       setError(err.message || `Failed to process the ${distanceLabel} race bib template.`);
+    } finally {
+      setRaceBibUploading(false);
+    }
+  };
+
+  const handleEntryCategoryRaceBibTemplateSelected = async (entryCategory: RaceEntryCategory, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setRaceBibUploading(true);
+    setError('');
+    try {
+      const image = await resizeImageToDataUrl(file, 1200, 800, 0.82);
+      setRaceBibTemplatesByEntryCategory((current) => ({ ...current, [entryCategory]: { image } }));
+    } catch (err: any) {
+      setError(err.message || `Failed to process the ${entryCategoryLabels[entryCategory]} race bib template.`);
     } finally {
       setRaceBibUploading(false);
     }
@@ -504,6 +548,17 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
             }] as const;
           }),
       )) as Record<string, RaceBibTemplate>;
+      const savedEntryCategoryBibTemplates = Object.fromEntries(await Promise.all(
+        entryCategories
+          .filter((entryCategory) => raceBibTemplatesByEntryCategory[entryCategory]?.image)
+          .map(async (entryCategory) => {
+            const template = raceBibTemplatesByEntryCategory[entryCategory]!;
+            return [entryCategory, {
+              ...template,
+              image: await storeRaceImage(template.image, raceId, `bib-${entryCategory}`),
+            }] as const;
+          }),
+      )) as Partial<Record<RaceEntryCategory, RaceBibTemplate>>;
       const record: Race = {
         id: raceId,
         name: name.trim(),
@@ -540,10 +595,12 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
         ...(storedInclusionImage ? { inclusionImage: storedInclusionImage } : {}),
         ...(storedRaceBibTemplateImage ? { raceBibTemplateImage: storedRaceBibTemplateImage } : {}),
         ...(raceBibCustomFont ? { raceBibCustomFont } : {}),
-        ...(storedRaceBibTemplateImage || Object.keys(savedDistanceBibTemplates).length ? {
-          raceBibLayout: { bibNumberX, bibNumberY, runnerNameX, runnerNameY, bibNumberSize, runnerNameSize, bibNumberColor, runnerNameColor, bibNumberStrokeColor, runnerNameStrokeColor, bibNumberStrokeWidth, runnerNameStrokeWidth, bibNumberFont, runnerNameFont },
+        ...(storedRaceBibTemplateImage || Object.keys(savedDistanceBibTemplates).length || Object.keys(savedEntryCategoryBibTemplates).length ? {
+          raceBibLayout: { bibNumberX, bibNumberY, raffleNumberX, raffleNumberY, runnerNameX, runnerNameY, bibNumberSize, raffleNumberSize, runnerNameSize, bibNumberColor, raffleNumberColor, runnerNameColor, bibNumberStrokeColor, raffleNumberStrokeColor, runnerNameStrokeColor, bibNumberStrokeWidth, raffleNumberStrokeWidth, runnerNameStrokeWidth, bibNumberFont, raffleNumberFont, runnerNameFont },
         } : {}),
+        ...(showRaffleNumber ? { raceBibShowRaffleNumber: true } : {}),
         ...(Object.keys(savedDistanceBibTemplates).length ? { raceBibTemplatesByDistance: savedDistanceBibTemplates } : {}),
+        ...(Object.keys(savedEntryCategoryBibTemplates).length ? { raceBibTemplatesByEntryCategory: savedEntryCategoryBibTemplates } : {}),
       };
       if (existing) {
         // Patch only changed settings; never overwrite a concurrent start, finish or publication.
@@ -852,6 +909,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
                 <div className="relative rounded-[16px] overflow-hidden border border-[var(--border-default)] bg-[var(--surface-inset)]" style={{ containerType: 'inline-size' }}>
                   <img src={raceBibTemplateImage} alt="Race bib template preview" className="w-full aspect-[3/2] object-cover" />
                   <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${bibNumberX}%`, top: `${bibNumberY}%`, fontSize: `${bibNumberSize}cqw`, color: bibNumberColor, fontFamily: raceBibFontFamily(bibNumberFont, raceBibCustomFont), WebkitTextStroke: `${bibNumberStrokeWidth}cqw ${bibNumberStrokeColor}`, paintOrder: 'stroke fill' }}>10-001</span>
+                  {showRaffleNumber && <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${raffleNumberX}%`, top: `${raffleNumberY}%`, fontSize: `${raffleNumberSize}cqw`, color: raffleNumberColor, fontFamily: raceBibFontFamily(raffleNumberFont, raceBibCustomFont), WebkitTextStroke: `${raffleNumberStrokeWidth}cqw ${raffleNumberStrokeColor}`, paintOrder: 'stroke fill' }}>10-001</span>}
                   <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-wide drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${runnerNameX}%`, top: `${runnerNameY}%`, fontSize: `${runnerNameSize}cqw`, color: runnerNameColor, fontFamily: raceBibFontFamily(runnerNameFont, raceBibCustomFont), WebkitTextStroke: `${runnerNameStrokeWidth}cqw ${runnerNameStrokeColor}`, paintOrder: 'stroke fill' }}>RUNNER NAME</span>
                   <button disabled={(!!editingId && !can('race.bibs'))} type="button" onClick={() => setRaceBibTemplateImage('')} className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center transition" title="Remove race bib template"><X className="w-4 h-4" /></button>
                   <button disabled={(!!editingId && !can('race.bibs'))} type="button" onClick={() => raceBibInputRef.current?.click()} className="absolute bottom-2 right-2 text-[10px] font-black uppercase tracking-wide px-3 py-1.5 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center gap-1.5 transition"><ImagePlus className="w-3 h-3" /> Change</button>
@@ -876,6 +934,24 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
                     <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Border <input type="color" value={runnerNameStrokeColor} onChange={(e) => setRunnerNameStrokeColor(e.target.value)} className="w-7 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" /> <span className="font-mono">{runnerNameStrokeColor}</span></label>
                     <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Border thickness <input type="range" min="0" max="1.5" step="0.1" value={runnerNameStrokeWidth} onChange={(e) => setRunnerNameStrokeWidth(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameStrokeWidth.toFixed(1)}</label>
                     <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Font <select disabled={(!!editingId && !can('race.bibs'))} value={runnerNameFont} onChange={(e) => setRunnerNameFont(e.target.value as RaceBibFont)} className="flex-1 glass-inset px-2 py-1 text-[10px] font-bold text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-red-500/50"><option value="display">Racing Bold</option><option value="sans">Clean Sans</option><option value="mono">Timing Mono</option><option value="condensed">Condensed</option><option value="custom" disabled={!raceBibCustomFont}>Uploaded Custom Font</option></select></label>
+                  </div>
+                  <div className="sm:col-span-2 rounded-xl border border-amber-500/25 bg-amber-500/[0.04] p-3">
+                    <label className="flex cursor-pointer items-center gap-2 text-xs font-black uppercase tracking-wide text-[var(--text-primary)]"><input disabled={(!!editingId && !can('race.bibs'))} type="checkbox" checked={showRaffleNumber} onChange={(e) => setShowRaffleNumber(e.target.checked)} className="h-4 w-4 accent-amber-500" /> Print raffle number at the bottom <span className="normal-case font-medium text-[var(--text-secondary)]">(same as bib number)</span></label>
+                    {showRaffleNumber && <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-amber-500 mb-2">Raffle number position</p>
+                        <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)]">X <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="5" max="95" value={raffleNumberX} onChange={(e) => setRaffleNumberX(Number(e.target.value))} className="flex-1 accent-amber-500" /> {raffleNumberX}%</label>
+                        <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Y <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="5" max="95" value={raffleNumberY} onChange={(e) => setRaffleNumberY(Number(e.target.value))} className="flex-1 accent-amber-500" /> {raffleNumberY}%</label>
+                        <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Size <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="3" max="16" step="0.5" value={raffleNumberSize} onChange={(e) => setRaffleNumberSize(Number(e.target.value))} className="flex-1 accent-amber-500" /> {raffleNumberSize}</label>
+                        <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Font <select disabled={(!!editingId && !can('race.bibs'))} value={raffleNumberFont} onChange={(e) => setRaffleNumberFont(e.target.value as RaceBibFont)} className="flex-1 glass-inset px-2 py-1 text-[10px] font-bold text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-amber-500/50"><option value="mono">Timing Mono</option><option value="display">Racing Bold</option><option value="condensed">Condensed</option><option value="sans">Clean Sans</option><option value="custom" disabled={!raceBibCustomFont}>Uploaded Custom Font</option></select></label>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-amber-500 mb-2">Raffle style</p>
+                        <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)]">Color <input disabled={(!!editingId && !can('race.bibs'))} type="color" value={raffleNumberColor} onChange={(e) => setRaffleNumberColor(e.target.value)} className="w-7 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" /> <span className="font-mono">{raffleNumberColor}</span></label>
+                        <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Border <input disabled={(!!editingId && !can('race.bibs'))} type="color" value={raffleNumberStrokeColor} onChange={(e) => setRaffleNumberStrokeColor(e.target.value)} className="w-7 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" /> <span className="font-mono">{raffleNumberStrokeColor}</span></label>
+                        <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Border thickness <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="0" max="1.5" step="0.1" value={raffleNumberStrokeWidth} onChange={(e) => setRaffleNumberStrokeWidth(Number(e.target.value))} className="flex-1 accent-amber-500" /> {raffleNumberStrokeWidth.toFixed(1)}</label>
+                      </div>
+                    </div>}
                   </div>
                 </div>
                 <div className="border-t border-[var(--border-default)] pt-3">
@@ -941,6 +1017,46 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
                 })}
               </div>
             )}
+          </div>
+
+          <div className="border-t border-[var(--border-default)] pt-5">
+            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Different Bib Design Per Entry Category <span className="normal-case font-normal text-[var(--text-muted)]">(optional)</span></label>
+            <p className="text-[10.5px] text-[var(--text-secondary)] mb-3">Give Solo, Duo, Trio, or Group their own blank bib artwork. A category design has priority over a distance design, then falls back to the default bib. The number/name layout above stays shared.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+              {entryCategories.map((entryCategory) => {
+                const template = raceBibTemplatesByEntryCategory[entryCategory];
+                const label = entryCategoryLabels[entryCategory];
+                return (
+                  <div key={entryCategory} className="glass-inset p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-black text-[var(--text-primary)]">{label} bib design</p>
+                      {template?.image && <span className="text-[9px] font-black uppercase tracking-wide text-emerald-500">Custom</span>}
+                    </div>
+                    <input
+                      disabled={(!!editingId && !can('race.bibs'))}
+                      ref={(node) => { raceBibEntryCategoryInputRefs.current[entryCategory] = node; }}
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => void handleEntryCategoryRaceBibTemplateSelected(entryCategory, e)}
+                      className="hidden"
+                    />
+                    {template?.image ? (
+                      <div className="relative overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)]">
+                        <img src={template.image} alt={`${label} race bib template`} className="w-full aspect-[3/2] object-cover" />
+                        <button disabled={(!!editingId && !can('race.bibs'))} type="button" onClick={() => setRaceBibTemplatesByEntryCategory((current) => { const next = { ...current }; delete next[entryCategory]; return next; })} className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center transition" title={`Remove ${label} design`}><X className="w-3.5 h-3.5" /></button>
+                        <button disabled={(!!editingId && !can('race.bibs'))} type="button" onClick={() => raceBibEntryCategoryInputRefs.current[entryCategory]?.click()} className="absolute bottom-2 right-2 text-[9px] font-black uppercase tracking-wide px-2.5 py-1.5 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center gap-1 transition"><ImagePlus className="w-3 h-3" /> Change</button>
+                      </div>
+                    ) : (
+                      <button type="button" onClick={() => raceBibEntryCategoryInputRefs.current[entryCategory]?.click()} disabled={(raceBibUploading) || (!!editingId && !can('race.bibs'))} className="w-full aspect-[3/2] rounded-xl border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-1.5 text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 transition disabled:opacity-60">
+                        {raceBibUploading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <ImagePlus className="w-5 h-5" />}
+                        <span className="text-[10px] font-black uppercase tracking-wide">Upload {label} Design</span>
+                        <span className="text-[9px] text-[var(--text-muted)]">Overrides distance/default bib</span>
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           <div>

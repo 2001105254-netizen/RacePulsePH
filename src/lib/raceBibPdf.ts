@@ -192,7 +192,7 @@ export async function generateRaceBibsPdf(race: Race, runners: RunnerProfile[], 
 
   for (let index = 0; index < printableBibs.length; index += 1) {
     const { runner, runnerName } = printableBibs[index];
-    const bibTemplate = resolveRaceBibTemplate(race, runner.distance);
+    const bibTemplate = resolveRaceBibTemplate(race, runner.distance, runner.entryCategory || 'solo');
     if (!bibTemplate) {
       throw new Error(`No race bib template is configured for ${runner.distance}. Upload a template for that distance or add a default template.`);
     }
@@ -207,6 +207,9 @@ export async function generateRaceBibsPdf(race: Race, runners: RunnerProfile[], 
     ctx.drawImage(template, 0, 0, canvas.width, canvas.height);
     const { layout } = bibTemplate;
     drawFittedText(ctx, runner.bibNumber, canvas.width, canvas.height, layout.bibNumberX, layout.bibNumberY, layout.bibNumberSize ?? 12, layout.bibNumberColor ?? '#FFFFFF', layout.bibNumberStrokeColor ?? '#000000', layout.bibNumberStrokeWidth ?? 0, raceBibFontFamily(layout.bibNumberFont, race.raceBibCustomFont, true));
+    if (race.raceBibShowRaffleNumber) {
+      drawFittedText(ctx, runner.bibNumber, canvas.width, canvas.height, layout.raffleNumberX ?? 50, layout.raffleNumberY ?? 88, layout.raffleNumberSize ?? 7, layout.raffleNumberColor ?? '#FFFFFF', layout.raffleNumberStrokeColor ?? '#000000', layout.raffleNumberStrokeWidth ?? 0, raceBibFontFamily(layout.raffleNumberFont ?? 'mono', race.raceBibCustomFont, true));
+    }
     const nameLines = runner.isFreeSlot ? [] : runner.entryCategory === 'group' ? [runnerName] : raceBibNameLines(runner);
     if (nameLines.length > 0) {
       drawFittedTextLines(ctx, nameLines, canvas.width, canvas.height, layout.runnerNameX, layout.runnerNameY, layout.runnerNameSize ?? 5, layout.runnerNameColor ?? '#FFFFFF', layout.runnerNameStrokeColor ?? '#000000', layout.runnerNameStrokeWidth ?? 0, raceBibFontFamily(layout.runnerNameFont, race.raceBibCustomFont, true));

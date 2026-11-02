@@ -11,7 +11,10 @@ service firebase.storage {
     }
     function scope(raceId) {
       let race = firestore.get(/databases/(default)/documents/races/$(raceId)).data;
-      return access().scope == 'all' || (access().scope == 'selected' && raceId in access().raceIds)
+      // Super Admins can manage artwork for every event. This explicit branch
+      // keeps legacy selected/owned access records from blocking poster/bib
+      // uploads after a user has been promoted.
+      return profile().role == 'superadmin' || access().scope == 'all' || (access().scope == 'selected' && raceId in access().raceIds)
         || (access().scope == 'owned-assigned' && (race.createdBy == request.auth.uid || request.auth.uid in race.get('organizerIds', [])));
     }
     match /race-bib-fonts/{ownerUid}/{file} {

@@ -1,6 +1,6 @@
 import { ChangeEvent, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { FileDown, FileSpreadsheet, ImagePlus, Plus, Printer, RefreshCw, Trash2, Upload, X } from 'lucide-react';
+import { FileDown, FileSpreadsheet, ImagePlus, Printer, RefreshCw, Upload, WandSparkles } from 'lucide-react';
 import { Race, RaceBibFont, RaceBibLayout, RaceBibTemplate, RunnerProfile } from '../types';
 import { generateRaceBibsPdf } from '../lib/raceBibPdf';
 import { resizeImageToDataUrl } from '../lib/image';
@@ -11,17 +11,24 @@ type StudioRow = { id: string; fullName: string; bibNumber: string; distance: st
 const defaultLayout: RaceBibLayout = {
   bibNumberX: 50,
   bibNumberY: 48,
+  raffleNumberX: 50,
+  raffleNumberY: 88,
   runnerNameX: 50,
   runnerNameY: 70,
   bibNumberSize: 18,
+  raffleNumberSize: 7,
   runnerNameSize: 6,
   bibNumberColor: '#FFFFFF',
+  raffleNumberColor: '#FFFFFF',
   runnerNameColor: '#FFFFFF',
   bibNumberStrokeColor: '#000000',
+  raffleNumberStrokeColor: '#000000',
   runnerNameStrokeColor: '#000000',
   bibNumberStrokeWidth: 0,
+  raffleNumberStrokeWidth: 0,
   runnerNameStrokeWidth: 0,
   bibNumberFont: 'mono',
+  raffleNumberFont: 'mono',
   runnerNameFont: 'display',
 };
 
@@ -33,7 +40,7 @@ function valueFromRow(row: Record<string, unknown>, choices: string[]): string {
   return cleanValue(entry?.[1]);
 }
 
-function parseRoster(rows: Record<string, unknown>[]): { entries: StudioRow[]; rejected: number } {
+function parseRoster(rows: Record<string, unknown>[], namesAreOptional: boolean): { entries: StudioRow[]; rejected: number } {
   let rejected = 0;
   const usedBibs = new Set<string>();
   const entries = rows.flatMap((row, index) => {
@@ -41,7 +48,7 @@ function parseRoster(rows: Record<string, unknown>[]): { entries: StudioRow[]; r
     const bibNumber = valueFromRow(row, ['racebibnumber', 'bibnumber', 'bib', 'racenumber']);
     const distance = valueFromRow(row, ['distance', 'km', 'category']) || 'General';
     const bibKey = bibNumber.toUpperCase();
-    if (!fullName || !bibNumber || usedBibs.has(bibKey)) {
+    if ((!namesAreOptional && !fullName) || !bibNumber || usedBibs.has(bibKey)) {
       rejected += 1;
       return [];
     }
@@ -51,16 +58,19 @@ function parseRoster(rows: Record<string, unknown>[]): { entries: StudioRow[]; r
   return { entries, rejected };
 }
 
-function filenameSafe(value: string): string {
-  return value.trim().replace(/[^a-z0-9_-]+/gi, '_').replace(/^_+|_+$/g, '') || 'RacePulsePH';
-}
-
 export default function BibStudioPanel() {
   const [jobName, setJobName] = useState('');
   const [rows, setRows] = useState<StudioRow[]>([]);
   const [templateImage, setTemplateImage] = useState('');
   const [distanceTemplates, setDistanceTemplates] = useState<Record<string, RaceBibTemplate>>({});
   const [layout, setLayout] = useState<RaceBibLayout>(defaultLayout);
+  const [hideRunnerNames, setHideRunnerNames] = useState(false);
+  const [showRaffleNumber, setShowRaffleNumber] = useState(false);
+  const [quickPrefix, setQuickPrefix] = useState('');
+  const [quickStart, setQuickStart] = useState('1');
+  const [quickCount, setQuickCount] = useState('10');
+  const [quickDigits, setQuickDigits] = useState('3');
+  const [quickDistance, setQuickDistance] = useState('General');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -77,8 +87,8 @@ export default function BibStudioPanel() {
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       if (!worksheet) throw new Error('No worksheet was found in that file.');
       const parsed = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '' });
-      const { entries, rejected } = parseRoster(parsed);
-      if (entries.length === 0) throw new Error('No valid rows found. Use Full Name, Race Bib Number, and Distance columns.');
+      const { entries, rejected } = parseRoster(parsed, hideRunnerNames);
+      if (entries.length === 0) throw new Error(`No valid rows found. Use ${hideRunnerNames ? 'Race Bib Number and Distance' : 'Full Name, Race Bib Number, and Distance'} columns.`);
       setRows(entries);
       setMessage(`${entries.length} bibs ready${rejected ? ` · ${rejected} duplicate or incomplete row${rejected === 1 ? '' : 's'} skipped` : ''}.`);
     } catch (error: any) {
@@ -117,6 +127,28 @@ export default function BibStudioPanel() {
     setDistanceTemplates((current) => Object.fromEntries(Object.entries(current).map(([distance, template]) => [distance, { ...template, layout: { ...template.layout, ...patch } }])));
   };
 
+  const createBlankBibs = () => {
+    const count = Math.floor(Number(quickCount));
+    const firstNumber = Math.floor(Number(quickStart));
+    const digits = Math.floor(Number(quickDigits));
+    const prefix = quickPrefix.trim();
+    const distance = quickDistance.trim() || 'General';
+    if (!Number.isFinite(count) || count < 1 || count > 2000) return setMessage('Enter a quantity from 1 to 2,000 bibs.');
+    if (!Number.isFinite(firstNumber) || firstNumber < 0) return setMessage('Enter a valid first bib number.');
+    if (!Number.isFinite(digits) || digits < 1 || digits > 8) return setMessage('Use 1 to 8 digits for the bib sequence.');
+    if (rows.length > 0 && !window.confirm('Replace the current roster with these blank bibs?')) return;
+
+    const entries = Array.from({ length: count }, (_, index) => ({
+      id: `blank-${prefix}-${firstNumber + index}`,
+      fullName: '',
+      bibNumber: `${prefix}${String(firstNumber + index).padStart(digits, '0')}`,
+      distance,
+    }));
+    setRows(entries);
+    setHideRunnerNames(true);
+    setMessage(`${count} blank race bib${count === 1 ? '' : 's'} ready: ${entries[0].bibNumber} to ${entries[entries.length - 1].bibNumber}.`);
+  };
+
   const generate = async (distance?: string) => {
     if (!jobName.trim()) return setMessage('Enter the client or event name first.');
     if (rows.length === 0) return setMessage('Import a roster before generating the PDF.');
@@ -140,6 +172,7 @@ export default function BibStudioPanel() {
         createdAt: new Date().toISOString(),
         raceBibTemplateImage: templateImage || undefined,
         raceBibLayout: layout,
+        raceBibShowRaffleNumber: showRaffleNumber,
         raceBibTemplatesByDistance: Object.keys(distanceTemplates).length ? distanceTemplates : undefined,
       };
       const now = new Date().toISOString();
@@ -152,6 +185,7 @@ export default function BibStudioPanel() {
         gender: 'male',
         age: 0,
         createdAt: now,
+        isFreeSlot: hideRunnerNames,
       }));
       const count = await generateRaceBibsPdf(race, runners, distance);
       setMessage(`${count} personalized race bib${count === 1 ? '' : 's'} downloaded as a print-ready PDF.`);
@@ -168,6 +202,13 @@ export default function BibStudioPanel() {
     setTemplateImage('');
     setDistanceTemplates({});
     setLayout(defaultLayout);
+    setHideRunnerNames(false);
+    setShowRaffleNumber(false);
+    setQuickPrefix('');
+    setQuickStart('1');
+    setQuickCount('10');
+    setQuickDigits('3');
+    setQuickDistance('General');
     setMessage('New printing job ready.');
   };
 
@@ -190,10 +231,18 @@ export default function BibStudioPanel() {
           </div>
 
           <div className="rounded-2xl border border-dashed border-violet-500/35 bg-violet-500/[0.03] p-4">
-            <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-widest text-[var(--text-primary)]">1. Import roster</p><p className="mt-1 text-[11px] text-[var(--text-secondary)]">Excel, CSV, or TSV. Required columns: <strong>Full Name</strong>, <strong>Race Bib Number</strong>, and <strong>Distance</strong>.</p></div><FileSpreadsheet className="w-5 h-5 text-violet-500 shrink-0" /></div>
+            <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-widest text-[var(--text-primary)]">1. Import roster</p><p className="mt-1 text-[11px] text-[var(--text-secondary)]">Excel, CSV, or TSV. Required columns: <strong>{hideRunnerNames ? 'Race Bib Number and Distance' : 'Full Name, Race Bib Number, and Distance'}</strong>.</p></div><FileSpreadsheet className="w-5 h-5 text-violet-500 shrink-0" /></div>
+            <label className="mt-4 flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 py-2.5 text-xs font-bold text-[var(--text-primary)]"><input type="checkbox" checked={hideRunnerNames} onChange={(event) => setHideRunnerNames(event.target.checked)} className="h-4 w-4 accent-violet-600" /> Do not print runner names <span className="text-[10px] font-medium text-[var(--text-muted)]">(bib number only)</span></label>
             <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv,.tsv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" className="hidden" onChange={onRosterSelected} />
             <button type="button" onClick={() => fileInputRef.current?.click()} disabled={busy} className="mt-4 w-full rounded-xl bg-violet-600 px-4 py-3 text-xs font-black uppercase tracking-widest text-white hover:bg-violet-500 disabled:opacity-60 flex items-center justify-center gap-2"><Upload className="w-4 h-4" /> Upload roster</button>
             {rows.length > 0 && <div className="mt-3 rounded-xl bg-[var(--surface-inset)] px-3 py-2 text-xs text-[var(--text-secondary)]"><strong className="text-emerald-500">{rows.length} bibs ready</strong> · {distances.join(', ')}</div>}
+          </div>
+
+          <div className="rounded-2xl border border-dashed border-amber-500/40 bg-amber-500/[0.04] p-4">
+            <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-widest text-[var(--text-primary)]">Or create blank bibs</p><p className="mt-1 text-[11px] text-[var(--text-secondary)]">No roster needed. Choose the number range and we will generate bib-number-only PDFs.</p></div><WandSparkles className="w-5 h-5 text-amber-500 shrink-0" /></div>
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4"><Field label="Prefix" value={quickPrefix} placeholder="Example: 5-" onChange={setQuickPrefix} /><Field label="First no." value={quickStart} inputMode="numeric" onChange={setQuickStart} /><Field label="Quantity" value={quickCount} inputMode="numeric" onChange={setQuickCount} /><Field label="Digits" value={quickDigits} inputMode="numeric" onChange={setQuickDigits} /></div>
+            <div className="mt-3 grid grid-cols-[1fr_auto] gap-3"><Field label="Distance / label" value={quickDistance} placeholder="Example: 5K" onChange={setQuickDistance} /><button type="button" onClick={createBlankBibs} disabled={busy} className="self-end rounded-xl bg-amber-500 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-black hover:bg-amber-400 disabled:opacity-60">Create blank bibs</button></div>
+            <p className="mt-2 text-[10px] text-[var(--text-muted)]">Example: Prefix <strong>18-</strong>, First no. <strong>1</strong>, Digits <strong>3</strong> creates 18-001, 18-002, 18-003…</p>
           </div>
 
           <div>
@@ -207,13 +256,15 @@ export default function BibStudioPanel() {
 
         <section className="glass-panel p-5 space-y-5">
           <div><p className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)]">3. Text & print layout</p><p className="mt-1 text-[11px] text-[var(--text-muted)]">Settings apply to the default and all distance designs.</p></div>
+          <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-amber-500/25 bg-amber-500/[0.04] px-3 py-2.5 text-xs font-black text-[var(--text-primary)]"><input type="checkbox" checked={showRaffleNumber} onChange={(event) => setShowRaffleNumber(event.target.checked)} className="h-4 w-4 accent-amber-500" /> Print raffle number at bottom <span className="text-[10px] font-medium text-[var(--text-muted)]">(same as bib number)</span></label>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <LayoutControls title="Bib number" layout={layout} onChange={updateLayout} prefix="bibNumber" />
             <LayoutControls title="Runner name" layout={layout} onChange={updateLayout} prefix="runnerName" />
+            {showRaffleNumber && <LayoutControls title="Raffle number" layout={layout} onChange={updateLayout} prefix="raffleNumber" />}
           </div>
-          <div className="rounded-2xl overflow-hidden border border-[var(--border-default)] bg-black relative aspect-[3/2]">
+          <div className="rounded-2xl overflow-hidden border border-[var(--border-default)] bg-black relative aspect-[3/2]" style={{ containerType: 'inline-size' }}>
             {templateImage ? <img src={distanceTemplates[preview.distance]?.image || templateImage} alt="Race bib preview" className="absolute inset-0 w-full h-full object-cover" /> : <div className="absolute inset-0 grid place-items-center bg-gradient-to-br from-zinc-800 to-zinc-950 text-xs text-zinc-400">Upload a design to preview</div>}
-            {templateImage && <><span style={{ left: `${layout.bibNumberX}%`, top: `${layout.bibNumberY}%`, color: layout.bibNumberColor, fontFamily: raceBibFontFamily(layout.bibNumberFont, undefined), WebkitTextStroke: `${Math.max(0, layout.bibNumberStrokeWidth || 0) * 2}px ${layout.bibNumberStrokeColor || '#000000'}` }} className="absolute -translate-x-1/2 -translate-y-1/2 text-[clamp(18px,8cqw,80px)] leading-none font-black whitespace-nowrap">{preview.bibNumber}</span><span style={{ left: `${layout.runnerNameX}%`, top: `${layout.runnerNameY}%`, color: layout.runnerNameColor, fontFamily: raceBibFontFamily(layout.runnerNameFont, undefined), WebkitTextStroke: `${Math.max(0, layout.runnerNameStrokeWidth || 0) * 2}px ${layout.runnerNameStrokeColor || '#000000'}` }} className="absolute -translate-x-1/2 -translate-y-1/2 text-[clamp(12px,3.3cqw,34px)] leading-none font-black whitespace-nowrap max-w-[90%] truncate">{preview.fullName}</span></>}
+            {templateImage && <><span style={{ left: `${layout.bibNumberX}%`, top: `${layout.bibNumberY}%`, fontSize: `${layout.bibNumberSize || 18}cqw`, color: layout.bibNumberColor, fontFamily: raceBibFontFamily(layout.bibNumberFont, undefined), WebkitTextStroke: `${Math.max(0, layout.bibNumberStrokeWidth || 0)}cqw ${layout.bibNumberStrokeColor || '#000000'}`, paintOrder: 'stroke fill' }} className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black whitespace-nowrap">{preview.bibNumber}</span>{showRaffleNumber && <span style={{ left: `${layout.raffleNumberX ?? 50}%`, top: `${layout.raffleNumberY ?? 88}%`, fontSize: `${layout.raffleNumberSize ?? 7}cqw`, color: layout.raffleNumberColor ?? '#FFFFFF', fontFamily: raceBibFontFamily(layout.raffleNumberFont ?? 'mono', undefined), WebkitTextStroke: `${Math.max(0, layout.raffleNumberStrokeWidth || 0)}cqw ${layout.raffleNumberStrokeColor || '#000000'}`, paintOrder: 'stroke fill' }} className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black whitespace-nowrap">{preview.bibNumber}</span>}{!hideRunnerNames && <span style={{ left: `${layout.runnerNameX}%`, top: `${layout.runnerNameY}%`, fontSize: `${layout.runnerNameSize || 6}cqw`, color: layout.runnerNameColor, fontFamily: raceBibFontFamily(layout.runnerNameFont, undefined), WebkitTextStroke: `${Math.max(0, layout.runnerNameStrokeWidth || 0)}cqw ${layout.runnerNameStrokeColor || '#000000'}`, paintOrder: 'stroke fill' }} className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black whitespace-nowrap max-w-[90%] truncate">{preview.fullName}</span>}</>}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <button type="button" onClick={() => void generate()} disabled={busy || rows.length === 0} className="rounded-xl bg-red-600 px-4 py-3.5 text-xs font-black uppercase tracking-widest text-white hover:bg-red-500 disabled:opacity-60 flex items-center justify-center gap-2">{busy ? <RefreshCw className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />} Download all PDF</button>
@@ -226,8 +277,10 @@ export default function BibStudioPanel() {
   );
 }
 
-function LayoutControls({ title, layout, onChange, prefix }: { title: string; layout: RaceBibLayout; onChange: (patch: Partial<RaceBibLayout>) => void; prefix: 'bibNumber' | 'runnerName' }) {
-  const isBib = prefix === 'bibNumber';
+function LayoutControls({ title, layout, onChange, prefix }: { title: string; layout: RaceBibLayout; onChange: (patch: Partial<RaceBibLayout>) => void; prefix: 'bibNumber' | 'runnerName' | 'raffleNumber' }) {
+  const isMainBib = prefix === 'bibNumber';
+  const isName = prefix === 'runnerName';
+  const defaultSize = isMainBib ? 18 : isName ? 6 : 7;
   const xKey = `${prefix}X` as const;
   const yKey = `${prefix}Y` as const;
   const sizeKey = `${prefix}Size` as const;
@@ -235,7 +288,7 @@ function LayoutControls({ title, layout, onChange, prefix }: { title: string; la
   const strokeColorKey = `${prefix}StrokeColor` as const;
   const strokeWidthKey = `${prefix}StrokeWidth` as const;
   const fontKey = `${prefix}Font` as const;
-  return <div className="glass-inset p-4 space-y-3"><p className="text-xs font-black uppercase tracking-widest text-[var(--text-primary)]">{title}</p><Range label="X position" value={layout[xKey]} min={5} max={95} suffix="%" onChange={(value) => onChange({ [xKey]: value })} /><Range label="Y position" value={layout[yKey]} min={5} max={95} suffix="%" onChange={(value) => onChange({ [yKey]: value })} /><Range label="Size" value={layout[sizeKey] || (isBib ? 18 : 6)} min={isBib ? 8 : 3} max={isBib ? 30 : 14} step={0.5} onChange={(value) => onChange({ [sizeKey]: value })} /><div className="grid grid-cols-2 gap-2"><Color label="Text" value={layout[colorKey] || '#FFFFFF'} onChange={(value) => onChange({ [colorKey]: value })} /><Color label="Border" value={layout[strokeColorKey] || '#000000'} onChange={(value) => onChange({ [strokeColorKey]: value })} /></div><Range label="Border thickness" value={layout[strokeWidthKey] || 0} min={0} max={2} step={0.1} onChange={(value) => onChange({ [strokeWidthKey]: value })} /><label className="block text-[10px] font-bold text-[var(--text-secondary)]">Font<select value={layout[fontKey] || (isBib ? 'mono' : 'display')} onChange={(event) => onChange({ [fontKey]: event.target.value as RaceBibFont })} className="mt-1 w-full glass-inset px-2 py-2 text-xs font-bold text-[var(--text-primary)]"><option value="display">Racing Bold</option><option value="sans">Clean Sans</option><option value="mono">Timing Mono</option><option value="condensed">Condensed</option></select></label></div>;
+  return <div className="glass-inset p-4 space-y-3"><p className="text-xs font-black uppercase tracking-widest text-[var(--text-primary)]">{title}</p><Range label="X position" value={layout[xKey] ?? 50} min={5} max={95} suffix="%" onChange={(value) => onChange({ [xKey]: value })} /><Range label="Y position" value={layout[yKey] ?? (isName ? 70 : isMainBib ? 48 : 88)} min={5} max={95} suffix="%" onChange={(value) => onChange({ [yKey]: value })} /><Range label="Size" value={layout[sizeKey] || defaultSize} min={isName ? 3 : isMainBib ? 8 : 3} max={isMainBib ? 30 : 16} step={0.5} onChange={(value) => onChange({ [sizeKey]: value })} /><div className="grid grid-cols-2 gap-2"><Color label="Text" value={layout[colorKey] || '#FFFFFF'} onChange={(value) => onChange({ [colorKey]: value })} /><Color label="Border" value={layout[strokeColorKey] || '#000000'} onChange={(value) => onChange({ [strokeColorKey]: value })} /></div><Range label="Border thickness" value={layout[strokeWidthKey] || 0} min={0} max={2} step={0.1} onChange={(value) => onChange({ [strokeWidthKey]: value })} /><label className="block text-[10px] font-bold text-[var(--text-secondary)]">Font<select value={layout[fontKey] || (isName ? 'display' : 'mono')} onChange={(event) => onChange({ [fontKey]: event.target.value as RaceBibFont })} className="mt-1 w-full glass-inset px-2 py-2 text-xs font-bold text-[var(--text-primary)]"><option value="display">Racing Bold</option><option value="sans">Clean Sans</option><option value="mono">Timing Mono</option><option value="condensed">Condensed</option></select></label></div>;
 }
 
 function Range({ label, value, min, max, step = 1, suffix = '', onChange }: { label: string; value: number; min: number; max: number; step?: number; suffix?: string; onChange: (value: number) => void }) {
@@ -244,4 +297,8 @@ function Range({ label, value, min, max, step = 1, suffix = '', onChange }: { la
 
 function Color({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return <label className="text-[10px] font-bold text-[var(--text-secondary)]">{label}<span className="mt-1 flex items-center gap-2"><input type="color" value={value} onChange={(event) => onChange(event.target.value)} className="h-8 w-8 rounded border-0 bg-transparent p-0" /><span className="font-mono text-[10px] text-[var(--text-primary)]">{value}</span></span></label>;
+}
+
+function Field({ label, value, placeholder, inputMode, onChange }: { label: string; value: string; placeholder?: string; inputMode?: 'numeric' | 'text'; onChange: (value: string) => void }) {
+  return <label className="block text-[10px] font-bold text-[var(--text-secondary)]">{label}<input value={value} placeholder={placeholder} inputMode={inputMode} onChange={(event) => onChange(event.target.value)} className="mt-1 w-full glass-inset px-2.5 py-2 text-xs font-bold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-amber-500/40" /></label>;
 }

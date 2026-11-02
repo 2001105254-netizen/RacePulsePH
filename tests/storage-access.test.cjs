@@ -8,8 +8,11 @@ before(async()=>{
  env=await initializeTestEnvironment({projectId:'demo-racepulse-rbac',firestore:{host:'127.0.0.1',port:8080},storage:{host:'127.0.0.1',port:9199,rules:fs.readFileSync('storage.rules','utf8')}});
  await env.withSecurityRulesDisabled(async ctx=>{
   await setDoc(doc(ctx.firestore(),'users','storage_owner'),{uid:'storage_owner',role:'organizer',approved:true});
+  await setDoc(doc(ctx.firestore(),'users','storage_superadmin'),{uid:'storage_superadmin',role:'superadmin',approved:true});
   await setDoc(doc(ctx.firestore(),'races','storage_race'),{createdBy:'storage_owner'});
   await setDoc(doc(ctx.firestore(),'races','unassigned_storage_race'),{createdBy:'other'});
+  // This intentionally stale scope mirrors an account promoted to Super Admin.
+  await setDoc(doc(ctx.firestore(),'userAccess','storage_superadmin'),{status:'active',scope:'selected',raceIds:[],overrides:{}});
  });
 });
 after(async()=>env?.cleanup());
@@ -25,4 +28,7 @@ test('an artwork denial also blocks direct upload requests',async()=>{
  await env.withSecurityRulesDisabled(ctx=>setDoc(doc(ctx.firestore(),'userAccess','storage_owner'),{status:'active',scope:'owned-assigned',raceIds:[],overrides:{'race.artwork':false}}));
  await assertFails(upload(env.authenticatedContext('storage_owner'),'storage_race','poster-denied.jpg'));
  await assertSucceeds(upload(env.authenticatedContext('storage_owner'),'storage_race','bib-allowed.jpg'));
+});
+test('Super Admin can upload artwork for any race despite a legacy restricted scope',async()=>{
+ await assertSucceeds(upload(env.authenticatedContext('storage_superadmin'),'unassigned_storage_race','poster-superadmin.jpg','storage_superadmin'));
 });
