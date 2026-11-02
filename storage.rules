@@ -5,9 +5,11 @@ service firebase.storage {
     function access() { return firestore.exists(/databases/(default)/documents/userAccess/$(request.auth.uid)) ? firestore.get(/databases/(default)/documents/userAccess/$(request.auth.uid)).data : {'status':'active','overrides':{},'scope':profile().role in ['admin','superadmin'] ? 'all' : 'owned-assigned','raceIds':[]}; }
     function can(action) {
       return request.auth != null && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)) && access().status == 'active'
-        && (profile().role != 'organizer' || profile().approved)
-        && access().get('overrides', {}).get(action, profile().role in ['admin','superadmin','organizer']) == true
-        && access().get('overrides', {}).get('race.view', profile().role in ['admin','superadmin','organizer']) == true;
+        && (profile().role == 'superadmin' || (
+          (profile().role != 'organizer' || profile().approved)
+          && access().get('overrides', {}).get(action, profile().role in ['admin','superadmin','organizer']) == true
+          && access().get('overrides', {}).get('race.view', profile().role in ['admin','superadmin','organizer']) == true
+        ));
     }
     function scope(raceId) {
       let race = firestore.get(/databases/(default)/documents/races/$(raceId)).data;

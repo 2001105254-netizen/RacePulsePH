@@ -22,7 +22,10 @@ service cloud.firestore {
     function permission(action) {
       return request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && exists(/databases/$(database)/documents/userAccess/$(request.auth.uid))
-        && access().status == 'active' && access().get('permissions', {}).get(action, false) == true;
+        && access().status == 'active'
+        // The active Super Admin must not be locked out by a stale saved
+        // permission map after a role promotion.
+        && (callerDoc().data.role == 'superadmin' || access().get('permissions', {}).get(action, false) == true);
     }
     function raceScope(raceId) {
       let race = get(/databases/$(database)/documents/races/$(raceId)).data;

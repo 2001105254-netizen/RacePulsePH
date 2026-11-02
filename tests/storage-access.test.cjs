@@ -12,7 +12,7 @@ before(async()=>{
   await setDoc(doc(ctx.firestore(),'races','storage_race'),{createdBy:'storage_owner'});
   await setDoc(doc(ctx.firestore(),'races','unassigned_storage_race'),{createdBy:'other'});
   // This intentionally stale scope mirrors an account promoted to Super Admin.
-  await setDoc(doc(ctx.firestore(),'userAccess','storage_superadmin'),{status:'active',scope:'selected',raceIds:[],overrides:{}});
+  await setDoc(doc(ctx.firestore(),'userAccess','storage_superadmin'),{status:'active',scope:'selected',raceIds:[],overrides:{'race.artwork':false,'race.view':false}});
  });
 });
 after(async()=>env?.cleanup());

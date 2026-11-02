@@ -18,7 +18,9 @@ function defaults(role) {
 }
 function effective(role, access = {}) {
   const result = defaults(role);
-  for (const key of keys) if (typeof access.overrides?.[key] === 'boolean') result[key] = access.overrides[key];
+  // The platform owner must always retain the complete operational preset.
+  // This also makes an old custom deny harmless after a promotion.
+  if (role !== 'superadmin') for (const key of keys) if (typeof access.overrides?.[key] === 'boolean') result[key] = access.overrides[key];
   if (access.status === 'suspended') for (const key of keys) result[key] = false;
   return result;
 }

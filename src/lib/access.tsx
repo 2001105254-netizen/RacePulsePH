@@ -20,7 +20,11 @@ export function AccessProvider({ profile, children }: { profile: UserProfile; ch
   useEffect(() => { setReady(false); setError(''); return onSnapshot(doc(db, 'userAccess', profile.uid), snap => { setState(snap.data() || {}); setReady(snap.exists()); if (!snap.exists()) void accessCommand('session', {}).catch(e => setError(e.message)); }, e => { setError(e.message); setReady(false); }); }, [profile.uid]);
   const value = useMemo<AccessContextValue>(() => {
     const active = ready && state.status !== 'suspended';
-    const permissions = { ...defaults(profile.role), ...(state.overrides || {}) };
+    // Super Admin is the platform owner. Legacy custom denies must not leave
+    // that account unable to repair a race or its uploaded assets.
+    const permissions = profile.role === 'superadmin'
+      ? defaults(profile.role)
+      : { ...defaults(profile.role), ...(state.overrides || {}) };
     const can = (key: string) => active && permissions[key] === true && (key.startsWith('personal.') || profile.role !== 'organizer' || profile.approved) && (catalog.dependencies[key] || []).every((dep: string) => permissions[dep] === true);
     // A Super Admin is the platform owner. Older access documents may still
     // contain a selected or owned-only scope from before the role was changed;
