@@ -15,9 +15,11 @@ export function useScopedRaces() {
   useEffect(() => onSnapshot(collection(db, 'races'), snap => setRaces(snap.docs.map(d => ({ ...d.data(), id: d.id } as Race)).filter(inScope)), () => setRaces([])), [inScope, version]);
   return races;
 }
-export function AccessProvider({ profile, children }: { profile: UserProfile; children: React.ReactNode }) {
+export function AccessProvider({ profile, children, onLoadState }: { profile: UserProfile; children: React.ReactNode; onLoadState?: (state: 'loading' | 'ready' | 'error') => void }) {
   const [state, setState] = useState<AccessState>({}), [ready, setReady] = useState(false), [error, setError] = useState('');
   useEffect(() => { setReady(false); setError(''); return onSnapshot(doc(db, 'userAccess', profile.uid), snap => { setState(snap.data() || {}); setReady(snap.exists()); if (!snap.exists()) void accessCommand('session', {}).catch(e => setError(e.message)); }, e => { setError(e.message); setReady(false); }); }, [profile.uid]);
+  // Report after commit so a successful signal includes the mounted workspace.
+  useEffect(() => { onLoadState?.(error ? 'error' : ready ? 'ready' : 'loading'); }, [error, ready, onLoadState]);
   const value = useMemo<AccessContextValue>(() => {
     const active = ready && state.status !== 'suspended';
     // Super Admin is the platform owner. Legacy custom denies must not leave
