@@ -2,7 +2,7 @@ import { useAccess, useScopedRaces, authenticatedFetch } from '../lib/access';
 import React, { useEffect, useRef, useState } from 'react';
 import { collection, doc, onSnapshot, setDoc, updateDoc, deleteField, deleteDoc, getDocs, query, runTransaction, where, writeBatch } from 'firebase/firestore';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
-import { db, storage } from '../firebase';
+import { auth, db, storage } from '../firebase';
 import { resizeImageToDataUrl, resizeImageToDataUrlContain } from '../lib/image';
 import { AgeCategory, CheckpointType, Gender, Race, RaceBibCustomFont, RaceBibFont, RaceBibTemplate, RaceDistance, RaceEntryCategory, RunnerProfile, UserProfile } from '../types';
 import { entryCategoryLabels, raceEntryCategories } from '../lib/raceEntry';
@@ -112,6 +112,10 @@ interface RaceSetupPanelProps {
 // need to be able to stand up a race day-of without waiting on an Admin.
 export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: RaceSetupPanelProps) {
   const { can, authority, version } = useAccess();
+  // `profile.uid` comes from Firestore and can be stale on older accounts.
+  // Storage rules always compare against Firebase Auth's real UID, so never
+  // build an upload path from a profile field alone.
+  const actorUid = auth.currentUser?.uid || uid;
   const settingsAllowed = ['race.edit','race.categories','race.registration','race.artwork','race.bibs','race.team','payment.configure'].some(can);
   const races = useScopedRaces();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -192,11 +196,11 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     return onSnapshot(organizersQuery, (snapshot) => {
       const list = snapshot.docs
         .map((docSnap) => docSnap.data() as UserProfile)
-        .filter((organizer) => organizer.uid !== uid)
+        .filter((organizer) => organizer.uid !== actorUid)
         .sort((a, b) => a.displayName.localeCompare(b.displayName));
       setApprovedOrganizers(list);
     }, (err) => console.warn('Organizer team directory listener failed:', err.message));
-  }, [uid]);
+  }, [actorUid]);
 
   const resetForm = () => {
     setEditingId(null);
@@ -404,7 +408,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     try {
       const stamp = Date.now();
       const family = `RacePulseCustom_${stamp}`;
-      const path = `race-bib-fonts/${uid}/${stamp}.${extension}`;
+      const path = `race-bib-fonts/${actorUid}/${stamp}.${extension}`;
       const fontRef = storageRef(storage, path);
       await uploadBytes(fontRef, file, { contentType: file.type || 'font/woff2' });
       const customFont: RaceBibCustomFont = { family, url: await getDownloadURL(fontRef), name: file.name };
@@ -491,7 +495,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     if (!blob.type.startsWith('image/')) throw new Error('The selected race artwork is not a valid image.');
 
     const safeName = assetName.replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
-    const fileRef = storageRef(storage, `race-assets/${uid}/${raceId}/${safeName}-${Date.now()}.jpg`);
+    const fileRef = storageRef(storage, `race-assets/${actorUid}/${raceId}/${safeName}-${Date.now()}.jpg`);
     await uploadBytes(fileRef, blob, {
       contentType: blob.type || 'image/jpeg',
       cacheControl: 'public,max-age=31536000,immutable',
@@ -528,7 +532,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     try {
       const raceId = editingId || `race_${Date.now()}`;
       const existing = editingId ? races.find((r) => r.id === editingId) : undefined;
-      const primaryOrganizerId = existing?.createdBy || uid;
+      const primaryOrganizerId = existing?.createdBy || actorUid;
       const teamOrganizerIds = [...new Set(organizerIds)]
         .filter((organizerId) => organizerId && organizerId !== primaryOrganizerId)
         .slice(0, 20);
@@ -699,7 +703,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
   };
 
   const editingRace = editingId ? races.find((race) => race.id === editingId) : undefined;
-  const canManageOrganizerTeam = can('race.team') && (!editingRace || authority || editingRace.createdBy === uid);
+  const canManageOrganizerTeam = can('race.team') && (!editingRace || authority || editingRace.createdBy === actorUid);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

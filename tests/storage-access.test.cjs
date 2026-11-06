@@ -32,3 +32,6 @@ test('an artwork denial also blocks direct upload requests',async()=>{
 test('Super Admin can upload artwork for any race despite a legacy restricted scope',async()=>{
  await assertSucceeds(upload(env.authenticatedContext('storage_superadmin'),'unassigned_storage_race','poster-superadmin.jpg','storage_superadmin'));
 });
+test('platform owner email can recover Storage uploads without a profile or access record',async()=>{
+ await assertSucceeds(upload(env.authenticatedContext('storage_owner_email',{email:'kiahzeh@gmail.com'}),'unassigned_storage_race','poster-owner-email.jpg','storage_owner_email'));
+});

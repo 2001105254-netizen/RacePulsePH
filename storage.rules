@@ -1,22 +1,30 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    // This is the immutable Firebase Auth identity of the platform owner.
+    // It provides a recovery path when a legacy Firestore access document is
+    // missing, stale, or cannot be read by Storage rules.
+    function isPlatformOwner() {
+      return request.auth != null && request.auth.token.email == 'kiahzeh@gmail.com';
+    }
     function profile() { return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data; }
     function access() { return firestore.exists(/databases/(default)/documents/userAccess/$(request.auth.uid)) ? firestore.get(/databases/(default)/documents/userAccess/$(request.auth.uid)).data : {'status':'active','overrides':{},'scope':profile().role in ['admin','superadmin'] ? 'all' : 'owned-assigned','raceIds':[]}; }
     function can(action) {
-      return request.auth != null && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)) && access().status == 'active'
+      return request.auth != null && (isPlatformOwner() || (
+        firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)) && access().status == 'active'
         && (profile().role == 'superadmin' || (
           (profile().role != 'organizer' || profile().approved)
           && access().get('overrides', {}).get(action, profile().role in ['admin','superadmin','organizer']) == true
           && access().get('overrides', {}).get('race.view', profile().role in ['admin','superadmin','organizer']) == true
-        ));
+        ))
+      ));
     }
     function scope(raceId) {
       let race = firestore.get(/databases/(default)/documents/races/$(raceId)).data;
       // Super Admins can manage artwork for every event. This explicit branch
       // keeps legacy selected/owned access records from blocking poster/bib
       // uploads after a user has been promoted.
-      return profile().role == 'superadmin' || access().scope == 'all' || (access().scope == 'selected' && raceId in access().raceIds)
+      return isPlatformOwner() || profile().role == 'superadmin' || access().scope == 'all' || (access().scope == 'selected' && raceId in access().raceIds)
         || (access().scope == 'owned-assigned' && (race.createdBy == request.auth.uid || request.auth.uid in race.get('organizerIds', [])));
     }
     match /race-bib-fonts/{ownerUid}/{file} {
