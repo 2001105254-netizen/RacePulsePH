@@ -27,10 +27,16 @@ function raceBibQrImage(value: string, size: number): Promise<HTMLImageElement> 
     bgColor: '#FFFFFF',
     fgColor: '#000000',
   }));
-  return loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
+  // Some mobile browsers are strict with percent-encoded SVG data URLs when
+  // they are subsequently drawn to Canvas. Base64 keeps the QR image portable
+  // across Chrome, Safari, and the in-app WebView used by staff devices.
+  const bytes = new TextEncoder().encode(svg);
+  let binary = '';
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return loadImage(`data:image/svg+xml;base64,${btoa(binary)}`, 'race bib QR code');
 }
 
-async function loadImage(source: string): Promise<HTMLImageElement> {
+async function loadImage(source: string, label = 'race bib template'): Promise<HTMLImageElement> {
   // A Storage download URL is cross-origin. Fetch it first and render the
   // resulting local blob URL instead, so Canvas can safely include it in the
   // printable PDF even when a browser is strict about cross-origin images.
@@ -51,7 +57,7 @@ async function loadImage(source: string): Promise<HTMLImageElement> {
     };
     image.onerror = () => {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
-      reject(new Error('Unable to load the race bib template.'));
+      reject(new Error(`Unable to load the ${label}.`));
     };
     image.src = imageSource;
   });
