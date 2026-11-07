@@ -1251,6 +1251,7 @@ function MobileCheckInPanel({
   const [search, setSearch] = useState('');
   const [showQrScanner, setShowQrScanner] = useState(false);
   const [qrScanError, setQrScanError] = useState('');
+  const [pendingQrRunner, setPendingQrRunner] = useState<RunnerProfile | null>(null);
   const normalizedSearch = normalizeScanValue(search);
   const checkedInBibs = useMemo(() => new Set(
     checkInCheckpoint
@@ -1297,9 +1298,15 @@ function MobileCheckInPanel({
     }
     setQrScanError('');
     setSearch(runner.bibNumber);
-    await onCheckIn(runner);
     setShowQrScanner(false);
+    setPendingQrRunner(runner);
     return true;
+  };
+
+  const confirmQrCheckIn = async () => {
+    if (!pendingQrRunner) return;
+    await onCheckIn(pendingQrRunner);
+    setPendingQrRunner(null);
   };
 
   return (
@@ -1410,9 +1417,54 @@ function MobileCheckInPanel({
           errorMessage={qrScanError}
           title="Mobile Race Bib Scanner"
           subtitle="SCAN TO CHECK IN"
-          instructions="Point the phone camera at the QR code printed on the runner's race bib. The matching runner will be checked in automatically."
+          instructions="Point the phone camera at the QR code printed on the runner's race bib. Review the runner details, then confirm their check-in."
         />
       )}
+
+      {pendingQrRunner && (() => {
+        const alreadyCheckedIn = checkedInBibs.has(pendingQrRunner.bibNumber);
+        const isSaving = checkingBib === pendingQrRunner.bibNumber;
+        const entry = runnerEntryCategory(pendingQrRunner);
+        const emergencyContact = [pendingQrRunner.emergencyContactName, pendingQrRunner.emergencyContactPhone].filter(Boolean).join(' · ');
+        return (
+          <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/75 p-3 sm:p-5 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="checkin-confirm-title">
+            <div className="w-full max-w-lg overflow-hidden rounded-[26px] border border-emerald-500/30 bg-[var(--surface-card)] shadow-2xl">
+              <div className="border-b border-emerald-500/20 bg-gradient-to-br from-emerald-600 to-emerald-800 p-5 text-white">
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-100">Race bib verified</p>
+                <div className="mt-2 flex items-start justify-between gap-3">
+                  <div>
+                    <h3 id="checkin-confirm-title" className="font-display text-2xl font-black uppercase tracking-tight">Confirm Runner</h3>
+                    <p className="mt-1 text-sm text-emerald-50/90">Review the details before recording attendance.</p>
+                  </div>
+                  <span className="rounded-xl border border-white/20 bg-black/15 px-3 py-2 font-mono text-base font-black">#{pendingQrRunner.bibNumber}</span>
+                </div>
+              </div>
+
+              <div className="space-y-4 p-5">
+                <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-4">
+                  <p className="text-xl font-black leading-tight text-[var(--text-primary)]">{runnerTimingName(pendingQrRunner)}</p>
+                  <p className="mt-1 text-xs font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">{pendingQrRunner.distance} · {entryCategoryLabels[entry]}</p>
+                </div>
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                  <div><dt className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Race bib</dt><dd className="mt-0.5 font-mono font-black text-[var(--text-primary)]">#{pendingQrRunner.bibNumber}</dd></div>
+                  <div><dt className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Category</dt><dd className="mt-0.5 font-bold text-[var(--text-primary)]">{entryCategoryLabels[entry]}</dd></div>
+                  {!pendingQrRunner.isFreeSlot && <><div><dt className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Gender</dt><dd className="mt-0.5 font-bold capitalize text-[var(--text-primary)]">{pendingQrRunner.gender}</dd></div><div><dt className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Age</dt><dd className="mt-0.5 font-bold text-[var(--text-primary)]">{pendingQrRunner.ageNotProvided ? 'Not provided' : pendingQrRunner.age}</dd></div></>}
+                  {pendingQrRunner.shirtSize && <div><dt className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Shirt size</dt><dd className="mt-0.5 font-bold text-[var(--text-primary)]">{pendingQrRunner.shirtSize}</dd></div>}
+                  {pendingQrRunner.chipId && <div><dt className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">RFID chip</dt><dd className="mt-0.5 truncate font-mono text-xs font-bold text-[var(--text-primary)]">{pendingQrRunner.chipId}</dd></div>}
+                </dl>
+                {(pendingQrRunner.teamName || (pendingQrRunner.teamMembers?.length || 0) > 1) && <div className="rounded-xl border border-[var(--border-default)] px-3 py-2.5"><p className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Team / members</p><p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{pendingQrRunner.teamName || pendingQrRunner.teamMembers?.join(' · ')}</p></div>}
+                {emergencyContact && <div className="rounded-xl border border-amber-500/25 bg-amber-500/[0.05] px-3 py-2.5"><p className="text-[9px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-400">Emergency contact</p><p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{emergencyContact}</p></div>}
+                {alreadyCheckedIn && <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs font-semibold text-amber-600 dark:text-amber-400">This runner is already checked in. No new attendance record will be added.</p>}
+              </div>
+
+              <div className="flex gap-3 border-t border-[var(--border-default)] p-4">
+                <button type="button" onClick={() => setPendingQrRunner(null)} disabled={isSaving} className="min-h-12 flex-1 rounded-xl border border-[var(--border-default)] px-4 text-xs font-black uppercase tracking-widest text-[var(--text-secondary)] transition hover:text-[var(--text-primary)] disabled:opacity-55">{alreadyCheckedIn ? 'Close' : 'Cancel'}</button>
+                {!alreadyCheckedIn && <button type="button" onClick={() => { void confirmQrCheckIn(); }} disabled={raceCompleted || isSaving} className="min-h-12 flex-[1.4] rounded-xl bg-emerald-600 px-4 text-xs font-black uppercase tracking-widest text-white transition hover:bg-emerald-500 disabled:opacity-55">{isSaving ? 'Checking in…' : 'Confirm Check-In'}</button>}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
