@@ -26,6 +26,8 @@ export default function QrScannerModal({
   const scannerId = "html5-qr-scanner-element";
   const [cameraActive, setCameraActive] = useState(false);
   const [permissionError, setPermissionError] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const [scannerAttempt, setScannerAttempt] = useState(0);
   const [localFileError, setLocalFileError] = useState('');
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
 
@@ -35,13 +37,23 @@ export default function QrScannerModal({
       try {
         const html5QrCode = new Html5Qrcode(scannerId);
         html5QrCodeRef.current = html5QrCode;
-        setCameraActive(true);
+        setCameraActive(false);
         setPermissionError(false);
+        setCameraError('');
+
+        // iOS Safari can expose the front camera first. Asking the browser
+        // for the physical camera list after permission lets us select the
+        // rear/back camera explicitly, which prevents the blank-white feed
+        // seen on older iPhones with an `environment` hint alone.
+        const cameras = await Html5Qrcode.getCameras();
+        const rearCamera = cameras.find((camera) => /back|rear|environment/i.test(camera.label));
 
         await html5QrCode.start(
-          { facingMode: "environment" },
+          rearCamera?.id || { facingMode: { ideal: "environment" } },
           {
-            fps: 10,
+            fps: 8,
+            aspectRatio: 1,
+            disableFlip: true,
             qrbox: (width, height) => {
               const min = Math.min(width, height);
               return { width: Math.floor(min * 0.75), height: Math.floor(min * 0.75) };
@@ -55,6 +67,14 @@ export default function QrScannerModal({
             // Silence verbose camera tracking errors in log console
           }
         );
+        if (stopped) {
+          if (html5QrCode.isScanning) await html5QrCode.stop();
+          return;
+        }
+        // Only mark the scanner active once a real video stream is rendered.
+        // Previously this was set before start() completed, which could leave
+        // iPhone Safari showing a blank camera box after a failed startup.
+        setCameraActive(true);
       } catch (err: any) {
         console.error("Failed to start QR camera:", err);
         setCameraActive(false);
@@ -66,6 +86,8 @@ export default function QrScannerModal({
           errMsg.includes("permission denied")
         ) {
           setPermissionError(true);
+        } else {
+          setCameraError('The rear camera could not start. Tap Try camera again, or upload a photo of the QR code.');
         }
       }
     };
@@ -86,7 +108,7 @@ export default function QrScannerModal({
         }
       }
     };
-  }, []);
+  }, [scannerAttempt]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -136,7 +158,7 @@ export default function QrScannerModal({
           </div>
 
           {/* Active Scanning Frame */}
-          <div className="relative w-full aspect-square max-w-[280px] rounded-[26px] overflow-hidden border-2 border-dashed border-[var(--border-default)] bg-[var(--surface-inset)]/75 backdrop-blur-md flex items-center justify-center shadow-inner">
+          <div className="relative w-full aspect-square max-w-[280px] rounded-[26px] overflow-hidden border-2 border-dashed border-[var(--border-default)] bg-black flex items-center justify-center shadow-inner">
             <div id={scannerId} className="w-full h-full" />
             {!cameraActive && (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-[var(--text-muted)] p-5 text-center bg-black/50 backdrop-blur-sm">
@@ -156,8 +178,9 @@ export default function QrScannerModal({
                   </div>
                 ) : (
                   <div className="space-y-1">
-                    <p className="text-xs font-mono select-none">Awaiting Camera Feed...</p>
-                    <p className="text-[10px] text-[var(--text-secondary)] mt-1 max-w-xs leading-normal">Please allow webcam access inside your browser when prompted.</p>
+                    <p className="text-xs font-mono select-none">{cameraError ? 'CAMERA UNAVAILABLE' : 'Awaiting Camera Feed...'}</p>
+                    <p className="text-[10px] text-[var(--text-secondary)] mt-1 max-w-xs leading-normal">{cameraError || 'Please allow camera access inside your browser when prompted.'}</p>
+                    {cameraError && <button type="button" onClick={() => setScannerAttempt((attempt) => attempt + 1)} className="mt-3 rounded-lg border border-violet-500/40 bg-violet-500/15 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-violet-300 hover:bg-violet-500 hover:text-white">Try camera again</button>}
                   </div>
                 )}
               </div>
@@ -213,6 +236,8 @@ export default function QrScannerModal({
           </span>
         </div>
       </div>
+
+      <style>{`#${scannerId} video { width: 100% !important; height: 100% !important; object-fit: cover !important; background: #000 !important; } #${scannerId} img, #${scannerId} canvas { max-width: 100% !important; }`}</style>
     </div>
   );
 }
