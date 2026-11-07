@@ -177,7 +177,7 @@ export default function App() {
 
       {/* Global Navigation - persistent frosted glass bar on every page */}
       <nav className="sticky top-0 z-40 glass-nav">
-        <div className="max-w-7xl mx-auto min-w-0 px-3 sm:px-6 h-16 flex items-center justify-between gap-2">
+        <div className="max-w-7xl mx-auto min-w-0 px-3 sm:px-6 h-[4.5rem] sm:h-16 flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
             <button
               type="button"
@@ -195,25 +195,27 @@ export default function App() {
                 className="w-full h-full object-contain"
               />
             </div>
-            <span className="hidden min-w-0 truncate font-display font-black text-sm tracking-tight uppercase min-[390px]:inline">
+            <span className="hidden min-w-0 truncate font-display font-black text-sm tracking-tight uppercase min-[560px]:inline">
               RacePulse<span className="text-red-500">PH</span>
             </span>
           </div>
 
-          <div className="flex shrink-0 items-center gap-0.5 sm:gap-2">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             {!authUser && guestScreen === 'landing' && (
               <>
                 <button
                   onClick={() => { setPendingRaceId(null); setRunnerSignupIntent(false); setGuestScreen('login'); }}
-                  className="h-9 px-2 sm:px-3 rounded-[18px] text-[10px] sm:text-xs font-black uppercase tracking-wide text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)] transition flex items-center gap-1.5"
+                  aria-label="Log in to your account"
+                  className="h-10 px-2.5 sm:px-3.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)]/70 text-[10px] sm:text-xs font-black uppercase tracking-wide text-[var(--text-primary)] hover:text-red-500 hover:border-red-500/45 hover:bg-red-500/10 transition flex items-center justify-center gap-1.5 active:scale-95"
                 >
-                  <LogIn className="w-3.5 h-3.5" /> <span className="hidden min-[430px]:inline">Log in</span>
+                  <LogIn className="w-3.5 h-3.5" /> <span>Log in</span>
                 </button>
                 <button
                   onClick={() => { setPendingRaceId(null); setRunnerSignupIntent(false); setGuestScreen('signup'); }}
-                  className="h-9 px-2 sm:px-4 rounded-[18px] bg-red-600 hover:bg-red-500 text-white text-[10px] sm:text-xs font-black uppercase tracking-wide shadow-lg shadow-red-900/30 transition flex items-center gap-1.5"
+                  aria-label="Create a RacePulsePH account"
+                  className="h-10 px-2.5 sm:px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white text-[10px] sm:text-xs font-black uppercase tracking-wide shadow-lg shadow-red-900/30 transition flex items-center justify-center gap-1.5 active:scale-95"
                 >
-                  <UserPlus className="w-3.5 h-3.5" /> <span className="hidden min-[430px]:inline">Sign up</span>
+                  <UserPlus className="w-3.5 h-3.5" /> <span>Register</span>
                 </button>
               </>
             )}
@@ -221,7 +223,7 @@ export default function App() {
               onClick={toggleTheme}
               title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               aria-label="Toggle color theme"
-              className="w-10 h-10 rounded-full glass-inset flex items-center justify-center text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 transition duration-200 active:scale-90"
+              className="w-10 h-10 rounded-xl glass-inset flex items-center justify-center text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 transition duration-200 active:scale-90"
             >
               {theme === 'dark' ? <Sun className="w-4.5 h-4.5" /> : <Moon className="w-4.5 h-4.5" />}
             </button>
