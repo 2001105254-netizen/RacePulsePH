@@ -30,7 +30,11 @@ function raceBibQrImage(value: string, size: number): Promise<HTMLImageElement> 
   // Some mobile browsers are strict with percent-encoded SVG data URLs when
   // they are subsequently drawn to Canvas. Base64 keeps the QR image portable
   // across Chrome, Safari, and the in-app WebView used by staff devices.
-  const bytes = new TextEncoder().encode(svg);
+  // renderToStaticMarkup omits the XML namespace because React normally
+  // inserts the SVG straight into the DOM. A standalone SVG image needs it,
+  // otherwise Safari/Chrome may reject it when Canvas tries to decode it.
+  const standaloneSvg = svg.replace(/^<svg\b/, '<svg xmlns="http://www.w3.org/2000/svg"');
+  const bytes = new TextEncoder().encode(standaloneSvg);
   let binary = '';
   bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
   return loadImage(`data:image/svg+xml;base64,${btoa(binary)}`, 'race bib QR code');
