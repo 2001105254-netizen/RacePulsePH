@@ -1,4 +1,7 @@
 import { jsPDF } from 'jspdf';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server.browser';
+import { QRCodeSVG } from 'qrcode.react';
 import { Race, RunnerProfile } from '../types';
 import { raceBibNameLines, resolveRaceBibTemplate } from './raceBib';
 import { ensureRaceBibCustomFont, raceBibFontFamily } from './raceBibFont';
@@ -10,6 +13,21 @@ interface PrintableRaceBib {
 
 function safeFilename(value: string): string {
   return value.trim().replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_') || 'RacePulsePH';
+}
+
+function raceBibQrImage(value: string, size: number): Promise<HTMLImageElement> {
+  // Reuse the same QR implementation used throughout the runner and staff
+  // dashboards. Rendering it to SVG first keeps the printed code sharp even
+  // when a bib is generated at high resolution for borderless A4 printing.
+  const svg = renderToStaticMarkup(React.createElement(QRCodeSVG, {
+    value,
+    size,
+    level: 'M',
+    includeMargin: true,
+    bgColor: '#FFFFFF',
+    fgColor: '#000000',
+  }));
+  return loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
 }
 
 async function loadImage(source: string): Promise<HTMLImageElement> {
@@ -189,6 +207,7 @@ export async function generateRaceBibsPdf(race: Race, runners: RunnerProfile[], 
   const yPositions = [0, 148.5];
   const printableBibs = printableRaceBibs(runners);
   const loadedTemplates = new Map<string, HTMLImageElement>();
+  const loadedQrCodes = new Map<string, HTMLImageElement>();
 
   for (let index = 0; index < printableBibs.length; index += 1) {
     const { runner, runnerName } = printableBibs[index];
@@ -213,6 +232,22 @@ export async function generateRaceBibsPdf(race: Race, runners: RunnerProfile[], 
     const nameLines = runner.isFreeSlot ? [] : runner.entryCategory === 'group' ? [runnerName] : raceBibNameLines(runner);
     if (nameLines.length > 0) {
       drawFittedTextLines(ctx, nameLines, canvas.width, canvas.height, layout.runnerNameX, layout.runnerNameY, layout.runnerNameSize ?? 5, layout.runnerNameColor ?? '#FFFFFF', layout.runnerNameStrokeColor ?? '#000000', layout.runnerNameStrokeWidth ?? 0, raceBibFontFamily(layout.runnerNameFont, race.raceBibCustomFont, true));
+    }
+    if (race.raceBibShowQrCode === true) {
+      const qrPayload = `RPCHIPv1|${race.id}|${runner.bibNumber}`;
+      let qr = loadedQrCodes.get(qrPayload);
+      if (!qr) {
+        qr = await raceBibQrImage(qrPayload, 240);
+        loadedQrCodes.set(qrPayload, qr);
+      }
+      const qrSize = Math.min(canvas.width * 0.3, Math.max(canvas.width * 0.06, canvas.width * ((layout.qrCodeSize ?? 14) / 100)));
+      const qrX = Math.min(canvas.width - qrSize / 2 - 6, Math.max(qrSize / 2 + 6, canvas.width * ((layout.qrCodeX ?? 90) / 100)));
+      const qrY = Math.min(canvas.height - qrSize / 2 - 6, Math.max(qrSize / 2 + 6, canvas.height * ((layout.qrCodeY ?? 84) / 100)));
+      // Use a white backing even when the source design is dark or busy;
+      // camera scanners need a quiet zone around every QR module.
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(qrX - qrSize / 2, qrY - qrSize / 2, qrSize, qrSize);
+      ctx.drawImage(qr, qrX - qrSize / 2, qrY - qrSize / 2, qrSize, qrSize);
     }
 
     const pageSlot = index % 2;

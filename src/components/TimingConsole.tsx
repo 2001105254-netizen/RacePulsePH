@@ -651,7 +651,12 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   const handleQrScan = async (text: string): Promise<boolean> => {
     let bib = text.trim();
     if (bib.startsWith('RPCHIPv1|')) {
-      bib = bib.split('|')[2] || bib.split('|')[1] || '';
+      const parts = bib.split('|');
+      if (parts[1] !== race.id) {
+        setFeedback({ type: 'error', text: 'This bib QR belongs to a different race.' });
+        return false;
+      }
+      bib = parts[2] || '';
     } else if (bib.startsWith('RXPv2|')) {
       bib = bib.split('|')[3] || ''; // fall back to the engraving ticket's bib field
     }
@@ -905,6 +910,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
       {mode === 'assign' && <ChipAssignmentPanel race={race} runnerProfiles={runnerProfiles} chipReads={chipReads} />}
       {mode === 'mobile-checkin' && (
         <MobileCheckInPanel
+          raceId={race.id}
           raceName={race.name}
           runners={runnerProfiles}
           chipReads={chipReads}
@@ -1217,6 +1223,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
 // ========== MOBILE CHECK-IN ==========
 
 interface MobileCheckInPanelProps {
+  raceId: string;
   raceName: string;
   runners: RunnerProfile[];
   chipReads: ChipRead[];
@@ -1229,6 +1236,7 @@ interface MobileCheckInPanelProps {
 }
 
 function MobileCheckInPanel({
+  raceId,
   raceName,
   runners,
   chipReads,
@@ -1241,13 +1249,15 @@ function MobileCheckInPanel({
 }: MobileCheckInPanelProps) {
   const { can, authority } = useAccess();
   const [search, setSearch] = useState('');
+  const [showQrScanner, setShowQrScanner] = useState(false);
+  const [qrScanError, setQrScanError] = useState('');
   const normalizedSearch = normalizeScanValue(search);
   const checkedInBibs = useMemo(() => new Set(
     checkInCheckpoint
       ? chipReads.filter((read) => read.checkpointId === checkInCheckpoint.id).map((read) => read.bibNumber)
       : []
   ), [checkInCheckpoint, chipReads]);
-  const runnerByBib = useMemo(() => new Map(runners.map((runner) => [runner.bibNumber, runner])), [runners]);
+  const runnerByBib = useMemo(() => new Map(runners.map((runner) => [normalizeScanValue(runner.bibNumber), runner])), [runners]);
   const results = useMemo(() => {
     if (!normalizedSearch) return [];
     return runners
@@ -1269,6 +1279,29 @@ function MobileCheckInPanel({
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     .slice(0, 6), [checkInCheckpoint?.id, chipReads]);
 
+  const handleCheckInQr = async (text: string): Promise<boolean> => {
+    const parts = text.trim().split('|');
+    if (parts[0] !== 'RPCHIPv1') {
+      setQrScanError('This is not a RacePulsePH race bib QR code.');
+      return false;
+    }
+    if (parts[1] !== raceId) {
+      setQrScanError('This race bib belongs to a different event.');
+      return false;
+    }
+    const bibNumber = normalizeScanValue(parts[2] || '');
+    const runner = runnerByBib.get(bibNumber);
+    if (!runner) {
+      setQrScanError(`Bib ${bibNumber || 'unknown'} is not in this race roster.`);
+      return false;
+    }
+    setQrScanError('');
+    setSearch(runner.bibNumber);
+    await onCheckIn(runner);
+    setShowQrScanner(false);
+    return true;
+  };
+
   return (
     <div className="max-w-3xl mx-auto space-y-4">
       <section className="glass-panel overflow-hidden">
@@ -1277,7 +1310,7 @@ function MobileCheckInPanel({
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-100 flex items-center gap-2"><Smartphone className="w-4 h-4" /> Staff mobile mode</p>
               <h2 className="font-display font-black text-2xl sm:text-3xl uppercase tracking-tight mt-2">Mobile Check-In</h2>
-              <p className="text-sm text-emerald-50/90 mt-2">Ask for a bib number or name, then tap once to mark the runner present. Free Slots are searched by bib only.</p>
+              <p className="text-sm text-emerald-50/90 mt-2">Scan the QR on the race bib, or search by bib number or name. Free Slots are searched by bib only.</p>
             </div>
             <div className="shrink-0 text-right rounded-2xl bg-black/15 px-4 py-3 border border-white/15">
               <p className="font-mono font-black text-2xl leading-none">{checkedInCount}</p>
@@ -1293,6 +1326,7 @@ function MobileCheckInPanel({
           </div>
         ) : (
           <div className="p-4 sm:p-5 space-y-3">
+            <button hidden={!can('timing.scan')} type="button" onClick={() => { setQrScanError(''); setShowQrScanner(true); }} disabled={raceCompleted} className="w-full min-h-14 rounded-[18px] bg-violet-600 hover:bg-violet-500 disabled:opacity-55 px-4 py-3 text-xs font-black uppercase tracking-widest text-white transition active:scale-[0.98] flex items-center justify-center gap-2"><QrCode className="w-5 h-5" /> Scan race bib QR</button>
             <label className="sr-only" htmlFor="mobile-checkin-search">Search runner</label>
             <div className="relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
@@ -1360,13 +1394,25 @@ function MobileCheckInPanel({
           ) : recentCheckIns.map((read) => (
             <div key={read.id} className="flex items-center gap-3 glass-inset px-3 py-2.5 rounded-xl">
               <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-500" />
-              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--text-primary)]">{runnerTimingName(runnerByBib.get(read.bibNumber), read.bibNumber)}</span>
+              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--text-primary)]">{runnerTimingName(runnerByBib.get(normalizeScanValue(read.bibNumber)), read.bibNumber)}</span>
               <span className="font-mono text-xs font-bold text-[var(--text-secondary)]">#{read.bibNumber}</span>
               <span className="text-[10px] text-[var(--text-muted)] shrink-0">{new Date(read.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
             </div>
           ))}
         </div>
       </section>
+
+      {showQrScanner && (
+        <QrScannerModal
+          onClose={() => setShowQrScanner(false)}
+          onScanSuccess={handleCheckInQr}
+          successMessage=""
+          errorMessage={qrScanError}
+          title="Mobile Race Bib Scanner"
+          subtitle="SCAN TO CHECK IN"
+          instructions="Point the phone camera at the QR code printed on the runner's race bib. The matching runner will be checked in automatically."
+        />
+      )}
     </div>
   );
 }

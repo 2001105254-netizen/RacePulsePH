@@ -316,7 +316,7 @@ service cloud.firestore {
       let fields = request.resource.data.diff(resource.data).affectedKeys();
       let scoped = true;
       return request.auth != null && access().status == 'active' && raceScope(raceId) && request.resource.data.createdBy == resource.data.createdBy && request.resource.data.createdAt == resource.data.createdAt
-        && fields.hasOnly(['name','date','inclusions','checkpoints','ageCategories','youngestRunnerAwardEnabled','oldestRunnerAwardEnabled','distances','entryCategories','registrationOpen','registrationCloseDate','onlinePaymentEnabled','paymentFeeMode','manualPaymentEnabled','manualPaymentInstructions','manualPaymentQrImage','posterImage','inclusionImage','raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','raceBibTemplatesByEntryCategory','raceBibShowRaffleNumber','organizerIds','gunStartTime','waveStartTimes','completedAt','liveBroadcastEnabled','livestreamUrl','routeMapUrl','finishReviewWindowMs'])
+        && fields.hasOnly(['name','date','inclusions','checkpoints','ageCategories','youngestRunnerAwardEnabled','oldestRunnerAwardEnabled','distances','entryCategories','registrationOpen','registrationCloseDate','onlinePaymentEnabled','paymentFeeMode','manualPaymentEnabled','manualPaymentInstructions','manualPaymentQrImage','posterImage','inclusionImage','raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','raceBibTemplatesByEntryCategory','raceBibShowRaffleNumber','raceBibShowQrCode','organizerIds','gunStartTime','waveStartTimes','completedAt','liveBroadcastEnabled','livestreamUrl','routeMapUrl','finishReviewWindowMs'])
         && (!fields.hasAny(['finishReviewWindowMs']) || (p.get('timing.correct', false) && request.resource.data.finishReviewWindowMs is number && request.resource.data.finishReviewWindowMs >= 0 && request.resource.data.finishReviewWindowMs <= 60000))
         && (!fields.hasAny(['name','date','inclusions']) || p.get('race.edit', false))
         && (!fields.hasAny(['checkpoints','ageCategories','youngestRunnerAwardEnabled','oldestRunnerAwardEnabled','entryCategories']) || p.get('race.categories', false))
@@ -324,7 +324,7 @@ service cloud.firestore {
         && (!fields.hasAny(['registrationOpen','registrationCloseDate']) || p.get('race.registration', false) || (p.get('timing.finish', false) && fields.hasAny(['completedAt']) && request.resource.data.registrationOpen == false))
         && (!fields.hasAny(['onlinePaymentEnabled','paymentFeeMode','manualPaymentEnabled','manualPaymentInstructions','manualPaymentQrImage']) || p.get('payment.configure', false))
         && (!fields.hasAny(['posterImage','inclusionImage']) || p.get('race.artwork', false))
-        && (!fields.hasAny(['raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','raceBibTemplatesByEntryCategory','raceBibShowRaffleNumber']) || p.get('race.bibs', false))
+        && (!fields.hasAny(['raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','raceBibTemplatesByEntryCategory','raceBibShowRaffleNumber','raceBibShowQrCode']) || p.get('race.bibs', false))
         && (!fields.hasAny(['organizerIds']) || (p.get('race.team', false) && (resource.data.createdBy == request.auth.uid || isSuperAdmin())))
         && (!fields.hasAny(['liveBroadcastEnabled']) || p.get('hub.publish', false))
         && (!fields.hasAny(['livestreamUrl','routeMapUrl']) || p.get('hub.manage', false))
@@ -336,7 +336,7 @@ service cloud.firestore {
       allow create: if permission('race.create') && request.resource.data.createdBy == request.auth.uid && request.resource.data.id == raceId
         && !request.resource.data.keys().hasAny(['gunStartTime','waveStartTimes','completedAt'])
         && (!request.resource.data.keys().hasAny(['posterImage','inclusionImage']) || permission('race.artwork'))
-        && (!request.resource.data.keys().hasAny(['raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','raceBibTemplatesByEntryCategory','raceBibShowRaffleNumber']) || permission('race.bibs'))
+        && (!request.resource.data.keys().hasAny(['raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','raceBibTemplatesByEntryCategory','raceBibShowRaffleNumber','raceBibShowQrCode']) || permission('race.bibs'))
         && (request.resource.data.get('organizerIds', []).size() == 0 || permission('race.team'))
         && (!(request.resource.data.get('onlinePaymentEnabled', false) || request.resource.data.get('manualPaymentEnabled', false)) || permission('payment.configure'));
       allow update: if raceUpdateAllowed(raceId);

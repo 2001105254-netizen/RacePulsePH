@@ -120,6 +120,11 @@ export interface RaceBibLayout {
   // section so the detached raffle stub keeps a matching ticket number.
   raffleNumberX?: number;
   raffleNumberY?: number;
+  // The bib QR carries the race ID and bib number for camera-based staff
+  // check-in. Its white backing keeps it readable over colourful artwork.
+  qrCodeX?: number;
+  qrCodeY?: number;
+  qrCodeSize?: number;
   runnerNameX: number;
   runnerNameY: number;
   // Sizes use container-width units (cqw), so the same layout scales neatly
@@ -205,6 +210,7 @@ export interface Race {
   raceBibTemplateImage?: string;
   raceBibLayout?: RaceBibLayout;
   raceBibShowRaffleNumber?: boolean;
+  raceBibShowQrCode?: boolean;
   raceBibCustomFont?: RaceBibCustomFont;
   // Keyed by the distance label stored on registrations (for example, "5K").
   // Falls back to the original single raceBibTemplateImage for old races.
