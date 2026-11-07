@@ -50,6 +50,16 @@ ${markerEnd}`;
 source=source.replace('    function isValidId(id)',helpers+'\n\n    function isValidId(id)');
 block('function isSuperAdmin()',`function isSuperAdmin() { return request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && callerDoc().data.role == 'superadmin' && access().status == 'active'; }`);
 block('function managesRace(raceId)',`function managesRace(raceId) { return racePermission('race.view', raceId); }`);
+block('function ownsRecordedSplit(raceId, bibNumber)',`function ownsRecordedSplit(raceId, bibNumber) {
+      let directRegistration = exists(/databases/$(database)/documents/runners/$(request.auth.uid + '_' + raceId))
+        && get(/databases/$(database)/documents/runners/$(request.auth.uid + '_' + raceId)).data.bibNumber == bibNumber;
+      // Imported/Google Form runners can securely link their physical bib to
+      // their account through the server-side QR claim flow. The claim stores
+      // only the profile needed for their own race screen.
+      let bibClaim = exists(/databases/$(database)/documents/runnerClaims/$(request.auth.uid + '_' + raceId))
+        && get(/databases/$(database)/documents/runnerClaims/$(request.auth.uid + '_' + raceId)).data.bibNumber == bibNumber;
+      return isSignedIn() && (directRegistration || bibClaim);
+    }`);
 block('match /users/{uid}',`match /users/{uid} {
       allow read: if (request.auth != null && request.auth.uid == uid) || isSuperAdmin() || permission('users.view') || (permission('race.team') && resource.data.role == 'organizer' && resource.data.approved == true);
       allow create: if request.auth != null && request.auth.token.email_verified == true && request.auth.uid == uid
@@ -106,6 +116,16 @@ block('match /runners/{regId}',`match /runners/{regId} {
           && (!changed(['fullName','gender','age','ageNotProvided','shirtSize','emergencyContactName','emergencyContactPhone','entryCategory','teamName','teamMembers','distance']) || racePermission('roster.edit', resource.data.raceId) || (permission('personal.register') && resource.data.uid == request.auth.uid))));
       allow delete: if (isSuperAdmin() && raceScope(resource.data.raceId)) || racePermission('roster.remove', resource.data.raceId) || (permission('personal.register') && resource.data.uid == request.auth.uid);
     }`);
+source=source.replace('    match /bibCounters/{counterId} {',`    // A server-side QR claim lets a Google Form/imported runner attach their
+    // own physical bib to their personal account without exposing the roster.
+    // Browser clients can read only their own claim and can never forge one.
+    match /runnerClaims/{claimId} {
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid
+        && (permission('personal.register') || permission('personal.results') || permission('personal.bibs') || permission('personal.certificates'));
+      allow write: if false;
+    }
+
+    match /bibCounters/{counterId} {`);
 block('match /bibCounters/{counterId}',`match /bibCounters/{counterId} {
       allow read: if permission('personal.register') || permission('roster.add') || permission('roster.slots');
       // Counters contain no private data. Only monotonic increments are permitted.

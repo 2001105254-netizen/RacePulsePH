@@ -22,6 +22,7 @@ import { createPayMongoCheckout, getPaymentStatus, PaymentStatusResponse } from 
 import DeleteAccountModal from './DeleteAccountModal';
 import QrScannerModal from './QrScannerModal';
 import PublicRaceResults from './PublicRaceResults';
+import { claimRaceBib, claimableEntryLabel, parseRaceBibQr, previewRaceBibClaim, RaceBibClaimPreview } from '../lib/raceBibClaim';
 
 interface RunnerDashboardProps {
   profile: UserProfile;
@@ -202,6 +203,9 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
   const [scannedRaceId, setScannedRaceId] = useState<string | null>(null);
   const [eventQrMessage, setEventQrMessage] = useState('');
   const [eventQrError, setEventQrError] = useState('');
+  const [pendingBibClaim, setPendingBibClaim] = useState<(RaceBibClaimPreview & { payload: { raceId: string; bibNumber: string } }) | null>(null);
+  const [claimingBib, setClaimingBib] = useState(false);
+  const [bibClaimError, setBibClaimError] = useState('');
 
   useEffect(() => {
     const goHome = () => {
@@ -218,15 +222,36 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
 
   useEffect(() => {
     if (!['personal.register','personal.results','personal.bibs','personal.certificates'].some(can)) { setRunnerProfiles([]); return; }
-    const unsubscribe = onSnapshot(query(collection(db, 'runners'), where('uid', '==', profile.uid)), (snapshot) => {
-      const list: RunnerProfile[] = [];
-      snapshot.forEach((docSnap) => list.push(docSnap.data() as RunnerProfile));
-      setRunnerProfiles(list);
+    let directProfiles: RunnerProfile[] = [];
+    let claimedProfiles: RunnerProfile[] = [];
+    const publish = () => {
+      // A normal in-app registration always wins over a QR claim for the
+      // same event. QR claims are for Google Form/imported rosters, where the
+      // registration was made before the runner had a RacePulse account.
+      const directRaceIds = new Set(directProfiles.map((item) => item.raceId));
+      setRunnerProfiles([...directProfiles, ...claimedProfiles.filter((item) => !directRaceIds.has(item.raceId))]);
+    };
+    const unsubscribeProfiles = onSnapshot(query(collection(db, 'runners'), where('uid', '==', profile.uid)), (snapshot) => {
+      directProfiles = snapshot.docs.map((docSnap) => docSnap.data() as RunnerProfile);
+      publish();
     }, (err) => {
       console.warn('Runner profiles listener failed:', err.message);
-      setRunnerProfiles([]);
+      directProfiles = [];
+      publish();
     });
-    return () => unsubscribe();
+    const unsubscribeClaims = onSnapshot(query(collection(db, 'runnerClaims'), where('uid', '==', profile.uid)), (snapshot) => {
+      claimedProfiles = snapshot.docs
+        .map((docSnap) => docSnap.data()?.runner as RunnerProfile | undefined)
+        .filter((runner): runner is RunnerProfile => Boolean(runner));
+      publish();
+    }, (err) => {
+      // Older deployments have no runnerClaims rule yet. The normal runner
+      // list still works while the rules/function deployment is completed.
+      console.warn('Runner bib claims listener failed:', err.message);
+      claimedProfiles = [];
+      publish();
+    });
+    return () => { unsubscribeProfiles(); unsubscribeClaims(); };
   }, [profile.uid]);
 
   // Legacy accounts get their safe friend card automatically once they open
@@ -282,6 +307,21 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
   const latestProfile = runnerProfiles ? mostRecent(runnerProfiles) : undefined;
 
   const scanEventQr = async (text: string): Promise<boolean> => {
+    const bibPayload = parseRaceBibQr(text);
+    if (bibPayload) {
+      try {
+        setEventQrError('');
+        setEventQrMessage('Checking your race bib…');
+        const preview = await previewRaceBibClaim(bibPayload);
+        setPendingBibClaim({ ...preview, payload: bibPayload });
+        setEventQrMessage(preview.alreadyLinked ? 'This race is already in My Races.' : 'Race bib found — review the details to add it.');
+        window.setTimeout(() => setShowEventQrScanner(false), 300);
+        return true;
+      } catch (error: any) {
+        setEventQrError(error.message || 'We could not find a runner for this race bib QR code.');
+        return false;
+      }
+    }
     try {
       const url = new URL(text.trim());
       const allowedHosts = new Set(['racepulseph.com', 'www.racepulseph.com', 'racepulseph.web.app', 'racepulseph.firebaseapp.com', 'localhost']);
@@ -302,6 +342,25 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
     }
   };
 
+  const confirmBibClaim = async () => {
+    if (!pendingBibClaim || pendingBibClaim.alreadyLinked) {
+      setPendingBibClaim(null);
+      setTab('myraces');
+      return;
+    }
+    setClaimingBib(true);
+    setBibClaimError('');
+    try {
+      await claimRaceBib(pendingBibClaim.payload);
+      setPendingBibClaim(null);
+      setTab('myraces');
+    } catch (error: any) {
+      setBibClaimError(error.message || 'Unable to add this race to your account.');
+    } finally {
+      setClaimingBib(false);
+    }
+  };
+
   return (
     <div className="w-full max-w-7xl mx-auto px-4 py-4 pb-28 space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between glass-panel hero-glow px-4 sm:px-6 py-5 gap-4 animate-fadeIn">
@@ -312,10 +371,10 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
         </div>
         <div className="flex items-center gap-2 self-start">
           <button
-            onClick={() => { setEventQrError(''); setEventQrMessage(''); setShowEventQrScanner(true); }}
+            onClick={() => { setEventQrError(''); setEventQrMessage(''); setBibClaimError(''); setShowEventQrScanner(true); }}
             className="text-xs text-violet-500 border border-violet-500/30 hover:bg-violet-500/10 font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
           >
-            <Camera className="w-3.5 h-3.5" /> Scan event QR
+            <Camera className="w-3.5 h-3.5" /> Scan Race / Bib QR
           </button>
           <button
             onClick={() => setShowProfile(true)}
@@ -339,6 +398,36 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
 
       {showProfile && (
         <ProfileModal profile={profile} runnerProfiles={runnerProfiles || []} onClose={() => setShowProfile(false)} />
+      )}
+
+      {pendingBibClaim && createPortal(
+        <div className="fixed inset-0 z-[70] bg-black/70 backdrop-blur-sm p-4 flex items-center justify-center animate-fadeIn">
+          <div className="w-full max-w-md glass-panel p-6 space-y-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-violet-500">Race bib QR found</p>
+                <h2 className="heading-float text-xl font-black font-display uppercase text-[var(--text-primary)] mt-1">{pendingBibClaim.alreadyLinked ? 'Already in My Races' : 'Add this race?'}</h2>
+                <p className="text-xs text-[var(--text-secondary)] mt-1.5">{pendingBibClaim.race.name} • {pendingBibClaim.race.date}</p>
+              </div>
+              <button type="button" onClick={() => setPendingBibClaim(null)} disabled={claimingBib} className="p-2 rounded-full glass-inset text-[var(--text-secondary)] hover:text-red-500"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="glass-inset p-4 grid grid-cols-2 gap-x-4 gap-y-3 text-left">
+              <span className="col-span-2"><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Runner / team</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5">{pendingBibClaim.runner.fullName}</span></span>
+              <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Bib number</span><span className="block text-lg font-mono font-black text-red-500 mt-0.5">#{pendingBibClaim.runner.bibNumber}</span></span>
+              <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Distance</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5">{pendingBibClaim.runner.distance}</span></span>
+              <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Category</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5">{claimableEntryLabel(pendingBibClaim.runner.entryCategory)}</span></span>
+              <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Gender</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5 capitalize">{pendingBibClaim.runner.gender}</span></span>
+            </div>
+            {pendingBibClaim.runner.teamMembers && pendingBibClaim.runner.teamMembers.length > 1 && <p className="text-[11px] text-[var(--text-secondary)]"><span className="font-black uppercase tracking-wide text-[var(--text-muted)]">Members: </span>{pendingBibClaim.runner.teamMembers.join(' • ')}</p>}
+            {bibClaimError && <p className="text-xs font-bold text-red-500">{bibClaimError}</p>}
+            <p className="text-[10.5px] text-[var(--text-secondary)]">Only confirm if this is your official race bib. Your event, live splits, and published result will appear under My Races.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <button type="button" onClick={() => setPendingBibClaim(null)} disabled={claimingBib} className="py-3 rounded-[var(--radius-control)] glass-inset text-xs font-black uppercase tracking-widest text-[var(--text-secondary)]">Cancel</button>
+              <button type="button" onClick={confirmBibClaim} disabled={claimingBib} className="py-3 rounded-[var(--radius-control)] bg-gradient-to-r from-red-600 to-red-700 text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-red-900/30 disabled:opacity-60">{claimingBib ? 'Adding…' : pendingBibClaim.alreadyLinked ? 'Open My Races' : 'Confirm & Add Race'}</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
 
       {runnerProfiles === undefined && (
@@ -408,9 +497,9 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
           onScanSuccess={scanEventQr}
           successMessage={eventQrMessage}
           errorMessage={eventQrError}
-          title="Scan Event QR"
-          subtitle="OPEN A RACE REGISTRATION"
-          instructions="Scan the RacePulse event QR from the organizer. We will open that specific race registration form for you."
+          title="Scan Race or Bib QR"
+          subtitle="OPEN EVENT OR ADD MY RACE"
+          instructions="Scan an organizer event QR to open registration, or scan the QR printed on your race bib to add that event and its result to My Races."
         />
       )}
     </div>
