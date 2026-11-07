@@ -45,11 +45,19 @@ export default function QrScannerModal({
         // for the physical camera list after permission lets us select the
         // rear/back camera explicitly, which prevents the blank-white feed
         // seen on older iPhones with an `environment` hint alone.
-        const cameras = await Html5Qrcode.getCameras();
-        const rearCamera = cameras.find((camera) => /back|rear|environment/i.test(camera.label));
+        let rearCameraId: string | undefined;
+        try {
+          const cameras = await Html5Qrcode.getCameras();
+          rearCameraId = cameras.find((camera) => /back|rear|environment/i.test(camera.label))?.id;
+        } catch (cameraListError) {
+          // iPhone Safari occasionally declines device enumeration even after
+          // permission is granted. Starting directly with the environment
+          // preference still works, so never block the scanner on this step.
+          console.warn('Could not enumerate cameras; using the rear-camera preference instead.', cameraListError);
+        }
 
         await html5QrCode.start(
-          rearCamera?.id || { facingMode: { ideal: "environment" } },
+          rearCameraId || { facingMode: { ideal: "environment" } },
           {
             fps: 8,
             aspectRatio: 1,
@@ -193,11 +201,24 @@ export default function QrScannerModal({
           </div>
 
           {/* Fallback Image Import Trigger */}
-          <div className="w-full max-w-[280px]">
+          <div className="w-full max-w-[280px] space-y-2">
+            <label className="flex flex-col items-center justify-center border border-violet-500/45 hover:border-violet-400 bg-violet-500/10 p-3 rounded-[20px] cursor-pointer transition select-none active:scale-95 duration-150">
+              <span className="text-[10px] uppercase font-black text-violet-500 flex items-center gap-1.5 font-mono">
+                <Camera className="w-3.5 h-3.5" /> Use iPhone Camera Photo
+              </span>
+              <p className="text-[9px] text-[var(--text-secondary)] mt-1 text-center">Best fallback for iPhone: take one photo of the QR, then it scans automatically.</p>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+            </label>
             <label className="flex flex-col items-center justify-center border border-dashed border-[var(--border-default)] hover:border-[var(--border-default)] bg-[var(--surface-card)]/72 backdrop-blur-2xl p-3 rounded-[20px] cursor-pointer transition select-none active:scale-95 duration-150">
               <span className="text-[10px] uppercase font-bold text-[var(--text-secondary)] flex items-center gap-1.5 font-mono">
                 <UploadCloud className="w-3.5 h-3.5 text-amber-500" />
-                Upload Photo / Screenshot of QR
+                Upload Existing QR Photo
               </span>
               <p className="text-[9px] text-[var(--text-muted)] mt-1">If webcam is unavailable or blocked</p>
               <input
