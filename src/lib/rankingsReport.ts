@@ -138,6 +138,46 @@ export function generateRankingsReportPdf(race: Race, results: RunnerResult[], d
       });
   }
 
+  const specialAgeAwardGroups = new Map<string, RunnerResult[]>();
+  for (const result of finishers) {
+    for (const award of result.specialAgeAwards || []) {
+      const key = `${runnerDivisionLabel(result.runnerProfile)}|||${award}`;
+      const group = specialAgeAwardGroups.get(key) || [];
+      group.push(result);
+      specialAgeAwardGroups.set(key, group);
+    }
+  }
+  if (specialAgeAwardGroups.size > 0) {
+    pdf.addPage();
+    header('SPECIAL AGE AWARDS', reportScope);
+    cursorY = 34;
+    Array.from(specialAgeAwardGroups.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .forEach(([key, group]) => {
+        const [division, award] = key.split('|||');
+        if (cursorY > 250) {
+          pdf.addPage();
+          header('SPECIAL AGE AWARDS', reportScope);
+          cursorY = 34;
+        }
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(10.5);
+        pdf.setTextColor(13, 148, 136);
+        pdf.text(`${division.toUpperCase()} • ${award.toUpperCase()}`, 14, cursorY);
+        autoTable(pdf, {
+          startY: cursorY + 4,
+          head: [['Award', 'Age', 'Bib', 'Runner', 'Finish Time']],
+          body: group.map((result) => [award, String(result.runnerProfile?.age ?? '—'), result.bibNumber, runnerName(result), result.finishTime || '—']),
+          styles: { fontSize: 8, cellPadding: 2.5, textColor: [40, 40, 40] },
+          headStyles: { fillColor: [15, 118, 110], textColor: [255, 255, 255], fontStyle: 'bold' },
+          alternateRowStyles: { fillColor: [240, 253, 250] },
+          columnStyles: { 0: { cellWidth: 40 }, 1: { halign: 'center', cellWidth: 18 }, 2: { halign: 'center', cellWidth: 28 }, 4: { halign: 'center', cellWidth: 28 } },
+          margin: { left: 14, right: 14 },
+        });
+        cursorY = (pdf as any).lastAutoTable.finalY + 10;
+      });
+  }
+
   const femaleGroups = new Map<string, RunnerResult[]>();
   for (const result of finishers) {
     if (result.runnerProfile?.gender !== 'female' || result.runnerProfile.isFreeSlot) continue;

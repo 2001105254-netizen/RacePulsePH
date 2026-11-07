@@ -314,6 +314,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         overallRank: result.overallRank ?? result.rank,
         ...(result.categoryRank ? { categoryRank: result.categoryRank } : {}),
         ...(result.categoryLabel ? { categoryLabel: result.categoryLabel } : {}),
+        ...(result.specialAgeAwards?.length ? { specialAgeAwards: result.specialAgeAwards } : {}),
         ...(result.timingMethod ? { timingMethod: result.timingMethod } : {}),
         ...(result.sequenceStartTime ? { sequenceStartTime: result.sequenceStartTime } : {}),
         ...(result.chipTime ? { chipTime: result.chipTime } : {}),
@@ -333,6 +334,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         overallRank: result.overallRank ?? result.rank,
         ...(result.categoryRank ? { categoryRank: result.categoryRank } : {}),
         ...(result.categoryLabel ? { categoryLabel: result.categoryLabel } : {}),
+        ...(result.specialAgeAwards?.length ? { specialAgeAwards: result.specialAgeAwards } : {}),
         ...(result.timingMethod ? { timingMethod: result.timingMethod } : {}),
         ...(result.sequenceStartTime ? { sequenceStartTime: result.sequenceStartTime } : {}),
         ...(result.chipTime ? { chipTime: result.chipTime } : {}),
@@ -2785,7 +2787,7 @@ function RaceRankingsPanel({ race, results }: RaceRankingsPanelProps) {
                     </summary>
                     <ol aria-label={`${folder.distance} ${category.label}`} className="space-y-1.5 max-h-80 overflow-y-auto pb-3">
                       {category.results.map((r) => {
-                        const rank = category.ranking === 'age' ? r.categoryRank! : (r.overallRank ?? r.rank!);
+                        const rank = category.ranking === 'age' ? r.categoryRank! : category.ranking === 'special' ? 1 : (r.overallRank ?? r.rank!);
                         return (
                           <li key={r.bibNumber} className="flex items-center justify-between px-2 sm:px-3 py-2 rounded-[14px] bg-[var(--surface-inset)]/40 text-xs gap-2">
                             <span className={`font-mono font-black w-9 shrink-0 ${rank === 1 ? 'text-amber-500' : rank === 2 ? 'text-slate-400' : rank === 3 ? 'text-orange-600' : 'text-red-500'}`}>#{rank}</span>

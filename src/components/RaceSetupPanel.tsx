@@ -133,6 +133,8 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
   const [approvedOrganizers, setApprovedOrganizers] = useState<UserProfile[]>([]);
   const [checkpoints, setCheckpoints] = useState<CheckpointDraft[]>(emptyCheckpointDrafts());
   const [ageCategories, setAgeCategories] = useState<AgeCategoryDraft[]>([]);
+  const [youngestRunnerAwardEnabled, setYoungestRunnerAwardEnabled] = useState(false);
+  const [oldestRunnerAwardEnabled, setOldestRunnerAwardEnabled] = useState(false);
   const [distances, setDistances] = useState<DistanceDraft[]>([]);
   const [entryCategories, setEntryCategories] = useState<RaceEntryCategory[]>(['solo']);
   const [inclusions, setInclusions] = useState<InclusionDraft[]>([]);
@@ -216,6 +218,8 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     setOrganizerIds([]);
     setCheckpoints(emptyCheckpointDrafts());
     setAgeCategories([]);
+    setYoungestRunnerAwardEnabled(false);
+    setOldestRunnerAwardEnabled(false);
     setDistances([]);
     setEntryCategories(['solo']);
     setInclusions([]);
@@ -275,6 +279,8 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
       cutoffMinutes: c.cutoffMinutes ? String(c.cutoffMinutes) : '',
     })));
     setAgeCategories((race.ageCategories || []).map((c) => ({ id: c.id, gender: c.gender, minAge: c.minAge, maxAge: c.maxAge, labelSuffix: ageCategoryLabelSuffix(c) })));
+    setYoungestRunnerAwardEnabled(race.youngestRunnerAwardEnabled === true);
+    setOldestRunnerAwardEnabled(race.oldestRunnerAwardEnabled === true);
     setDistances((race.distances || []).sort((a, b) => a.km - b.km).map((d) => ({ id: d.id, km: d.km, price: d.price || 0 })));
     setEntryCategories(raceEntryCategories(race));
     setInclusions((race.inclusions || []).map((text, idx) => ({ id: `incl_${idx}_${Date.now()}`, text })));
@@ -589,6 +595,8 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
           ...(c.type === 'intermediate' && c.cutoffMinutes ? { cutoffMinutes: Number(c.cutoffMinutes) } : {}),
         })),
         ageCategories: ageCategories.map(draftToAgeCategory),
+        ...(youngestRunnerAwardEnabled ? { youngestRunnerAwardEnabled: true } : {}),
+        ...(oldestRunnerAwardEnabled ? { oldestRunnerAwardEnabled: true } : {}),
         distances: savedDistances,
         entryCategories,
         inclusions: inclusions.map((i) => i.text.trim()).filter(Boolean),
@@ -1303,6 +1311,20 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
               <button disabled={(!!editingId && !can('race.categories'))} type="button" onClick={() => addAgeCategoryPreset(50, 120, '50 & Above')} className="text-xs font-bold text-red-500 hover:text-red-400">
                 + Add 50 & Above (M/F)
               </button>
+            </div>
+            <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 space-y-2">
+              <p className="text-[10.5px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Special age awards</p>
+              <p className="text-[10.5px] text-[var(--text-muted)]">Awards one youngest and/or oldest Solo finisher per distance and gender. These do not affect Overall or normal age-category rankings.</p>
+              <div className="flex flex-wrap gap-x-5 gap-y-2">
+                <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-primary)] cursor-pointer">
+                  <input disabled={(!!editingId && !can('race.categories'))} type="checkbox" checked={youngestRunnerAwardEnabled} onChange={(event) => setYoungestRunnerAwardEnabled(event.target.checked)} className="accent-amber-500" />
+                  Youngest Runner (M/F)
+                </label>
+                <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-primary)] cursor-pointer">
+                  <input disabled={(!!editingId && !can('race.categories'))} type="checkbox" checked={oldestRunnerAwardEnabled} onChange={(event) => setOldestRunnerAwardEnabled(event.target.checked)} className="accent-amber-500" />
+                  Oldest Runner (M/F)
+                </label>
+              </div>
             </div>
           </div>
 

@@ -119,7 +119,7 @@ export function computeResults(
   chipReads: ChipRead[],
   runnerProfiles: RunnerProfile[],
   ageCategories: AgeCategory[] = [],
-  raceTiming?: Pick<Race, 'gunStartTime' | 'waveStartTimes' | 'finishReviewWindowMs' | 'femaleOverallRankOverrides'>
+  raceTiming?: Pick<Race, 'gunStartTime' | 'waveStartTimes' | 'finishReviewWindowMs' | 'femaleOverallRankOverrides' | 'youngestRunnerAwardEnabled' | 'oldestRunnerAwardEnabled'>
 ): RunnerResult[] {
   const orderedCheckpoints = [...checkpoints].sort((a, b) => a.order - b.order);
   // Check-in is operational only. It must never become the timing start just
@@ -282,6 +282,35 @@ export function computeResults(
       });
   }
 
+  // Recognition awards intentionally stay separate from age brackets. For
+  // each distance and gender, choose one completed Solo finisher by age; an
+  // earlier finish only breaks a tie between runners of the same age.
+  const specialAwards = [
+    { enabled: raceTiming?.youngestRunnerAwardEnabled === true, label: 'Youngest Runner', direction: 1 },
+    { enabled: raceTiming?.oldestRunnerAwardEnabled === true, label: 'Oldest Runner', direction: -1 },
+  ];
+  for (const award of specialAwards) {
+    if (!award.enabled) continue;
+    const candidatesByDivisionAndGender = new Map<string, RunnerResult[]>();
+    for (const result of results) {
+      const runner = result.runnerProfile;
+      if (!runner || result.finishSeconds === undefined || runner.isFreeSlot || runner.ageNotProvided || runnerEntryCategory(runner) !== 'solo') continue;
+      const key = `${runnerDivisionLabel(runner)}|${runner.gender}`;
+      const list = candidatesByDivisionAndGender.get(key) || [];
+      list.push(result);
+      candidatesByDivisionAndGender.set(key, list);
+    }
+    for (const list of candidatesByDivisionAndGender.values()) {
+      const winner = list.sort((a, b) => {
+        const ageDifference = (a.runnerProfile!.age - b.runnerProfile!.age) * award.direction;
+        return ageDifference || a.finishSeconds! - b.finishSeconds! || compareResultFinishOrder(a, b);
+      })[0];
+      if (!winner) continue;
+      const genderLabel = winner.runnerProfile!.gender === 'female' ? 'Female' : 'Male';
+      winner.specialAgeAwards = [...(winner.specialAgeAwards || []), `${award.label} · ${genderLabel}`];
+    }
+  }
+
   return results.sort((a, b) => {
     if (a.finishSeconds !== undefined && b.finishSeconds !== undefined) return a.finishSeconds - b.finishSeconds || compareResultFinishOrder(a, b);
     if (a.finishSeconds !== undefined) return -1;
@@ -296,7 +325,7 @@ export function getResultForBib(
   runnerProfiles: RunnerProfile[],
   bibNumber: string,
   ageCategories: AgeCategory[] = [],
-  raceTiming?: Pick<Race, 'gunStartTime' | 'waveStartTimes' | 'finishReviewWindowMs' | 'femaleOverallRankOverrides'>
+  raceTiming?: Pick<Race, 'gunStartTime' | 'waveStartTimes' | 'finishReviewWindowMs' | 'femaleOverallRankOverrides' | 'youngestRunnerAwardEnabled' | 'oldestRunnerAwardEnabled'>
 ): RunnerResult | undefined {
   return computeResults(checkpoints, chipReads, runnerProfiles, ageCategories, raceTiming).find((r) => r.bibNumber === bibNumber);
 }

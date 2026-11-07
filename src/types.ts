@@ -212,6 +212,10 @@ export interface Race {
   // Optional artwork for Solo, Duo, Trio, or Group entries. This takes
   // priority over a distance template, then falls back to the default bib.
   raceBibTemplatesByEntryCategory?: Partial<Record<RaceEntryCategory, RaceBibTemplate>>;
+  // Optional recognition awards, selected from completed Solo finishers per
+  // distance and gender. These never replace normal age-category standings.
+  youngestRunnerAwardEnabled?: boolean;
+  oldestRunnerAwardEnabled?: boolean;
 }
 
 export interface PublicLeaderboardEntry {
@@ -227,6 +231,7 @@ export interface PublicLeaderboardEntry {
   overallRank?: number;
   categoryRank?: number;
   categoryLabel?: string;
+  specialAgeAwards?: string[];
   timingMethod?: 'chip' | 'gun' | 'transition';
   sequenceStartTime?: string;
   // Both elapsed views are published for transparent certificates. `finishTime`
@@ -349,6 +354,7 @@ export interface RunnerResult {
   overallRank?: number;
   categoryRank?: number;
   categoryLabel?: string;
+  specialAgeAwards?: string[];
   // Roll Call gun time is the official basis for a normal wave. A transition
   // entry starts at the prior entry's validated finish; chip is legacy fallback.
   timingMethod?: 'chip' | 'gun' | 'transition';

@@ -67,6 +67,32 @@ test('next entry has a start and running clock before it finishes', () => {
   assert.equal(byBib(results, 'D').rank, undefined);
 });
 
+test('youngest and oldest awards choose one Solo finisher per gender without changing rankings', () => {
+  const runners = [
+    runner('YM', 'solo', { age: 18 }),
+    runner('OM', 'solo', { age: 62 }),
+    runner('YF', 'solo', { gender: 'female', age: 20 }),
+    runner('OF', 'solo', { gender: 'female', age: 57 }),
+    runner('D', 'duo', { age: 16 }),
+  ];
+  const results = computeResults(race.checkpoints, [
+    read('YM', 'finish', 31), read('OM', 'finish', 30),
+    read('YF', 'finish', 34), read('OF', 'finish', 33),
+    read('D', 'finish', 20),
+  ], runners, [], {
+    ...race,
+    youngestRunnerAwardEnabled: true,
+    oldestRunnerAwardEnabled: true,
+  });
+
+  assert.deepEqual(byBib(results, 'YM').specialAgeAwards, ['Youngest Runner · Male']);
+  assert.deepEqual(byBib(results, 'OM').specialAgeAwards, ['Oldest Runner · Male']);
+  assert.deepEqual(byBib(results, 'YF').specialAgeAwards, ['Youngest Runner · Female']);
+  assert.deepEqual(byBib(results, 'OF').specialAgeAwards, ['Oldest Runner · Female']);
+  assert.equal(byBib(results, 'D').specialAgeAwards, undefined);
+  assert.equal(byBib(results, 'OM').overallRank, 1);
+});
+
 test('next entry cannot finish before its predecessor or fall back to a wave', () => {
   const missingFinish = compute([solo, duo], [read('D', 'start', 10), read('D', 'finish', 20)]);
   assert.equal(byBib(missingFinish, 'D').rank, undefined);
