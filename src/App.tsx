@@ -184,7 +184,7 @@ export default function App() {
               onClick={handleBack}
               title="Back"
               aria-label="Go back"
-              className="w-9 h-9 rounded-full glass-inset flex items-center justify-center text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 transition active:scale-90"
+              className="w-10 h-10 rounded-full border border-[var(--border-default)] bg-[var(--surface-card)] dark:bg-[#141416] shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] flex items-center justify-center text-[var(--text-secondary)] hover:text-red-500 hover:border-red-600/50 transition-all duration-150 motion-safe:active:scale-95"
             >
               <ArrowLeft className="w-4 h-4" />
             </button>
@@ -195,7 +195,7 @@ export default function App() {
                 className="w-full h-full object-contain"
               />
             </div>
-            <span className="hidden min-w-0 truncate font-display font-black text-sm tracking-tight uppercase min-[560px]:inline">
+            <span className="hidden min-w-0 truncate font-display font-semibold text-sm tracking-tight uppercase min-[560px]:inline">
               RacePulse<span className="text-red-500">PH</span>
             </span>
           </div>
@@ -206,14 +206,14 @@ export default function App() {
                 <button
                   onClick={() => { setPendingRaceId(null); setRunnerSignupIntent(false); setGuestScreen('login'); }}
                   aria-label="Log in to your account"
-                  className="h-10 px-2.5 sm:px-3.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)]/70 text-[10px] sm:text-xs font-black uppercase tracking-wide text-[var(--text-primary)] hover:text-red-500 hover:border-red-500/45 hover:bg-red-500/10 transition flex items-center justify-center gap-1.5 active:scale-95"
+                  className="h-10 px-4 rounded-full border border-[var(--border-default)] bg-[var(--surface-card)] dark:bg-[#141416] text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:border-red-600/50 hover:text-red-500 transition-all duration-150 flex items-center justify-center gap-2 motion-safe:active:scale-[0.97]"
                 >
                   <LogIn className="w-3.5 h-3.5" /> <span>Log in</span>
                 </button>
                 <button
                   onClick={() => { setPendingRaceId(null); setRunnerSignupIntent(false); setGuestScreen('signup'); }}
                   aria-label="Create a RacePulsePH account"
-                  className="h-10 px-2.5 sm:px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white text-[10px] sm:text-xs font-black uppercase tracking-wide shadow-lg shadow-red-900/30 transition flex items-center justify-center gap-1.5 active:scale-95"
+                  className="h-10 px-4 rounded-full bg-red-700 hover:bg-red-600 text-white text-xs font-semibold uppercase tracking-wider border border-red-500/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.35)] transition-all duration-150 flex items-center justify-center gap-2 motion-safe:active:scale-[0.97]"
                 >
                   <UserPlus className="w-3.5 h-3.5" /> <span>Register</span>
                 </button>
@@ -223,7 +223,7 @@ export default function App() {
               onClick={toggleTheme}
               title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               aria-label="Toggle color theme"
-              className="w-10 h-10 rounded-xl glass-inset flex items-center justify-center text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 transition duration-200 active:scale-90"
+              className="w-10 h-10 rounded-full border border-[var(--border-default)] bg-[var(--surface-card)] dark:bg-[#141416] text-[var(--text-secondary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:text-red-500 hover:border-red-600/50 transition-all duration-150 flex items-center justify-center motion-safe:active:scale-95"
             >
               {theme === 'dark' ? <Sun className="w-4.5 h-4.5" /> : <Moon className="w-4.5 h-4.5" />}
             </button>
@@ -239,7 +239,7 @@ export default function App() {
       <footer className="glass-nav border-t-0 mt-auto text-center text-[10px] text-[var(--text-muted)] font-mono tracking-wide">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between px-6 py-4 gap-2">
           <span>&copy; 2026 RACEPULSEPH BY LOUD & CLEAR. ALL RIGHTS RESERVED.</span>
-          <span>STATION CO-PROCESSING SYNC // FAULT COOPERATION PROTOCOL</span>
+          <span>OFFICIAL TIMING & RACE RESULTS PLATFORM</span>
         </div>
       </footer>
 

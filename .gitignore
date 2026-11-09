@@ -17,3 +17,14 @@ rfid-bridge/obj/
 rfid-station/bin/
 rfid-station/obj/
 release/
+
+# Scratch files, test artifacts, and evidence screenshots
+scratch/
+.scratch/
+tmp/
+evidence/
+screenshots/
+*.screenshot.png
+*.evidence.png
+screenshot*.png
+evidence*.png

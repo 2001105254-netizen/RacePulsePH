@@ -6,12 +6,24 @@ import { PasswordResetFlow } from './AccountSecurity';
 import { isSuperAdminEmail } from '../lib/superAdmin';
 import { UserProfile } from '../types';
 import type { User } from 'firebase/auth';
-import { Mail, Lock, User as UserIcon, RefreshCw, AlertTriangle, LogOut, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { Mail, Lock, User as UserIcon, RefreshCw, AlertTriangle, LogOut, Eye, EyeOff, ShieldCheck, CheckCircle2, ArrowLeft } from 'lucide-react';
 
 type Mode = 'login' | 'signup';
 type SignupRole = 'runner' | 'organizer' | 'superadmin';
 
 const USERNAME_PATTERN = /^[a-z0-9][a-z0-9_.-]{2,23}$/;
+
+// Shared control styles. One definition keeps every field on the same type
+// scale (base for input text, xs for labels and hints) and the same 4/8 spacing.
+const accentText = 'text-red-700 dark:text-red-400';
+const labelClass = 'block text-xs font-semibold text-[var(--text-secondary)] mb-2';
+const hintClass = 'mt-2 text-xs text-[var(--text-secondary)]';
+const inputClass = 'w-full glass-inset py-3 text-base font-normal text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-700 dark:focus:ring-red-400 transition-colors';
+const iconClass = 'w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] pointer-events-none';
+const focusRing = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-700 dark:focus-visible:ring-red-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-page)]';
+const buttonBase = `w-full h-12 px-6 rounded-[var(--radius-control)] text-base font-semibold flex items-center justify-center gap-2 transition-colors duration-150 ${focusRing}`;
+const primaryButton = (busy: boolean) =>
+  `${buttonBase} ${busy ? 'bg-[var(--surface-hover)] text-[var(--text-secondary)] cursor-not-allowed' : 'bg-red-700 hover:bg-red-800 text-white'}`;
 
 function normalizeUsername(value: string): string {
   return value.trim().toLowerCase();
@@ -19,7 +31,7 @@ function normalizeUsername(value: string): string {
 
 function usernameError(value: string): string | null {
   const username = normalizeUsername(value);
-  if (!USERNAME_PATTERN.test(username)) return 'Username must be 3–24 characters: letters, numbers, dot, underscore, or hyphen.';
+  if (!USERNAME_PATTERN.test(username)) return 'Username must be 3 to 24 characters: letters, numbers, dot, underscore, or hyphen.';
   return null;
 }
 
@@ -43,6 +55,25 @@ function GoogleIcon({ className }: { className?: string }) {
       <path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z" />
       <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z" />
     </svg>
+  );
+}
+
+// Moving backdrop for the sign-in screens. Purpose: "RacePulse" is a heartbeat
+// plus a timing beam, so the page shows exactly that: a slow red beam sweeping
+// the screen like a finish-line scanner, and rings that expand from behind the
+// logo like a pulse. Layers animate transform and opacity only (see .auth-*
+// in index.css) and freeze under prefers-reduced-motion.
+function AuthStage({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="relative isolate flex-grow flex items-center justify-center overflow-hidden py-16 px-4">
+      <div className="auth-backdrop" aria-hidden="true">
+        <span className="auth-glow" />
+        <span className="auth-beam" />
+        <span className="auth-pulse" />
+        <span className="auth-pulse auth-pulse-late" />
+      </div>
+      <div className="relative w-full flex justify-center animate-fadeIn">{children}</div>
+    </div>
   );
 }
 
@@ -192,192 +223,211 @@ export default function AuthGate({ authUser, initialMode = 'login', onBackToRace
   }
 
   if (resettingPassword) {
-    return <div className="hero-glow flex-grow flex items-center justify-center py-12 px-4"><PasswordResetFlow initialEmail={email.includes('@') ? email : ''} onBack={() => { setResettingPassword(false); setMode('login'); setPassword(''); }} /></div>;
+    return <AuthStage><PasswordResetFlow initialEmail={email.includes('@') ? email : ''} onBack={() => { setResettingPassword(false); setMode('login'); setPassword(''); }} /></AuthStage>;
   }
 
-  return (
-    <div className="hero-glow flex-grow flex items-center justify-center py-14 px-4 animate-fadeIn">
-      <div className="w-full max-w-md space-y-8 text-center">
+  const passwordToggle = (
+    <button
+      type="button"
+      onClick={() => setShowPassword((current) => !current)}
+      className={`absolute right-0 top-1/2 -translate-y-1/2 w-12 h-12 flex items-center justify-center rounded-[var(--radius-control)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] ${focusRing}`}
+      aria-label={showPassword ? 'Hide password' : 'Show password'}
+      aria-pressed={showPassword}
+    >
+      {showPassword ? <EyeOff className="w-4 h-4" aria-hidden="true" /> : <Eye className="w-4 h-4" aria-hidden="true" />}
+    </button>
+  );
 
-        {/* Logo area */}
-        <div className="flex flex-col items-center space-y-5">
-          <div className="w-full max-w-[15.5rem] rounded-[26px] bg-[#0a0a0a] p-3 shadow-2xl shadow-red-950/30 ring-1 ring-white/10">
+  const errorMessage = error && (
+    <p className={`text-xs font-semibold flex items-start gap-2 ${accentText}`} role="alert">
+      <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" /> <span>{error}</span>
+    </p>
+  );
+
+  return (
+    <AuthStage>
+      <div className="w-full max-w-md space-y-8">
+
+        <div className="flex flex-col items-center text-center space-y-6">
+          <div className="w-full max-w-[16rem] rounded-[var(--radius-panel)] bg-[#0a0a0a] p-4 ring-1 ring-white/10">
             <img
               src="/assets/racepulse-logo.png"
               alt="RacePulsePH"
               className="w-full h-auto"
             />
           </div>
-          <div>
-            <p className="text-sm text-[var(--text-secondary)] mt-3 max-w-md mx-auto leading-relaxed">
+          <div className="space-y-2">
+            <h1 className="text-3xl font-semibold tracking-tight text-[var(--text-primary)]">
+              {mode === 'signup' ? 'Create your account' : 'Sign in'}
+            </h1>
+            <p className="text-base text-[var(--text-primary)] max-w-sm mx-auto">
               {mode === 'signup' ? 'Create your account, then verify your email to join RacePulse.' : 'Sign in to continue as Runner or Organizer.'}
             </p>
-            {onBackToRaces && (
-              <button
-                type="button"
-                onClick={onBackToRaces}
-                className="mt-3 text-[11px] font-bold uppercase tracking-wide text-red-500 hover:text-red-400 transition"
-              >
-                ← Browse race events
-              </button>
-            )}
           </div>
+          {onBackToRaces && (
+            <button
+              type="button"
+              onClick={onBackToRaces}
+              className={`inline-flex items-center gap-2 text-xs font-semibold rounded-md px-2 py-2 text-[var(--text-primary)] underline underline-offset-4 ${focusRing}`}
+            >
+              <ArrowLeft className="w-4 h-4" aria-hidden="true" /> Browse race events
+            </button>
+          )}
         </div>
 
-        <div className="glass-panel p-6 text-left space-y-5 animate-fadeIn">
+        <div className="glass-panel p-6 text-left space-y-6">
 
           <button
             type="button"
             onClick={handleGoogleSignIn}
             disabled={submitting}
-            className="w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-black uppercase text-xs tracking-widest shadow-lg flex items-center justify-center gap-2.5 transition duration-200 bg-white hover:bg-zinc-100 text-zinc-800 border border-zinc-300 disabled:opacity-60"
+            className={`${buttonBase} bg-zinc-50 hover:bg-zinc-100 text-zinc-800 border border-zinc-300 disabled:opacity-60`}
           >
             <GoogleIcon className="w-4 h-4" /> Continue with Google
           </button>
 
-          <div className="flex items-center gap-3">
-            <span className="flex-1 h-px bg-[var(--border-subtle)]" />
-            <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]">or</span>
-            <span className="flex-1 h-px bg-[var(--border-subtle)]" />
+          <div className="flex items-center gap-4" aria-hidden="true">
+            <span className="flex-1 h-px bg-[var(--border-default)]" />
+            <span className="text-xs text-[var(--text-secondary)]">or use email</span>
+            <span className="flex-1 h-px bg-[var(--border-default)]" />
           </div>
 
-          {/* Mode toggle */}
-          <div className="grid grid-cols-2 glass-inset p-1">
+          <div className="grid grid-cols-2 glass-inset p-1 gap-1" role="group" aria-label="Sign in or create an account">
             <button
+              type="button"
+              aria-pressed={mode === 'login'}
               onClick={() => { setMode('login'); setError(''); }}
-              className={`text-xs font-black uppercase tracking-wider py-2.5 rounded-[16px] transition ${mode === 'login' ? 'bg-red-600 text-white shadow-lg shadow-red-900/30' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+              className={`text-base font-semibold h-10 rounded-[12px] transition-colors ${focusRing} ${mode === 'login' ? 'bg-red-700 text-white' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
             >
-              Sign In
+              Sign in
             </button>
             <button
+              type="button"
+              aria-pressed={mode === 'signup'}
               onClick={() => { setMode('signup'); setError(''); }}
-              className={`text-xs font-black uppercase tracking-wider py-2.5 rounded-[16px] transition ${mode === 'signup' ? 'bg-red-600 text-white shadow-lg shadow-red-900/30' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+              className={`text-base font-semibold h-10 rounded-[12px] transition-colors ${focusRing} ${mode === 'signup' ? 'bg-red-700 text-white' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
             >
-              Create Account
+              Create account
             </button>
           </div>
 
           {mode === 'login' ? (
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
-                <label htmlFor="loginEmail" className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Email or Username</label>
+                <label htmlFor="loginEmail" className={labelClass}>Email or username</label>
                 <div className="relative">
-                  <UserIcon className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
+                  <UserIcon className={iconClass} aria-hidden="true" />
                   <input id="loginEmail" type="text" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@email.com or your.username"
-                    className="w-full glass-inset pl-10 pr-4 py-3.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/60 transition" />
+                    className={`${inputClass} pl-12 pr-4`} />
                 </div>
               </div>
               <div>
-                <div className="flex items-center justify-between gap-3 mb-1.5">
-                  <label htmlFor="loginPassword" className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-secondary)]">Password</label>
-                  <button type="button" onClick={handleForgotPassword} disabled={submitting} className="text-[11px] font-bold text-red-500 hover:text-red-400 disabled:opacity-50">Forgot password?</button>
+                <div className="flex items-center justify-between gap-4 mb-2">
+                  <label htmlFor="loginPassword" className="block text-xs font-semibold text-[var(--text-secondary)]">Password</label>
+                  <button type="button" onClick={handleForgotPassword} disabled={submitting} className={`text-xs font-semibold rounded-md px-2 py-2 -my-2 ${accentText} hover:underline disabled:opacity-50 ${focusRing}`}>Forgot password?</button>
                 </div>
                 <div className="relative">
-                  <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
-                  <input id="loginPassword" type={showPassword ? 'text' : 'password'} required value={password} onChange={(e) => setPassword(e.target.value)}
-                    className="w-full glass-inset pl-10 pr-11 py-3.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/60 transition" />
-                  <button type="button" onClick={() => setShowPassword((current) => !current)} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-[var(--text-muted)] hover:text-red-500 transition" aria-label={showPassword ? 'Hide password' : 'Show password'}>
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
+                  <Lock className={iconClass} aria-hidden="true" />
+                  <input id="loginPassword" type={showPassword ? 'text' : 'password'} autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)}
+                    className={`${inputClass} pl-12 pr-12`} />
+                  {passwordToggle}
                 </div>
               </div>
 
-              {error && (
-                <p className="text-xs text-red-500 font-semibold flex items-center gap-1.5" role="alert">
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {error}
+              {errorMessage}
+              {notice && (
+                <p className="text-xs font-semibold flex items-start gap-2 text-emerald-700 dark:text-emerald-300" role="status">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" /> <span>{notice}</span>
                 </p>
               )}
-              {notice && <p className="text-xs text-emerald-500 font-semibold">✅ {notice}</p>}
 
-              <button type="submit" disabled={submitting}
-                className={`w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-black uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 ${submitting ? 'bg-[var(--surface-hover)] text-[var(--text-secondary)] cursor-not-allowed' : 'text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-red-900/30'}`}>
-                {submitting ? <><RefreshCw className="w-4 h-4 animate-spin" /> Signing In...</> : 'Sign In'}
+              <button type="submit" disabled={submitting} className={primaryButton(submitting)}>
+                {submitting ? <><RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> Signing in…</> : 'Sign in'}
               </button>
             </form>
           ) : (
             <form onSubmit={handleSignup} className="space-y-4">
-              <div aria-label="Account creation steps" className="flex items-center gap-3 text-[10px] uppercase tracking-wide font-bold text-[var(--text-muted)]">
-                <span aria-current="step" className="text-red-500">01 Account details</span><span className="h-px flex-1 bg-[var(--border-default)]" /><span>02 Verify email</span>
-              </div>
+              <ol aria-label="Account creation steps" className="flex items-center gap-4 text-xs font-semibold text-[var(--text-secondary)]">
+                <li aria-current="step" className={accentText}>1. Account details</li>
+                <li aria-hidden="true" className="h-px flex-1 bg-[var(--border-default)]" />
+                <li>2. Verify email</li>
+              </ol>
               <div>
-                <label htmlFor="signupName" className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Full Name</label>
+                <label htmlFor="signupName" className={labelClass}>Full name</label>
                 <div className="relative">
-                  <UserIcon className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
-                  <input id="signupName" type="text" required value={displayName} onChange={(e) => setDisplayName(e.target.value)}
-                    className="w-full glass-inset pl-10 pr-4 py-3.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/60 transition" />
+                  <UserIcon className={iconClass} aria-hidden="true" />
+                  <input id="signupName" type="text" autoComplete="name" required value={displayName} onChange={(e) => setDisplayName(e.target.value)}
+                    className={`${inputClass} pl-12 pr-4`} />
                 </div>
               </div>
               <div>
-                <label htmlFor="signupUsername" className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Username</label>
+                <label htmlFor="signupUsername" className={labelClass}>Username</label>
                 <div className="relative">
-                  <UserIcon className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
-                  <input id="signupUsername" type="text" required value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} autoCapitalize="none" autoCorrect="off" maxLength={24} placeholder="e.g. juan.runner"
-                    className="w-full glass-inset pl-10 pr-4 py-3.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/60 transition" />
+                  <UserIcon className={iconClass} aria-hidden="true" />
+                  <input id="signupUsername" type="text" required aria-describedby="signup-username-help" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} autoCapitalize="none" autoCorrect="off" maxLength={24} placeholder="e.g. juan.runner"
+                    className={`${inputClass} pl-12 pr-4`} />
                 </div>
-                <p className="mt-1.5 text-[10px] text-[var(--text-muted)]">3–24 characters: letters, numbers, dots, underscores, or hyphens.</p>
+                <p id="signup-username-help" className={hintClass}>3 to 24 characters: letters, numbers, dots, underscores, or hyphens.</p>
               </div>
               <div>
-                <label htmlFor="signupEmail" className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Email</label>
+                <label htmlFor="signupEmail" className={labelClass}>Email</label>
                 <div className="relative">
-                  <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
+                  <Mail className={iconClass} aria-hidden="true" />
                   <input id="signupEmail" type="email" autoComplete="email" required aria-describedby="signup-email-help" value={email} onChange={(e) => setEmail(e.target.value)}
-                    className="w-full glass-inset pl-10 pr-4 py-3.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/60 transition" />
+                    className={`${inputClass} pl-12 pr-4`} />
                 </div>
-                <p id="signup-email-help" className="mt-2 text-xs leading-relaxed text-[var(--text-secondary)]">We’ll send a six-digit code to this address. Enter it on the next screen to verify your email.</p>
+                <p id="signup-email-help" className={hintClass}>We’ll send a six-digit code to this address. Enter it on the next screen to verify your email.</p>
               </div>
               <div>
-                <label htmlFor="signupPassword" className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Password</label>
+                <label htmlFor="signupPassword" className={labelClass}>Password</label>
                 <div className="relative">
-                  <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
-                  <input id="signupPassword" type={showPassword ? 'text' : 'password'} required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)}
-                    className="w-full glass-inset pl-10 pr-11 py-3.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/60 transition" />
-                  <button type="button" onClick={() => setShowPassword((current) => !current)} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-[var(--text-muted)] hover:text-red-500 transition" aria-label={showPassword ? 'Hide password' : 'Show password'}>
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
+                  <Lock className={iconClass} aria-hidden="true" />
+                  <input id="signupPassword" type={showPassword ? 'text' : 'password'} autoComplete="new-password" required minLength={6} aria-describedby="signup-password-help" value={password} onChange={(e) => setPassword(e.target.value)}
+                    className={`${inputClass} pl-12 pr-12`} />
+                  {passwordToggle}
                 </div>
+                <p id="signup-password-help" className={hintClass}>At least 6 characters.</p>
               </div>
 
               {signupRoleLocked ? (
-                <p className="text-[10.5px] text-[var(--text-secondary)] glass-inset px-3 py-2">You’re creating a Runner account so you can register for a race.</p>
+                <p className="text-xs text-[var(--text-secondary)] glass-inset px-4 py-3">You’re creating a Runner account so you can register for a race.</p>
               ) : (
                 <RoleSelector role={signupRole} onChange={setSignupRole} />
               )}
 
-              {error && (
-                <p className="text-xs text-red-500 font-semibold flex items-center gap-1.5" role="alert">
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {error}
-                </p>
-              )}
+              {errorMessage}
 
-              <button type="submit" disabled={submitting}
-                className={`w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-black uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 ${submitting ? 'bg-[var(--surface-hover)] text-[var(--text-secondary)] cursor-not-allowed' : 'text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-red-900/30'}`}>
-                {submitting ? <><RefreshCw className="w-4 h-4 animate-spin" /> Preparing verification…</> : <><ShieldCheck className="w-4 h-4 shrink-0" /> Continue to email verification</>}
+              <button type="submit" disabled={submitting} className={primaryButton(submitting)}>
+                {submitting ? <><RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> Preparing verification…</> : <><ShieldCheck className="w-4 h-4 shrink-0" aria-hidden="true" /> Continue to email verification</>}
               </button>
-              <p className="text-xs text-center leading-relaxed text-[var(--text-muted)]">Verify your email before accessing your RacePulse account.</p>
             </form>
           )}
         </div>
       </div>
-    </div>
+    </AuthStage>
   );
 }
 
 function RoleSelector({ role, onChange }: { role: SignupRole; onChange: (r: SignupRole) => void }) {
+  const option = (value: 'runner' | 'organizer', label: string) => (
+    <button
+      type="button"
+      aria-pressed={role === value}
+      onClick={() => onChange(value)}
+      className={`h-12 rounded-[var(--radius-control)] border text-base font-semibold transition-colors ${focusRing} ${role === value ? `border-red-700 dark:border-red-400 bg-[var(--surface-card)] ${accentText}` : 'glass-inset text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+    >
+      {label}
+    </button>
+  );
   return (
-    <div>
-      <label className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">I am signing up as</label>
+    <div role="group" aria-labelledby="role-label">
+      <span id="role-label" className={labelClass}>I am signing up as</span>
       <div className="grid grid-cols-2 gap-2">
-        <button type="button" onClick={() => onChange('runner')}
-          className={`text-xs font-bold uppercase tracking-wide py-2.5 rounded-[16px] border transition ${role === 'runner' ? 'bg-red-500/10 border-red-500/40 text-red-500' : 'glass-inset border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}>
-          Runner
-        </button>
-        <button type="button" onClick={() => onChange('organizer')}
-          className={`text-xs font-bold uppercase tracking-wide py-2.5 rounded-[16px] border transition ${role === 'organizer' ? 'bg-red-500/10 border-red-500/40 text-red-500' : 'glass-inset border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}>
-          Organizer
-        </button>
+        {option('runner', 'Runner')}
+        {option('organizer', 'Organizer')}
       </div>
       {role === 'organizer' && (
-        <p className="text-[10.5px] text-[var(--text-muted)] mt-1.5 pl-1">A Super Admin needs to approve your Organizer account before you can record times.</p>
+        <p className={hintClass}>A Super Admin needs to approve your Organizer account before you can record times.</p>
       )}
     </div>
   );
@@ -427,69 +477,68 @@ function CompleteProfileForm({ user, signupRoleLocked = false }: { user: User; s
   }, []);
 
   return (
-    <div className="hero-glow flex-grow flex items-center justify-center py-14 px-4 animate-fadeIn">
-      <div className="w-full max-w-md space-y-8 text-center">
-        <div className="flex flex-col items-center space-y-5">
-          <div className="w-20 h-20 rounded-[22px] overflow-hidden bg-[#0a0a0a] shadow-xl shadow-red-950/25 ring-1 ring-white/10">
+    <AuthStage>
+      <div className="w-full max-w-md space-y-8">
+        <div className="flex flex-col items-center text-center space-y-6">
+          <div className="w-20 h-20 rounded-[22px] overflow-hidden bg-[#0a0a0a] ring-1 ring-white/10">
             <img
               src="/assets/racepulse-mark.png"
               alt="RacePulsePH"
               className="w-full h-full object-contain"
             />
           </div>
-          <div>
-            <h1 className="heading-float text-3xl sm:text-4xl font-black tracking-tight font-display text-[var(--text-primary)] uppercase">One Last Step</h1>
-            <p className="text-sm text-[var(--text-secondary)] mt-3 max-w-md mx-auto leading-relaxed">
-              Signed in as <strong className="text-[var(--text-primary)]">{user.email}</strong>. Finish setting up your account.
+          <div className="space-y-2">
+            <h1 className="text-3xl font-semibold tracking-tight text-[var(--text-primary)]">One last step</h1>
+            <p className="text-base text-[var(--text-primary)] max-w-sm mx-auto">
+              Signed in as <strong className="font-semibold text-[var(--text-primary)] break-all">{user.email}</strong>. Finish setting up your account.
             </p>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="glass-panel p-6 text-left space-y-4 animate-fadeIn">
+        <form onSubmit={handleSubmit} className="glass-panel p-6 text-left space-y-4">
           <div>
-            <label htmlFor="completeName" className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Full Name</label>
+            <label htmlFor="completeName" className={labelClass}>Full name</label>
             <div className="relative">
-              <UserIcon className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
-              <input id="completeName" type="text" required value={displayName} onChange={(e) => setDisplayName(e.target.value)}
-                className="w-full glass-inset pl-10 pr-4 py-3.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/60 transition" />
+              <UserIcon className={iconClass} aria-hidden="true" />
+              <input id="completeName" type="text" autoComplete="name" required value={displayName} onChange={(e) => setDisplayName(e.target.value)}
+                className={`${inputClass} pl-12 pr-4`} />
             </div>
           </div>
           <div>
-            <label htmlFor="completeUsername" className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Username</label>
+            <label htmlFor="completeUsername" className={labelClass}>Username</label>
             <div className="relative">
-              <UserIcon className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
-              <input id="completeUsername" type="text" required value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} autoCapitalize="none" autoCorrect="off" maxLength={24} placeholder="e.g. juan.runner"
-                className="w-full glass-inset pl-10 pr-4 py-3.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/60 transition" />
+              <UserIcon className={iconClass} aria-hidden="true" />
+              <input id="completeUsername" type="text" required aria-describedby="complete-username-help" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} autoCapitalize="none" autoCorrect="off" maxLength={24} placeholder="e.g. juan.runner"
+                className={`${inputClass} pl-12 pr-4`} />
             </div>
-            <p className="mt-1.5 text-[10px] text-[var(--text-muted)]">This will be your sign-in username.</p>
+            <p id="complete-username-help" className={hintClass}>This will be your sign-in username.</p>
           </div>
 
           {signupRoleLocked ? (
-            <p className="text-[10.5px] text-[var(--text-secondary)] glass-inset px-3 py-2">Your Runner account will be used for race registration and timing results.</p>
+            <p className="text-xs text-[var(--text-secondary)] glass-inset px-4 py-3">Your Runner account will be used for race registration and timing results.</p>
           ) : (
             <RoleSelector role={role} onChange={setRole} />
           )}
 
           {error && (
-            <p className="text-xs text-red-500 font-semibold flex items-center gap-1.5" role="alert">
-              <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {error}
+            <p className={`text-xs font-semibold flex items-start gap-2 ${accentText}`} role="alert">
+              <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" /> <span>{error}</span>
             </p>
           )}
 
-          <button type="submit" disabled={submitting}
-            className={`w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-black uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 ${submitting ? 'bg-[var(--surface-hover)] text-[var(--text-secondary)] cursor-not-allowed' : 'text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-red-900/30'}`}>
-            {submitting ? <><RefreshCw className="w-4 h-4 animate-spin" /> Finishing Setup...</> : 'Complete Sign Up'}
+          <button type="submit" disabled={submitting} className={primaryButton(submitting)}>
+            {submitting ? <><RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> Finishing setup…</> : 'Complete sign up'}
           </button>
 
           <button
             type="button"
             onClick={() => signOutUser()}
-            className="w-full text-xs text-[var(--text-secondary)] hover:text-red-500 font-bold flex items-center justify-center gap-1.5 transition"
+            className={`w-full h-12 rounded-[var(--radius-control)] text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] flex items-center justify-center gap-2 transition-colors ${focusRing}`}
           >
-            <LogOut className="w-3.5 h-3.5" /> Not you? Sign out
+            <LogOut className="w-4 h-4" aria-hidden="true" /> Not you? Sign out
           </button>
         </form>
       </div>
-    </div>
+    </AuthStage>
   );
 }

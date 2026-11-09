@@ -31,7 +31,7 @@ function certificateResult(entry: PublicLeaderboardEntry): RunnerResult {
 }
 
 // Read-only results view. It deliberately reads only the compact public
-// `liveResults` record published by the timing console—never raw scan data or
+// `liveResults` record published by the timing console: never raw scan data or
 // runner contact details.
 export default function PublicRaceResults({ race, onRegister }: PublicRaceResultsProps) {
   const [summary, setSummary] = useState<PublicLiveResults | null | undefined>(undefined);
@@ -77,12 +77,12 @@ export default function PublicRaceResults({ race, onRegister }: PublicRaceResult
         <div className="absolute inset-0 bg-gradient-to-r from-red-950/35 to-[var(--surface-panel)]/85" />
         <div className="relative flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div className="min-w-0">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-500"><Trophy className="w-3.5 h-3.5" /> Official Results</span>
-            <h2 className="heading-float mt-3 text-xl sm:text-2xl font-black font-display uppercase tracking-tight text-[var(--text-primary)]">{race.name}</h2>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400"><Trophy className="w-3.5 h-3.5" /> Official Results</span>
+            <h2 className="heading-float font-display mt-3 text-xl sm:text-2xl font-semibold uppercase tracking-tight text-[var(--text-primary)]">{race.name}</h2>
             <p className="mt-1.5 flex items-center gap-1.5 text-xs text-[var(--text-secondary)]"><Calendar className="w-3.5 h-3.5 text-red-500" /> {race.date}</p>
           </div>
           {registrationOpen && (
-            <button type="button" onClick={() => onRegister(race.id)} className="shrink-0 px-4 py-2.5 rounded-[var(--radius-control)] font-display font-black uppercase text-[10px] tracking-widest text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 transition flex items-center justify-center gap-2">
+            <button type="button" onClick={() => onRegister(race.id)} className="shrink-0 h-10 px-5 rounded-full font-semibold uppercase text-xs tracking-wider text-white bg-red-700 hover:bg-red-600 border border-red-500/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.35)] transition-all duration-150 flex items-center justify-center gap-2 motion-safe:active:scale-[0.97]">
               <UserPlus className="w-4 h-4" /> Sign up to register
             </button>
           )}
@@ -125,7 +125,7 @@ export default function PublicRaceResults({ race, onRegister }: PublicRaceResult
                     <span className="w-8 text-center font-mono font-black text-red-500 shrink-0">#{entry.overallRank ?? entry.rank}</span>
                     <span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold text-[var(--text-primary)]">{entry.isFreeSlot ? `Bib ${entry.bibNumber}` : entry.fullName}</span><span className="block mt-0.5 text-[10.5px] text-[var(--text-secondary)]">{entry.distance} · Bib #{entry.bibNumber}{entry.categoryRank ? ` · ${entry.categoryLabel || 'Category'} #${entry.categoryRank}` : ''}{entry.specialAgeAwards?.length ? ` · ${entry.specialAgeAwards.join(' / ')}` : ''}{entry.timingMethod === 'gun' ? ' · Gun time' : ''}</span></span>
                     <span className="hidden sm:block shrink-0 font-mono text-sm font-black text-emerald-500">{formatRaceTime(entry.finishTime)}{entry.finishReviewRequired && <span className="block text-xs text-amber-500">Provisional · finish review</span>}</span>
-                    <button type="button" onClick={() => downloadFinisherCertificate(race, entry, certificateResult(entry))} className="shrink-0 rounded-xl border border-red-500/25 bg-red-500/10 p-2 text-red-500 hover:bg-red-500 hover:text-white transition" title={`Download ${entry.isFreeSlot ? `Bib ${entry.bibNumber}` : entry.fullName}'s certificate`} aria-label={`Download certificate for ${entry.isFreeSlot ? `Bib ${entry.bibNumber}` : entry.fullName}`}><FileDown className="w-4 h-4" /></button>
+                    <button type="button" onClick={() => downloadFinisherCertificate(race, entry, certificateResult(entry))} className="shrink-0 w-9 h-9 rounded-full border border-red-500/25 bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-700 hover:text-white transition-all duration-150 flex items-center justify-center motion-safe:active:scale-95 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.2)]" title={`Download ${entry.isFreeSlot ? `Bib ${entry.bibNumber}` : entry.fullName}'s certificate`} aria-label={`Download certificate for ${entry.isFreeSlot ? `Bib ${entry.bibNumber}` : entry.fullName}`}><FileDown className="w-4 h-4" /></button>
                   </div>
                 ))}
               </div>
