@@ -22,6 +22,8 @@ import RunnerReminderCenter from './RunnerReminderCenter';
 import { createPayMongoCheckout, getPaymentStatus, PaymentStatusResponse } from '../lib/payments';
 import DeleteAccountModal from './DeleteAccountModal';
 import QrScannerModal from './QrScannerModal';
+import PublicRaceResults from './PublicRaceResults';
+import { claimRaceBib, claimableEntryLabel, parseRaceBibQr, previewRaceBibClaim, RaceBibClaimPreview } from '../lib/raceBibClaim';
 
 interface RunnerDashboardProps {
   profile: UserProfile;
@@ -29,7 +31,7 @@ interface RunnerDashboardProps {
   onInitialRaceHandled?: () => void;
 }
 
-type RunnerTab = 'events' | 'myraces' | 'friends' | 'engraving';
+type RunnerTab = 'events' | 'allraces' | 'myraces' | 'friends' | 'engraving';
 
 const standardShirtSizes = ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL', '6XL'];
 const usernamePattern = /^[a-z0-9][a-z0-9_.-]{2,23}$/;
@@ -202,6 +204,9 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
   const [scannedRaceId, setScannedRaceId] = useState<string | null>(null);
   const [eventQrMessage, setEventQrMessage] = useState('');
   const [eventQrError, setEventQrError] = useState('');
+  const [pendingBibClaim, setPendingBibClaim] = useState<(RaceBibClaimPreview & { payload: { raceId: string; bibNumber: string } }) | null>(null);
+  const [claimingBib, setClaimingBib] = useState(false);
+  const [bibClaimError, setBibClaimError] = useState('');
 
   useEffect(() => {
     const goHome = () => {
@@ -218,15 +223,36 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
 
   useEffect(() => {
     if (!['personal.register','personal.results','personal.bibs','personal.certificates'].some(can)) { setRunnerProfiles([]); return; }
-    const unsubscribe = onSnapshot(query(collection(db, 'runners'), where('uid', '==', profile.uid)), (snapshot) => {
-      const list: RunnerProfile[] = [];
-      snapshot.forEach((docSnap) => list.push(docSnap.data() as RunnerProfile));
-      setRunnerProfiles(list);
+    let directProfiles: RunnerProfile[] = [];
+    let claimedProfiles: RunnerProfile[] = [];
+    const publish = () => {
+      // A normal in-app registration always wins over a QR claim for the
+      // same event. QR claims are for Google Form/imported rosters, where the
+      // registration was made before the runner had a RacePulse account.
+      const directRaceIds = new Set(directProfiles.map((item) => item.raceId));
+      setRunnerProfiles([...directProfiles, ...claimedProfiles.filter((item) => !directRaceIds.has(item.raceId))]);
+    };
+    const unsubscribeProfiles = onSnapshot(query(collection(db, 'runners'), where('uid', '==', profile.uid)), (snapshot) => {
+      directProfiles = snapshot.docs.map((docSnap) => docSnap.data() as RunnerProfile);
+      publish();
     }, (err) => {
       console.warn('Runner profiles listener failed:', err.message);
-      setRunnerProfiles([]);
+      directProfiles = [];
+      publish();
     });
-    return () => unsubscribe();
+    const unsubscribeClaims = onSnapshot(query(collection(db, 'runnerClaims'), where('uid', '==', profile.uid)), (snapshot) => {
+      claimedProfiles = snapshot.docs
+        .map((docSnap) => docSnap.data()?.runner as RunnerProfile | undefined)
+        .filter((runner): runner is RunnerProfile => Boolean(runner));
+      publish();
+    }, (err) => {
+      // Older deployments have no runnerClaims rule yet. The normal runner
+      // list still works while the rules/function deployment is completed.
+      console.warn('Runner bib claims listener failed:', err.message);
+      claimedProfiles = [];
+      publish();
+    });
+    return () => { unsubscribeProfiles(); unsubscribeClaims(); };
   }, [profile.uid]);
 
   // Legacy accounts get their safe friend card automatically once they open
@@ -282,6 +308,21 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
   const latestProfile = runnerProfiles ? mostRecent(runnerProfiles) : undefined;
 
   const scanEventQr = async (text: string): Promise<boolean> => {
+    const bibPayload = parseRaceBibQr(text);
+    if (bibPayload) {
+      try {
+        setEventQrError('');
+        setEventQrMessage('Checking your race bib…');
+        const preview = await previewRaceBibClaim(bibPayload);
+        setPendingBibClaim({ ...preview, payload: bibPayload });
+        setEventQrMessage(preview.alreadyLinked ? 'This race is already in My Races.' : 'Race bib found — review the details to add it.');
+        window.setTimeout(() => setShowEventQrScanner(false), 300);
+        return true;
+      } catch (error: any) {
+        setEventQrError(error.message || 'We could not find a runner for this race bib QR code.');
+        return false;
+      }
+    }
     try {
       const url = new URL(text.trim());
       const allowedHosts = new Set(['racepulseph.com', 'www.racepulseph.com', 'racepulseph.web.app', 'racepulseph.firebaseapp.com', 'localhost']);
@@ -302,6 +343,25 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
     }
   };
 
+  const confirmBibClaim = async () => {
+    if (!pendingBibClaim || pendingBibClaim.alreadyLinked) {
+      setPendingBibClaim(null);
+      setTab('myraces');
+      return;
+    }
+    setClaimingBib(true);
+    setBibClaimError('');
+    try {
+      await claimRaceBib(pendingBibClaim.payload);
+      setPendingBibClaim(null);
+      setTab('myraces');
+    } catch (error: any) {
+      setBibClaimError(error.message || 'Unable to add this race to your account.');
+    } finally {
+      setClaimingBib(false);
+    }
+  };
+
   return (
     <div className="w-full max-w-7xl mx-auto px-4 py-4 pb-28 space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between glass-panel hero-glow px-4 sm:px-6 py-5 gap-4 animate-fadeIn">
@@ -312,10 +372,10 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
         </div>
         <div className="flex items-center gap-2 self-start">
           <button
-            onClick={() => { setEventQrError(''); setEventQrMessage(''); setShowEventQrScanner(true); }}
+            onClick={() => { setEventQrError(''); setEventQrMessage(''); setBibClaimError(''); setShowEventQrScanner(true); }}
             className="text-xs text-violet-500 border border-violet-500/30 hover:bg-violet-500/10 font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
           >
-            <Camera className="w-3.5 h-3.5" /> Scan event QR
+            <Camera className="w-3.5 h-3.5" /> Scan Race / Bib QR
           </button>
           <button
             onClick={() => setShowProfile(true)}
@@ -339,6 +399,36 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
 
       {showProfile && (
         <ProfileModal profile={profile} runnerProfiles={runnerProfiles || []} onClose={() => setShowProfile(false)} />
+      )}
+
+      {pendingBibClaim && createPortal(
+        <div className="fixed inset-0 z-[70] bg-black/70 backdrop-blur-sm p-4 flex items-center justify-center animate-fadeIn">
+          <div className="w-full max-w-md glass-panel p-6 space-y-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-violet-500">Race bib QR found</p>
+                <h2 className="heading-float text-xl font-black font-display uppercase text-[var(--text-primary)] mt-1">{pendingBibClaim.alreadyLinked ? 'Already in My Races' : 'Add this race?'}</h2>
+                <p className="text-xs text-[var(--text-secondary)] mt-1.5">{pendingBibClaim.race.name} • {pendingBibClaim.race.date}</p>
+              </div>
+              <button type="button" onClick={() => setPendingBibClaim(null)} disabled={claimingBib} className="p-2 rounded-full glass-inset text-[var(--text-secondary)] hover:text-red-500"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="glass-inset p-4 grid grid-cols-2 gap-x-4 gap-y-3 text-left">
+              <span className="col-span-2"><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Runner / team</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5">{pendingBibClaim.runner.fullName}</span></span>
+              <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Bib number</span><span className="block text-lg font-mono font-black text-red-500 mt-0.5">#{pendingBibClaim.runner.bibNumber}</span></span>
+              <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Distance</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5">{pendingBibClaim.runner.distance}</span></span>
+              <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Category</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5">{claimableEntryLabel(pendingBibClaim.runner.entryCategory)}</span></span>
+              <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Gender</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5 capitalize">{pendingBibClaim.runner.gender}</span></span>
+            </div>
+            {pendingBibClaim.runner.teamMembers && pendingBibClaim.runner.teamMembers.length > 1 && <p className="text-[11px] text-[var(--text-secondary)]"><span className="font-black uppercase tracking-wide text-[var(--text-muted)]">Members: </span>{pendingBibClaim.runner.teamMembers.join(' • ')}</p>}
+            {bibClaimError && <p className="text-xs font-bold text-red-500">{bibClaimError}</p>}
+            <p className="text-[10.5px] text-[var(--text-secondary)]">Only confirm if this is your official race bib. Your event, live splits, and published result will appear under My Races.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <button type="button" onClick={() => setPendingBibClaim(null)} disabled={claimingBib} className="py-3 rounded-[var(--radius-control)] glass-inset text-xs font-black uppercase tracking-widest text-[var(--text-secondary)]">Cancel</button>
+              <button type="button" onClick={confirmBibClaim} disabled={claimingBib} className="py-3 rounded-[var(--radius-control)] bg-gradient-to-r from-red-600 to-red-700 text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-red-900/30 disabled:opacity-60">{claimingBib ? 'Adding…' : pendingBibClaim.alreadyLinked ? 'Open My Races' : 'Confirm & Add Race'}</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
 
       {runnerProfiles === undefined && (
@@ -370,6 +460,13 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
         </>
       )}
 
+      {runnerProfiles !== undefined && tab === 'allraces' && (
+        <AllRacesView onRegister={(raceId) => {
+          setScannedRaceId(raceId);
+          setTab('events');
+        }} />
+      )}
+
       {runnerProfiles !== undefined && tab === 'friends' && can('personal.friends') && (
         <FriendsView profile={profile} onOpenRace={(raceId) => { setScannedRaceId(raceId); setTab('events'); }} />
       )}
@@ -388,6 +485,7 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
         <BottomNav
           items={[
             { key: 'events', icon: <Flag className="w-4 h-4" />, label: 'Events', active: tab === 'events', onClick: () => setTab('events') },
+            { key: 'allraces', icon: <Trophy className="w-4 h-4" />, label: 'All Races', active: tab === 'allraces', onClick: () => setTab('allraces') },
             { key: 'myraces', icon: <ClipboardList className="w-4 h-4" />, label: 'My Races', active: tab === 'myraces', onClick: () => setTab('myraces') },
             { key: 'friends', icon: <Users2 className="w-4 h-4" />, label: 'Friends', active: tab === 'friends', onClick: () => setTab('friends') },
             { key: 'engraving', icon: <Award className="w-4 h-4" />, label: 'Engraving', active: tab === 'engraving', onClick: () => setTab('engraving') },
@@ -400,10 +498,70 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
           onScanSuccess={scanEventQr}
           successMessage={eventQrMessage}
           errorMessage={eventQrError}
-          title="Scan Event QR"
-          subtitle="OPEN A RACE REGISTRATION"
-          instructions="Scan the RacePulse event QR from the organizer. We will open that specific race registration form for you."
+          title="Scan Race or Bib QR"
+          subtitle="OPEN EVENT OR ADD MY RACE"
+          instructions="Scan an organizer event QR to open registration, or scan the QR printed on your race bib to add that event and its result to My Races."
         />
+      )}
+    </div>
+  );
+}
+
+// ========== ALL PUBLIC RACES ==========
+
+// This is deliberately separate from My Races: a runner can browse every
+// public event and its published standings without adding that event to their
+// personal registration list.
+function AllRacesView({ onRegister }: { onRegister: (raceId: string) => void }) {
+  const [races, setRaces] = useState<Race[]>([]);
+  const [selectedRaceId, setSelectedRaceId] = useState('');
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'races'), (snapshot) => {
+      const list: Race[] = [];
+      snapshot.forEach((docSnap) => list.push(docSnap.data() as Race));
+      list.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      setRaces(list);
+    }, (err) => console.warn('All races listener failed:', err.message));
+    return () => unsubscribe();
+  }, []);
+
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const activeRaces = races.filter((race) => !race.completedAt && race.date >= today);
+  const doneRaces = races.filter((race) => !!race.completedAt || race.date < today);
+  const selectedRace = races.find((race) => race.id === selectedRaceId);
+  const selectRace = (raceId: string) => {
+    setSelectedRaceId(raceId);
+    requestAnimationFrame(() => document.getElementById('runner-public-race-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
+
+  return (
+    <div className="space-y-8 pb-8">
+      <RaceList
+        races={activeRaces}
+        onSelectRace={selectRace}
+        selectedRaceId={selectedRaceId}
+        title="Active & Upcoming Races"
+        subtitle="Browse every published RacePulsePH event. Registration is optional."
+        actionLabel="View Race"
+        emptyTitle="No active or upcoming races"
+        emptyDescription="Check back soon for the next event."
+      />
+      <RaceList
+        races={doneRaces}
+        onSelectRace={selectRace}
+        selectedRaceId={selectedRaceId}
+        title="Done & Past Races"
+        subtitle="View official rankings, finish times, and digital certificates."
+        actionLabel="View Official Results"
+        emptyTitle="No completed races yet"
+        emptyDescription="Completed events will be archived here."
+      />
+      {selectedRace && (
+        <div id="runner-public-race-results" className="scroll-mt-6">
+          <PublicRaceResults race={selectedRace} onRegister={onRegister} />
+        </div>
       )}
     </div>
   );
@@ -448,8 +606,15 @@ function MyRacesView({ runnerProfiles, onBrowseEvents }: MyRacesViewProps) {
 
   const raceById = new Map(races.map((r) => [r.id, r]));
   const todayStr = new Date().toISOString().slice(0, 10);
-  const upcoming = runnerProfiles.filter((rp) => (raceById.get(rp.raceId)?.date || '9999') >= todayStr);
-  const past = runnerProfiles.filter((rp) => (raceById.get(rp.raceId)?.date || '9999') < todayStr);
+  // The organizer can close a race before its scheduled date (or correct a
+  // date later). Treat completedAt as the source of truth so an official Done
+  // Race always remains visible in the runner's own race archive.
+  const isDoneRace = (profile: RunnerProfile) => {
+    const race = raceById.get(profile.raceId);
+    return !!race?.completedAt || (race?.date || '9999') < todayStr;
+  };
+  const upcoming = runnerProfiles.filter((rp) => !isDoneRace(rp));
+  const past = runnerProfiles.filter(isDoneRace);
 
   return (
     <div className="space-y-6">
@@ -470,7 +635,7 @@ function MyRacesView({ runnerProfiles, onBrowseEvents }: MyRacesViewProps) {
       ) : (
         <>
           <RaceProfileSection title="Upcoming Races" profiles={upcoming} raceById={raceById} onSelect={setViewingProfile} emptyText="No upcoming races." />
-          <RaceProfileSection title="Past Races" profiles={past} raceById={raceById} onSelect={setViewingProfile} emptyText="No past races yet." />
+          <RaceProfileSection title="Done & Past Races" profiles={past} raceById={raceById} onSelect={setViewingProfile} emptyText="No done or past races yet." />
         </>
       )}
     </div>
@@ -1432,7 +1597,7 @@ function RunnerRacePass({ race, runnerProfile, result, orderedCheckpoints }: {
     ...(start ? [{
       id: 'start',
       label: 'Started',
-      detail: result?.sequenceStartTime ? 'Started at previous entry finish' : startSplit ? start.label : result?.timingMethod === 'gun' ? 'Official wave gun-time fallback' : start.label,
+      detail: result?.sequenceStartTime ? 'Started at previous entry finish' : startSplit ? start.label : result?.timingMethod === 'gun' ? 'Official Roll Call gun start' : start.label,
       completed: !!startSplit || !!result?.sequenceStartTime || result?.timingMethod === 'gun',
       timestamp: result?.sequenceStartTime || startSplit?.timestamp || (result?.timingMethod === 'gun' ? getWaveStartTime(race, runnerProfile.distance, runnerEntryCategory(runnerProfile)) : undefined),
     }] : []),
@@ -1490,7 +1655,7 @@ function DigitalRaceBib({ race, runnerProfile }: { race: Race; runnerProfile: Ru
   const bibRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState('');
-  const bibTemplate = resolveRaceBibTemplate(race, runnerProfile.distance);
+  const bibTemplate = resolveRaceBibTemplate(race, runnerProfile.distance, runnerProfile.entryCategory || 'solo');
   const layout = bibTemplate?.layout;
   const nameLines = raceBibNameLines(runnerProfile);
   const previewNameSize = Math.min(layout?.runnerNameSize ?? 5, 11 / Math.max(1, nameLines.length));
@@ -1518,6 +1683,13 @@ function DigitalRaceBib({ race, runnerProfile }: { race: Race; runnerProfile: Ru
         layout.bibNumberX, layout.bibNumberY, layout.bibNumberSize ?? 12,
         layout.bibNumberColor ?? '#FFFFFF', layout.bibNumberStrokeColor ?? '#000000', layout.bibNumberStrokeWidth ?? 0, raceBibFontFamily(layout.bibNumberFont, race.raceBibCustomFont, true),
       );
+      if (race.raceBibShowRaffleNumber) {
+        drawFittedRaceBibText(
+          ctx, runnerProfile.bibNumber, canvas.width, canvas.height,
+          layout.raffleNumberX ?? 50, layout.raffleNumberY ?? 88, layout.raffleNumberSize ?? 7,
+          layout.raffleNumberColor ?? '#FFFFFF', layout.raffleNumberStrokeColor ?? '#000000', layout.raffleNumberStrokeWidth ?? 0, raceBibFontFamily(layout.raffleNumberFont ?? 'mono', race.raceBibCustomFont, true),
+        );
+      }
       drawFittedRaceBibTextLines(
         ctx, nameLines, canvas.width, canvas.height,
         layout.runnerNameX, layout.runnerNameY, layout.runnerNameSize ?? 5,
@@ -1549,6 +1721,7 @@ function DigitalRaceBib({ race, runnerProfile }: { race: Race; runnerProfile: Ru
       <div ref={bibRef} className="relative w-full aspect-[3/2] overflow-hidden rounded-xl bg-[var(--surface-inset)] select-none" style={{ containerType: 'inline-size' }}>
         <img src={bibTemplate.image} alt={`${race.name} personalized race bib`} className="absolute inset-0 w-full h-full object-cover" />
         <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${layout.bibNumberX}%`, top: `${layout.bibNumberY}%`, fontSize: `${layout.bibNumberSize ?? 12}cqw`, color: layout.bibNumberColor ?? '#FFFFFF', fontFamily: raceBibFontFamily(layout.bibNumberFont, race.raceBibCustomFont), WebkitTextStroke: `${layout.bibNumberStrokeWidth ?? 0}cqw ${layout.bibNumberStrokeColor ?? '#000000'}`, paintOrder: 'stroke fill' }}>{runnerProfile.bibNumber}</span>
+        {race.raceBibShowRaffleNumber && <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${layout.raffleNumberX ?? 50}%`, top: `${layout.raffleNumberY ?? 88}%`, fontSize: `${layout.raffleNumberSize ?? 7}cqw`, color: layout.raffleNumberColor ?? '#FFFFFF', fontFamily: raceBibFontFamily(layout.raffleNumberFont ?? 'mono', race.raceBibCustomFont), WebkitTextStroke: `${layout.raffleNumberStrokeWidth ?? 0}cqw ${layout.raffleNumberStrokeColor ?? '#000000'}`, paintOrder: 'stroke fill' }}>{runnerProfile.bibNumber}</span>}
         <div className="absolute -translate-x-1/2 -translate-y-1/2 w-[90%] text-center leading-[1.16] font-black tracking-wide drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)]" style={{ left: `${layout.runnerNameX}%`, top: `${layout.runnerNameY}%`, fontSize: `${previewNameSize}cqw`, color: layout.runnerNameColor ?? '#FFFFFF', fontFamily: raceBibFontFamily(layout.runnerNameFont, race.raceBibCustomFont), WebkitTextStroke: `${layout.runnerNameStrokeWidth ?? 0}cqw ${layout.runnerNameStrokeColor ?? '#000000'}`, paintOrder: 'stroke fill' }}>{nameLines.map((name, index) => <span key={`${name}-${index}`} className="block">{name}</span>)}</div>
       </div>
       <button hidden={!can('personal.bibs')} type="button" onClick={handleDownload} disabled={downloading} className="w-full py-2.5 px-4 rounded-[var(--radius-control)] font-display font-black uppercase text-[10px] tracking-widest text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 transition disabled:opacity-60 flex items-center justify-center gap-2">

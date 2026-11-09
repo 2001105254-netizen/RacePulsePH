@@ -116,21 +116,35 @@ export interface RaceBibCustomFont {
 export interface RaceBibLayout {
   bibNumberX: number;
   bibNumberY: number;
+  // Optional duplicate of the bib number, normally positioned in the lower
+  // section so the detached raffle stub keeps a matching ticket number.
+  raffleNumberX?: number;
+  raffleNumberY?: number;
+  // The bib QR carries the race ID and bib number for camera-based staff
+  // check-in. Its white backing keeps it readable over colourful artwork.
+  qrCodeX?: number;
+  qrCodeY?: number;
+  qrCodeSize?: number;
   runnerNameX: number;
   runnerNameY: number;
   // Sizes use container-width units (cqw), so the same layout scales neatly
   // in the organizer preview, runner PWA, and downloaded bib image.
   bibNumberSize?: number;
+  raffleNumberSize?: number;
   runnerNameSize?: number;
   bibNumberColor?: string;
+  raffleNumberColor?: string;
   runnerNameColor?: string;
   // Outline widths use container-width units (cqw), matching the text sizes.
   // A value of 0 keeps the legacy no-outline appearance.
   bibNumberStrokeColor?: string;
+  raffleNumberStrokeColor?: string;
   bibNumberStrokeWidth?: number;
+  raffleNumberStrokeWidth?: number;
   runnerNameStrokeColor?: string;
   runnerNameStrokeWidth?: number;
   bibNumberFont?: RaceBibFont;
+  raffleNumberFont?: RaceBibFont;
   runnerNameFont?: RaceBibFont;
 }
 
@@ -176,6 +190,9 @@ export interface Race {
   // RFC3339 start time per distance label (e.g. "10K", "5K"). Falls back to
   // gunStartTime for legacy races and races with one shared start.
   waveStartTimes?: Record<string, string>;
+  // Optional organizer-confirmed Female Overall order per Solo division
+  // (for example { "5K Solo": ["5-154", "5-157", "5-145"] }).
+  femaleOverallRankOverrides?: Record<string, string[]>;
   // Set explicitly by the organizer after the last timing check. This is the
   // source of truth for moving an event to Done Races; it does not depend on
   // waiting for the calendar date to roll over.
@@ -192,10 +209,19 @@ export interface Race {
   // overlaid on this template using the organizer-configured positions.
   raceBibTemplateImage?: string;
   raceBibLayout?: RaceBibLayout;
+  raceBibShowRaffleNumber?: boolean;
+  raceBibShowQrCode?: boolean;
   raceBibCustomFont?: RaceBibCustomFont;
   // Keyed by the distance label stored on registrations (for example, "5K").
   // Falls back to the original single raceBibTemplateImage for old races.
   raceBibTemplatesByDistance?: Record<string, RaceBibTemplate>;
+  // Optional artwork for Solo, Duo, Trio, or Group entries. This takes
+  // priority over a distance template, then falls back to the default bib.
+  raceBibTemplatesByEntryCategory?: Partial<Record<RaceEntryCategory, RaceBibTemplate>>;
+  // Optional recognition awards, selected from completed Solo finishers per
+  // distance and gender. These never replace normal age-category standings.
+  youngestRunnerAwardEnabled?: boolean;
+  oldestRunnerAwardEnabled?: boolean;
 }
 
 export interface PublicLeaderboardEntry {
@@ -211,6 +237,7 @@ export interface PublicLeaderboardEntry {
   overallRank?: number;
   categoryRank?: number;
   categoryLabel?: string;
+  specialAgeAwards?: string[];
   timingMethod?: 'chip' | 'gun' | 'transition';
   sequenceStartTime?: string;
   // Both elapsed views are published for transparent certificates. `finishTime`
@@ -263,6 +290,7 @@ export interface RunnerProfile {
   // still stores a schema-safe numeric fallback, while this flag ensures it
   // is never presented as a real age or used for a division.
   ageNotProvided?: boolean;
+  ageCategoryOverrideId?: string;
   // A pre-created, anonymous race-day place. It uses a normal unique bib but
   // must never be placed in a gender/age category.
   isFreeSlot?: boolean;
@@ -316,6 +344,10 @@ export interface RunnerResult {
   finishReviewRequired?: boolean;
   finishTime?: string; // formatted HH:MM:SSfffff elapsed from 'start' checkpoint to 'finish'
   finishSeconds?: number;
+  // Preserve the actual crossing order when results have the same displayed
+  // elapsed second. This is used only as a deterministic ranking tie-break.
+  finishReadAt?: string;
+  finishReadRecordedAt?: string;
   // Kept independently so a certificate can show both elapsed measurements.
   // Chip time exists only if the runner has a valid individual Start read.
   chipTime?: string;
@@ -329,8 +361,9 @@ export interface RunnerResult {
   overallRank?: number;
   categoryRank?: number;
   categoryLabel?: string;
-  // A chip start is preferred. Gun is a deliberate per-distance fallback when
-  // a crowded start mat misses an otherwise valid finisher.
+  specialAgeAwards?: string[];
+  // Roll Call gun time is the official basis for a normal wave. A transition
+  // entry starts at the prior entry's validated finish; chip is legacy fallback.
   timingMethod?: 'chip' | 'gun' | 'transition';
   sequenceStartTime?: string;
 }

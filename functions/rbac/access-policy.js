@@ -18,7 +18,9 @@ function defaults(role) {
 }
 function effective(role, access = {}) {
   const result = defaults(role);
-  for (const key of keys) if (typeof access.overrides?.[key] === 'boolean') result[key] = access.overrides[key];
+  // The platform owner must always retain the complete operational preset.
+  // This also makes an old custom deny harmless after a promotion.
+  if (role !== 'superadmin') for (const key of keys) if (typeof access.overrides?.[key] === 'boolean') result[key] = access.overrides[key];
   if (access.status === 'suspended') for (const key of keys) result[key] = false;
   return result;
 }
@@ -27,7 +29,10 @@ const dependencies = Object.fromEntries(keys.filter(k => !k.startsWith('personal
 Object.assign(dependencies, { 'timing.view': ['roster.view', 'race.view'], 'timing.scan': ['timing.view'], 'timing.manual': ['timing.scan'], 'results.view': ['timing.view'], 'results.publish': ['results.view'], 'timing.finish': ['results.publish'], 'revenue.view': ['roster.view'] });
 Object.assign(dependencies, { 'personal.checkout': ['personal.register'], 'personal.certificates': ['personal.results'], 'personal.invites': ['personal.friends'] });
 function accessFor(user, access = {}) {
-  return { schemaVersion: 1, presetVersion: 1, revision: 0, scope: ['admin', 'superadmin'].includes(user.role) ? 'all' : 'owned-assigned', raceIds: [], status: 'active', overrides: {}, ...access };
+  const state = { schemaVersion: 1, presetVersion: 1, revision: 0, scope: ['admin', 'superadmin'].includes(user.role) ? 'all' : 'owned-assigned', raceIds: [], status: 'active', overrides: {}, ...access };
+  // Super Admin is deliberately global. This also repairs legacy records
+  // that retained a selected/owned scope after an account was promoted.
+  return user.role === 'superadmin' ? { ...state, scope: 'all', raceIds: [] } : state;
 }
 function can(user, access, action) {
   if (!user || !roles.includes(user.role)) return false;

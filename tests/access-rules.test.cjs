@@ -81,10 +81,10 @@ test('suspension blocks operational access even for Super Admin',async()=>{
  await assertFails(deleteDoc(doc(db('superadmin'),'races','race_b')));
  await assertSucceeds(getDoc(doc(db('superadmin'),'users','superadmin')));
 });
-test('selected-race restriction also applies to protected race deletion',async()=>{
+test('Super Admin remains global after a legacy selected-race scope',async()=>{
  const user={uid:'superadmin',role:'superadmin',approved:true},state={status:'active',scope:'selected',raceIds:['race_a'],overrides:{}};
  await env.withSecurityRulesDisabled(ctx=>setDoc(doc(ctx.firestore(),'userAccess','superadmin'),{...state,permissions:Object.fromEntries(policy.keys.map(key=>[key,policy.can(user,state,key)]))}));
- await assertFails(deleteDoc(doc(db('superadmin'),'races','race_b')));
+ await assertSucceeds(updateDoc(doc(db('superadmin'),'races','race_b'),{name:'Super Admin update'}));
 });
 
 test('finish review window requires correction permission and a bounded numeric value', async()=>{

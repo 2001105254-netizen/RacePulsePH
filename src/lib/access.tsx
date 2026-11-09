@@ -15,14 +15,23 @@ export function useScopedRaces() {
   useEffect(() => onSnapshot(collection(db, 'races'), snap => setRaces(snap.docs.map(d => ({ ...d.data(), id: d.id } as Race)).filter(inScope)), () => setRaces([])), [inScope, version]);
   return races;
 }
-export function AccessProvider({ profile, children }: { profile: UserProfile; children: React.ReactNode }) {
+export function AccessProvider({ profile, children, onLoadState }: { profile: UserProfile; children: React.ReactNode; onLoadState?: (state: 'loading' | 'ready' | 'error') => void }) {
   const [state, setState] = useState<AccessState>({}), [ready, setReady] = useState(false), [error, setError] = useState('');
   useEffect(() => { setReady(false); setError(''); return onSnapshot(doc(db, 'userAccess', profile.uid), snap => { setState(snap.data() || {}); setReady(snap.exists()); if (!snap.exists()) void accessCommand('session', {}).catch(e => setError(e.message)); }, e => { setError(e.message); setReady(false); }); }, [profile.uid]);
+  // Report after commit so a successful signal includes the mounted workspace.
+  useEffect(() => { onLoadState?.(error ? 'error' : ready ? 'ready' : 'loading'); }, [error, ready, onLoadState]);
   const value = useMemo<AccessContextValue>(() => {
     const active = ready && state.status !== 'suspended';
-    const permissions = { ...defaults(profile.role), ...(state.overrides || {}) };
+    // Super Admin is the platform owner. Legacy custom denies must not leave
+    // that account unable to repair a race or its uploaded assets.
+    const permissions = profile.role === 'superadmin'
+      ? defaults(profile.role)
+      : { ...defaults(profile.role), ...(state.overrides || {}) };
     const can = (key: string) => active && permissions[key] === true && (key.startsWith('personal.') || profile.role !== 'organizer' || profile.approved) && (catalog.dependencies[key] || []).every((dep: string) => permissions[dep] === true);
-    const scope = state.scope || (['admin','superadmin'].includes(profile.role) ? 'all' : 'owned-assigned');
+    // A Super Admin is the platform owner. Older access documents may still
+    // contain a selected or owned-only scope from before the role was changed;
+    // that must never hide races or lock the Super Admin out of Race Setup.
+    const scope = profile.role === 'superadmin' ? 'all' : (state.scope || (profile.role === 'admin' ? 'all' : 'owned-assigned'));
     return { ready, suspended: state.status === 'suspended', can, authority: active && profile.role === 'superadmin', state, version: `${profile.uid}:${profile.role}:${profile.approved}:${state.revision || 0}`,
       inScope: race => active && (scope === 'all' || (scope === 'selected' && (state.raceIds || []).includes(race.id)) || (scope === 'owned-assigned' && (race.createdBy === profile.uid || (race.organizerIds || []).includes(profile.uid)))) };
   }, [profile, state, ready]);

@@ -10,6 +10,7 @@ import { groupRankingFolders } from '../lib/rankingFolders';
 import { useOfflineScanQueue } from '../lib/offlineScanQueue';
 import { Race, ChipRead, PublicLeaderboardEntry, PublicLiveResults, RaceEntryCategory, RunnerProfile, RunnerResult } from '../types';
 import { groupRunnersByDistance, generateRunnerRosterPdf } from '../lib/runnerReport';
+import { generateRankingsReportPdf } from '../lib/rankingsReport';
 import { entryCategoryLabels, entryMemberCount, raceEntryCategories, runnerDivisionLabel, runnerEntryCategory, runnerWaveLabel } from '../lib/raceEntry';
 import { Radio, ScanLine, Trophy, Clock, Wifi, WifiOff, QrCode, RefreshCw, ArrowLeft, Cpu, Users2, FileDown, FileUp, Maximize2, X, ListChecks, CheckCircle2, Circle, PlayCircle, RotateCcw, Timer, Keyboard, Smartphone, Search, UserCheck, Undo2, Folder, FolderOpen, ChevronRight } from 'lucide-react';
 import QrScannerModal from './QrScannerModal';
@@ -310,6 +311,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         overallRank: result.overallRank ?? result.rank,
         ...(result.categoryRank ? { categoryRank: result.categoryRank } : {}),
         ...(result.categoryLabel ? { categoryLabel: result.categoryLabel } : {}),
+        ...(result.specialAgeAwards?.length ? { specialAgeAwards: result.specialAgeAwards } : {}),
         ...(result.timingMethod ? { timingMethod: result.timingMethod } : {}),
         ...(result.sequenceStartTime ? { sequenceStartTime: result.sequenceStartTime } : {}),
         ...(result.chipTime ? { chipTime: result.chipTime } : {}),
@@ -329,6 +331,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         overallRank: result.overallRank ?? result.rank,
         ...(result.categoryRank ? { categoryRank: result.categoryRank } : {}),
         ...(result.categoryLabel ? { categoryLabel: result.categoryLabel } : {}),
+        ...(result.specialAgeAwards?.length ? { specialAgeAwards: result.specialAgeAwards } : {}),
         ...(result.timingMethod ? { timingMethod: result.timingMethod } : {}),
         ...(result.sequenceStartTime ? { sequenceStartTime: result.sequenceStartTime } : {}),
         ...(result.chipTime ? { chipTime: result.chipTime } : {}),
@@ -645,7 +648,12 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
   const handleQrScan = async (text: string): Promise<boolean> => {
     let bib = text.trim();
     if (bib.startsWith('RPCHIPv1|')) {
-      bib = bib.split('|')[2] || bib.split('|')[1] || '';
+      const parts = bib.split('|');
+      if (parts[1] !== race.id) {
+        setFeedback({ type: 'error', text: 'This bib QR belongs to a different race.' });
+        return false;
+      }
+      bib = parts[2] || '';
     } else if (bib.startsWith('RXPv2|')) {
       bib = bib.split('|')[3] || ''; // fall back to the engraving ticket's bib field
     }
@@ -771,6 +779,30 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
     }
   };
 
+  const republishResults = async () => {
+    if (!isRaceCompleted || updatingRaceStatus) return;
+    setUpdatingRaceStatus(true);
+    try {
+      const updatedAt = new Date().toISOString();
+      await setDoc(doc(db, 'liveResults', race.id), {
+        raceId: race.id,
+        raceName: race.name,
+        updatedAt,
+        status: 'completed',
+        totalRegistered: runnerProfiles.length,
+        totalStarted: new Set(chipReads.filter((read) => read.checkpointId === startCheckpoint?.id).map((read) => read.bibNumber)).size,
+        totalFinished: finishedCount,
+        leaders: publicLeaders,
+        officialResults: publicOfficialResults,
+      } satisfies PublicLiveResults);
+      setFeedback({ type: 'success', text: `Published ${finishedCount} official finisher${finishedCount === 1 ? '' : 's'} to the public results page.` });
+    } catch (error: any) {
+      setFeedback({ type: 'error', text: error.message || 'Could not republish results. Please try again.' });
+    } finally {
+      setUpdatingRaceStatus(false);
+    }
+  };
+
   const reopenTiming = async () => {
     if (!can('timing.reopen')) return;
     if (!isRaceCompleted || updatingRaceStatus) return;
@@ -797,9 +829,14 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         <div className="flex items-center gap-3">
           <LiveClock gunStartTime={race.gunStartTime} />
           {isRaceCompleted ? (
-            <button hidden={!can('timing.reopen')} type="button" onClick={() => void reopenTiming()} disabled={updatingRaceStatus} className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-emerald-500 hover:bg-emerald-500/20 disabled:opacity-50 transition">
-              {updatingRaceStatus ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />} Race complete · Reopen timing
-            </button>
+            <>
+              <button hidden={!can('results.publish')} type="button" onClick={() => void republishResults()} disabled={updatingRaceStatus} className="inline-flex items-center gap-1.5 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-cyan-500 hover:bg-cyan-500/20 disabled:opacity-50 transition">
+                {updatingRaceStatus ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Trophy className="w-3 h-3" />} Republish results
+              </button>
+              <button hidden={!can('timing.reopen')} type="button" onClick={() => void reopenTiming()} disabled={updatingRaceStatus} className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-emerald-500 hover:bg-emerald-500/20 disabled:opacity-50 transition">
+                {updatingRaceStatus ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />} Race complete · Reopen timing
+              </button>
+            </>
           ) : (
             <button hidden={!can('timing.finish')} type="button" onClick={() => void finishRace()} disabled={updatingRaceStatus} className="inline-flex items-center gap-1.5 rounded-full border border-red-500/35 bg-red-500/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-red-500 hover:bg-red-500 hover:text-white disabled:opacity-50 transition">
               {updatingRaceStatus ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />} Finish race & publish results
@@ -870,6 +907,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
       {mode === 'assign' && <ChipAssignmentPanel race={race} runnerProfiles={runnerProfiles} chipReads={chipReads} />}
       {mode === 'mobile-checkin' && (
         <MobileCheckInPanel
+          raceId={race.id}
           raceName={race.name}
           runners={runnerProfiles}
           chipReads={chipReads}
@@ -1182,6 +1220,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
 // ========== MOBILE CHECK-IN ==========
 
 interface MobileCheckInPanelProps {
+  raceId: string;
   raceName: string;
   runners: RunnerProfile[];
   chipReads: ChipRead[];
@@ -1194,6 +1233,7 @@ interface MobileCheckInPanelProps {
 }
 
 function MobileCheckInPanel({
+  raceId,
   raceName,
   runners,
   chipReads,
@@ -1206,13 +1246,16 @@ function MobileCheckInPanel({
 }: MobileCheckInPanelProps) {
   const { can, authority } = useAccess();
   const [search, setSearch] = useState('');
+  const [showQrScanner, setShowQrScanner] = useState(false);
+  const [qrScanError, setQrScanError] = useState('');
+  const [pendingQrRunner, setPendingQrRunner] = useState<RunnerProfile | null>(null);
   const normalizedSearch = normalizeScanValue(search);
   const checkedInBibs = useMemo(() => new Set(
     checkInCheckpoint
       ? chipReads.filter((read) => read.checkpointId === checkInCheckpoint.id).map((read) => read.bibNumber)
       : []
   ), [checkInCheckpoint, chipReads]);
-  const runnerByBib = useMemo(() => new Map(runners.map((runner) => [runner.bibNumber, runner])), [runners]);
+  const runnerByBib = useMemo(() => new Map(runners.map((runner) => [normalizeScanValue(runner.bibNumber), runner])), [runners]);
   const results = useMemo(() => {
     if (!normalizedSearch) return [];
     return runners
@@ -1234,6 +1277,35 @@ function MobileCheckInPanel({
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     .slice(0, 6), [checkInCheckpoint?.id, chipReads]);
 
+  const handleCheckInQr = async (text: string): Promise<boolean> => {
+    const parts = text.trim().split('|');
+    if (parts[0] !== 'RPCHIPv1') {
+      setQrScanError('This is not a RacePulsePH race bib QR code.');
+      return false;
+    }
+    if (parts[1] !== raceId) {
+      setQrScanError('This race bib belongs to a different event.');
+      return false;
+    }
+    const bibNumber = normalizeScanValue(parts[2] || '');
+    const runner = runnerByBib.get(bibNumber);
+    if (!runner) {
+      setQrScanError(`Bib ${bibNumber || 'unknown'} is not in this race roster.`);
+      return false;
+    }
+    setQrScanError('');
+    setSearch(runner.bibNumber);
+    setShowQrScanner(false);
+    setPendingQrRunner(runner);
+    return true;
+  };
+
+  const confirmQrCheckIn = async () => {
+    if (!pendingQrRunner) return;
+    await onCheckIn(pendingQrRunner);
+    setPendingQrRunner(null);
+  };
+
   return (
     <div className="max-w-3xl mx-auto space-y-4">
       <section className="glass-panel overflow-hidden">
@@ -1242,7 +1314,7 @@ function MobileCheckInPanel({
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-100 flex items-center gap-2"><Smartphone className="w-4 h-4" /> Staff mobile mode</p>
               <h2 className="font-display font-black text-2xl sm:text-3xl uppercase tracking-tight mt-2">Mobile Check-In</h2>
-              <p className="text-sm text-emerald-50/90 mt-2">Ask for a bib number or name, then tap once to mark the runner present. Free Slots are searched by bib only.</p>
+              <p className="text-sm text-emerald-50/90 mt-2">Scan the QR on the race bib, or search by bib number or name. Free Slots are searched by bib only.</p>
             </div>
             <div className="shrink-0 text-right rounded-2xl bg-black/15 px-4 py-3 border border-white/15">
               <p className="font-mono font-black text-2xl leading-none">{checkedInCount}</p>
@@ -1258,6 +1330,7 @@ function MobileCheckInPanel({
           </div>
         ) : (
           <div className="p-4 sm:p-5 space-y-3">
+            <button hidden={!can('timing.scan')} type="button" onClick={() => { setQrScanError(''); setShowQrScanner(true); }} disabled={raceCompleted} className="w-full min-h-14 rounded-[18px] bg-violet-600 hover:bg-violet-500 disabled:opacity-55 px-4 py-3 text-xs font-black uppercase tracking-widest text-white transition active:scale-[0.98] flex items-center justify-center gap-2"><QrCode className="w-5 h-5" /> Scan race bib QR</button>
             <label className="sr-only" htmlFor="mobile-checkin-search">Search runner</label>
             <div className="relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
@@ -1325,13 +1398,70 @@ function MobileCheckInPanel({
           ) : recentCheckIns.map((read) => (
             <div key={read.id} className="flex items-center gap-3 glass-inset px-3 py-2.5 rounded-xl">
               <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-500" />
-              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--text-primary)]">{runnerTimingName(runnerByBib.get(read.bibNumber), read.bibNumber)}</span>
+              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--text-primary)]">{runnerTimingName(runnerByBib.get(normalizeScanValue(read.bibNumber)), read.bibNumber)}</span>
               <span className="font-mono text-xs font-bold text-[var(--text-secondary)]">#{read.bibNumber}</span>
               <span className="text-[10px] text-[var(--text-muted)] shrink-0">{formatClockTime(read.timestamp)}</span>
             </div>
           ))}
         </div>
       </section>
+
+      {showQrScanner && (
+        <QrScannerModal
+          onClose={() => setShowQrScanner(false)}
+          onScanSuccess={handleCheckInQr}
+          successMessage=""
+          errorMessage={qrScanError}
+          title="Mobile Race Bib Scanner"
+          subtitle="SCAN TO CHECK IN"
+          instructions="Point the phone camera at the QR code printed on the runner's race bib. Review the runner details, then confirm their check-in."
+        />
+      )}
+
+      {pendingQrRunner && (() => {
+        const alreadyCheckedIn = checkedInBibs.has(pendingQrRunner.bibNumber);
+        const isSaving = checkingBib === pendingQrRunner.bibNumber;
+        const entry = runnerEntryCategory(pendingQrRunner);
+        const emergencyContact = [pendingQrRunner.emergencyContactName, pendingQrRunner.emergencyContactPhone].filter(Boolean).join(' · ');
+        return (
+          <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/75 p-3 sm:p-5 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="checkin-confirm-title">
+            <div className="w-full max-w-lg overflow-hidden rounded-[26px] border border-emerald-500/30 bg-[var(--surface-card)] shadow-2xl">
+              <div className="border-b border-emerald-500/20 bg-gradient-to-br from-emerald-600 to-emerald-800 p-5 text-white">
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-100">Race bib verified</p>
+                <div className="mt-2 flex items-start justify-between gap-3">
+                  <div>
+                    <h3 id="checkin-confirm-title" className="font-display text-2xl font-black uppercase tracking-tight">Confirm Runner</h3>
+                    <p className="mt-1 text-sm text-emerald-50/90">Review the details before recording attendance.</p>
+                  </div>
+                  <span className="rounded-xl border border-white/20 bg-black/15 px-3 py-2 font-mono text-base font-black">#{pendingQrRunner.bibNumber}</span>
+                </div>
+              </div>
+
+              <div className="space-y-4 p-5">
+                <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-4">
+                  <p className="text-xl font-black leading-tight text-[var(--text-primary)]">{runnerTimingName(pendingQrRunner)}</p>
+                  <p className="mt-1 text-xs font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">{pendingQrRunner.distance} · {entryCategoryLabels[entry]}</p>
+                </div>
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                  <div><dt className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Race bib</dt><dd className="mt-0.5 font-mono font-black text-[var(--text-primary)]">#{pendingQrRunner.bibNumber}</dd></div>
+                  <div><dt className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Category</dt><dd className="mt-0.5 font-bold text-[var(--text-primary)]">{entryCategoryLabels[entry]}</dd></div>
+                  {!pendingQrRunner.isFreeSlot && <><div><dt className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Gender</dt><dd className="mt-0.5 font-bold capitalize text-[var(--text-primary)]">{pendingQrRunner.gender}</dd></div><div><dt className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Age</dt><dd className="mt-0.5 font-bold text-[var(--text-primary)]">{pendingQrRunner.ageNotProvided ? 'Not provided' : pendingQrRunner.age}</dd></div></>}
+                  {pendingQrRunner.shirtSize && <div><dt className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Shirt size</dt><dd className="mt-0.5 font-bold text-[var(--text-primary)]">{pendingQrRunner.shirtSize}</dd></div>}
+                  {pendingQrRunner.chipId && <div><dt className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">RFID chip</dt><dd className="mt-0.5 truncate font-mono text-xs font-bold text-[var(--text-primary)]">{pendingQrRunner.chipId}</dd></div>}
+                </dl>
+                {(pendingQrRunner.teamName || (pendingQrRunner.teamMembers?.length || 0) > 1) && <div className="rounded-xl border border-[var(--border-default)] px-3 py-2.5"><p className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Team / members</p><p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{pendingQrRunner.teamName || pendingQrRunner.teamMembers?.join(' · ')}</p></div>}
+                {emergencyContact && <div className="rounded-xl border border-amber-500/25 bg-amber-500/[0.05] px-3 py-2.5"><p className="text-[9px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-400">Emergency contact</p><p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{emergencyContact}</p></div>}
+                {alreadyCheckedIn && <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs font-semibold text-amber-600 dark:text-amber-400">This runner is already checked in. No new attendance record will be added.</p>}
+              </div>
+
+              <div className="flex gap-3 border-t border-[var(--border-default)] p-4">
+                <button type="button" onClick={() => setPendingQrRunner(null)} disabled={isSaving} className="min-h-12 flex-1 rounded-xl border border-[var(--border-default)] px-4 text-xs font-black uppercase tracking-widest text-[var(--text-secondary)] transition hover:text-[var(--text-primary)] disabled:opacity-55">{alreadyCheckedIn ? 'Close' : 'Cancel'}</button>
+                {!alreadyCheckedIn && <button type="button" onClick={() => { void confirmQrCheckIn(); }} disabled={raceCompleted || isSaving} className="min-h-12 flex-[1.4] rounded-xl bg-emerald-600 px-4 text-xs font-black uppercase tracking-widest text-white transition hover:bg-emerald-500 disabled:opacity-55">{isSaving ? 'Checking in…' : 'Confirm Check-In'}</button>}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -2345,8 +2475,6 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
   const [settingDistance, setSettingDistance] = useState<string | null>(null);
   const [editingGunTimeDistance, setEditingGunTimeDistance] = useState<string | null>(null);
   const [gunTimeInput, setGunTimeInput] = useState('');
-  const [pendingGunStartDistance, setPendingGunStartDistance] = useState<string | null>(null);
-  const now = useNow(1000);
 
   const startedBibs = useMemo(() => {
     if (!startCheckpointId) return new Set<string>();
@@ -2379,6 +2507,10 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
       return;
     }
     setSettingDistance(distance);
+    // Open the scan station immediately.  The Firestore update continues in
+    // the background so a slow network cannot make the starter miss runners
+    // crossing the mat at the gun.
+    onOpenStartScanner(distance);
     try {
       const raceRef = doc(db, 'races', race.id);
       const startedAt = new Date().toISOString();
@@ -2395,7 +2527,6 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
           gunStartTime: currentRace?.gunStartTime || startedAt,
         });
       });
-      onOpenStartScanner(distance);
     } catch (err: any) {
       alert(err.message || `Failed to start the ${distance} clock.`);
     } finally {
@@ -2431,13 +2562,6 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
   const openGunTimeEditor = (distance: string) => {
     setGunTimeInput(toLocalDateTimeInputValue(getWaveStartTime(race, distance), race.date));
     setEditingGunTimeDistance(distance);
-  };
-
-  const confirmGunStart = () => {
-    if (!pendingGunStartDistance) return;
-    const distance = pendingGunStartDistance;
-    setPendingGunStartDistance(null);
-    void handleStartWave(distance);
   };
 
   const handleSaveGunTime = async (distance: string) => {
@@ -2538,11 +2662,11 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
                   </button>
                 ) : (
                   <button
-                    onClick={() => setPendingGunStartDistance(group.distance)}
+                    onClick={() => void handleStartWave(group.distance)}
                     disabled={!!settingDistance}
                     className="w-full text-xs font-black uppercase tracking-widest px-4 py-2.5 rounded-[var(--radius-control)] text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 flex items-center justify-center gap-2 transition disabled:opacity-60"
                   >
-                    {settingThisWave ? <RefreshCw className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />} Start {group.distance} & Arm RFID
+                    {settingThisWave ? <RefreshCw className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />} {settingThisWave ? 'Starting…' : `Start ${group.distance} & Arm RFID`}
                   </button>
                 )}
               </div>
@@ -2550,63 +2674,6 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
           })}
         </div>
       </div>
-
-      {pendingGunStartDistance && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="gun-start-confirmation-title">
-          <div className="w-full max-w-lg overflow-hidden rounded-[24px] border border-red-500/40 bg-[var(--bg-elevated)] shadow-2xl shadow-red-950/40">
-            <div className="border-b border-red-500/25 bg-gradient-to-r from-red-600/25 to-orange-500/10 px-5 py-4 sm:px-6">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow-lg shadow-red-900/50">
-                    <PlayCircle className="h-6 w-6" />
-                  </span>
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-300">Official race action</p>
-                    <h3 id="gun-start-confirmation-title" className="mt-0.5 text-xl font-black font-display text-white">Fire {pendingGunStartDistance} gun?</h3>
-                  </div>
-                </div>
-                <button type="button" onClick={() => setPendingGunStartDistance(null)} className="rounded-xl p-2 text-[var(--text-secondary)] transition hover:bg-white/10 hover:text-white" aria-label="Cancel gun start">
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-4 px-5 py-5 sm:px-6">
-              <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
-                The official <strong className="text-[var(--text-primary)]">{pendingGunStartDistance}</strong> gun clock will start the instant you confirm. Use this only when the runners are leaving the start line.
-              </p>
-
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <div className="rounded-[14px] border border-white/10 bg-black/20 px-3 py-3">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Official start time</p>
-                  <p className="mt-1 font-mono text-lg font-black tabular-nums text-emerald-400">
-                    {formatClockTime(now)}
-                  </p>
-                  <p className="text-[10px] text-[var(--text-secondary)]">Your timing device clock</p>
-                </div>
-                <div className="rounded-[14px] border border-white/10 bg-black/20 px-3 py-3">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">After confirmation</p>
-                  <p className="mt-1 text-xs font-bold text-[var(--text-primary)]">Start RFID opens automatically</p>
-                  <p className="mt-1 text-[10px] text-[var(--text-secondary)]">Record Splits switches to Start</p>
-                </div>
-              </div>
-
-              <div className="rounded-[14px] border border-amber-500/25 bg-amber-500/10 px-3 py-2.5 text-xs leading-relaxed text-amber-100">
-                <strong>Important:</strong> This gun time is the fallback for runners whose Start chip read is missed. You can correct it later, but firing it at the real start is best.
-              </div>
-            </div>
-
-            <div className="flex flex-col-reverse gap-2 border-t border-white/10 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
-              <button type="button" onClick={() => setPendingGunStartDistance(null)} disabled={!!settingDistance} className="rounded-[12px] border border-white/10 px-4 py-2.5 text-xs font-black uppercase tracking-wide text-[var(--text-secondary)] transition hover:bg-white/10 hover:text-white disabled:opacity-50">
-                Cancel — not yet
-              </button>
-              <button type="button" onClick={confirmGunStart} disabled={!!settingDistance} className="rounded-[12px] bg-gradient-to-r from-red-600 to-red-700 px-5 py-2.5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-red-900/35 transition hover:from-red-500 hover:to-red-600 disabled:opacity-50">
-                {settingDistance ? 'Starting…' : `Fire ${pendingGunStartDistance} gun & arm RFID`}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="glass-panel p-5">
         <div className="flex items-center justify-between mb-1">
@@ -2755,12 +2822,23 @@ function RaceRankingsPanel({ race, results }: RaceRankingsPanelProps) {
           </h3>
           <p className="text-xs text-[var(--text-secondary)] mt-0.5">{totalFinishers} finisher{totalFinishers === 1 ? '' : 's'} ranked so far</p>
         </div>
-        <button
-          onClick={() => setPresenting(true)}
-          className="text-xs font-black uppercase tracking-widest px-4 py-2.5 rounded-[var(--radius-control)] text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 flex items-center justify-center gap-2 transition shrink-0"
-        >
-          <Maximize2 className="w-4 h-4" /> Present on Screen
-        </button>
+        <div className="flex flex-wrap gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              if (!generateRankingsReportPdf(race, results)) alert('No completed finishers are available for the report yet.');
+            }}
+            className="text-xs font-black uppercase tracking-widest px-4 py-2.5 rounded-[var(--radius-control)] border border-[var(--border-strong)] text-[var(--text-primary)] hover:border-red-500 hover:text-red-500 flex items-center justify-center gap-2 transition"
+          >
+            <FileDown className="w-4 h-4" /> Download PDF
+          </button>
+          <button
+            onClick={() => setPresenting(true)}
+            className="text-xs font-black uppercase tracking-widest px-4 py-2.5 rounded-[var(--radius-control)] text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 flex items-center justify-center gap-2 transition"
+          >
+            <Maximize2 className="w-4 h-4" /> Present on Screen
+          </button>
+        </div>
       </div>
 
       {(authority || can('timing.correct')) && <div className="space-y-2 text-xs">
@@ -2806,7 +2884,7 @@ function RaceRankingsPanel({ race, results }: RaceRankingsPanelProps) {
                     </summary>
                     <ol aria-label={`${folder.distance} ${category.label}`} className="space-y-1.5 max-h-80 overflow-y-auto pb-3">
                       {category.results.map((r) => {
-                        const rank = category.ranking === 'age' ? r.categoryRank! : (r.overallRank ?? r.rank!);
+                        const rank = category.ranking === 'age' ? r.categoryRank! : category.ranking === 'special' ? 1 : (r.overallRank ?? r.rank!);
                         return (
                           <li key={r.bibNumber} className="flex items-center justify-between px-2 sm:px-3 py-2 rounded-[14px] bg-[var(--surface-inset)]/40 text-xs gap-2">
                             <span className={`font-mono font-black w-9 shrink-0 ${rank === 1 ? 'text-amber-500' : rank === 2 ? 'text-slate-400' : rank === 3 ? 'text-orange-600' : 'text-red-500'}`}>#{rank}</span>

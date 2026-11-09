@@ -14,6 +14,7 @@ const { defineSecret, defineString } = require('firebase-functions/params');
 
 admin.initializeApp();
 exports.accountApi = require('./auth-api').accountApi;
+exports.raceBibClaimApi = require('./race-bib-claim-api').raceBibClaimApi;
 const db = admin.firestore();
 
 const paymongoSecretKey = defineSecret('PAYMONGO_SECRET_KEY');

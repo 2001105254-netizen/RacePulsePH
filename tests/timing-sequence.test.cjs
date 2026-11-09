@@ -41,12 +41,17 @@ const duo = runner('D', 'duo', { startsAfterBib: 'S', teamMembers: ['Michiron', 
 const compute = (runners, reads) => computeResults(race.checkpoints, reads, runners, [], race);
 const byBib = (results, bib) => results.find((result) => result.bibNumber === bib);
 
-test('unlinked entries keep chip timing and division gun fallback', () => {
+test('unlinked entries use gun timing for normal waves and fall back to chip time when gun is missing', () => {
   const results = compute([solo, runner('U', 'duo')], [read('S', 'start', 1), read('S', 'finish', 31), read('U', 'finish', 40)]);
-  assert.equal(byBib(results, 'S').finishTime, '00:30:0000000');
-  assert.equal(byBib(results, 'S').timingMethod, 'chip');
+  assert.equal(byBib(results, 'S').finishTime, '00:31:0000000');
+  assert.equal(byBib(results, 'S').chipTime, '00:30:0000000');
+  assert.equal(byBib(results, 'S').timingMethod, 'gun');
   assert.equal(byBib(results, 'U').finishTime, '00:30:0000000');
   assert.equal(byBib(results, 'U').timingMethod, 'gun');
+
+  const legacyResults = computeResults(race.checkpoints, [read('S', 'start', 1), read('S', 'finish', 31)], [solo], []);
+  assert.equal(byBib(legacyResults, 'S').finishTime, '00:30:0000000');
+  assert.equal(byBib(legacyResults, 'S').timingMethod, 'chip');
 });
 
 test('Solo finish starts the separate Duo bib, regardless of roster order or later chip start', () => {
@@ -65,6 +70,32 @@ test('next entry has a start and running clock before it finishes', () => {
   assert.equal(byBib(results, 'D').sequenceStartTime, time(30));
   assert.equal(byBib(results, 'D').finishTime, undefined);
   assert.equal(byBib(results, 'D').rank, undefined);
+});
+
+test('youngest and oldest awards choose one Solo finisher per gender without changing rankings', () => {
+  const runners = [
+    runner('YM', 'solo', { age: 18 }),
+    runner('OM', 'solo', { age: 62 }),
+    runner('YF', 'solo', { gender: 'female', age: 20 }),
+    runner('OF', 'solo', { gender: 'female', age: 57 }),
+    runner('D', 'duo', { age: 16 }),
+  ];
+  const results = computeResults(race.checkpoints, [
+    read('YM', 'finish', 31), read('OM', 'finish', 30),
+    read('YF', 'finish', 34), read('OF', 'finish', 33),
+    read('D', 'finish', 20),
+  ], runners, [], {
+    ...race,
+    youngestRunnerAwardEnabled: true,
+    oldestRunnerAwardEnabled: true,
+  });
+
+  assert.deepEqual(byBib(results, 'YM').specialAgeAwards, ['Youngest Runner · Male']);
+  assert.deepEqual(byBib(results, 'OM').specialAgeAwards, ['Oldest Runner · Male']);
+  assert.deepEqual(byBib(results, 'YF').specialAgeAwards, ['Youngest Runner · Female']);
+  assert.deepEqual(byBib(results, 'OF').specialAgeAwards, ['Oldest Runner · Female']);
+  assert.equal(byBib(results, 'D').specialAgeAwards, undefined);
+  assert.equal(byBib(results, 'OM').overallRank, 1);
 });
 
 test('next entry cannot finish before its predecessor or fall back to a wave', () => {
@@ -147,12 +178,17 @@ test('seventh bridge fractional digit determines rank even when displayed second
   assert.ok(results[0].finishSeconds < results[1].finishSeconds);
 });
 test('identical measurements share provisional division and age places', () => {
-  const runners = [runner('A'), runner('Z'), runner('C')];
-  const results = computeResults(race.checkpoints, [preciseRead('A', time(30)), preciseRead('Z', time(30)), preciseRead('C', time(31))], runners, [{id:'age', gender:'male', minAge:18, maxAge:40, label:'Adult'}], race);
-  assert.deepEqual(results.map(r => r.rank), [1, 1, 3]);
-  assert.deepEqual(results.map(r => r.categoryRank), [1, 1, 3]);
-  assert.ok(results[0].finishReviewRequired && results[1].finishReviewRequired);
-  assert.equal(results[2].finishReviewRequired, undefined);
+  const overallTopThree = [runner('O1'), runner('O2'), runner('O3')];
+  const runners = [...overallTopThree, runner('A'), runner('Z'), runner('C')];
+  const results = computeResults(race.checkpoints, [
+    preciseRead('O1', time(20)), preciseRead('O2', time(21)), preciseRead('O3', time(22)),
+    preciseRead('A', time(30)), preciseRead('Z', time(30)), preciseRead('C', time(31))
+  ], runners, [{id:'age', gender:'male', minAge:18, maxAge:40, label:'Adult'}], race);
+  const targetResults = [byBib(results, 'A'), byBib(results, 'Z'), byBib(results, 'C')];
+  assert.deepEqual(targetResults.map(r => r.rank), [4, 4, 6]);
+  assert.deepEqual(targetResults.map(r => r.categoryRank), [1, 1, 3]);
+  assert.ok(targetResults[0].finishReviewRequired && targetResults[1].finishReviewRequired);
+  assert.equal(targetResults[2].finishReviewRequired, undefined);
 });
 test('configured uncertainty window flags close places without changing measured order', () => {
   const results = computeResults(race.checkpoints, [preciseRead('A', '2026-10-26T00:30:00.100Z'), preciseRead('Z', '2026-10-26T00:30:00.105Z')], [runner('A'), runner('Z')], [], {...race, finishReviewWindowMs:10});

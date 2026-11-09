@@ -4,7 +4,7 @@ import { entryCategoryLabels, runnerEntryCategory } from './raceEntry';
 export interface RankingSubcategory {
   id: string;
   label: string;
-  ranking: 'overall' | 'age';
+  ranking: 'overall' | 'age' | 'special';
   results: RunnerResult[];
 }
 
@@ -52,16 +52,24 @@ export function groupRankingFolders(results: RunnerResult[], search = ''): Ranki
     if (entry === 'solo' && !runner?.isFreeSlot && result.categoryRank !== undefined && result.categoryLabel) {
       addResult(`${divisionId}-age-${result.categoryLabel}`, `${divisionLabel} · ${result.categoryLabel}`, 'age');
     }
+    if (entry === 'solo' && !runner?.isFreeSlot) {
+      for (const award of result.specialAgeAwards || []) {
+        addResult(`${divisionId}-special-${award}`, `${divisionLabel} · ${award}`, 'special');
+      }
+    }
   }
 
   for (const folder of folders.values()) {
     folder.subcategories.sort((a, b) => {
-      if (a.ranking !== b.ranking) return a.ranking === 'overall' ? -1 : 1;
+      if (a.ranking !== b.ranking) {
+        const order = { overall: 0, age: 1, special: 2 };
+        return order[a.ranking] - order[b.ranking];
+      }
       return a.label.localeCompare(b.label, undefined, { numeric: true });
     });
     for (const category of folder.subcategories) {
       const rank = (result: RunnerResult) => category.ranking === 'age'
-        ? result.categoryRank! : (result.overallRank ?? result.rank!);
+        ? result.categoryRank! : category.ranking === 'special' ? 1 : (result.overallRank ?? result.rank!);
       category.results.sort((a, b) => rank(a) - rank(b) || a.bibNumber.localeCompare(b.bibNumber));
     }
   }

@@ -31,11 +31,16 @@ const helpers = `${markerStart}
     function permission(action) {
       return request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && exists(/databases/$(database)/documents/userAccess/$(request.auth.uid))
-        && access().status == 'active' && access().get('permissions', {}).get(action, false) == true;
+        && access().status == 'active'
+        // The active Super Admin must not be locked out by a stale saved
+        // permission map after a role promotion.
+        && (callerDoc().data.role == 'superadmin' || access().get('permissions', {}).get(action, false) == true);
     }
     function raceScope(raceId) {
       let race = get(/databases/$(database)/documents/races/$(raceId)).data;
-      return access().scope == 'all'
+      // Super Admin remains global even if an older userAccess document has
+      // an obsolete selected/owned scope.
+      return callerDoc().data.role == 'superadmin' || access().scope == 'all'
         || (access().scope == 'selected' && raceId in access().raceIds)
         || (access().scope == 'owned-assigned' && (race.createdBy == request.auth.uid || request.auth.uid in race.get('organizerIds', [])));
     }
@@ -45,6 +50,16 @@ ${markerEnd}`;
 source=source.replace('    function isValidId(id)',helpers+'\n\n    function isValidId(id)');
 block('function isSuperAdmin()',`function isSuperAdmin() { return request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && callerDoc().data.role == 'superadmin' && access().status == 'active'; }`);
 block('function managesRace(raceId)',`function managesRace(raceId) { return racePermission('race.view', raceId); }`);
+block('function ownsRecordedSplit(raceId, bibNumber)',`function ownsRecordedSplit(raceId, bibNumber) {
+      let directRegistration = exists(/databases/$(database)/documents/runners/$(request.auth.uid + '_' + raceId))
+        && get(/databases/$(database)/documents/runners/$(request.auth.uid + '_' + raceId)).data.bibNumber == bibNumber;
+      // Imported/Google Form runners can securely link their physical bib to
+      // their account through the server-side QR claim flow. The claim stores
+      // only the profile needed for their own race screen.
+      let bibClaim = exists(/databases/$(database)/documents/runnerClaims/$(request.auth.uid + '_' + raceId))
+        && get(/databases/$(database)/documents/runnerClaims/$(request.auth.uid + '_' + raceId)).data.bibNumber == bibNumber;
+      return isSignedIn() && (directRegistration || bibClaim);
+    }`);
 block('match /users/{uid}',`match /users/{uid} {
       allow read: if (request.auth != null && request.auth.uid == uid) || isSuperAdmin() || permission('users.view') || (permission('race.team') && resource.data.role == 'organizer' && resource.data.approved == true);
       allow create: if request.auth != null && request.auth.token.email_verified == true && request.auth.uid == uid
@@ -63,19 +78,19 @@ block('match /races/{raceId}',`match /races/{raceId} {
       allow create: if permission('race.create') && request.resource.data.createdBy == request.auth.uid && request.resource.data.id == raceId
         && !request.resource.data.keys().hasAny(['gunStartTime','waveStartTimes','completedAt'])
         && (!request.resource.data.keys().hasAny(['posterImage','inclusionImage']) || permission('race.artwork'))
-        && (!request.resource.data.keys().hasAny(['raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance']) || permission('race.bibs'))
+        && (!request.resource.data.keys().hasAny(['raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','raceBibTemplatesByEntryCategory','raceBibShowRaffleNumber','raceBibShowQrCode']) || permission('race.bibs'))
         && (request.resource.data.get('organizerIds', []).size() == 0 || permission('race.team'))
         && (!(request.resource.data.get('onlinePaymentEnabled', false) || request.resource.data.get('manualPaymentEnabled', false)) || permission('payment.configure'));
       allow update: if raceScope(raceId) && request.resource.data.createdBy == resource.data.createdBy && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','date','inclusions','checkpoints','ageCategories','distances','entryCategories','registrationOpen','registrationCloseDate','onlinePaymentEnabled','paymentFeeMode','manualPaymentEnabled','manualPaymentInstructions','manualPaymentQrImage','posterImage','inclusionImage','raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','organizerIds','gunStartTime','waveStartTimes','completedAt','liveBroadcastEnabled','livestreamUrl','routeMapUrl','finishReviewWindowMs'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','date','inclusions','checkpoints','ageCategories','youngestRunnerAwardEnabled','oldestRunnerAwardEnabled','distances','entryCategories','registrationOpen','registrationCloseDate','onlinePaymentEnabled','paymentFeeMode','manualPaymentEnabled','manualPaymentInstructions','manualPaymentQrImage','posterImage','inclusionImage','raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','raceBibTemplatesByEntryCategory','raceBibShowRaffleNumber','raceBibShowQrCode','organizerIds','gunStartTime','waveStartTimes','completedAt','liveBroadcastEnabled','livestreamUrl','routeMapUrl','finishReviewWindowMs'])
         && (!changed(['finishReviewWindowMs']) || (permission('timing.correct') && request.resource.data.finishReviewWindowMs is number && request.resource.data.finishReviewWindowMs >= 0 && request.resource.data.finishReviewWindowMs <= 60000))
         && (!changed(['name','date','inclusions']) || permission('race.edit'))
-        && (!changed(['checkpoints','ageCategories','entryCategories']) || permission('race.categories'))
+        && (!changed(['checkpoints','ageCategories','youngestRunnerAwardEnabled','oldestRunnerAwardEnabled','entryCategories']) || permission('race.categories'))
         && (!changed(['distances']) || (permission('race.categories') && permission('payment.configure')))
         && (!changed(['registrationOpen','registrationCloseDate']) || permission('race.registration') || (permission('timing.finish') && changed(['completedAt']) && request.resource.data.registrationOpen == false))
         && (!changed(['onlinePaymentEnabled','paymentFeeMode','manualPaymentEnabled','manualPaymentInstructions','manualPaymentQrImage']) || permission('payment.configure'))
         && (!changed(['posterImage','inclusionImage']) || permission('race.artwork'))
-        && (!changed(['raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance']) || permission('race.bibs'))
+        && (!changed(['raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','raceBibTemplatesByEntryCategory','raceBibShowRaffleNumber','raceBibShowQrCode']) || permission('race.bibs'))
         && (!changed(['organizerIds']) || (permission('race.team') && (resource.data.createdBy == request.auth.uid || isSuperAdmin())))
         && (!changed(['liveBroadcastEnabled']) || permission('hub.publish'))
         && (!changed(['livestreamUrl','routeMapUrl']) || permission('hub.manage'))
@@ -101,6 +116,16 @@ block('match /runners/{regId}',`match /runners/{regId} {
           && (!changed(['fullName','gender','age','ageNotProvided','shirtSize','emergencyContactName','emergencyContactPhone','entryCategory','teamName','teamMembers','distance']) || racePermission('roster.edit', resource.data.raceId) || (permission('personal.register') && resource.data.uid == request.auth.uid))));
       allow delete: if (isSuperAdmin() && raceScope(resource.data.raceId)) || racePermission('roster.remove', resource.data.raceId) || (permission('personal.register') && resource.data.uid == request.auth.uid);
     }`);
+source=source.replace('    match /bibCounters/{counterId} {',`    // A server-side QR claim lets a Google Form/imported runner attach their
+    // own physical bib to their personal account without exposing the roster.
+    // Browser clients can read only their own claim and can never forge one.
+    match /runnerClaims/{claimId} {
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid
+        && (permission('personal.register') || permission('personal.results') || permission('personal.bibs') || permission('personal.certificates'));
+      allow write: if false;
+    }
+
+    match /bibCounters/{counterId} {`);
 block('match /bibCounters/{counterId}',`match /bibCounters/{counterId} {
       allow read: if permission('personal.register') || permission('roster.add') || permission('roster.slots');
       // Counters contain no private data. Only monotonic increments are permitted.

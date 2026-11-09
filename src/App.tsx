@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { onIdTokenChanged, User } from 'firebase/auth';
 import { doc, onSnapshot, writeBatch } from 'firebase/firestore';
 import { auth, db, signOutUser } from './firebase';
@@ -10,11 +10,13 @@ import AdminDashboard from './components/AdminDashboard';
 import OrganizerDashboard from './components/OrganizerDashboard';
 import RunnerDashboard from './components/RunnerDashboard';
 import PublicRaceLanding from './components/PublicRaceLanding';
+import RunningLoader, { type StartupStage } from './components/RunningLoader';
 import { UserProfile } from './types';
 import { isSuperAdminEmail } from './lib/superAdmin';
 import { Sun, Moon, RefreshCw, Clock3, LogOut, LogIn, UserPlus, ArrowLeft, ShieldCheck } from 'lucide-react';
 
 type Theme = 'light' | 'dark';
+type LoadState = 'loading' | 'ready' | 'error';
 
 // Event registration QR codes use ?register={raceId}. Keep this intentionally
 // small and local: race IDs are public identifiers, and the actual race is
@@ -44,21 +46,18 @@ export default function App() {
   const [authUser, setAuthUser] = useState<User | null | undefined>(undefined); // undefined = still checking session
   const [profile, setProfile] = useState<UserProfile | null | undefined>(undefined);
   const [profileError, setProfileError] = useState(false);
+  const [authError, setAuthError] = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
   const [guestScreen, setGuestScreen] = useState<'landing' | 'login' | 'signup'>(() => registrationRaceIdFromUrl() ? 'signup' : 'landing');
   const [pendingRaceId, setPendingRaceId] = useState<string | null>(() => registrationRaceIdFromUrl());
   const [runnerSignupIntent, setRunnerSignupIntent] = useState(() => !!registrationRaceIdFromUrl());
-  const [openingPhase, setOpeningPhase] = useState<'showing' | 'leaving' | 'done'>('showing');
-
-  useEffect(() => {
-    const leaveTimer = window.setTimeout(() => setOpeningPhase('leaving'), 900);
-    const doneTimer = window.setTimeout(() => setOpeningPhase('done'), 1250);
-
-    return () => {
-      window.clearTimeout(leaveTimer);
-      window.clearTimeout(doneTimer);
-    };
-  }, []);
+  const [openingDone, setOpeningDone] = useState(false);
+  const [accessLoad, setAccessLoad] = useState<{ uid: string; state: LoadState }>({ uid: '', state: 'loading' });
+  const [racesLoad, setRacesLoad] = useState<LoadState>('loading');
+  const finishOpening = useCallback(() => setOpeningDone(true), []);
+  const accessUid = profile?.uid || '';
+  const reportAccessLoad = useCallback((state: LoadState) => setAccessLoad({ uid: accessUid, state }), [accessUid]);
+  const reportRacesLoad = useCallback((state: LoadState) => setRacesLoad(state), []);
 
   // Dashboard navigation lives in React state, so browser history is not a
   // safe back action. Each signed-in console listens for this event and goes
@@ -75,6 +74,8 @@ export default function App() {
 
   useEffect(() => {
     const unsubscribe = onIdTokenChanged(auth, (user) => {
+      setAuthError(false);
+      setProfileError(false);
       setAuthUser(user);
       setEmailVerified(!!user?.emailVerified);
       if (user) setProfile((current) => current?.uid === user.uid ? current : undefined);
@@ -85,12 +86,16 @@ export default function App() {
         setPendingRaceId(registrationRaceId);
         setRunnerSignupIntent(!!registrationRaceId);
       }
+    }, (err) => {
+      console.warn('Session failed to load:', err.message);
+      setAuthError(true);
     });
     return () => unsubscribe();
   }, []);
 
   useEffect(() => {
     if (!authUser) { setProfile(null); return; }
+    setAccessLoad({ uid: authUser.uid, state: 'loading' });
     setProfile(undefined);
     setProfileError(false);
     const unsubscribe = onSnapshot(doc(db, 'users', authUser.uid), (docSnap) => {
@@ -103,14 +108,24 @@ export default function App() {
   }, [authUser, emailVerified]);
 
   const stillLoading = authUser === undefined || (!!authUser && profile === undefined);
+  // Completion is driven by the initial usable screen, not elapsed animation
+  // time. Live race updates continue normally after the opening has finished.
+  const currentAccessLoad = accessLoad.uid === authUser?.uid ? accessLoad.state : 'loading';
+  let startupStage: StartupStage;
+  if (authError || (authUser && profileError)) startupStage = 'error';
+  else if (authUser === undefined) startupStage = 'session';
+  else if (authUser && profile === undefined) startupStage = 'profile';
+  else if (authUser && profile) startupStage = currentAccessLoad === 'loading' ? 'access' : currentAccessLoad;
+  else if (!authUser && guestScreen === 'landing') startupStage = racesLoad === 'loading' ? 'races' : racesLoad;
+  else startupStage = 'ready';
 
   let content: React.ReactNode;
-  if (profileError && authUser) {
+  if (authError || (profileError && authUser)) {
     content = (
       <div className="flex-grow flex flex-col items-center justify-center gap-4 px-4 py-20 text-center">
-        <p role="alert">Could not load your account. Please try again.</p>
+        <p role="alert">{authError ? 'Could not check your session.' : 'Could not load your account.'} Please try again.</p>
         <button onClick={() => window.location.reload()} className="rounded-xl bg-red-600 px-5 py-3 font-bold text-white">Try again</button>
-        <button onClick={() => signOutUser()} className="text-sm text-[var(--text-secondary)]">Sign out</button>
+        {authUser && <button onClick={() => signOutUser()} className="text-sm text-[var(--text-secondary)]">Sign out</button>}
       </div>
     );
   } else if (stillLoading) {
@@ -125,7 +140,7 @@ export default function App() {
     content = authUser ? (
       <AuthGate authUser={authUser} signupRoleLocked={runnerSignupIntent} />
     ) : guestScreen === 'landing' ? (
-      <PublicRaceLanding onRegister={(raceId) => {
+      <PublicRaceLanding onLoadState={reportRacesLoad} onRegister={(raceId) => {
         setPendingRaceId(raceId || null);
         setRunnerSignupIntent(true);
         setGuestScreen('signup');
@@ -139,7 +154,7 @@ export default function App() {
       />
     );
   } else {
-    content = <AccessProvider profile={profile}><AuthorizedWorkspace profile={profile} raceId={pendingRaceId} onRaceHandled={() => {
+    content = <AccessProvider key={profile.uid} profile={profile} onLoadState={reportAccessLoad}><AuthorizedWorkspace profile={profile} raceId={pendingRaceId} onRaceHandled={() => {
       setPendingRaceId(null);
       const url = new URL(window.location.href);
       url.searchParams.delete('register');
@@ -148,7 +163,8 @@ export default function App() {
   }
 
   return (
-    <div id="app_root" className="min-h-screen bg-[var(--surface-page)] text-[var(--text-primary)] flex flex-col">
+    <>
+    <div id="app_root" inert={!openingDone} aria-hidden={!openingDone || undefined} className="min-h-screen bg-[var(--surface-page)] text-[var(--text-primary)] flex flex-col">
 
       {/* Global ambient glow - sits behind every page so glass panels have depth to catch.
           Light mode: soft scattered blobs. Dark mode: a single dramatic red light-ray
@@ -161,7 +177,7 @@ export default function App() {
 
       {/* Global Navigation - persistent frosted glass bar on every page */}
       <nav className="sticky top-0 z-40 glass-nav">
-        <div className="max-w-7xl mx-auto min-w-0 px-3 sm:px-6 h-16 flex items-center justify-between gap-2">
+        <div className="max-w-7xl mx-auto min-w-0 px-3 sm:px-6 h-[4.5rem] sm:h-16 flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
             <button
               type="button"
@@ -179,25 +195,27 @@ export default function App() {
                 className="w-full h-full object-contain"
               />
             </div>
-            <span className="hidden min-w-0 truncate font-display font-black text-sm tracking-tight uppercase min-[390px]:inline">
+            <span className="hidden min-w-0 truncate font-display font-black text-sm tracking-tight uppercase min-[560px]:inline">
               RacePulse<span className="text-red-500">PH</span>
             </span>
           </div>
 
-          <div className="flex shrink-0 items-center gap-0.5 sm:gap-2">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             {!authUser && guestScreen === 'landing' && (
               <>
                 <button
                   onClick={() => { setPendingRaceId(null); setRunnerSignupIntent(false); setGuestScreen('login'); }}
-                  className="h-9 px-2 sm:px-3 rounded-[18px] text-[10px] sm:text-xs font-black uppercase tracking-wide text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)] transition flex items-center gap-1.5"
+                  aria-label="Log in to your account"
+                  className="h-10 px-2.5 sm:px-3.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)]/70 text-[10px] sm:text-xs font-black uppercase tracking-wide text-[var(--text-primary)] hover:text-red-500 hover:border-red-500/45 hover:bg-red-500/10 transition flex items-center justify-center gap-1.5 active:scale-95"
                 >
-                  <LogIn className="w-3.5 h-3.5" /> <span className="hidden min-[430px]:inline">Log in</span>
+                  <LogIn className="w-3.5 h-3.5" /> <span>Log in</span>
                 </button>
                 <button
                   onClick={() => { setPendingRaceId(null); setRunnerSignupIntent(false); setGuestScreen('signup'); }}
-                  className="h-9 px-2 sm:px-4 rounded-[18px] bg-red-600 hover:bg-red-500 text-white text-[10px] sm:text-xs font-black uppercase tracking-wide shadow-lg shadow-red-900/30 transition flex items-center gap-1.5"
+                  aria-label="Create a RacePulsePH account"
+                  className="h-10 px-2.5 sm:px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white text-[10px] sm:text-xs font-black uppercase tracking-wide shadow-lg shadow-red-900/30 transition flex items-center justify-center gap-1.5 active:scale-95"
                 >
-                  <UserPlus className="w-3.5 h-3.5" /> <span className="hidden min-[430px]:inline">Sign up</span>
+                  <UserPlus className="w-3.5 h-3.5" /> <span>Register</span>
                 </button>
               </>
             )}
@@ -205,7 +223,7 @@ export default function App() {
               onClick={toggleTheme}
               title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               aria-label="Toggle color theme"
-              className="w-10 h-10 rounded-full glass-inset flex items-center justify-center text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 transition duration-200 active:scale-90"
+              className="w-10 h-10 rounded-xl glass-inset flex items-center justify-center text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 transition duration-200 active:scale-90"
             >
               {theme === 'dark' ? <Sun className="w-4.5 h-4.5" /> : <Moon className="w-4.5 h-4.5" />}
             </button>
@@ -225,34 +243,9 @@ export default function App() {
         </div>
       </footer>
 
-      {openingPhase !== 'done' && <OpeningSplash leaving={openingPhase === 'leaving'} />}
-
     </div>
-  );
-}
-
-function OpeningSplash({ leaving }: { leaving: boolean }) {
-  return (
-    <div
-      className={`app-opening-splash fixed inset-0 z-[2000] flex items-center justify-center overflow-hidden bg-[#070707] px-6 transition-[opacity,transform] duration-[350ms] ease-out ${leaving ? 'pointer-events-none scale-[1.02] opacity-0' : 'opacity-100'}`}
-      aria-label="Opening RacePulsePH"
-      role="status"
-    >
-      <div className="absolute -left-24 -top-24 h-80 w-80 rounded-full bg-red-600/30 blur-[110px]" />
-      <div className="absolute -bottom-32 -right-20 h-72 w-72 rounded-full bg-red-900/35 blur-[120px]" />
-      <div className="relative flex flex-col items-center text-center">
-        <div className="app-opening-ring absolute top-0 h-28 w-28 rounded-[30px] border border-red-500/60" />
-        <div className="app-opening-logo relative flex h-28 w-28 items-center justify-center overflow-hidden rounded-[30px] bg-[#0a0a0a] shadow-[0_0_45px_rgba(239,68,68,0.4)] ring-1 ring-white/15">
-          <img src="/assets/racepulse-mark.png" alt="" className="h-full w-full object-contain" />
-        </div>
-        <p className="app-opening-title mt-6 font-display text-2xl font-black uppercase tracking-tight text-white sm:text-3xl">
-          RacePulse<span className="text-red-500">PH</span>
-        </p>
-        <p className="app-opening-tagline mt-2 font-mono text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400">
-          Ready. Set. Run.
-        </p>
-      </div>
-    </div>
+    {!openingDone && <RunningLoader stage={startupStage} onComplete={finishOpening} />}
+    </>
   );
 }
 

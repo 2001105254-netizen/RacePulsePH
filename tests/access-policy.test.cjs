@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { defaults, effective, validate, keys } = require('../functions/access-policy');
+const { defaults, effective, validate, keys, can, inScope } = require('../functions/access-policy');
 test('browser preset bundle matches authoritative policy', () => {
   const catalog = require('../src/lib/access-presets.json');
   for (const role of catalog.roles) assert.deepEqual(catalog.presets[role], defaults(role));
@@ -11,6 +11,13 @@ test('runner preset never includes operational access', () => {
 test('explicit denial overrides administrator default', () => {
   assert.equal(defaults('admin')['timing.scan'], true);
   assert.equal(effective('admin', { overrides: { 'timing.scan': false } })['timing.scan'], false);
+});
+test('Super Admin retains global access despite legacy scope or custom deny', () => {
+  const user = { uid: 'owner', role: 'superadmin', approved: true };
+  const state = { status: 'active', scope: 'selected', raceIds: [], overrides: { 'race.artwork': false, 'race.edit': false } };
+  assert.equal(inScope(user, state, { id: 'other_race', createdBy: 'someone_else' }), true);
+  assert.equal(can(user, state, 'race.artwork'), true);
+  assert.equal(can(user, state, 'race.edit'), true);
 });
 test('suspension disables every configurable capability', () => {
   assert.ok(Object.values(effective('superadmin', { status: 'suspended' })).every(value => value === false));

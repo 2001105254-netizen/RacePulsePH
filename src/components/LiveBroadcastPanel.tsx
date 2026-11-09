@@ -21,6 +21,8 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
   const [activeRaceId, setActiveRaceId] = useState('');
   const [runnerProfiles, setRunnerProfiles] = useState<RunnerProfile[]>([]);
   const [chipReads, setChipReads] = useState<ChipRead[]>([]);
+  const [runnersLoaded, setRunnersLoaded] = useState(false);
+  const [readsLoaded, setReadsLoaded] = useState(false);
   const [enabled, setEnabled] = useState(false);
   const [livestreamUrl, setLivestreamUrl] = useState('');
   const [routeMapUrl, setRouteMapUrl] = useState('');
@@ -45,17 +47,27 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
     if (!activeRace || !can('roster.view') || !can('timing.view')) {
       setRunnerProfiles([]);
       setChipReads([]);
+      setRunnersLoaded(false);
+      setReadsLoaded(false);
       return;
     }
+    // A fresh race selection begins with empty arrays while Firestore loads.
+    // Never let that temporary state overwrite an already published board.
+    setRunnerProfiles([]);
+    setChipReads([]);
+    setRunnersLoaded(false);
+    setReadsLoaded(false);
     const runnersUnsubscribe = onSnapshot(query(collection(db, 'runners'), where('raceId', '==', activeRace.id)), (snapshot) => {
       const list: RunnerProfile[] = [];
       snapshot.forEach((runnerDoc) => list.push(runnerDoc.data() as RunnerProfile));
       setRunnerProfiles(list);
+      setRunnersLoaded(true);
     }, (error) => console.warn('Live broadcast runner listener failed:', error.message));
     const readsUnsubscribe = onSnapshot(query(collection(db, 'chipReads'), where('raceId', '==', activeRace.id)), (snapshot) => {
       const list: ChipRead[] = [];
       snapshot.forEach((readDoc) => list.push(readDoc.data() as ChipRead));
       setChipReads(list);
+      setReadsLoaded(true);
     }, (error) => console.warn('Live broadcast timing listener failed:', error.message));
     return () => {
       runnersUnsubscribe();
@@ -76,6 +88,10 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
 
   const publishResults = useCallback(async (quiet = false) => {
     if (!activeRace || activeRace.completedAt || !can('results.publish') || publishingRef.current) return;
+    if (!runnersLoaded || !readsLoaded) {
+      if (!quiet) setMessage('Still loading the race roster and timing reads. Please wait a moment, then publish again.');
+      return;
+    }
     publishingRef.current = true;
     setPublishing(true);
     try {
@@ -139,16 +155,19 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
       publishingRef.current = false;
       setPublishing(false);
     }
-  }, [activeRace, finishedCount, results, runnerProfiles.length, startedCount]);
+  }, [activeRace, finishedCount, readsLoaded, results, runnerProfiles.length, runnersLoaded, startedCount]);
 
   // Once public broadcast is enabled, every incoming timing scan republishes a
   // small aggregate after a short debounce. This avoids exposing chipReads and
   // avoids a write per individual UI render.
   useEffect(() => {
-    if (!activeRace?.liveBroadcastEnabled) return;
+    // A completed race owns its final board.  It can be republished manually
+    // after a verified correction, but a stale/open browser tab must never
+    // auto-overwrite those official results with an empty loading state.
+    if (!activeRace?.liveBroadcastEnabled || activeRace.completedAt || !runnersLoaded || !readsLoaded) return;
     const timeout = window.setTimeout(() => { void publishResults(true); }, 700);
     return () => window.clearTimeout(timeout);
-  }, [activeRace?.liveBroadcastEnabled, activeRace?.id, chipReads, publishResults, runnerProfiles]);
+  }, [activeRace?.completedAt, activeRace?.liveBroadcastEnabled, activeRace?.id, chipReads, publishResults, readsLoaded, runnerProfiles, runnersLoaded]);
 
   const handleSave = async () => {
     if (!activeRace) return;
@@ -229,7 +248,7 @@ export default function LiveBroadcastPanel({ uid }: LiveBroadcastPanelProps) {
               <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2"><Users2 className="w-4 h-4 text-red-500" /> Live Timing Feed</h3>
               <p className="text-sm font-black text-[var(--text-primary)]">{startedCount} started · {finishedCount} finished</p>
               <p className="text-xs text-[var(--text-secondary)]">{runnerProfiles.length} registered runners. When public live mode is on, every new checkpoint scan refreshes the spectator leaderboard.</p>
-              <button hidden={!can('results.publish')} onClick={() => void publishResults()} disabled={!enabled || publishing} className="w-full text-xs font-black uppercase tracking-widest px-4 py-2.5 rounded-[var(--radius-control)] bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center gap-2 transition disabled:opacity-50">
+              <button hidden={!can('results.publish')} onClick={() => void publishResults()} disabled={!enabled || publishing || !runnersLoaded || !readsLoaded} className="w-full text-xs font-black uppercase tracking-widest px-4 py-2.5 rounded-[var(--radius-control)] bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center gap-2 transition disabled:opacity-50">
                 {publishing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trophy className="w-4 h-4" />} Publish Leaderboard Now
               </button>
             </div>

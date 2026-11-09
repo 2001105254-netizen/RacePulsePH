@@ -1,4 +1,4 @@
-import { Race, RaceBibLayout, RaceBibTemplate, RunnerProfile } from '../types';
+import { Race, RaceBibLayout, RaceBibTemplate, RaceEntryCategory, RunnerProfile } from '../types';
 
 const defaultLayout: RaceBibLayout = {
   bibNumberX: 50,
@@ -12,21 +12,27 @@ export interface ResolvedRaceBibTemplate {
   layout: RaceBibLayout;
 }
 
-// Prefer the template assigned to the runner's own distance. Existing races
-// retain their original single-template behaviour as a safe fallback.
-export function resolveRaceBibTemplate(race: Race, distance: string): ResolvedRaceBibTemplate | null {
+// Entry-category artwork is the most specific option, followed by distance,
+// then the original default template. Existing races remain compatible.
+export function resolveRaceBibTemplate(race: Race, distance: string, entryCategory: RaceEntryCategory = 'solo'): ResolvedRaceBibTemplate | null {
+  const entryCategoryTemplate: RaceBibTemplate | undefined = race.raceBibTemplatesByEntryCategory?.[entryCategory];
   const distanceTemplate: RaceBibTemplate | undefined = race.raceBibTemplatesByDistance?.[distance];
-  const image = distanceTemplate?.image || race.raceBibTemplateImage;
+  const selectedTemplate = entryCategoryTemplate || distanceTemplate;
+  const image = selectedTemplate?.image || race.raceBibTemplateImage;
   if (!image) return null;
 
   return {
     image,
-    layout: distanceTemplate?.layout || race.raceBibLayout || defaultLayout,
+    layout: selectedTemplate?.layout || race.raceBibLayout || defaultLayout,
   };
 }
 
 export function hasRaceBibTemplate(race: Race): boolean {
-  return Boolean(race.raceBibTemplateImage || Object.values(race.raceBibTemplatesByDistance || {}).some((template) => template?.image));
+  return Boolean(
+    race.raceBibTemplateImage
+    || Object.values(race.raceBibTemplatesByDistance || {}).some((template) => template?.image)
+    || Object.values(race.raceBibTemplatesByEntryCategory || {}).some((template) => template?.image),
+  );
 }
 
 // Team entries share one bib/chip, but every team member needs to stay

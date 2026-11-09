@@ -9,13 +9,16 @@ import PublicRaceResults from './PublicRaceResults';
 
 interface PublicRaceLandingProps {
   onRegister: (raceId?: string) => void;
+  onLoadState?: (state: 'loading' | 'ready' | 'error') => void;
 }
 
 // The public first screen: races are intentionally readable without an account.
 // Registration itself remains behind Firebase Auth and starts only after Sign Up.
-export default function PublicRaceLanding({ onRegister }: PublicRaceLandingProps) {
+export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRaceLandingProps) {
   const [races, setRaces] = useState<Race[]>([]);
   const [selectedRaceId, setSelectedRaceId] = useState('');
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
+  useEffect(() => { onLoadState?.(loadState); }, [loadState, onLoadState]);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'races'), (snapshot) => {
@@ -23,9 +26,11 @@ export default function PublicRaceLanding({ onRegister }: PublicRaceLandingProps
       snapshot.forEach((docSnap) => list.push(docSnap.data() as Race));
       list.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       setRaces(list);
+      setLoadState('ready');
     }, (err) => {
       console.warn('Public race list failed to load:', err.message);
       setRaces([]);
+      setLoadState('error');
     });
     return () => unsubscribe();
   }, []);
@@ -42,6 +47,7 @@ export default function PublicRaceLanding({ onRegister }: PublicRaceLandingProps
 
   return (
     <main className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12 pb-16 space-y-9 animate-fadeIn">
+      {loadState === 'error' && <p role="alert" className="text-center">Could not load races. <button type="button" onClick={() => window.location.reload()} className="underline">Try again</button></p>}
       <section className="hero-glow glass-panel overflow-hidden px-6 py-8 sm:px-10 sm:py-10 text-center">
         <img
           src="/assets/racepulse-mark.png"

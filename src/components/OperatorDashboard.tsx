@@ -1,9 +1,9 @@
 import { formatDateTime, formatRaceTime } from '../lib/preciseTime';
-import { useAccess, authenticatedFetch } from '../lib/access';
+import { useAccess, useScopedRaces, authenticatedFetch } from '../lib/access';
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, query, onSnapshot, doc, updateDoc, deleteDoc, writeBatch, getDocs } from 'firebase/firestore';
+import { collection, query, onSnapshot, doc, updateDoc, deleteDoc, writeBatch, getDocs, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { EngravingOrder, EngravingStatus, EngravingStats } from '../types';
+import { EngravingOrder, EngravingStatus, EngravingStats, RunnerProfile } from '../types';
 import {
   Copy, Check, Search, TrendingUp, Clock, AlertTriangle, Play, CheckSquare,
   Trash2, Filter, Sparkles, Volume2, VolumeX, BarChart2, BadgeMinus,
@@ -16,8 +16,13 @@ import QrScannerModal from './QrScannerModal';
 
 export default function OperatorDashboard() {
   const { can, authority } = useAccess();
+  const races = useScopedRaces();
   const [orders, setOrders] = useState<EngravingOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedRaceId, setSelectedRaceId] = useState(() => localStorage.getItem('racepulse_engraving_race') || '');
+  const [eventRunners, setEventRunners] = useState<RunnerProfile[]>([]);
+  const [eventRunnersLoading, setEventRunnersLoading] = useState(false);
+  const [runnerSearch, setRunnerSearch] = useState('');
 
   // Filtering and Searching State
   const [searchTerm, setSearchTerm] = useState('');
@@ -149,6 +154,34 @@ export default function OperatorDashboard() {
 
     return () => unsubscribe();
   }, []);
+
+  // Engraving starts by choosing one event. Load only that race's registration
+  // roster so the staff never has to scan through runners from other events.
+  useEffect(() => {
+    localStorage.setItem('racepulse_engraving_race', selectedRaceId);
+    if (!selectedRaceId) {
+      setEventRunners([]);
+      setEventRunnersLoading(false);
+      return;
+    }
+    setEventRunnersLoading(true);
+    const unsubscribe = onSnapshot(
+      query(collection(db, 'runners'), where('raceId', '==', selectedRaceId)),
+      (snapshot) => {
+        const runners = snapshot.docs
+          .map((runnerDoc) => runnerDoc.data() as RunnerProfile)
+          .sort((a, b) => a.bibNumber.localeCompare(b.bibNumber, undefined, { numeric: true }));
+        setEventRunners(runners);
+        setEventRunnersLoading(false);
+      },
+      (error) => {
+        console.warn('Engraving event roster listener failed:', error.message);
+        setEventRunners([]);
+        setEventRunnersLoading(false);
+      },
+    );
+    return () => unsubscribe();
+  }, [selectedRaceId]);
 
   // 2. Offsite LAN Local Express Syner
   useEffect(() => {
@@ -625,6 +658,15 @@ export default function OperatorDashboard() {
     return matchSearch && matchStatus;
   });
 
+  const selectedRace = races.find((race) => race.id === selectedRaceId);
+  const filteredEventRunners = eventRunners.filter((runner) => {
+    const needle = runnerSearch.trim().toLowerCase();
+    if (!needle) return true;
+    return runner.fullName.toLowerCase().includes(needle)
+      || runner.bibNumber.toLowerCase().includes(needle)
+      || runner.distance.toLowerCase().includes(needle);
+  });
+
   // Isolated matched record for double check input
   const foundDoubleCheckOrder = doubleCheckCode.trim()
     ? orders.find(o => o.id.toUpperCase() === doubleCheckCode.trim().toUpperCase())
@@ -754,6 +796,54 @@ export default function OperatorDashboard() {
 
         </div>
       </div>
+
+      {/* Event-first engraving workflow: keep runner rosters separate by race. */}
+      <section className="glass-panel p-4 sm:p-5 space-y-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <span className="text-[10px] font-black uppercase tracking-widest text-amber-500">Step 1</span>
+            <h2 className="mt-1 text-lg font-black font-display uppercase text-[var(--text-primary)]">Choose event for engraving</h2>
+            <p className="mt-1 text-xs text-[var(--text-secondary)]">Choose the race first, then only its registered runners appear below.</p>
+          </div>
+          <label className="block w-full md:max-w-md text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)]">Race event
+            <select value={selectedRaceId} onChange={(event) => { setSelectedRaceId(event.target.value); setRunnerSearch(''); }} className="mt-1.5 w-full glass-inset px-3 py-3 text-sm font-bold normal-case tracking-normal text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-amber-500/40">
+              <option value="">Select an event…</option>
+              {[...races].sort((a, b) => b.date.localeCompare(a.date)).map((race) => <option key={race.id} value={race.id}>{race.name} · {race.date}</option>)}
+            </select>
+          </label>
+        </div>
+
+        {!selectedRaceId ? (
+          <div className="rounded-2xl border border-dashed border-amber-500/30 bg-amber-500/[0.04] px-4 py-7 text-center">
+            <Printer className="mx-auto h-7 w-7 text-amber-500" />
+            <p className="mt-2 text-xs font-black uppercase tracking-widest text-[var(--text-primary)]">Select an event to load its runners</p>
+            <p className="mt-1 text-xs text-[var(--text-secondary)]">This prevents names from other races mixing into the engraving station.</p>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)]/60 p-3 sm:p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest text-[var(--text-primary)]">{selectedRace?.name || 'Selected event'}</p>
+                <p className="mt-1 text-[11px] text-[var(--text-secondary)]">{eventRunnersLoading ? 'Loading registered runners…' : `${eventRunners.length} registered runner${eventRunners.length === 1 ? '' : 's'} · ${selectedRace?.date || ''}`}</p>
+              </div>
+              <div className="relative w-full sm:w-72"><Search className="absolute left-3 top-3 h-4 w-4 text-[var(--text-secondary)]" /><input value={runnerSearch} onChange={(event) => setRunnerSearch(event.target.value)} placeholder="Find name, bib, or distance…" className="w-full rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] py-2.5 pl-9 pr-3 text-xs font-bold text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-amber-500/40" /></div>
+            </div>
+            {eventRunnersLoading ? (
+              <div className="flex items-center justify-center gap-2 py-8 text-xs font-bold text-[var(--text-secondary)]"><RefreshCw className="h-4 w-4 animate-spin text-amber-500" /> Loading event roster…</div>
+            ) : filteredEventRunners.length === 0 ? (
+              <p className="py-8 text-center text-xs text-[var(--text-secondary)]">{eventRunners.length ? 'No runner matches that search.' : 'No registered runners found for this event yet.'}</p>
+            ) : (
+              <div className="mt-4 max-h-[30rem] overflow-y-auto pr-1 space-y-2">
+                {filteredEventRunners.map((runner) => <div key={runner.uid} className="flex items-center gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)] px-3 py-2.5">
+                  <span className="min-w-[5.5rem] rounded-lg bg-amber-500/10 px-2 py-1 text-center font-mono text-xs font-black text-amber-500">#{runner.bibNumber}</span>
+                  <div className="min-w-0 flex-1"><p className="truncate text-sm font-black text-[var(--text-primary)]">{runner.fullName || 'Free runner slot'}</p><p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--text-secondary)]">{runner.distance} · {runner.entryCategory || 'solo'}</p></div>
+                  <button type="button" onClick={() => { navigator.clipboard.writeText(`${runner.fullName}\t${runner.bibNumber}\t${runner.distance}`); setCopiedStates((current) => ({ ...current, [`runner_${runner.uid}`]: true })); window.setTimeout(() => setCopiedStates((current) => ({ ...current, [`runner_${runner.uid}`]: false })), 1300); }} className="shrink-0 rounded-lg border border-[var(--border-default)] p-2 text-[var(--text-secondary)] hover:border-amber-500/50 hover:text-amber-500" title="Copy runner name, bib, and distance">{copiedStates[`runner_${runner.uid}`] ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}</button>
+                </div>)}
+              </div>
+            )}
+          </div>
+        )}
+      </section>
 
       {/* Tally and Metrics section */}
       <div id="operator_stats_grid" className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-4">
