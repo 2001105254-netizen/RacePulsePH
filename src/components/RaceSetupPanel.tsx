@@ -10,6 +10,7 @@ import { generateRunnerRosterPdf } from '../lib/runnerReport';
 import { generateRaceBibsPdf } from '../lib/raceBibPdf';
 import { hasRaceBibTemplate } from '../lib/raceBib';
 import { ensureRaceBibCustomFont, raceBibFontFamily } from '../lib/raceBibFont';
+import { useAndroidBackHandler } from '../lib/capacitorAndroid';
 import { QRCodeSVG } from 'qrcode.react';
 import { Flag, Trash2, Plus, Save, Pencil, RefreshCw, Users2, FileDown, ImagePlus, X, QrCode, Copy, Download } from 'lucide-react';
 
@@ -188,6 +189,11 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
   const [bibDownloadRace, setBibDownloadRace] = useState<Race | null>(null);
   const [qrRace, setQrRace] = useState<Race | null>(null);
   const [freeSlotRace, setFreeSlotRace] = useState<Race | null>(null);
+
+  useAndroidBackHandler(Boolean(qrRace), () => setQrRace(null));
+  useAndroidBackHandler(Boolean(bibDownloadRace), () => {
+    if (!raceBibPdfBusyRaceId) setBibDownloadRace(null);
+  });
   const posterInputRef = useRef<HTMLInputElement>(null);
   const inclusionInputRef = useRef<HTMLInputElement>(null);
   const raceBibInputRef = useRef<HTMLInputElement>(null);
@@ -270,10 +276,22 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
   };
 
   const handledLaunchRef = useRef<number>(0);
+  const editingIdRef = useRef<string | null>(editingId);
+  editingIdRef.current = editingId;
+
+  useAndroidBackHandler(Boolean(editingId), resetForm);
 
   useEffect(() => {
-    window.addEventListener('racepulse:back', resetForm);
-    return () => window.removeEventListener('racepulse:back', resetForm);
+    const handleBack = (event: Event) => {
+      const hardware = event instanceof CustomEvent && Boolean(event.detail?.hardware);
+      if (hardware) {
+        if (event.defaultPrevented || !editingIdRef.current) return;
+        event.preventDefault();
+      }
+      resetForm();
+    };
+    window.addEventListener('racepulse:back', handleBack);
+    return () => window.removeEventListener('racepulse:back', handleBack);
   }, []);
 
   const loadForEdit = (race: Race) => {
@@ -1441,8 +1459,8 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
         </div>
       </div>
       {qrRace && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="registration-qr-title" onClick={() => setQrRace(null)}>
-          <div className="w-full max-w-sm rounded-[24px] border border-[var(--border-default)] bg-[var(--surface-page)] p-6 text-center shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 pt-[max(1rem,var(--rp-safe-top))] pb-[max(1rem,var(--rp-safe-bottom))] pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="registration-qr-title" onClick={() => setQrRace(null)}>
+          <div className="w-full max-w-sm max-h-[calc(100dvh-2rem-var(--rp-safe-top)-var(--rp-safe-bottom))] overflow-y-auto rounded-[24px] border border-[var(--border-default)] bg-[var(--surface-page)] p-6 text-center shadow-2xl" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-start justify-between gap-3 text-left">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-violet-500">Event registration QR</p>
@@ -1464,8 +1482,8 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
       )}
       {freeSlotRace && <FreeSlotsDialog race={freeSlotRace} onClose={() => setFreeSlotRace(null)} />}
       {bibDownloadRace && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="bib-download-title" onClick={() => !raceBibPdfBusyRaceId && setBibDownloadRace(null)}>
-          <div className="w-full max-w-md rounded-[24px] border border-[var(--border-default)] bg-[var(--surface-page)] p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 pt-[max(1rem,var(--rp-safe-top))] pb-[max(1rem,var(--rp-safe-bottom))] pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="bib-download-title" onClick={() => !raceBibPdfBusyRaceId && setBibDownloadRace(null)}>
+          <div className="w-full max-w-md max-h-[calc(100dvh-2rem-var(--rp-safe-top)-var(--rp-safe-bottom))] overflow-y-auto rounded-[24px] border border-[var(--border-default)] bg-[var(--surface-page)] p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h3 id="bib-download-title" className="text-lg font-display font-black text-[var(--text-primary)]">Download Race Bibs</h3>
@@ -1515,6 +1533,10 @@ function FreeSlotsDialog({ race, onClose }: FreeSlotsDialogProps) {
   const [slots, setSlots] = useState<RunnerProfile[]>([]);
   const [creating, setCreating] = useState(false);
   const [message, setMessage] = useState('');
+
+  useAndroidBackHandler(true, () => {
+    if (!creating) onClose();
+  });
 
   useEffect(() => {
     setDistanceLabel(race.distances[0]?.label || '');
@@ -1586,8 +1608,8 @@ function FreeSlotsDialog({ race, onClose }: FreeSlotsDialogProps) {
   }))).filter((group) => group.slots.length > 0);
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="free-slots-title" onClick={() => !creating && onClose()}>
-      <div className="w-full max-w-lg rounded-[24px] border border-[var(--border-default)] bg-[var(--surface-page)] p-5 sm:p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 pt-[max(1rem,var(--rp-safe-top))] pb-[max(1rem,var(--rp-safe-bottom))] pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="free-slots-title" onClick={() => !creating && onClose()}>
+      <div className="w-full max-w-lg max-h-[calc(100dvh-2rem-var(--rp-safe-top)-var(--rp-safe-bottom))] overflow-y-auto rounded-[24px] border border-[var(--border-default)] bg-[var(--surface-page)] p-5 sm:p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-cyan-500">Race-day roster</p>

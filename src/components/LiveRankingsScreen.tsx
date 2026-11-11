@@ -6,6 +6,7 @@ import { groupRankingFolders } from '../lib/rankingFolders';
 import { finishScanOrder } from '../lib/liveRankings';
 import { runnerDivisionLabel, runnerEntryCategory } from '../lib/raceEntry';
 import { getWaveStartTime } from '../lib/timing';
+import { useAndroidBackHandler } from '../lib/capacitorAndroid';
 
 const badge = 'inline-flex items-center rounded-md border px-2.5 py-1 text-xs sm:text-sm font-semibold';
 const distanceColor = 'border-red-500/35 bg-red-500/10 text-red-300';
@@ -19,6 +20,7 @@ export default function LiveRankingsScreen({ race, results, onClose }: {
   const [categoryId, setCategoryId] = useState('all');
   const [search, setSearch] = useState('');
   const [now, setNow] = useState(Date.now);
+  useAndroidBackHandler(true, onClose);
   const containerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const folders = useMemo(() => groupRankingFolders(results), [results]);
@@ -74,7 +76,7 @@ export default function LiveRankingsScreen({ race, results, onClose }: {
   const control = 'inline-flex items-center justify-center rounded-xl border border-white/20 bg-[#19191c] px-3.5 min-h-11 text-sm text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400';
 
   return (
-    <div ref={containerRef} className="fixed inset-0 z-[100] bg-[#0a0a0c] text-white flex flex-col p-4 sm:p-8 lg:p-10 overflow-hidden">
+    <div ref={containerRef} className="fixed inset-0 z-[100] bg-[#0a0a0c] text-white flex flex-col pt-[max(1rem,var(--rp-safe-top))] pb-[max(1rem,var(--rp-safe-bottom))] pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pt-[max(2rem,var(--rp-safe-top))] sm:pb-[max(2rem,var(--rp-safe-bottom))] sm:pl-[max(2rem,var(--rp-safe-left))] sm:pr-[max(2rem,var(--rp-safe-right))] lg:pl-[max(2.5rem,var(--rp-safe-left))] lg:pr-[max(2.5rem,var(--rp-safe-right))] overflow-hidden">
       <header className="flex items-start justify-between gap-4 shrink-0">
         <div className="min-w-0">
           <p className="text-xs sm:text-sm tracking-[0.2em] font-semibold text-red-400 uppercase truncate">{race.name}</p>

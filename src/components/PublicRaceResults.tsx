@@ -1,7 +1,8 @@
 import { formatDateTime, formatRaceTime } from '../lib/preciseTime';
 import { useEffect, useMemo, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { Calendar, FileDown, Medal, RefreshCw, Search, Trophy, UserPlus } from 'lucide-react';
+import { Calendar, FileDown, Medal, Search, Trophy, UserPlus } from 'lucide-react';
+import { ResultsSkeletonList } from './ui/MotionPrimitives';
 import { db } from '../firebase';
 import { downloadFinisherCertificate } from '../lib/finisherCertificate';
 import { isRaceRegistrationOpen } from '../lib/raceRegistration';
@@ -91,7 +92,7 @@ export default function PublicRaceResults({ race, onRegister }: PublicRaceResult
 
       <div className="p-5 sm:p-7 space-y-4">
         {summary === undefined ? (
-          <div className="glass-inset p-8 text-center"><RefreshCw className="w-5 h-5 animate-spin text-[var(--text-muted)] mx-auto" /></div>
+          <ResultsSkeletonList rows={5} />
         ) : summary === null || officialResults.length === 0 ? (
           <div className="glass-inset px-5 py-8 text-center space-y-2">
             <Medal className="w-8 h-8 mx-auto text-[var(--text-muted)]" />

@@ -11,7 +11,7 @@
   display: grid;
   place-items: center;
   overflow: auto;
-  padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+  padding: max(24px, var(--rp-safe-top, env(safe-area-inset-top, 0px))) max(20px, var(--rp-safe-right, env(safe-area-inset-right, 0px))) max(24px, var(--rp-safe-bottom, env(safe-area-inset-bottom, 0px))) max(20px, var(--rp-safe-left, env(safe-area-inset-left, 0px)));
   background: var(--surface-page, #0a0a0a);
   color: var(--text-primary, #f5f5f7);
   opacity: 1;

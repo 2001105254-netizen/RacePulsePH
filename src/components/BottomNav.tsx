@@ -1,4 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
+import { LayoutGroup, m } from 'motion/react';
+import { TAB_PILL_SPRING } from './ui/MotionPrimitives';
 
 export interface WorkspaceNavItem {
   key: string;
@@ -19,6 +21,7 @@ interface BottomNavProps {
 // Mobile-only floating tab bar (< 1024px), keeping primary destinations
 // horizontally scrollable with no visible scrollbar across touch, wheel, and drag inputs.
 export default function BottomNav({ items, navLabel = 'Workspace navigation' }: BottomNavProps) {
+  const navLayoutId = useId();
   const scrollRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const suppressClickRef = useRef(false);
@@ -108,7 +111,7 @@ export default function BottomNav({ items, navLabel = 'Workspace navigation' }: 
     <nav
       aria-label={navLabel}
       data-workspace-nav="mobile"
-      className="lg:hidden fixed bottom-0 inset-x-0 z-40 flex justify-center pb-[max(0.75rem,env(safe-area-inset-bottom))] px-2 sm:px-4 pointer-events-none"
+      className="lg:hidden fixed bottom-0 inset-x-0 z-40 flex justify-center pb-[max(0.75rem,var(--rp-safe-bottom))] pl-[max(0.5rem,var(--rp-safe-left))] pr-[max(0.5rem,var(--rp-safe-right))] sm:pl-[max(1rem,var(--rp-safe-left))] sm:pr-[max(1rem,var(--rp-safe-right))] pointer-events-none"
     >
       <div className="glass-panel w-full max-w-6xl overflow-hidden shadow-2xl pointer-events-auto">
         <div
@@ -117,32 +120,42 @@ export default function BottomNav({ items, navLabel = 'Workspace navigation' }: 
           onClickCapture={handleClickCapture}
           className="racepulse-horizontal-scroll touch-pan-x w-full select-none"
         >
-          <div className="flex min-w-full w-max items-center gap-1 px-1.5 py-1.5 sm:px-2 sm:py-2">
-            {items.map((item) => (
-              <button
-                key={item.key}
-                ref={(node) => {
-                  itemRefs.current[item.key] = node;
-                }}
-                type="button"
-                onClick={item.onClick}
-                aria-label={item.label}
-                aria-current={item.active ? 'page' : undefined}
-                className={`flex min-w-fit min-h-11 shrink-0 flex-1 flex-col items-center justify-center gap-1 px-3 py-1.5 sm:px-4 rounded-[14px] sm:rounded-[16px] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
-                  item.active
-                    ? 'bg-red-700 text-white shadow-lg shadow-red-900/30'
-                    : 'text-zinc-600 dark:text-zinc-300 hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
-                }`}
-              >
-                <span aria-hidden="true" className="flex items-center justify-center">
-                  {item.icon}
-                </span>
-                <span className="whitespace-nowrap text-xs font-semibold tracking-wide">
-                  {item.label}
-                </span>
-              </button>
-            ))}
-          </div>
+          <LayoutGroup id={navLayoutId}>
+            <div className="flex min-w-full w-max items-center gap-1 px-1.5 py-1.5 sm:px-2 sm:py-2">
+              {items.map((item) => (
+                <button
+                  key={item.key}
+                  ref={(node) => {
+                    itemRefs.current[item.key] = node;
+                  }}
+                  type="button"
+                  onClick={item.onClick}
+                  aria-label={item.label}
+                  aria-current={item.active ? 'page' : undefined}
+                  className={`relative isolate flex min-w-fit min-h-11 shrink-0 flex-1 flex-col items-center justify-center gap-1 px-3 py-1.5 sm:px-4 rounded-[14px] sm:rounded-[16px] transition-colors duration-150 motion-safe:active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
+                    item.active
+                      ? 'text-white'
+                      : 'text-zinc-600 dark:text-zinc-300 hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
+                  }`}
+                >
+                  {item.active && (
+                    <m.span
+                      layoutId={`bottom-nav-pill-${navLayoutId}`}
+                      aria-hidden="true"
+                      transition={TAB_PILL_SPRING}
+                      className="pointer-events-none absolute inset-0 -z-10 rounded-[14px] sm:rounded-[16px] bg-red-700 shadow-lg shadow-red-900/30"
+                    />
+                  )}
+                  <span aria-hidden="true" className="flex items-center justify-center">
+                    {item.icon}
+                  </span>
+                  <span className="whitespace-nowrap text-xs font-semibold tracking-wide">
+                    {item.label}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </LayoutGroup>
         </div>
       </div>
     </nav>

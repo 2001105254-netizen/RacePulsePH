@@ -1,4 +1,5 @@
 import { ArrowRight, CheckCircle2, ClipboardList, Cpu, Flag, Radio, ShieldCheck, Trophy, Users2, X } from 'lucide-react';
+import { useAndroidBackHandler } from '../lib/capacitorAndroid';
 
 type OrganizerGuideDestination = 'race' | 'myevents' | 'timing' | 'broadcast';
 
@@ -73,14 +74,15 @@ const steps: Array<{
 ];
 
 export default function OrganizerSetupGuide({ onClose, onNavigate }: OrganizerSetupGuideProps) {
+  useAndroidBackHandler(true, onClose);
   const goTo = (destination: OrganizerGuideDestination) => {
     onNavigate(destination);
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/65 backdrop-blur-sm p-0 sm:p-5" role="dialog" aria-modal="true" aria-labelledby="organizer-guide-title">
-      <div className="w-full max-w-3xl max-h-[92vh] overflow-y-auto rounded-t-[28px] sm:rounded-[28px] border border-[var(--border-default)] bg-[var(--surface-page)] shadow-2xl">
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/65 backdrop-blur-sm pt-[var(--rp-safe-top)] px-0 sm:p-5" role="dialog" aria-modal="true" aria-labelledby="organizer-guide-title">
+      <div className="w-full max-w-3xl max-h-[92dvh] overflow-y-auto rounded-t-[28px] sm:rounded-[28px] border border-[var(--border-default)] bg-[var(--surface-page)] pb-[var(--rp-safe-bottom)] sm:pb-0 shadow-2xl">
         <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[var(--border-default)] bg-[var(--surface-page)] px-5 sm:px-7 py-5">
           <div>
             <div className="inline-flex items-center gap-1.5 rounded-full border border-red-500/25 bg-red-500/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.16em] text-red-500">

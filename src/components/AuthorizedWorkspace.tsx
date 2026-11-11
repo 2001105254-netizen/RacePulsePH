@@ -3,6 +3,7 @@ import { signOutUser } from '../firebase';
 import { UserProfile } from '../types';
 import { useAccess } from '../lib/access';
 import type { WorkspaceSwitchProps } from './DesktopSidebar';
+import { AnimatedTabView, ViewLoadingSkeleton, type NavDirection } from './ui/MotionPrimitives';
 
 const AdminDashboard = lazy(() => import('./AdminDashboard'));
 const RunnerDashboard = lazy(() => import('./RunnerDashboard'));
@@ -12,7 +13,13 @@ export default function AuthorizedWorkspace({ profile, raceId, onRaceHandled }: 
   const operations = access.authority || ['race.view','race.create','timing.view','roster.view','engraving.view','users.view','hub.manage'].some(access.can);
   const personal = ['personal.register','personal.results','personal.bibs','personal.certificates','personal.engraving','personal.friends'].some(access.can);
   const [selected, setSelected] = useState<'operations' | 'personal'>(operations ? 'operations' : 'personal');
+  const [workspaceDirection, setWorkspaceDirection] = useState<NavDirection>('forward');
   const workspace: 'operations' | 'personal' = selected === 'operations' && operations || !personal ? 'operations' : 'personal';
+
+  const selectWorkspace = (next: 'operations' | 'personal') => {
+    setWorkspaceDirection(next === 'personal' ? 'forward' : 'back');
+    setSelected(next);
+  };
 
   if (access.suspended || (!operations && !personal)) {
     return (
@@ -30,12 +37,16 @@ export default function AuthorizedWorkspace({ profile, raceId, onRaceHandled }: 
   }
 
   const workspaceSwitch: WorkspaceSwitchProps | undefined =
-    operations && personal ? { current: workspace, onSelect: setSelected } : undefined;
+    operations && personal ? { current: workspace, onSelect: selectWorkspace } : undefined;
   const pendingApprovalNotice = profile.role === 'organizer' && !profile.approved;
 
   return (
-    <div key={`${access.version}:${workspace}`} className="flex-grow flex flex-col min-h-0">
-      <Suspense fallback={<div role="status" className="p-8 text-center text-xs text-[var(--text-secondary)]">Loading workspace…</div>}>
+    <AnimatedTabView
+      tabKey={`${access.version}:${workspace}`}
+      direction={workspaceDirection}
+      className="flex-grow flex flex-col min-h-0"
+    >
+      <Suspense fallback={<ViewLoadingSkeleton label="Loading workspace" />}>
         {workspace === 'operations' ? (
           <AdminDashboard
             profile={profile}
@@ -52,6 +63,6 @@ export default function AuthorizedWorkspace({ profile, raceId, onRaceHandled }: 
           />
         )}
       </Suspense>
-    </div>
+    </AnimatedTabView>
   );
 }

@@ -24,7 +24,9 @@ import { createPayMongoCheckout, getPaymentStatus, PaymentStatusResponse } from 
 import DeleteAccountModal from './DeleteAccountModal';
 import QrScannerModal from './QrScannerModal';
 import PublicRaceResults from './PublicRaceResults';
+import { useAndroidBackHandler } from '../lib/capacitorAndroid';
 import { claimRaceBib, claimableEntryLabel, parseRaceBibQr, previewRaceBibClaim, RaceBibClaimPreview } from '../lib/raceBibClaim';
+import { AnimatedTabView, ViewLoadingSkeleton, resolveTabDirection, type NavDirection } from './ui/MotionPrimitives';
 
 interface RunnerDashboardProps {
   profile: UserProfile;
@@ -35,6 +37,8 @@ interface RunnerDashboardProps {
 }
 
 type RunnerTab = 'events' | 'allraces' | 'myraces' | 'friends' | 'engraving';
+
+const RUNNER_TAB_ORDER: readonly RunnerTab[] = ['events', 'allraces', 'myraces', 'friends', 'engraving'];
 
 const standardShirtSizes = ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL', '6XL'];
 const usernamePattern = /^[a-z0-9][a-z0-9_.-]{2,23}$/;
@@ -201,7 +205,9 @@ function mostRecent(profiles: RunnerProfile[]): RunnerProfile | undefined {
 export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceHandled, workspaceSwitch, pendingApprovalNotice }: RunnerDashboardProps) {
   const { can, authority } = useAccess();
   const [runnerProfiles, setRunnerProfiles] = useState<RunnerProfile[] | undefined>(undefined); // undefined = loading
-  const [tab, setTab] = useState<RunnerTab>(can('personal.register') ? 'events' : can('personal.results') || can('personal.bibs') ? 'myraces' : can('personal.friends') ? 'friends' : 'engraving');
+  const homeTab: RunnerTab = can('personal.register') ? 'events' : can('personal.results') || can('personal.bibs') ? 'myraces' : can('personal.friends') ? 'friends' : 'engraving';
+  const [tab, setTab] = useState<RunnerTab>(homeTab);
+  const [tabDirection, setTabDirection] = useState<NavDirection>('forward');
   const [showProfile, setShowProfile] = useState(false);
   const [showEventQrScanner, setShowEventQrScanner] = useState(false);
   const [scannedRaceId, setScannedRaceId] = useState<string | null>(null);
@@ -210,11 +216,34 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
   const [pendingBibClaim, setPendingBibClaim] = useState<(RaceBibClaimPreview & { payload: { raceId: string; bibNumber: string } }) | null>(null);
   const [claimingBib, setClaimingBib] = useState(false);
   const [bibClaimError, setBibClaimError] = useState('');
+  const tabRef = useRef<RunnerTab>(tab);
+  tabRef.current = tab;
+  const homeTabRef = useRef<RunnerTab>(homeTab);
+  homeTabRef.current = homeTab;
+  const showProfileRef = useRef(showProfile);
+  showProfileRef.current = showProfile;
+
+  const selectTab = (nextTab: RunnerTab, explicitDirection?: NavDirection) => {
+    const currentTab = tabRef.current;
+    if (nextTab === currentTab) return;
+    setTabDirection(explicitDirection ?? resolveTabDirection(RUNNER_TAB_ORDER, currentTab, nextTab));
+    setTab(nextTab);
+  };
+
+  useAndroidBackHandler(showProfile, () => setShowProfile(false));
+  useAndroidBackHandler(Boolean(pendingBibClaim), () => {
+    if (!claimingBib) setPendingBibClaim(null);
+  });
 
   useEffect(() => {
-    const goHome = () => {
+    const goHome = (event: Event) => {
+      const hardware = event instanceof CustomEvent && Boolean(event.detail?.hardware);
+      if (hardware) {
+        if (event.defaultPrevented || (tabRef.current === homeTabRef.current && !showProfileRef.current)) return;
+        event.preventDefault();
+      }
       setShowProfile(false);
-      setTab('events');
+      selectTab(hardware ? homeTabRef.current : 'events', 'back');
     };
     window.addEventListener('racepulse:back', goHome);
     return () => window.removeEventListener('racepulse:back', goHome);
@@ -337,7 +366,7 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
       setEventQrError('');
       setEventQrMessage('Event found: opening its registration form…');
       setScannedRaceId(raceId);
-      setTab('events');
+      selectTab('events');
       window.setTimeout(() => setShowEventQrScanner(false), 450);
       return true;
     } catch {
@@ -349,7 +378,7 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
   const confirmBibClaim = async () => {
     if (!pendingBibClaim || pendingBibClaim.alreadyLinked) {
       setPendingBibClaim(null);
-      setTab('myraces');
+      selectTab('myraces');
       return;
     }
     setClaimingBib(true);
@@ -357,7 +386,7 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
     try {
       await claimRaceBib(pendingBibClaim.payload);
       setPendingBibClaim(null);
-      setTab('myraces');
+      selectTab('myraces');
     } catch (error: any) {
       setBibClaimError(error.message || 'Unable to add this race to your account.');
     } finally {
@@ -366,11 +395,11 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
   };
 
   const navItems = [
-    { key: 'events', icon: <Flag className="w-4 h-4" />, label: 'Events', active: tab === 'events', onClick: () => setTab('events') },
-    { key: 'allraces', icon: <Trophy className="w-4 h-4" />, label: 'All Races', active: tab === 'allraces', onClick: () => setTab('allraces') },
-    { key: 'myraces', icon: <ClipboardList className="w-4 h-4" />, label: 'My Races', active: tab === 'myraces', onClick: () => setTab('myraces') },
-    { key: 'friends', icon: <Users2 className="w-4 h-4" />, label: 'Friends', active: tab === 'friends', onClick: () => setTab('friends') },
-    { key: 'engraving', icon: <Award className="w-4 h-4" />, label: 'Engraving', active: tab === 'engraving', onClick: () => setTab('engraving') },
+    { key: 'events', icon: <Flag className="w-4 h-4" />, label: 'Events', active: tab === 'events', onClick: () => selectTab('events') },
+    { key: 'allraces', icon: <Trophy className="w-4 h-4" />, label: 'All Races', active: tab === 'allraces', onClick: () => selectTab('allraces') },
+    { key: 'myraces', icon: <ClipboardList className="w-4 h-4" />, label: 'My Races', active: tab === 'myraces', onClick: () => selectTab('myraces') },
+    { key: 'friends', icon: <Users2 className="w-4 h-4" />, label: 'Friends', active: tab === 'friends', onClick: () => selectTab('friends') },
+    { key: 'engraving', icon: <Award className="w-4 h-4" />, label: 'Engraving', active: tab === 'engraving', onClick: () => selectTab('engraving') },
   ].filter(item => item.key === 'myraces' || can(({ events: 'personal.register', friends: 'personal.friends', engraving: 'personal.engraving' })[item.key]));
 
   return (
@@ -426,8 +455,8 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
       )}
 
       {pendingBibClaim && createPortal(
-        <div className="fixed inset-0 z-[70] bg-black/70 backdrop-blur-sm p-4 flex items-center justify-center animate-fadeIn">
-          <div className="w-full max-w-md glass-panel p-6 space-y-5 shadow-2xl">
+        <div className="fixed inset-0 z-[70] bg-black/70 backdrop-blur-sm pt-[max(1rem,var(--rp-safe-top))] pb-[max(1rem,var(--rp-safe-bottom))] pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] flex items-center justify-center animate-fadeIn">
+          <div className="w-full max-w-md max-h-[calc(100dvh-2rem-var(--rp-safe-top)-var(--rp-safe-bottom))] overflow-y-auto glass-panel p-6 space-y-5 shadow-2xl">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.16em] text-violet-500">Race bib QR found</p>
@@ -455,54 +484,54 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
         document.body,
       )}
 
-      {runnerProfiles === undefined && (
-        <div className="glass-panel p-8 text-center">
-          <RefreshCw className="w-6 h-6 text-[var(--text-muted)] animate-spin mx-auto" />
-        </div>
-      )}
+      {runnerProfiles === undefined ? (
+        <ViewLoadingSkeleton label="Loading runner portal" />
+      ) : (
+        <AnimatedTabView tabKey={tab} direction={tabDirection} className="space-y-6">
+          {tab === 'events' && can('personal.register') && (
+            <>
+              <RunnerReminderCenter runnerProfiles={runnerProfiles} />
+              <RaceRegistrationForm
+                uid={profile.uid}
+                friendIdentity={{ username: profile.username, displayName: profile.nickname || profile.displayName }}
+                runnerProfiles={runnerProfiles}
+                initialShirtSize={profile.shirtSize}
+                initialRaceId={initialRaceId}
+                requestedRaceId={scannedRaceId}
+                onRequestedRaceHandled={() => setScannedRaceId(null)}
+                onSaved={() => selectTab('myraces')}
+              />
+            </>
+          )}
 
-      {runnerProfiles !== undefined && tab === 'events' && can('personal.register') && (
-        <>
-          <RunnerReminderCenter runnerProfiles={runnerProfiles} />
-          <RaceRegistrationForm
-            uid={profile.uid}
-            friendIdentity={{ username: profile.username, displayName: profile.nickname || profile.displayName }}
-            runnerProfiles={runnerProfiles}
-            initialShirtSize={profile.shirtSize}
-            initialRaceId={initialRaceId}
-            requestedRaceId={scannedRaceId}
-            onRequestedRaceHandled={() => setScannedRaceId(null)}
-            onSaved={() => setTab('myraces')}
-          />
-        </>
-      )}
+          {tab === 'myraces' && (
+            <>
+              <RunnerReminderCenter runnerProfiles={runnerProfiles} />
+              <MyRacesView uid={profile.uid} runnerProfiles={runnerProfiles} onBrowseEvents={() => selectTab('events')} />
+            </>
+          )}
 
-      {runnerProfiles !== undefined && tab === 'myraces' && (
-        <>
-          <RunnerReminderCenter runnerProfiles={runnerProfiles} />
-          <MyRacesView uid={profile.uid} runnerProfiles={runnerProfiles} onBrowseEvents={() => setTab('events')} />
-        </>
-      )}
+          {tab === 'allraces' && (
+            <AllRacesView onRegister={(raceId) => {
+              setScannedRaceId(raceId);
+              selectTab('events');
+            }} />
+          )}
 
-      {runnerProfiles !== undefined && tab === 'allraces' && (
-        <AllRacesView onRegister={(raceId) => {
-          setScannedRaceId(raceId);
-          setTab('events');
-        }} />
-      )}
+          {tab === 'friends' && can('personal.friends') && (
+            <FriendsView profile={profile} onOpenRace={(raceId) => { setScannedRaceId(raceId); selectTab('events'); }} />
+          )}
 
-      {runnerProfiles !== undefined && tab === 'friends' && can('personal.friends') && (
-        <FriendsView profile={profile} onOpenRace={(raceId) => { setScannedRaceId(raceId); setTab('events'); }} />
-      )}
-
-      {runnerProfiles !== undefined && tab === 'engraving' && can('personal.engraving') && (
-        <CustomerForm
-          onBackToRoleSelection={() => setTab('myraces')}
-          backLabel="← Back to My Races"
-          ownerUid={profile.uid}
-          initialRunnerName={latestProfile?.fullName || ''}
-          initialBibNumber={latestProfile?.bibNumber || ''}
-        />
+          {tab === 'engraving' && can('personal.engraving') && (
+            <CustomerForm
+              onBackToRoleSelection={() => selectTab('myraces')}
+              backLabel="← Back to My Races"
+              ownerUid={profile.uid}
+              initialRunnerName={latestProfile?.fullName || ''}
+              initialBibNumber={latestProfile?.bibNumber || ''}
+            />
+          )}
+        </AnimatedTabView>
       )}
 
       {showEventQrScanner && (
@@ -1095,6 +1124,12 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
   const [paymentReturn, setPaymentReturn] = useState<PaymentStatusResponse | null>(null);
   const [checkingPayment, setCheckingPayment] = useState(false);
 
+  useAndroidBackHandler(showInclusionImage, () => setShowInclusionImage(false));
+  useAndroidBackHandler(showForm && !initialRaceId && !saving, () => {
+    setConfirmation(null);
+    setShowForm(false);
+  });
+
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'races'), (snapshot) => {
       const list: Race[] = [];
@@ -1397,7 +1432,7 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
         </button>
 
         {showInclusionImage && selectedRace?.inclusionImage && createPortal(
-          <div className="fixed inset-0 z-[1000] bg-black/90 backdrop-blur-sm p-4 sm:p-8 flex items-center justify-center animate-fadeIn" role="dialog" aria-modal="true" aria-label="Shirt or kit design preview" onClick={() => setShowInclusionImage(false)}>
+          <div className="fixed inset-0 z-[1000] bg-black/90 backdrop-blur-sm pt-[max(1rem,var(--rp-safe-top))] pb-[max(1rem,var(--rp-safe-bottom))] pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pt-[max(2rem,var(--rp-safe-top))] sm:pb-[max(2rem,var(--rp-safe-bottom))] sm:pl-[max(2rem,var(--rp-safe-left))] sm:pr-[max(2rem,var(--rp-safe-right))] flex items-center justify-center animate-fadeIn" role="dialog" aria-modal="true" aria-label="Shirt or kit design preview" onClick={() => setShowInclusionImage(false)}>
             <div className="relative max-w-6xl max-h-full" onClick={(e) => e.stopPropagation()}>
               <img src={selectedRace.inclusionImage} alt={`${selectedRace.name} shirt or kit design`} className="block max-w-full max-h-[calc(100vh-4rem)] object-contain rounded-xl shadow-2xl" />
               <button type="button" onClick={() => setShowInclusionImage(false)} className="absolute -top-3 -right-3 w-10 h-10 rounded-full bg-white text-zinc-950 hover:bg-red-500 hover:text-white shadow-xl flex items-center justify-center transition" aria-label="Close full-screen image"><X className="w-5 h-5" /></button>
@@ -1921,6 +1956,8 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useAndroidBackHandler(resettingPassword, () => setResettingPassword(false));
+
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'races'), (snapshot) => {
       const list: Race[] = [];
@@ -2058,16 +2095,16 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
   const recentRace = mostRecentPast ? raceById.get(mostRecentPast.raceId) : undefined;
 
   if (resettingPassword) return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn">
-      <div className="w-full max-w-md max-h-[calc(100vh-2rem)] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center pt-[max(1rem,var(--rp-safe-top))] pb-[max(1rem,var(--rp-safe-bottom))] pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] animate-fadeIn">
+      <div className="w-full max-w-md max-h-[calc(100dvh-2rem-var(--rp-safe-top)-var(--rp-safe-bottom))] overflow-y-auto">
         <PasswordResetFlow initialEmail={profile.email} backLabel="Back to profile" onBack={() => setResettingPassword(false)} onDone={() => void signOutUser()} />
       </div>
     </div>
   );
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn">
-      <div className="glass-panel w-full max-w-lg max-h-[calc(100vh-2rem)] overflow-y-auto p-6 space-y-5 relative">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center pt-[max(1rem,var(--rp-safe-top))] pb-[max(1rem,var(--rp-safe-bottom))] pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] animate-fadeIn">
+      <div className="glass-panel w-full max-w-lg max-h-[calc(100dvh-2rem-var(--rp-safe-top)-var(--rp-safe-bottom))] overflow-y-auto p-6 space-y-5 relative">
         <button
           onClick={onClose}
           className="absolute top-4 right-4 text-[var(--text-secondary)] hover:text-[var(--text-primary)] glass-inset p-2 rounded-full transition"

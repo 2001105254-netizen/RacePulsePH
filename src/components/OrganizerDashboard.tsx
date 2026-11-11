@@ -8,6 +8,7 @@ import LiveBroadcastPanel, { LiveBroadcastLaunchRequest } from './LiveBroadcastP
 import WorkspaceShell from './WorkspaceShell';
 import DeleteAccountModal from './DeleteAccountModal';
 import OrganizerSetupGuide from './OrganizerSetupGuide';
+import { AnimatedTabView, resolveTabDirection, type NavDirection } from './ui/MotionPrimitives';
 import { BookOpen, LogOut, Radio, Flag, LayoutGrid, Tv, Trash2 } from 'lucide-react';
 
 interface OrganizerDashboardProps {
@@ -16,17 +17,36 @@ interface OrganizerDashboardProps {
 
 type OrganizerTab = 'myevents' | 'timing' | 'race' | 'broadcast';
 
+const ORGANIZER_TAB_ORDER: readonly OrganizerTab[] = ['myevents', 'timing', 'broadcast', 'race'];
+
 export default function OrganizerDashboard({ profile }: OrganizerDashboardProps) {
   const [tab, setTab] = useState<OrganizerTab>('myevents');
+  const [tabDirection, setTabDirection] = useState<NavDirection>('forward');
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [showSetupGuide, setShowSetupGuide] = useState(false);
   const launchSeqRef = useRef(0);
   const [timingLaunch, setTimingLaunch] = useState<TimingLaunchRequest | null>(null);
   const [setupLaunch, setSetupLaunch] = useState<RaceSetupLaunchRequest | null>(null);
   const [hubLaunch, setHubLaunch] = useState<LiveBroadcastLaunchRequest | null>(null);
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
+
+  const selectTab = (nextTab: OrganizerTab, explicitDirection?: NavDirection) => {
+    const currentTab = tabRef.current;
+    if (nextTab === currentTab) return;
+    setTabDirection(explicitDirection ?? resolveTabDirection(ORGANIZER_TAB_ORDER, currentTab, nextTab));
+    setTab(nextTab);
+  };
 
   useEffect(() => {
-    const goHome = () => setTab('myevents');
+    const goHome = (event: Event) => {
+      const isHardware = (event as CustomEvent<{ hardware?: boolean }>).detail?.hardware === true;
+      if (isHardware) {
+        if (event.defaultPrevented || tabRef.current === 'myevents') return;
+        event.preventDefault();
+      }
+      selectTab('myevents', 'back');
+    };
     window.addEventListener('racepulse:back', goHome);
     return () => window.removeEventListener('racepulse:back', goHome);
   }, []);
@@ -39,7 +59,7 @@ export default function OrganizerDashboard({ profile }: OrganizerDashboardProps)
   const handleOpenTiming = (raceId: string, mode: 'record' | 'roster' = 'record') => {
     localStorage.setItem('racepulse_active_race', raceId);
     setTimingLaunch({ raceId, mode, nonce: nextNonce() });
-    setTab('timing');
+    selectTab('timing');
   };
 
   const handleOpenSetup = (raceId?: string) => {
@@ -48,19 +68,21 @@ export default function OrganizerDashboard({ profile }: OrganizerDashboardProps)
         ? { mode: 'edit', raceId, nonce: nextNonce() }
         : { mode: 'create', nonce: nextNonce() },
     );
-    setTab('race');
+    selectTab('race');
   };
 
   const handleOpenLiveHub = (raceId: string) => {
     setHubLaunch({ raceId, nonce: nextNonce() });
-    setTab('broadcast');
+    selectTab('broadcast');
   };
 
+  const isLocked = tab === 'myevents' || tab === 'broadcast' || tab === 'timing';
+
   const navItems = [
-    { key: 'myevents', icon: <LayoutGrid className="w-4 h-4" />, label: 'My Race Events', active: tab === 'myevents', onClick: () => setTab('myevents') },
-    { key: 'timing', icon: <Radio className="w-4 h-4" />, label: 'Live Timing', active: tab === 'timing', onClick: () => setTab('timing') },
-    { key: 'broadcast', icon: <Tv className="w-4 h-4" />, label: 'Live Hub', active: tab === 'broadcast', onClick: () => setTab('broadcast') },
-    { key: 'race', icon: <Flag className="w-4 h-4" />, label: 'Race Setup', active: tab === 'race', onClick: () => setTab('race') },
+    { key: 'myevents', icon: <LayoutGrid className="w-4 h-4" />, label: 'My Race Events', active: tab === 'myevents', onClick: () => selectTab('myevents') },
+    { key: 'timing', icon: <Radio className="w-4 h-4" />, label: 'Live Timing', active: tab === 'timing', onClick: () => selectTab('timing') },
+    { key: 'broadcast', icon: <Tv className="w-4 h-4" />, label: 'Live Hub', active: tab === 'broadcast', onClick: () => selectTab('broadcast') },
+    { key: 'race', icon: <Flag className="w-4 h-4" />, label: 'Race Setup', active: tab === 'race', onClick: () => selectTab('race') },
   ];
 
   return (
@@ -70,10 +92,10 @@ export default function OrganizerDashboard({ profile }: OrganizerDashboardProps)
       items={navItems}
       profile={profile}
       maxWidthClass="max-w-7xl"
-      desktopLocked={tab === 'myevents' || tab === 'broadcast' || tab === 'timing'}
+      desktopLocked={isLocked}
     >
       <div
-        className={`${tab === 'myevents' || tab === 'broadcast' || tab === 'timing' ? 'lg:hidden ' : ''}glass-panel hero-glow animate-fadeIn flex justify-between ${
+        className={`${isLocked ? 'lg:hidden ' : ''}glass-panel hero-glow animate-fadeIn flex justify-between ${
           tab === 'timing'
             ? 'flex-row items-center px-3 py-2 gap-2'
             : 'flex-col md:flex-row md:items-center px-4 sm:px-6 py-5 gap-4'
@@ -101,23 +123,29 @@ export default function OrganizerDashboard({ profile }: OrganizerDashboardProps)
         </div>
       </div>
 
-      {tab === 'myevents' && (
-        <MyRaceEventsPanel
-          uid={profile.uid}
-          onManageRace={(id) => handleOpenTiming(id, 'record')}
-          onOpenTiming={(id) => handleOpenTiming(id, 'record')}
-          onOpenRunners={(id) => handleOpenTiming(id, 'roster')}
-          onOpenSetup={(id) => handleOpenSetup(id)}
-          onOpenLiveHub={handleOpenLiveHub}
-          onCreateEvent={() => handleOpenSetup()}
-        />
-      )}
-      {tab === 'timing' && <TimingConsole uid={profile.uid} canSeeAllRaces={false} launchRequest={timingLaunch} />}
-      {tab === 'race' && <RaceSetupPanel uid={profile.uid} canSeeAllRaces={false} canDeleteRaces={false} launchRequest={setupLaunch} />}
-      {tab === 'broadcast' && <LiveBroadcastPanel uid={profile.uid} launchRequest={hubLaunch} />}
+      <AnimatedTabView
+        tabKey={tab}
+        direction={tabDirection}
+        className={isLocked ? 'lg:flex-1 lg:min-h-0 lg:flex lg:flex-col' : ''}
+      >
+        {tab === 'myevents' && (
+          <MyRaceEventsPanel
+            uid={profile.uid}
+            onManageRace={(id) => handleOpenTiming(id, 'record')}
+            onOpenTiming={(id) => handleOpenTiming(id, 'record')}
+            onOpenRunners={(id) => handleOpenTiming(id, 'roster')}
+            onOpenSetup={(id) => handleOpenSetup(id)}
+            onOpenLiveHub={handleOpenLiveHub}
+            onCreateEvent={() => handleOpenSetup()}
+          />
+        )}
+        {tab === 'timing' && <TimingConsole uid={profile.uid} canSeeAllRaces={false} launchRequest={timingLaunch} />}
+        {tab === 'race' && <RaceSetupPanel uid={profile.uid} canSeeAllRaces={false} canDeleteRaces={false} launchRequest={setupLaunch} />}
+        {tab === 'broadcast' && <LiveBroadcastPanel uid={profile.uid} launchRequest={hubLaunch} />}
+      </AnimatedTabView>
 
       {showDeleteAccount && <DeleteAccountModal profile={profile} onClose={() => setShowDeleteAccount(false)} />}
-      {showSetupGuide && <OrganizerSetupGuide onClose={() => setShowSetupGuide(false)} onNavigate={(destination) => setTab(destination)} />}
+      {showSetupGuide && <OrganizerSetupGuide onClose={() => setShowSetupGuide(false)} onNavigate={(destination) => selectTab(destination)} />}
     </WorkspaceShell>
   );
 }

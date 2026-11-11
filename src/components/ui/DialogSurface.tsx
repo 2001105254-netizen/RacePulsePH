@@ -1,5 +1,6 @@
 import { ReactNode, RefObject, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useAndroidBackHandler } from '../../lib/capacitorAndroid';
 
 interface DialogSurfaceProps {
   children: ReactNode;
@@ -17,6 +18,7 @@ let originalOverflow = '';
 // The portal also keeps overlays outside transformed/backdrop-filter ancestors.
 export default function DialogSurface({ children, className = '', titleId, descriptionId, onRequestClose, initialFocusRef, alert }: DialogSurfaceProps) {
   const ref = useRef<HTMLDialogElement>(null);
+  useAndroidBackHandler(true, onRequestClose);
   useLayoutEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;

@@ -6,6 +6,7 @@ import { db, handleFirestoreError, OperationType } from '../firebase';
 import { EngravingOrder, EngravingStatus } from '../types';
 import { Award, Clock, ArrowRight, CheckCircle, RefreshCw, XCircle, Wifi, WifiOff, AlertTriangle, User, Hash, MapPin, Trophy, MessageSquare, ChevronDown } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { useAndroidBackHandler } from '../lib/capacitorAndroid';
 
 interface CustomerFormProps {
   onBackToRoleSelection: () => void;
@@ -50,6 +51,9 @@ export default function CustomerForm({
   const [activeQueueCount, setActiveQueueCount] = useState(0);
   const [isQrMaximized, setIsQrMaximized] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+
+  useAndroidBackHandler(isQrMaximized, () => setIsQrMaximized(false));
+  useAndroidBackHandler(showCancelConfirm, () => setShowCancelConfirm(false));
 
   // Firestore Snapshot for live order status update
   useEffect(() => {
@@ -656,7 +660,7 @@ export default function CustomerForm({
             {/* FULL SCREEN MAXIMIZED QR MODAL */}
             {isQrMaximized && (
               <div
-                className="fixed inset-0 bg-black/95 backdrop-blur-xl z-50 flex flex-col items-center justify-center p-4 animate-fadeIn"
+                className="fixed inset-0 bg-black/95 backdrop-blur-xl z-50 flex flex-col items-center justify-center pt-[max(1rem,var(--rp-safe-top))] pb-[max(1rem,var(--rp-safe-bottom))] pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] animate-fadeIn"
                 onClick={() => setIsQrMaximized(false)}
               >
                 <div
@@ -847,7 +851,7 @@ export default function CustomerForm({
 
       {/* CUSTOM CONFIRMATION DIALOG FOR CANCEL ORDER */}
       {showCancelConfirm && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center pt-[max(1rem,var(--rp-safe-top))] pb-[max(1rem,var(--rp-safe-bottom))] pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] animate-fadeIn">
           <div className="glass-panel border-red-500/20 p-6 sm:p-8 max-w-md w-full text-center space-y-6 relative">
             <div className="mx-auto w-12 h-12 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center">
               <AlertTriangle className="w-6 h-6 text-red-500" />

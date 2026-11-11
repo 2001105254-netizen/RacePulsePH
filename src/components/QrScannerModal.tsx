@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { Camera, ShieldAlert, UploadCloud } from 'lucide-react';
+import { useAndroidBackHandler } from '../lib/capacitorAndroid';
 
 interface QrScannerModalProps {
   onClose: () => void;
@@ -30,6 +31,7 @@ export default function QrScannerModal({
   const [scannerAttempt, setScannerAttempt] = useState(0);
   const [localFileError, setLocalFileError] = useState('');
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
+  useAndroidBackHandler(true, onClose);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -145,7 +147,7 @@ export default function QrScannerModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn">
+    <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center pt-[max(1rem,var(--rp-safe-top))] pb-[max(1rem,var(--rp-safe-bottom))] pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] animate-fadeIn">
       {/* Hidden container for file decoder */}
       <div id="temporary-file-qr-decoder" className="hidden" />
 

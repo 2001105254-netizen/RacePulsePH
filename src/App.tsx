@@ -6,9 +6,11 @@ import { auth, db, signOutUser } from './firebase';
 import PublicRaceLanding from './components/PublicRaceLanding';
 import { PublicLegalPage, PublicNotFoundView } from './components/PublicInfoPages';
 import RunningLoader, { type StartupStage } from './components/RunningLoader';
+import { exitAndroidApp, subscribeAndroidBackButton, syncAndroidSystemBars } from './lib/capacitorAndroid';
 import { WorkspaceHeaderProvider, useWorkspaceHeader } from './lib/workspaceHeader';
 import { UserProfile } from './types';
 import { Sun, Moon, RefreshCw, Clock3, LogOut, LogIn, UserPlus, ArrowLeft, ShieldCheck, ChevronUp } from 'lucide-react';
+import { ViewLoadingSkeleton, directionalPageVariants, type NavDirection } from './components/ui/MotionPrimitives';
 
 // Lazy-load signed-in workspaces and authentication screens so public landing
 // visitors do not download admin/operator consoles, QR scanners, or spreadsheet libraries.
@@ -96,6 +98,7 @@ function useTheme() {
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
     localStorage.setItem('racepulse_theme', theme);
+    syncAndroidSystemBars(theme);
   }, [theme]);
 
   return { theme, toggleTheme: () => setTheme((t) => (t === 'dark' ? 'light' : 'dark')) };
@@ -121,6 +124,8 @@ function AppContent() {
   const [authError, setAuthError] = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
   const [guestScreen, setGuestScreen] = useState<GuestScreen>(() => guestScreenFromLocation());
+  const [navDirection, setNavDirection] = useState<NavDirection>('forward');
+  const wasSignedInRef = React.useRef<boolean | null>(null);
   const [currentPathname, setCurrentPathname] = useState<string>(() => window.location.pathname);
   const [activeRaceTitle, setActiveRaceTitle] = useState<string | null>(null);
   const [pendingRaceId, setPendingRaceId] = useState<string | null>(() => registrationRaceIdFromUrl());
@@ -136,7 +141,7 @@ function AppContent() {
   const navigateGuest = useCallback(
     (
       next: Exclude<GuestScreen, 'not-found'>,
-      options?: { raceId?: string | null; lockRunner?: boolean; preserveScroll?: boolean }
+      options?: { raceId?: string | null; lockRunner?: boolean; preserveScroll?: boolean; direction?: NavDirection }
     ) => {
       const targetPath = pathForGuestScreen(next);
       const url = new URL(window.location.href);
@@ -148,6 +153,7 @@ function AppContent() {
       if (`${window.location.pathname}${window.location.search}${window.location.hash}` !== nextUrl) {
         window.history.pushState({}, '', nextUrl);
       }
+      setNavDirection(options?.direction ?? 'forward');
       setCurrentPathname(url.pathname);
       setPendingRaceId(options?.raceId ?? null);
       setRunnerSignupIntent(Boolean(options?.lockRunner));
@@ -162,6 +168,7 @@ function AppContent() {
 
   useEffect(() => {
     const onPopState = () => {
+      setNavDirection('back');
       setCurrentPathname(window.location.pathname);
       if (!authUser) {
         const regId = registrationRaceIdFromUrl();
@@ -174,12 +181,42 @@ function AppContent() {
     return () => window.removeEventListener('popstate', onPopState);
   }, [authUser]);
 
+  // Route Android hardware back presses through active overlays/modals first,
+  // then inner console tabs or guest history before exiting cleanly.
+  useEffect(() => {
+    return subscribeAndroidBackButton((canGoBack) => {
+      if (!authUser) {
+        if (guestScreen !== 'landing') {
+          setNavDirection('back');
+          if (canGoBack && window.history.length > 1) {
+            window.history.back();
+          } else {
+            navigateGuest('landing', { direction: 'back' });
+          }
+          return;
+        }
+        exitAndroidApp();
+        return;
+      }
+
+      const backEvent = new CustomEvent('racepulse:back', {
+        cancelable: true,
+        detail: { hardware: true },
+      });
+      window.dispatchEvent(backEvent);
+      if (!backEvent.defaultPrevented) {
+        exitAndroidApp();
+      }
+    });
+  }, [authUser, guestScreen, navigateGuest]);
+
   // Dashboard navigation lives in React state, so browser history is not a
   // safe back action. Each signed-in console listens for this event and goes
   // to its own home screen instead.
   const handleBack = () => {
+    setNavDirection('back');
     if (!authUser) {
-      navigateGuest('landing');
+      navigateGuest('landing', { direction: 'back' });
       return;
     }
     window.dispatchEvent(new Event('racepulse:back'));
@@ -189,6 +226,10 @@ function AppContent() {
     const unsubscribe = onIdTokenChanged(
       auth,
       (user) => {
+        const wasSignedIn = wasSignedInRef.current;
+        wasSignedInRef.current = Boolean(user);
+        if (wasSignedIn === false && user) setNavDirection('forward');
+        else if (wasSignedIn === true && !user) setNavDirection('back');
         setAuthError(false);
         setProfileError(false);
         setAuthUser(user);
@@ -288,11 +329,7 @@ function AppContent() {
   else if (!authUser && guestScreen === 'landing') startupStage = racesLoad === 'loading' ? 'races' : racesLoad;
   else startupStage = 'ready';
 
-  const suspenseFallback = (
-    <div className="flex-grow flex items-center justify-center py-20" role="status" aria-label="Loading view">
-      <RefreshCw className="w-6 h-6 text-[var(--text-muted)] animate-spin" />
-    </div>
-  );
+  const suspenseFallback = <ViewLoadingSkeleton label="Loading RacePulsePH view" />;
 
   let content: React.ReactNode;
   if (authError || (profileError && authUser)) {
@@ -398,7 +435,7 @@ function AppContent() {
           id="app_root"
           inert={!openingDone}
           aria-hidden={!openingDone || undefined}
-          className={`min-h-screen bg-[var(--surface-page)] text-[var(--text-primary)] flex flex-col ${
+          className={`min-h-screen min-h-dvh bg-[var(--surface-page)] text-[var(--text-primary)] flex flex-col ${
             desktopLocked ? 'lg:h-screen lg:h-dvh lg:overflow-hidden' : ''
           }`}
         >
@@ -529,22 +566,25 @@ function AppContent() {
             </div>
           </nav>
 
-          <AnimatePresence mode="wait">
-            <m.div
-              key={viewKey}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-              className={`flex-grow flex flex-col ${desktopLocked ? 'lg:min-h-0 lg:overflow-hidden' : ''}`}
-            >
-              {content}
-            </m.div>
-          </AnimatePresence>
+          <div className={`relative flex-grow flex flex-col overflow-x-clip ${desktopLocked ? 'lg:min-h-0 lg:overflow-hidden' : ''}`}>
+            <AnimatePresence mode="popLayout" initial={false} custom={navDirection}>
+              <m.div
+                key={viewKey}
+                custom={navDirection}
+                variants={directionalPageVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className={`w-full flex-grow flex flex-col [backface-visibility:hidden] ${desktopLocked ? 'lg:min-h-0 lg:overflow-hidden' : ''}`}
+              >
+                {content}
+              </m.div>
+            </AnimatePresence>
+          </div>
 
           {/* Unified Semantic Footer with Philippine athletic greeting and legal/support navigation */}
-          <footer className={`border-t border-[var(--border-default)] bg-[var(--surface-card)] mt-auto text-xs text-[var(--text-secondary)] ${desktopLocked ? 'lg:hidden' : ''}`}>
-            <div className={`${isWorkspaceShell ? 'w-full' : 'max-w-7xl mx-auto'} flex flex-col md:flex-row items-center justify-between px-4 sm:px-6 py-4 gap-3`}>
+          <footer className={`border-t border-[var(--border-default)] bg-[var(--surface-card)] mt-auto text-xs text-[var(--text-secondary)] ${isWorkspaceShell ? 'pb-24 lg:pb-0' : 'pb-[var(--rp-safe-bottom)]'} ${desktopLocked ? 'lg:hidden' : ''}`}>
+            <div className={`${isWorkspaceShell ? 'w-full' : 'max-w-7xl mx-auto'} flex flex-col md:flex-row items-center justify-between pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))] py-4 gap-3`}>
               <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-3 gap-y-2">
                 <span className="font-mono text-[var(--text-primary)] font-semibold">
                   &copy; {new Date().getFullYear()} RacePulsePH

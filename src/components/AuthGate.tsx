@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useId } from 'react';
 import { doc, getDoc, runTransaction } from 'firebase/firestore';
 import { AnimatePresence, LayoutGroup, m } from 'motion/react';
+import { directionalTabVariants, type NavDirection } from './ui/MotionPrimitives';
 import { db, signUpWithEmail, signInWithEmail, signInWithGoogle, signOutUser } from '../firebase';
 import { clearSignupDraft, getSignupDraft, saveSignupDraft } from '../lib/accountSecurity';
 import { PasswordResetFlow } from './AccountSecurity';
@@ -450,18 +451,20 @@ export default function AuthGate({
             <span className="flex-1 h-px bg-[var(--border-default)]" />
           </div>
 
-          <AnimatePresence mode="wait">
-            {mode === 'login' ? (
-              <m.form
-                key="login-form"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-                onSubmit={handleLogin}
-                noValidate
-                className="space-y-4"
-              >
+          <div className="relative overflow-x-clip">
+            <AnimatePresence mode="popLayout" initial={false} custom={(mode === 'signup' ? 'forward' : 'back') satisfies NavDirection}>
+              {mode === 'login' ? (
+                <m.form
+                  key="login-form"
+                  custom={'back' satisfies NavDirection}
+                  variants={directionalTabVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  onSubmit={handleLogin}
+                  noValidate
+                  className="space-y-4 [backface-visibility:hidden]"
+                >
                 <div>
                   <label htmlFor="loginEmail" className={labelClass}>
                     Email or username
@@ -550,13 +553,14 @@ export default function AuthGate({
             ) : (
               <m.form
                 key="signup-form"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+                custom={'forward' satisfies NavDirection}
+                variants={directionalTabVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
                 onSubmit={handleSignup}
                 noValidate
-                className="space-y-4"
+                className="space-y-4 [backface-visibility:hidden]"
               >
                 <div>
                   <label htmlFor="signupName" className={labelClass}>
@@ -734,9 +738,10 @@ export default function AuthGate({
                     </button>
                   </p>
                 )}
-              </m.form>
-            )}
-          </AnimatePresence>
+                </m.form>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </div>
     </AuthStage>

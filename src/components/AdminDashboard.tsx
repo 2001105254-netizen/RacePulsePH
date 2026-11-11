@@ -5,6 +5,7 @@ import { db, signOutUser } from '../firebase';
 import { RunnerProfile, UserProfile } from '../types';
 import WorkspaceShell from './WorkspaceShell';
 import type { WorkspaceSwitchProps } from './DesktopSidebar';
+import { AnimatedTabView, ViewLoadingSkeleton, resolveTabDirection, type NavDirection } from './ui/MotionPrimitives';
 import type { TimingLaunchRequest } from './TimingConsole';
 import type { RaceSetupLaunchRequest } from './RaceSetupPanel';
 import type { LiveBroadcastLaunchRequest } from './LiveBroadcastPanel';
@@ -23,6 +24,8 @@ const BibStudioPanel = lazy(() => import('./BibStudioPanel'));
 
 type AdminTab = 'engraving' | 'timing' | 'race' | 'bibstudio' | 'organizers' | 'runners' | 'access' | 'events' | 'hub';
 
+const ADMIN_TAB_ORDER: readonly AdminTab[] = ['events', 'hub', 'engraving', 'timing', 'race', 'bibstudio', 'organizers', 'runners', 'access'];
+
 interface AdminDashboardProps {
   profile: UserProfile;
   workspaceSwitch?: WorkspaceSwitchProps;
@@ -32,11 +35,18 @@ interface AdminDashboardProps {
 export default function AdminDashboard({ profile, workspaceSwitch, pendingApprovalNotice }: AdminDashboardProps) {
   const { can, authority: isSuperAdmin } = useAccess();
   const [tab, setTab] = useState<AdminTab>(can('engraving.view') ? 'engraving' : 'events');
+  const [tabDirection, setTabDirection] = useState<NavDirection>('forward');
   const launchSeqRef = useRef(0);
   const [timingLaunch, setTimingLaunch] = useState<TimingLaunchRequest | null>(null);
   const [setupLaunch, setSetupLaunch] = useState<RaceSetupLaunchRequest | null>(null);
   const [hubLaunch, setHubLaunch] = useState<LiveBroadcastLaunchRequest | null>(null);
   const [engravingLaunch, setEngravingLaunch] = useState<EngravingLaunchRequest | null>(null);
+
+  const selectTab = (next: AdminTab, explicitDirection?: NavDirection) => {
+    setTabDirection(explicitDirection ?? resolveTabDirection(ADMIN_TAB_ORDER, tabRefOrCurrent(activeRef.current), next));
+    setTab(next);
+  };
+  const tabRefOrCurrent = (current: AdminTab) => current;
 
   const nextNonce = () => {
     launchSeqRef.current += 1;
@@ -45,12 +55,12 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
   const openRaceTiming = (raceId: string, mode: 'record' | 'roster' = 'record') => {
     localStorage.setItem('racepulse_active_race', raceId);
     setTimingLaunch({ raceId, mode, nonce: nextNonce() });
-    setTab('timing');
+    selectTab('timing');
   };
   const openRaceEngraving = (raceId: string) => {
     localStorage.setItem('racepulse_engraving_race', raceId);
     setEngravingLaunch({ raceId, nonce: nextNonce() });
-    setTab('engraving');
+    selectTab('engraving');
   };
   const openRaceSetup = (raceId?: string) => {
     setSetupLaunch(
@@ -58,17 +68,30 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
         ? { mode: 'edit', raceId, nonce: nextNonce() }
         : { mode: 'create', nonce: nextNonce() },
     );
-    setTab('race');
+    selectTab('race');
   };
   const openRaceHub = (raceId: string) => {
     setHubLaunch({ raceId, nonce: nextNonce() });
-    setTab('hub');
+    selectTab('hub');
   };
   const allowed: Record<AdminTab, boolean> = { engraving: can('engraving.view'), timing: can('timing.view') || can('roster.view'), race: can('race.view') || can('race.create'), bibstudio: isSuperAdmin, organizers: can('users.view') || isSuperAdmin, runners: can('users.view') || isSuperAdmin, access: isSuperAdmin, events: can('race.view'), hub: can('hub.manage') || can('hub.publish') };
   const active = allowed[tab] ? tab : (Object.keys(allowed).find(key => allowed[key]) as AdminTab);
+  const homeTab: AdminTab = can('engraving.view') ? 'engraving' : (Object.keys(allowed).find(key => allowed[key]) as AdminTab) || 'events';
+  const activeRef = useRef(active);
+  const homeTabRef = useRef(homeTab);
+  activeRef.current = active;
+  homeTabRef.current = homeTab;
 
   useEffect(() => {
-    const goHome = () => setTab('engraving');
+    const goHome = (event: Event) => {
+      const isHardware = (event as CustomEvent<{ hardware?: boolean }>).detail?.hardware === true;
+      if (isHardware) {
+        if (event.defaultPrevented || activeRef.current === homeTabRef.current) return;
+        event.preventDefault();
+      }
+      setTabDirection('back');
+      setTab(homeTabRef.current);
+    };
     window.addEventListener('racepulse:back', goHome);
     return () => window.removeEventListener('racepulse:back', goHome);
   }, []);
@@ -82,16 +105,18 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
         : 'Operations';
 
   const navItems = [
-    { key: 'events', icon: <CalendarDays className="w-4 h-4" />, label: 'My Events', shortLabel: 'Events', active: active === 'events', onClick: () => setTab('events') },
-    { key: 'hub', icon: <Tv className="w-4 h-4" />, label: 'Live Hub', shortLabel: 'Live Hub', active: active === 'hub', onClick: () => setTab('hub') },
-    { key: 'engraving', icon: <Award className="w-4 h-4" />, label: 'Engraving', shortLabel: 'Engrave', active: active === 'engraving', onClick: () => setTab('engraving') },
-    { key: 'timing', icon: <Timer className="w-4 h-4" />, label: 'Timing', shortLabel: 'Timing', active: active === 'timing', onClick: () => setTab('timing') },
-    { key: 'race', icon: <Flag className="w-4 h-4" />, label: 'Race Setup', shortLabel: 'Setup', active: active === 'race', onClick: () => setTab('race') },
-    { key: 'bibstudio', icon: <Printer className="w-4 h-4" />, label: 'Bib Studio', shortLabel: 'Bibs', active: active === 'bibstudio', onClick: () => setTab('bibstudio') },
-    { key: 'organizers', icon: <UserCog className="w-4 h-4" />, label: 'Organizers', shortLabel: 'Orgs', active: active === 'organizers', onClick: () => setTab('organizers') },
-    { key: 'runners', icon: <Users className="w-4 h-4" />, label: 'Runners', shortLabel: 'Runners', active: active === 'runners', onClick: () => setTab('runners') },
-    { key: 'access', icon: <ShieldCheck className="w-4 h-4" />, label: 'Access', shortLabel: 'Access', active: active === 'access', onClick: () => setTab('access') },
+    { key: 'events', icon: <CalendarDays className="w-4 h-4" />, label: 'My Events', shortLabel: 'Events', active: active === 'events', onClick: () => selectTab('events') },
+    { key: 'hub', icon: <Tv className="w-4 h-4" />, label: 'Live Hub', shortLabel: 'Live Hub', active: active === 'hub', onClick: () => selectTab('hub') },
+    { key: 'engraving', icon: <Award className="w-4 h-4" />, label: 'Engraving', shortLabel: 'Engrave', active: active === 'engraving', onClick: () => selectTab('engraving') },
+    { key: 'timing', icon: <Timer className="w-4 h-4" />, label: 'Timing', shortLabel: 'Timing', active: active === 'timing', onClick: () => selectTab('timing') },
+    { key: 'race', icon: <Flag className="w-4 h-4" />, label: 'Race Setup', shortLabel: 'Setup', active: active === 'race', onClick: () => selectTab('race') },
+    { key: 'bibstudio', icon: <Printer className="w-4 h-4" />, label: 'Bib Studio', shortLabel: 'Bibs', active: active === 'bibstudio', onClick: () => selectTab('bibstudio') },
+    { key: 'organizers', icon: <UserCog className="w-4 h-4" />, label: 'Organizers', shortLabel: 'Orgs', active: active === 'organizers', onClick: () => selectTab('organizers') },
+    { key: 'runners', icon: <Users className="w-4 h-4" />, label: 'Runners', shortLabel: 'Runners', active: active === 'runners', onClick: () => selectTab('runners') },
+    { key: 'access', icon: <ShieldCheck className="w-4 h-4" />, label: 'Access', shortLabel: 'Access', active: active === 'access', onClick: () => selectTab('access') },
   ].filter(item => allowed[item.key as AdminTab]);
+
+  const isLocked = active === 'engraving' || active === 'events' || active === 'hub' || active === 'timing';
 
   return (
     <WorkspaceShell
@@ -102,7 +127,7 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
       workspaceSwitch={workspaceSwitch}
       pendingApprovalNotice={pendingApprovalNotice}
       maxWidthClass="max-w-[1800px]"
-      desktopLocked={active === 'engraving' || active === 'events' || active === 'hub' || active === 'timing'}
+      desktopLocked={isLocked}
     >
       {/* Mobile-only compact console header + sign out; desktop uses the sidebar avatar tooltip and persistent top bar */}
       <div
@@ -125,28 +150,34 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
         </button>
       </div>
 
-      <Suspense fallback={<div role="status" className="p-8 text-center text-xs text-[var(--text-secondary)]">Loading module...</div>}>
-        {active === 'engraving' && <OperatorDashboard launchRequest={engravingLaunch} />}
-        {active === 'timing' && <TimingConsole uid={profile.uid} canSeeAllRaces launchRequest={timingLaunch} />}
-        {active === 'race' && <RaceSetupPanel uid={profile.uid} canSeeAllRaces canDeleteRaces={isSuperAdmin} launchRequest={setupLaunch} />}
-        {active === 'bibstudio' && <BibStudioPanel />}
-        {active === 'events' && (
-          <MyRaceEventsPanel
-            uid={profile.uid}
-            onManageRace={(id) => openRaceTiming(id, 'record')}
-            onOpenTiming={(id) => openRaceTiming(id, 'record')}
-            onOpenRunners={(id) => openRaceTiming(id, 'roster')}
-            onOpenEngraving={openRaceEngraving}
-            onOpenSetup={(id) => openRaceSetup(id)}
-            onOpenLiveHub={openRaceHub}
-            onCreateEvent={() => openRaceSetup()}
-          />
-        )}
-        {active === 'hub' && <LiveBroadcastPanel uid={profile.uid} launchRequest={hubLaunch} />}
-        {active === 'organizers' && <OrganizersPanel canManageAccounts={isSuperAdmin} currentUserId={profile.uid} />}
-        {active === 'runners' && <RunnersPanel canManageAccounts={isSuperAdmin} currentUserId={profile.uid} />}
-        {active === 'access' && <AccessPanel />}
-      </Suspense>
+      <AnimatedTabView
+        tabKey={active}
+        direction={tabDirection}
+        className={isLocked ? 'lg:flex-1 lg:min-h-0 lg:flex lg:flex-col' : ''}
+      >
+        <Suspense fallback={<ViewLoadingSkeleton label="Loading module" compact />}>
+          {active === 'engraving' && <OperatorDashboard launchRequest={engravingLaunch} />}
+          {active === 'timing' && <TimingConsole uid={profile.uid} canSeeAllRaces launchRequest={timingLaunch} />}
+          {active === 'race' && <RaceSetupPanel uid={profile.uid} canSeeAllRaces canDeleteRaces={isSuperAdmin} launchRequest={setupLaunch} />}
+          {active === 'bibstudio' && <BibStudioPanel />}
+          {active === 'events' && (
+            <MyRaceEventsPanel
+              uid={profile.uid}
+              onManageRace={(id) => openRaceTiming(id, 'record')}
+              onOpenTiming={(id) => openRaceTiming(id, 'record')}
+              onOpenRunners={(id) => openRaceTiming(id, 'roster')}
+              onOpenEngraving={openRaceEngraving}
+              onOpenSetup={(id) => openRaceSetup(id)}
+              onOpenLiveHub={openRaceHub}
+              onCreateEvent={() => openRaceSetup()}
+            />
+          )}
+          {active === 'hub' && <LiveBroadcastPanel uid={profile.uid} launchRequest={hubLaunch} />}
+          {active === 'organizers' && <OrganizersPanel canManageAccounts={isSuperAdmin} currentUserId={profile.uid} />}
+          {active === 'runners' && <RunnersPanel canManageAccounts={isSuperAdmin} currentUserId={profile.uid} />}
+          {active === 'access' && <AccessPanel />}
+        </Suspense>
+      </AnimatedTabView>
     </WorkspaceShell>
   );
 }

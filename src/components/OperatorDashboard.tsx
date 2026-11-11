@@ -1355,7 +1355,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
 
       {/* Mobile / Tablet Responsive Action & Event Bar (< 1024px) */}
       {!isDesktop && (
-        <div className="space-y-3 mb-4">
+        <div className="space-y-2 mb-2">
           <div className="glass-panel p-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -1482,7 +1482,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
       <section
         id="operator_stats_grid"
         aria-label="Engraving queue telemetry"
-        className="shrink-0 border border-[var(--border-default)] lg:border-x-0 lg:border-t-0 rounded-2xl lg:rounded-none bg-[var(--surface-card)] mb-4 lg:mb-0 lg:h-12 px-3 sm:px-4 py-2 lg:py-0 flex flex-wrap lg:flex-nowrap items-center justify-between gap-2 lg:gap-4 lg:overflow-x-auto"
+        className="shrink-0 border border-[var(--border-default)] lg:border-x-0 lg:border-t-0 rounded-2xl lg:rounded-none bg-[var(--surface-card)] mb-2 lg:mb-0 lg:h-12 px-3 sm:px-4 py-2 lg:py-0 flex flex-wrap lg:flex-nowrap items-center justify-between gap-2 lg:gap-4 lg:overflow-x-auto"
       >
         <div className="flex flex-wrap lg:flex-nowrap items-center gap-1.5 sm:gap-2 min-w-0">
           {telemetryItems.map((item) => {
@@ -1560,20 +1560,20 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
           className="flex flex-col min-h-0 lg:h-full bg-[var(--surface-page)] rounded-2xl lg:rounded-none border border-[var(--border-default)] lg:border-y-0 lg:border-l-0 lg:border-r overflow-hidden"
         >
           {/* Compact Queue Toolbar */}
-          <div className="shrink-0 px-3 sm:px-4 py-2.5 border-b border-[var(--border-default)] bg-[var(--surface-card)] flex flex-wrap items-center justify-between gap-2.5">
-            <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
+          <div className="shrink-0 px-3 sm:px-4 py-2.5 border-b border-[var(--border-default)] bg-[var(--surface-card)] flex flex-col xl:flex-row xl:items-center xl:justify-between gap-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 min-w-0 xl:flex-1">
               {/* View Switcher: Order Queue vs Event Roster */}
               <div
                 role="tablist"
                 aria-label="Master list view"
-                className="inline-flex rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] p-0.5 shrink-0"
+                className="inline-flex self-start rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] p-0.5 shrink-0"
               >
                 <button
                   type="button"
                   role="tab"
                   aria-selected={masterView === 'queue'}
                   onClick={() => setMasterView('queue')}
-                  className={`h-8 px-2.5 rounded-md text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${
+                  className={`min-h-11 sm:min-h-9 lg:h-8 px-3 sm:px-2.5 rounded-md text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${
                     masterView === 'queue'
                       ? 'bg-red-700 text-white'
                       : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
@@ -1587,7 +1587,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                   role="tab"
                   aria-selected={masterView === 'roster'}
                   onClick={() => setMasterView('roster')}
-                  className={`h-8 px-2.5 rounded-md text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${
+                  className={`min-h-11 sm:min-h-9 lg:h-8 px-3 sm:px-2.5 rounded-md text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${
                     masterView === 'roster'
                       ? 'bg-red-700 text-white'
                       : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
@@ -1599,7 +1599,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
               </div>
 
               {/* Search Input */}
-              <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <div className="relative w-full sm:flex-1 sm:min-w-[180px] xl:max-w-sm">
                 <Search
                   className="w-3.5 h-3.5 text-[var(--text-secondary)] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
                   aria-hidden="true"
@@ -1622,7 +1622,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                       ? setSearchTerm(e.target.value)
                       : setRunnerSearch(e.target.value)
                   }
-                  className="w-full h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] pl-8 pr-8 text-xs font-semibold text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400"
+                  className="w-full h-11 sm:h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] pl-8 pr-8 text-xs font-semibold text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400"
                 />
                 {(masterView === 'queue' ? searchTerm : runnerSearch) && (
                   <button
@@ -1641,7 +1641,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
 
             {/* Status Filter Pills (Queue Mode) */}
             {masterView === 'queue' && (
-              <div className="flex items-center gap-1 overflow-x-auto" role="group" aria-label="Filter queue by status">
+              <div className="flex items-center gap-1.5 overflow-x-auto racepulse-horizontal-scroll touch-pan-x max-w-full shrink-0 py-0.5" role="group" aria-label="Filter queue by status">
                 {(['all', 'queued', 'inprogress', 'ready', 'completed'] as const).map((filterOpt) => {
                   const active = statusFilter === filterOpt;
                   const count =
@@ -1663,7 +1663,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                       type="button"
                       onClick={() => setStatusFilter(filterOpt)}
                       aria-pressed={active}
-                      className={`h-8 px-2.5 rounded-lg border text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+                      className={`min-h-11 sm:min-h-9 lg:h-8 px-3 sm:px-2.5 rounded-lg border text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
                         active
                           ? 'bg-red-700 border-red-700 text-white'
                           : 'bg-[var(--surface-inset)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'

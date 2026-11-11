@@ -1,6 +1,7 @@
 import { formatClockTime, formatDateTime, formatRaceTime, formatElapsed } from '../lib/preciseTime';
 import { useAccess, useScopedRaces, authenticatedFetch } from '../lib/access';
 import { useWorkspaceHeader } from '../lib/workspaceHeader';
+import { useAndroidBackHandler } from '../lib/capacitorAndroid';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { collection, query, where, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch, deleteField, runTransaction } from 'firebase/firestore';
@@ -72,8 +73,14 @@ function useNow(intervalMs = 100): number {
   return now;
 }
 
+// Live JS timers only have millisecond accuracy, so preciseTime helpers pad two
+// trailing "00" sub-ms digits; strip those two padding digits on live clocks only.
+function trimLiveSubMs(formatted: string): string {
+  return /:\d{7}$/.test(formatted) ? formatted.slice(0, -2) : formatted;
+}
+
 function formatClockElapsed(totalMs: number): string {
-  return formatElapsed(Math.max(0, totalMs) / 1000);
+  return trimLiveSubMs(formatElapsed(Math.max(0, totalMs) / 1000));
 }
 
 // datetime-local inputs use the operator's local clock while Firestore stores
@@ -154,7 +161,7 @@ interface LiveClockProps {
 // official start (race.gunStartTime), independent of any individual chip read.
 function LiveClock({ gunStartTime, size = 'compact' }: LiveClockProps) {
   const now = useNow(100);
-  const wallClock = formatClockTime(now);
+  const wallClock = trimLiveSubMs(formatClockTime(now));
 
   if (size === 'large') {
     return (
@@ -224,6 +231,9 @@ export default function TimingConsole({ uid, canSeeAllRaces: _canSeeAllRaces, la
   }, [setDesktopLocked]);
   const races = useScopedRaces();
   const [activeRaceId, setActiveRaceId] = useState<string>(() => launchRequest?.raceId || localStorage.getItem('racepulse_active_race') || '');
+  const activeRaceIdRef = useRef(activeRaceId);
+  activeRaceIdRef.current = activeRaceId;
+  useAndroidBackHandler(Boolean(activeRaceId), () => setActiveRaceId(''));
   const [pendingMode, setPendingMode] = useState<'record' | 'roster' | undefined>(() => launchRequest?.mode);
   const [pendingModeNonce, setPendingModeNonce] = useState<number>(() => launchRequest?.nonce ?? 0);
 
@@ -238,7 +248,12 @@ export default function TimingConsole({ uid, canSeeAllRaces: _canSeeAllRaces, la
   }, [launchRequest?.nonce, launchRequest?.raceId, launchRequest?.mode]);
 
   useEffect(() => {
-    const goBackToRaceList = () => {
+    const goBackToRaceList = (event: Event) => {
+      const isHardware = (event as CustomEvent<{ hardware?: boolean }>).detail?.hardware === true;
+      if (isHardware) {
+        if (event.defaultPrevented || !activeRaceIdRef.current) return;
+        event.preventDefault();
+      }
       localStorage.removeItem('racepulse_active_race');
       setActiveRaceId('');
     };
@@ -274,7 +289,7 @@ export default function TimingConsole({ uid, canSeeAllRaces: _canSeeAllRaces, la
           </div>,
           headerCtx.leftSlotEl,
         )}
-        <div className="w-full flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-4">
+        <div className="w-full flex-1 min-h-0 overflow-y-auto px-0 sm:px-2 py-1 lg:px-6 lg:py-4">
           <RaceList
             races={races}
             onSelectRace={handleSelectRace}
@@ -1351,8 +1366,8 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
         headerCtx.rightSlotEl,
       )}
 
-      {/* Mobile-only compact race switcher & telemetry strip */}
-      <div className="lg:hidden px-3 py-2 border-b border-[var(--border-default)] bg-[var(--surface-card)] space-y-2 shrink-0">
+      {/* Mobile-only compact race switcher & telemetry card */}
+      <div className="lg:hidden glass-panel rounded-2xl p-3 space-y-2 shrink-0">
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -1430,9 +1445,9 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
       </div>
 
       {/* Mode navigation + read-only telemetry ribbon */}
-      <div className="px-3 lg:px-4 py-1.5 border-b border-[var(--border-default)] bg-[var(--surface-card)] flex items-center justify-between gap-3 shrink-0">
-        <div className="racepulse-horizontal-scroll touch-pan-x flex-1 min-w-0">
-          <div role="tablist" aria-label="Timing tools" className="flex items-center gap-2 min-w-max py-0.5">
+      <div className="glass-panel rounded-2xl px-2.5 py-2 lg:rounded-none lg:border-x-0 lg:border-t-0 lg:border-b lg:border-[var(--border-default)] lg:bg-[var(--surface-card)] lg:shadow-none lg:px-4 lg:py-1.5 flex items-center justify-between gap-3 shrink-0">
+        <div className="w-full racepulse-horizontal-scroll touch-pan-x md:flex-1 md:min-w-0">
+          <div role="tablist" aria-label="Timing tools" className="grid grid-cols-6 gap-1.5 md:flex md:items-center md:gap-1 md:min-w-max py-0.5">
             {timingModes.map(({ key, label, Icon }) => {
               const active = mode === key;
               return (
@@ -1442,22 +1457,24 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
                   type="button"
                   role="tab"
                   aria-selected={active}
+                  aria-label={label}
+                  title={label}
                   onClick={() => setMode(key)}
-                  className={`flex items-center gap-1.5 whitespace-nowrap shrink-0 min-h-11 px-3.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
+                  className={`flex items-center justify-center md:justify-start gap-1 2xl:gap-1.5 whitespace-nowrap shrink-0 min-h-11 px-2 2xl:px-3 rounded-xl text-xs font-semibold uppercase tracking-normal transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
                     active
                       ? 'bg-red-700 text-white shadow-sm'
                       : 'bg-[var(--surface-inset)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
                   }`}
                 >
-                  <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
-                  <span>{label}</span>
+                  <Icon className="w-5 h-5 md:w-4 md:h-4 shrink-0" aria-hidden="true" />
+                  <span className="hidden md:inline">{label}</span>
                 </button>
               );
             })}
           </div>
         </div>
 
-        <div className="hidden lg:flex items-center gap-3 text-xs font-mono text-[var(--text-secondary)] tabular-nums shrink-0">
+        <div className="hidden xl:flex items-center gap-1 2xl:gap-2 text-xs font-mono tracking-tight 2xl:tracking-normal text-[var(--text-secondary)] tabular-nums shrink-0">
           <span>{orderedCheckpoints.length} stations</span>
           <span aria-hidden="true">&bull;</span>
           <span>{runnerProfiles.length} runners</span>
@@ -1469,19 +1486,19 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
       </div>
 
       {runnerProfilesError && (
-        <p role="alert" className="mx-3 mt-2 text-xs font-semibold text-red-700 dark:text-red-400 glass-inset px-3 py-2 shrink-0">
+        <p role="alert" className="lg:mx-3 mt-2 text-xs font-semibold text-red-700 dark:text-red-400 glass-inset px-3 py-2 shrink-0">
           Could not load registered runners: {runnerProfilesError}
         </p>
       )}
 
       {mode === 'assign' && (
-        <div className="flex-1 min-h-0 flex flex-col p-3 lg:p-4 lg:overflow-hidden">
+        <div className="flex-1 min-h-0 flex flex-col px-0 py-0 lg:p-4 lg:overflow-hidden">
           <ChipAssignmentPanel race={race} runnerProfiles={runnerProfiles} chipReads={chipReads} />
         </div>
       )}
 
       {mode === 'mobile-checkin' && (
-        <div className="flex-1 min-h-0 flex flex-col p-3 lg:p-4 lg:overflow-hidden">
+        <div className="flex-1 min-h-0 flex flex-col px-0 py-0 lg:p-4 lg:overflow-hidden">
           <MobileCheckInPanel
             raceId={race.id}
             raceName={race.name}
@@ -1498,7 +1515,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
       )}
 
       {mode === 'roster' && (
-        <div className="flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-[minmax(0,64fr)_minmax(0,36fr)] gap-3 lg:gap-4 p-3 lg:p-4 lg:overflow-hidden">
+        <div className="flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-[minmax(0,64fr)_minmax(0,36fr)] gap-3 lg:gap-4 px-0 py-0 lg:p-4 lg:overflow-hidden">
           <div className="order-1 lg:order-none min-h-0 flex-1 flex flex-col">
             <RunnerRosterPanel race={race} runnerProfiles={runnerProfiles} />
           </div>
@@ -1509,7 +1526,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
       )}
 
       {mode === 'rankings' && (
-        <div className="flex-1 min-h-0 flex flex-col p-3 lg:p-4 lg:overflow-hidden">
+        <div className="flex-1 min-h-0 flex flex-col px-0 py-0 lg:p-4 lg:overflow-hidden">
           <RaceRankingsPanel
             race={race}
             results={results}
@@ -1525,7 +1542,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
       )}
 
       {mode === 'rollcall' && (
-        <div className="flex-1 min-h-0 flex flex-col p-3 lg:p-4 lg:overflow-hidden">
+        <div className="flex-1 min-h-0 flex flex-col px-0 py-0 lg:p-4 lg:overflow-hidden">
           <StartRollCallPanel
             race={race}
             runnerProfiles={runnerProfiles}
@@ -1537,7 +1554,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
       )}
 
       {mode === 'record' && (
-        <div className="flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-[minmax(0,64fr)_minmax(0,36fr)] lg:grid-rows-[auto_minmax(0,1fr)] gap-3 p-3 lg:p-4 lg:overflow-hidden">
+        <div className="flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-[minmax(0,64fr)_minmax(0,36fr)] lg:grid-rows-[auto_minmax(0,1fr)] gap-3 px-0 py-0 lg:p-4 lg:overflow-hidden">
           {queueError && (
             <p role="alert" className="lg:col-span-2 text-xs font-semibold text-red-700 dark:text-red-400 glass-inset px-3 py-2 shrink-0">
               {queueError}

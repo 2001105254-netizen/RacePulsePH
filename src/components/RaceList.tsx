@@ -64,7 +64,7 @@ export default function RaceList({
               <Card
                 key={race.id}
                 onClick={() => onSelectRace(race.id)}
-                className={`group cursor-pointer overflow-hidden text-left transition-colors duration-150 border-[var(--border-default)] hover:border-red-600/60 flex flex-col justify-between ${
+                className={`group cursor-pointer overflow-hidden text-left transition-[border-color,transform] duration-150 motion-safe:active:scale-[0.99] border-[var(--border-default)] hover:border-red-600/60 flex flex-col justify-between ${
                   isSelected ? 'ring-2 ring-red-600 border-red-600' : ''
                 }`}
               >
@@ -90,7 +90,7 @@ export default function RaceList({
                     <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5 z-10">
                       {isLive && (
                         <Badge variant="live" className="gap-1.5 shadow-sm text-xs">
-                          <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-ping" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-600 motion-safe:animate-ping" />
                           Live Timing
                         </Badge>
                       )}

@@ -3,6 +3,7 @@ import { EmailAuthProvider, GoogleAuthProvider, deleteUser, reauthenticateWithCr
 import { collection, doc, getDocs, query, where, writeBatch } from 'firebase/firestore';
 import { AlertTriangle, Loader2, Trash2, X } from 'lucide-react';
 import { auth, db } from '../firebase';
+import { useAndroidBackHandler } from '../lib/capacitorAndroid';
 import { UserProfile } from '../types';
 
 interface DeleteAccountModalProps {
@@ -23,6 +24,7 @@ export default function DeleteAccountModal({ profile, onClose }: DeleteAccountMo
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState('');
   const user = auth.currentUser;
+  useAndroidBackHandler(!deleting, onClose);
   const usesPassword = useMemo(() => user?.providerData.some((provider) => provider.providerId === 'password') ?? false, [user]);
 
   const handleDelete = async () => {
@@ -82,7 +84,7 @@ export default function DeleteAccountModal({ profile, onClose }: DeleteAccountMo
   };
 
   return (
-    <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn" role="dialog" aria-modal="true" aria-labelledby="delete-account-title">
+    <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-md flex items-center justify-center pt-[max(1rem,var(--rp-safe-top))] pb-[max(1rem,var(--rp-safe-bottom))] pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] animate-fadeIn" role="dialog" aria-modal="true" aria-labelledby="delete-account-title">
       <div className="glass-panel w-full max-w-md p-6 space-y-5 relative border border-red-500/35">
         <button onClick={onClose} disabled={deleting} className="absolute right-4 top-4 glass-inset p-2 rounded-full text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-50" aria-label="Close delete account dialog">
           <X className="w-4 h-4" />

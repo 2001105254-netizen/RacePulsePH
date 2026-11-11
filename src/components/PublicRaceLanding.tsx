@@ -24,6 +24,14 @@ import { Input } from './ui/input';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { isRaceRegistrationOpen, philippineDate } from '../lib/raceRegistration';
 import { formatRaceTime } from '../lib/preciseTime';
+import {
+  CardSkeletonLoader,
+  EMIL_EASE,
+  QUINT_EASE,
+  RaceCardSkeletonGrid,
+  ResultsSkeletonList,
+  cappedStaggerDelay,
+} from './ui/MotionPrimitives';
 
 const PublicLiveRaceHub = lazy(() => import('./PublicLiveRaceHub'));
 const PublicRaceResults = lazy(() => import('./PublicRaceResults'));
@@ -454,7 +462,7 @@ export default function PublicRaceLanding({
             <m.h1
               initial={{ opacity: 0, y: 12 }}
               animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 }}
-              transition={{ duration: 0.3, delay: 0.02, ease: [0.16, 1, 0.3, 1] }}
+              transition={{ duration: 0.24, delay: 0.02, ease: QUINT_EASE }}
               className="type-hero uppercase tracking-tight"
             >
               <span className="heading-float block">Find your next</span>
@@ -466,7 +474,7 @@ export default function PublicRaceLanding({
             <m.p
               initial={{ opacity: 0, y: 10 }}
               animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
-              transition={{ duration: 0.28, delay: 0.07, ease: [0.16, 1, 0.3, 1] }}
+              transition={{ duration: 0.22, delay: 0.06, ease: QUINT_EASE }}
               className="type-lead max-w-xl text-[var(--text-secondary)] dark:text-white"
             >
               Browse upcoming{' '}
@@ -478,7 +486,7 @@ export default function PublicRaceLanding({
             <m.form
               initial={{ opacity: 0, y: 10 }}
               animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
-              transition={{ duration: 0.3, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}
+              transition={{ duration: 0.24, delay: 0.1, ease: QUINT_EASE }}
               role="search"
               aria-label="Finisher result and certificate lookup"
               onSubmit={(e) => {
@@ -645,7 +653,7 @@ export default function PublicRaceLanding({
             <m.div
               initial={{ opacity: 0, y: 10 }}
               animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
-              transition={{ duration: 0.28, delay: 0.16, ease: [0.16, 1, 0.3, 1] }}
+              transition={{ duration: 0.22, delay: 0.14, ease: QUINT_EASE }}
               className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 pt-1"
             >
               <Button
@@ -686,7 +694,7 @@ export default function PublicRaceLanding({
               <m.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }}
-                transition={{ duration: 0.28, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                transition={{ duration: 0.22, delay: 0.18, ease: QUINT_EASE }}
                 className="pt-0.5 flex flex-wrap items-center gap-x-4 gap-y-1 type-caption text-[var(--text-secondary)] dark:text-white font-mono"
               >
                 <span className="flex items-center gap-1.5">
@@ -716,7 +724,7 @@ export default function PublicRaceLanding({
           <m.div
             initial={{ y: 8 }}
             animate={revealed ? { y: 0 } : { y: 8 }}
-            transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: 0.26, ease: QUINT_EASE }}
             className="lg:col-span-5 flex items-end justify-center lg:justify-end px-4 sm:px-8 lg:px-0 lg:pr-6 pt-0 lg:pt-6 self-end"
           >
             <img
@@ -746,13 +754,7 @@ export default function PublicRaceLanding({
               Live checkpoint split board
             </h2>
           </div>
-          <Suspense
-            fallback={
-              <Card className="p-8 text-center">
-                <RefreshCw className="w-5 h-5 animate-spin text-[var(--text-secondary)] mx-auto" />
-              </Card>
-            }
-          >
+          <Suspense fallback={<CardSkeletonLoader label="Loading live timing board" />}>
             <PublicLiveRaceHub races={liveRaces} />
           </Suspense>
         </section>
@@ -853,34 +855,7 @@ export default function PublicRaceLanding({
 
         {/* Events Grid, Loading Skeletons, or Empty State */}
         {loadState === 'loading' ? (
-          <ul
-            aria-busy="true"
-            aria-label="Loading published races"
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-          >
-            {[0, 1, 2].map((idx) => (
-              <li key={idx} className="flex">
-                <Card className="w-full overflow-hidden flex flex-col justify-between animate-pulse">
-                  <div>
-                    <div className="aspect-[16/10] w-full bg-[var(--surface-inset)] border-b border-[var(--border-default)]" />
-                    <CardContent className="p-6 space-y-4">
-                      <div className="space-y-2">
-                        <div className="h-5 w-3/4 rounded-md bg-[var(--surface-inset)]" />
-                        <div className="h-3.5 w-1/2 rounded-md bg-[var(--surface-inset)]" />
-                      </div>
-                      <div className="flex gap-2">
-                        <div className="h-7 w-20 rounded-lg bg-[var(--surface-inset)]" />
-                        <div className="h-7 w-24 rounded-lg bg-[var(--surface-inset)]" />
-                      </div>
-                    </CardContent>
-                  </div>
-                  <div className="px-6 pb-6">
-                    <div className="h-11 w-full rounded-full bg-[var(--surface-inset)]" />
-                  </div>
-                </Card>
-              </li>
-            ))}
-          </ul>
+          <RaceCardSkeletonGrid count={3} />
         ) : filteredRaces.length === 0 ? (
           <Card className="p-12 text-center border-dashed space-y-4">
             <Flag className="w-8 h-8 mx-auto text-[var(--text-secondary)]" aria-hidden="true" />
@@ -919,9 +894,9 @@ export default function PublicRaceLanding({
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true, amount: 0.08 }}
                   transition={{
-                    duration: 0.26,
-                    delay: Math.min(idx, 5) * 0.045,
-                    ease: [0.22, 1, 0.36, 1],
+                    duration: 0.24,
+                    delay: cappedStaggerDelay(idx),
+                    ease: EMIL_EASE,
                   }}
                   className="flex"
                 >
@@ -939,7 +914,7 @@ export default function PublicRaceLanding({
                             alt={`${race.name} official event poster`}
                             width={640}
                             height={400}
-                            className="w-full h-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03]"
+                            className="w-full h-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.03]"
                             loading="lazy"
                           />
                         ) : (
@@ -1046,55 +1021,60 @@ export default function PublicRaceLanding({
       </section>
 
       {/* Selected Race Results Inspector Section (Synced with ?race=<id>) */}
-      {selectedRace && (
-        <section id="public-race-results" className="scroll-mt-24 space-y-4" aria-labelledby="selected-heading">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-default)] pb-4">
-            <h2 id="selected-heading" className="type-section text-[var(--text-primary)]">
-              {selectedRace.name}
-            </h2>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="default"
-                className="h-11 px-4"
-                onClick={() => handleCopyRaceLink(selectedRace.id)}
-              >
-                {copiedRaceId === selectedRace.id ? (
-                  <>
-                    <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
-                    <span>Link copied</span>
-                  </>
-                ) : (
-                  <>
-                    <Link2 className="w-4 h-4" aria-hidden="true" />
-                    <span>Share race link</span>
-                  </>
-                )}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="default"
-                className="h-11 px-4 border border-[var(--border-default)]"
-                onClick={handleCloseSelectedRace}
-              >
-                <X className="w-4 h-4" aria-hidden="true" />
-                <span>Close</span>
-              </Button>
-            </div>
-          </div>
-          <Suspense
-            fallback={
-              <Card className="p-8 text-center">
-                <RefreshCw className="w-5 h-5 animate-spin text-[var(--text-secondary)] mx-auto" />
-              </Card>
-            }
+      <AnimatePresence mode="wait" initial={false}>
+        {selectedRace && (
+          <m.section
+            key={selectedRace.id}
+            id="public-race-results"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0, transitionEnd: { transform: 'none' } }}
+            exit={{ opacity: 0, y: -4, transition: { duration: 0.12, ease: EMIL_EASE } }}
+            transition={{ duration: 0.2, ease: EMIL_EASE }}
+            className="scroll-mt-24 space-y-4 [backface-visibility:hidden]"
+            aria-labelledby="selected-heading"
           >
-            <PublicRaceResults race={selectedRace} onRegister={onRegister} />
-          </Suspense>
-        </section>
-      )}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-default)] pb-4">
+              <h2 id="selected-heading" className="type-section text-[var(--text-primary)]">
+                {selectedRace.name}
+              </h2>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="default"
+                  className="h-11 px-4"
+                  onClick={() => handleCopyRaceLink(selectedRace.id)}
+                >
+                  {copiedRaceId === selectedRace.id ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+                      <span>Link copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Link2 className="w-4 h-4" aria-hidden="true" />
+                      <span>Share race link</span>
+                    </>
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="default"
+                  className="h-11 px-4 border border-[var(--border-default)]"
+                  onClick={handleCloseSelectedRace}
+                >
+                  <X className="w-4 h-4" aria-hidden="true" />
+                  <span>Close</span>
+                </Button>
+              </div>
+            </div>
+            <Suspense fallback={<ResultsSkeletonList rows={5} />}>
+              <PublicRaceResults race={selectedRace} onRegister={onRegister} />
+            </Suspense>
+          </m.section>
+        )}
+      </AnimatePresence>
 
       {/* Official Finisher Bib Board: Driven by real published finishers instead of generic feature template cards */}
       {featuredBibFinishers.length > 0 && (
@@ -1228,7 +1208,7 @@ export default function PublicRaceLanding({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
             transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-            className="md:hidden fixed bottom-0 inset-x-0 z-40 border-t border-[var(--border-default)] bg-[var(--surface-card)]/95 backdrop-blur-md px-4 py-2.5 shadow-[0_-10px_30px_-10px_rgba(0,0,0,0.18)]"
+            className="md:hidden fixed bottom-0 inset-x-0 z-40 border-t border-[var(--border-default)] bg-[var(--surface-card)]/95 backdrop-blur-md pt-2.5 pb-[max(0.625rem,var(--rp-safe-bottom))] pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] shadow-[0_-10px_30px_-10px_rgba(0,0,0,0.18)]"
           >
             <div className="max-w-md mx-auto grid grid-cols-2 gap-2.5">
               <Button
