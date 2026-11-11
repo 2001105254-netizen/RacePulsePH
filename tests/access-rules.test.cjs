@@ -94,3 +94,11 @@ test('finish review window requires correction permission and a bounded numeric 
  await assertFails(updateDoc(doc(db('admin'),'races','race_a'),{finishReviewWindowMs:60001}));
  await assertFails(updateDoc(doc(db('admin'),'races','race_a'),{finishReviewWindowMs:'10'}));
 });
+
+test('disqualifiedBibs requires timing permission, race scope, and a map', async()=>{
+ await assertSucceeds(updateDoc(doc(db('organizer'),'races','race_a'),{disqualifiedBibs:{'5-001':'Missed checkpoint'}}));
+ await assertSucceeds(updateDoc(doc(db('admin'),'races','race_a'),{disqualifiedBibs:{}}));
+ await assertFails(updateDoc(doc(db('organizer'),'races','race_b'),{disqualifiedBibs:{'5-001':'Out of scope'}}));
+ await assertFails(updateDoc(doc(db('runner'),'races','race_a'),{disqualifiedBibs:{'5-001':'Forbidden'}}));
+ await assertFails(updateDoc(doc(db('admin'),'races','race_a'),{disqualifiedBibs:['5-001']}));
+});

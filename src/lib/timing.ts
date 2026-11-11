@@ -93,6 +93,7 @@ export function orderFemaleOverallResults(
 ): RunnerResult[] {
   const automatic = [...results]
     .filter((result) => result.finishSeconds !== undefined
+      && !result.disqualified
       && !result.runnerProfile.isFreeSlot
       && runnerEntryCategory(result.runnerProfile) === 'solo'
       && result.runnerProfile.gender === 'female')
@@ -119,7 +120,7 @@ export function computeResults(
   chipReads: ChipRead[],
   runnerProfiles: RunnerProfile[],
   ageCategories: AgeCategory[] = [],
-  raceTiming?: Pick<Race, 'gunStartTime' | 'waveStartTimes' | 'finishReviewWindowMs' | 'femaleOverallRankOverrides' | 'youngestRunnerAwardEnabled' | 'oldestRunnerAwardEnabled'>
+  raceTiming?: Pick<Race, 'gunStartTime' | 'waveStartTimes' | 'finishReviewWindowMs' | 'femaleOverallRankOverrides' | 'youngestRunnerAwardEnabled' | 'oldestRunnerAwardEnabled' | 'disqualifiedBibs'>
 ): RunnerResult[] {
   const orderedCheckpoints = [...checkpoints].sort((a, b) => a.order - b.order);
   // Check-in is operational only. It must never become the timing start just
@@ -127,10 +128,40 @@ export function computeResults(
   const startCheckpoint = getCheckpointByType(orderedCheckpoints, 'start') || orderedCheckpoints[0];
   const finishCheckpoint = getCheckpointByType(orderedCheckpoints, 'finish') || orderedCheckpoints[orderedCheckpoints.length - 1];
 
+  // Control markers allow operators to dequeue a false finish scan, restore it,
+  // or mark/reinstate a disqualified finisher across Firestore and LAN sync.
+  const controlMarkers = new Set(['__dequeue__', '__restore__', '__dq__', '__reinstate__']);
+  const controlByBib = new Map<string, Map<string, ChipRead>>();
+  for (const read of chipReads) {
+    if (!controlMarkers.has(read.checkpointId) || timestampTicks(read.timestamp) === undefined) continue;
+    let map = controlByBib.get(read.bibNumber);
+    if (!map) {
+      map = new Map();
+      controlByBib.set(read.bibNumber, map);
+    }
+    const existing = map.get(read.checkpointId);
+    if (!existing || compareReadOrder(read, existing) > 0) {
+      map.set(read.checkpointId, read);
+    }
+  }
+
+  const activeDequeueForBib = (bibNumber: string): ChipRead | undefined => {
+    const controls = controlByBib.get(bibNumber);
+    const dequeueRead = controls?.get('__dequeue__');
+    const restoreRead = controls?.get('__restore__');
+    if (!dequeueRead) return undefined;
+    if (restoreRead && compareReadOrder(dequeueRead, restoreRead) <= 0) return undefined;
+    return dequeueRead;
+  };
+
   // bib -> checkpointId -> earliest actual scan (guards against duplicates).
   const readsByBib = new Map<string, Map<string, ChipRead>>();
   for (const read of chipReads) {
-    if (timestampTicks(read.timestamp) === undefined) continue;
+    if (controlMarkers.has(read.checkpointId) || timestampTicks(read.timestamp) === undefined) continue;
+    const activeDequeueRead = activeDequeueForBib(read.bibNumber);
+    if (finishCheckpoint && read.checkpointId === finishCheckpoint.id && activeDequeueRead && compareReadOrder(read, activeDequeueRead) <= 0) {
+      continue;
+    }
     let checkpointMap = readsByBib.get(read.bibNumber);
     if (!checkpointMap) {
       checkpointMap = new Map();
@@ -170,7 +201,7 @@ export function computeResults(
     if (runnerProfile.startsAfterBib) {
       const previous = profilesByBib.get(runnerProfile.startsAfterBib);
       const previousResult = previous ? computeEntry(previous) : undefined;
-      if (previousResult?.finishTime && finishCheckpoint) {
+      if (previousResult?.finishTime && !previousResult.disqualified && finishCheckpoint) {
         sequenceStartTime = previousResult.splits.find((split) => split.checkpointId === finishCheckpoint.id)?.timestamp;
       }
     }
@@ -196,12 +227,35 @@ export function computeResults(
       finishTime = finishSeconds === undefined ? undefined : formatElapsed(finishSeconds);
     }
 
+    const controls = controlByBib.get(bibNumber);
+    const dqRead = controls?.get('__dq__');
+    const reinstateRead = controls?.get('__reinstate__');
+    const activeDequeueRead = activeDequeueForBib(bibNumber);
+    const dqReadActive = !!dqRead
+      && (!reinstateRead || compareReadOrder(dqRead, reinstateRead) > 0)
+      && (!activeDequeueRead || compareReadOrder(dqRead, activeDequeueRead) > 0);
+    const raceDqReason = raceTiming?.disqualifiedBibs?.[bibNumber]
+      ?? raceTiming?.disqualifiedBibs?.[bibNumber.toUpperCase()];
+    const disqualified = Boolean(raceDqReason !== undefined || dqReadActive);
+    const dqReason = disqualified
+      ? (raceDqReason || dqRead?.chipId || 'Invalidated by race official').trim()
+      : undefined;
+    const missingStartScan = Boolean(finishTime && startCheckpoint && !checkpointMap.has(startCheckpoint.id) && !runnerProfile.startsAfterBib);
+    const missingIntermediateLabels = finishTime
+      ? orderedCheckpoints
+          .filter((cp, index) => checkpointType(cp, index, orderedCheckpoints.length) === 'intermediate' && !checkpointMap.has(cp.id))
+          .map((cp) => cp.label)
+      : [];
+
     const result: RunnerResult = {
       bibNumber,
       runnerProfile,
       splits,
       finishTime,
       finishSeconds,
+      ...(disqualified ? { disqualified: true, dqReason } : {}),
+      ...(missingStartScan ? { missingStartScan: true } : {}),
+      ...(missingIntermediateLabels.length > 0 ? { missingIntermediateLabels } : {}),
       ...(chipTime ? { chipTime, chipSeconds } : {}),
       ...(gunTime ? { gunTime, gunSeconds } : {}),
       ...(sequenceStartTime ? { sequenceStartTime } : {}),
@@ -227,7 +281,7 @@ export function computeResults(
     byDivision.set(division, list);
   }
   for (const list of byDivision.values()) {
-    const ranked = list.filter(r => r.finishSeconds !== undefined)
+    const ranked = list.filter(r => r.finishSeconds !== undefined && !r.disqualified)
       .sort((a, b) => a.finishSeconds! - b.finishSeconds! || compareResultFinishOrder(a, b));
     ranked.forEach((r, idx) => {
       const previous = ranked[idx - 1];
@@ -243,7 +297,7 @@ export function computeResults(
   const ageCategoryAwardExclusions = new Set<string>();
   for (const [division, list] of byDivision.entries()) {
     list
-      .filter((result) => result.finishSeconds !== undefined && !result.runnerProfile.isFreeSlot && runnerEntryCategory(result.runnerProfile) === 'solo')
+      .filter((result) => result.finishSeconds !== undefined && !result.disqualified && !result.runnerProfile.isFreeSlot && runnerEntryCategory(result.runnerProfile) === 'solo')
       .sort((a, b) => a.finishSeconds! - b.finishSeconds! || compareResultFinishOrder(a, b))
       .slice(0, 3)
       .forEach((result) => ageCategoryAwardExclusions.add(result.bibNumber));
@@ -256,7 +310,7 @@ export function computeResults(
   // distance/entry division, so a 5K runner can never rank against a 10K one.
   const byAgeCategory = new Map<string, RunnerResult[]>();
   for (const result of results) {
-    if (result.finishSeconds === undefined || !result.runnerProfile) continue;
+    if (result.finishSeconds === undefined || result.disqualified || !result.runnerProfile) continue;
     // Free slots are anonymous race-day places. They can receive a time and
     // a rank in their own division, but never an age-category place.
     if (result.runnerProfile.isFreeSlot) continue;
@@ -294,7 +348,7 @@ export function computeResults(
     const candidatesByDivisionAndGender = new Map<string, RunnerResult[]>();
     for (const result of results) {
       const runner = result.runnerProfile;
-      if (!runner || result.finishSeconds === undefined || runner.isFreeSlot || runner.ageNotProvided || runnerEntryCategory(runner) !== 'solo') continue;
+      if (!runner || result.finishSeconds === undefined || result.disqualified || runner.isFreeSlot || runner.ageNotProvided || runnerEntryCategory(runner) !== 'solo') continue;
       const key = `${runnerDivisionLabel(runner)}|${runner.gender}`;
       const list = candidatesByDivisionAndGender.get(key) || [];
       list.push(result);
@@ -312,6 +366,11 @@ export function computeResults(
   }
 
   return results.sort((a, b) => {
+    const aValid = a.finishSeconds !== undefined && !a.disqualified;
+    const bValid = b.finishSeconds !== undefined && !b.disqualified;
+    if (aValid && bValid) return a.finishSeconds! - b.finishSeconds! || compareResultFinishOrder(a, b);
+    if (aValid) return -1;
+    if (bValid) return 1;
     if (a.finishSeconds !== undefined && b.finishSeconds !== undefined) return a.finishSeconds - b.finishSeconds || compareResultFinishOrder(a, b);
     if (a.finishSeconds !== undefined) return -1;
     if (b.finishSeconds !== undefined) return 1;
@@ -325,7 +384,7 @@ export function getResultForBib(
   runnerProfiles: RunnerProfile[],
   bibNumber: string,
   ageCategories: AgeCategory[] = [],
-  raceTiming?: Pick<Race, 'gunStartTime' | 'waveStartTimes' | 'finishReviewWindowMs' | 'femaleOverallRankOverrides' | 'youngestRunnerAwardEnabled' | 'oldestRunnerAwardEnabled'>
+  raceTiming?: Pick<Race, 'gunStartTime' | 'waveStartTimes' | 'finishReviewWindowMs' | 'femaleOverallRankOverrides' | 'youngestRunnerAwardEnabled' | 'oldestRunnerAwardEnabled' | 'disqualifiedBibs'>
 ): RunnerResult | undefined {
   return computeResults(checkpoints, chipReads, runnerProfiles, ageCategories, raceTiming).find((r) => r.bibNumber === bibNumber);
 }

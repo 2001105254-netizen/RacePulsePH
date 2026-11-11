@@ -12,11 +12,52 @@ import { Race, ChipRead, PublicLeaderboardEntry, PublicLiveResults, RaceEntryCat
 import { groupRunnersByDistance, generateRunnerRosterPdf } from '../lib/runnerReport';
 import { generateRankingsReportPdf } from '../lib/rankingsReport';
 import { entryCategoryLabels, entryMemberCount, raceEntryCategories, runnerDivisionLabel, runnerEntryCategory, runnerWaveLabel } from '../lib/raceEntry';
-import { Radio, ScanLine, Trophy, Clock, Wifi, WifiOff, QrCode, RefreshCw, ArrowLeft, Cpu, Users2, FileDown, FileUp, Maximize2, X, ListChecks, CheckCircle2, Circle, PlayCircle, RotateCcw, Timer, Keyboard, Smartphone, Search, UserCheck, Undo2, Folder, FolderOpen, ChevronRight } from 'lucide-react';
+import { Radio, ScanLine, Trophy, Clock, Wifi, WifiOff, QrCode, RefreshCw, ArrowLeft, Cpu, Users2, FileDown, FileUp, Maximize2, X, ListChecks, CheckCircle2, Circle, PlayCircle, RotateCcw, Timer, Keyboard, Smartphone, Search, UserCheck, Undo2, Folder, FolderOpen, ChevronRight, AlertTriangle, Ban } from 'lucide-react';
 import QrScannerModal from './QrScannerModal';
 import RaceList from './RaceList';
 import LiveRankingsScreen from './LiveRankingsScreen';
 import EntrySequencePanel from './EntrySequencePanel';
+import DialogSurface from './ui/DialogSurface';
+import { useFeedback } from './ui/FeedbackProvider';
+
+interface DequeuedFinisherRecord {
+  bibNumber: string;
+  runnerName: string;
+  division: string;
+  finishTime?: string;
+  reads: ChipRead[];
+  dequeuedAt: string;
+}
+
+function safeControlReadId(prefix: string, raceId: string, bibNumber: string): string {
+  return `${prefix}_${raceId}_${bibNumber}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+}
+
+function nextControlTimestamp(reads: ChipRead[]): string {
+  const maxExisting = reads.reduce((max, read) => {
+    const parsed = Date.parse(read.timestamp);
+    return Number.isNaN(parsed) ? max : Math.max(max, parsed);
+  }, 0);
+  return new Date(Math.max(Date.now(), maxExisting + 1)).toISOString();
+}
+
+function finisherAnomalyLabels(result: RunnerResult): string[] {
+  const labels: string[] = [];
+  if (result.missingStartScan) labels.push('No start scan (gun fallback)');
+  if (result.missingIntermediateLabels?.length) {
+    labels.push(`Missed: ${result.missingIntermediateLabels.join(', ')}`);
+  }
+  if (result.finishReviewRequired) labels.push('Provisional (close finish)');
+  return labels;
+}
+
+const DQ_PRESET_REASONS = [
+  'Incomplete duo or team at finish',
+  'Missed checkpoint or course cut',
+  'Accidental or false finish scan',
+  'Started in wrong wave',
+  'Bib swap or unofficial runner',
+];
 
 // Ticks ten times per second so any component reading it re-renders live - backs the
 // gun clock and the wall-clock readout without each caller managing its own timer.
@@ -241,6 +282,7 @@ interface TimingConsoleForRaceProps {
 
 function TimingConsoleForRace({ race, uid, initialMode, initialModeNonce = 0 }: TimingConsoleForRaceProps) {
   const { can, authority } = useAccess();
+  const { confirm, notify } = useFeedback();
   const defaultMode = can('timing.view') ? 'record' : (can('roster.view') ? 'roster' : 'assign');
   const [mode, setMode] = useState<'record' | 'mobile-checkin' | 'assign' | 'roster' | 'rankings' | 'rollcall'>(() => initialMode || defaultMode);
 
@@ -313,12 +355,12 @@ function TimingConsoleForRace({ race, uid, initialMode, initialModeNonce = 0 }: 
 
   const results = useMemo(
     () => computeResults(race.checkpoints, chipReads, runnerProfiles, race.ageCategories || [], race),
-    [race.ageCategories, race.checkpoints, race.gunStartTime, race.waveStartTimes, chipReads, runnerProfiles]
+    [race, chipReads, runnerProfiles]
   );
 
   const checkpointLabel = (id: string) => orderedCheckpoints.find((c) => c.id === id)?.label || id;
   const checkInCount = checkInCheckpoint ? new Set(chipReads.filter((read) => read.checkpointId === checkInCheckpoint.id).map((read) => read.bibNumber)).size : 0;
-  const finishedCount = results.filter((result) => !!result.finishTime).length;
+  const finishedCount = results.filter((result) => !!result.finishTime && !result.disqualified).length;
   const isRaceCompleted = !!race.completedAt;
   const hasWaveStarted = Object.keys(race.waveStartTimes || {}).length > 0 || !!race.gunStartTime;
   // Pre-race chip tests must never leak into the public leaderboard. Timing
@@ -539,7 +581,21 @@ function TimingConsoleForRace({ race, uid, initialMode, initialModeNonce = 0 }: 
     // Check-in, Start and Finish are one-time stations. Unlike intermediate
     // lap splits, a later duplicate here would only create operator confusion,
     // so stop it and show exactly when the first valid read was recorded.
-    const priorRead = chipReads.find((read) => read.bibNumber === bibNumber && read.checkpointId === selectedCheckpointId);
+    const latestDequeueRead = chipReads
+      .filter((read) => read.bibNumber === bibNumber && read.checkpointId === '__dequeue__')
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+    const latestRestoreRead = chipReads
+      .filter((read) => read.bibNumber === bibNumber && read.checkpointId === '__restore__')
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+    const activeDequeueAt = latestDequeueRead
+      && (!latestRestoreRead || new Date(latestDequeueRead.timestamp).getTime() > new Date(latestRestoreRead.timestamp).getTime())
+      ? new Date(latestDequeueRead.timestamp).getTime()
+      : 0;
+    const priorRead = chipReads.find((read) =>
+      read.bibNumber === bibNumber
+      && read.checkpointId === selectedCheckpointId
+      && !(selectedCheckpointType === 'finish' && activeDequeueAt > 0 && new Date(read.timestamp).getTime() <= activeDequeueAt)
+    );
     if (priorRead && ['checkin', 'start', 'finish'].includes(selectedCheckpointType)) {
       setFeedback({ type: 'warning', text: `Duplicate scan: bib #${bibNumber} already has a ${checkpointLabel(selectedCheckpointId)} record at ${formatClockTime(priorRead.timestamp)}. No new read was saved.` });
       setBibInput('');
@@ -653,23 +709,291 @@ function TimingConsoleForRace({ race, uid, initialMode, initialModeNonce = 0 }: 
     void submitRead(bibInput, undefined, 'keyboard');
   };
 
+  const [recentlyDequeued, setRecentlyDequeued] = useState<DequeuedFinisherRecord[]>([]);
+  const [busyFinisherBib, setBusyFinisherBib] = useState<string | null>(null);
+
+  const deleteChipReadEverywhere = async (readId: string) => {
+    discardQueuedScan(readId);
+    await deleteDoc(doc(db, 'chipReads', readId));
+    void authenticatedFetch(`/api/chip-reads/${encodeURIComponent(readId)}`, { method: 'DELETE' }).catch(() => undefined);
+  };
+
   const undoTimingRead = async (read: ChipRead) => {
     if (!authority && !can('timing.correct')) return;
-    const canUndoAtStation = selectedCheckpointType === 'checkin' || !!selectedCheckpoint?.cutoffMinutes;
-    if (!canUndoAtStation || read.checkpointId !== selectedCheckpointId) return;
-    const stationTypeLabel = selectedCheckpointType === 'checkin' ? 'check-in' : 'cutoff';
+    const stationLabel = checkpointLabel(read.checkpointId);
     const runner = runnerProfiles.find((profile) => profile.bibNumber === read.bibNumber);
     const runnerLabel = runner ? runnerTimingName(runner) : `Bib ${read.bibNumber}`;
-    if (!window.confirm(`Undo the ${stationTypeLabel} read for ${runnerLabel} (#${read.bibNumber}) at ${formatClockTime(read.timestamp)}?\n\nOnly this one timing entry will be removed.`)) return;
+    const approved = await confirm({
+      title: `Remove ${stationLabel} scan for Bib #${read.bibNumber}?`,
+      message: `Removes the ${stationLabel} read for ${runnerLabel} recorded at ${formatClockTime(read.timestamp)}. Other checkpoint splits for this runner stay intact.`,
+      confirmLabel: 'Remove scan',
+      cancelLabel: 'Keep scan',
+      destructive: true,
+    });
+    if (!approved) return;
 
     try {
-      // Also remove an offline copy before deleting Firestore. This prevents a
-      // delayed device sync from restoring an accidental entry.
-      discardQueuedScan(read.id);
-      await deleteDoc(doc(db, 'chipReads', read.id));
-      setFeedback({ type: 'success', text: `Undid ${stationTypeLabel} read for ${runnerLabel} • bib ${read.bibNumber}.` });
+      await deleteChipReadEverywhere(read.id);
+      setFeedback({ type: 'success', text: `Removed ${stationLabel} read for ${runnerLabel} • bib ${read.bibNumber}.` });
+      notify({
+        tone: 'info',
+        title: `Removed ${stationLabel} scan`,
+        message: `${runnerLabel} (Bib #${read.bibNumber}) removed from ${stationLabel}.`,
+      });
     } catch (error: any) {
-      setFeedback({ type: 'error', text: error.message || 'Could not undo this timing read. Sign in with the Super Admin account and try again.' });
+      setFeedback({ type: 'error', text: error.message || 'Could not remove this timing read.' });
+    }
+  };
+
+  const canManageFinishers = authority || can('timing.correct') || (can('timing.scan') && !isRaceCompleted);
+
+  const dequeueFinisher = async (result: RunnerResult) => {
+    if (!canManageFinishers || !finishCheckpoint) return;
+    const bibNumber = result.bibNumber;
+    const runnerName = runnerTimingName(result.runnerProfile, bibNumber);
+    const division = runnerDivisionLabel(result.runnerProfile);
+    const finishReads = chipReads.filter(
+      (read) => read.bibNumber === bibNumber && read.checkpointId === finishCheckpoint.id,
+    );
+    const controlReads = chipReads.filter(
+      (read) => read.bibNumber === bibNumber && ['__dq__', '__reinstate__', '__dequeue__', '__restore__'].includes(read.checkpointId),
+    );
+
+    setBusyFinisherBib(bibNumber);
+    try {
+      if (finishReads.length > 0) {
+        setRecentlyDequeued((current) => [
+          {
+            bibNumber,
+            runnerName,
+            division,
+            finishTime: result.finishTime,
+            reads: finishReads,
+            dequeuedAt: new Date().toISOString(),
+          },
+          ...current.filter((item) => item.bibNumber !== bibNumber),
+        ].slice(0, 12));
+      }
+
+      if (authority || can('timing.correct')) {
+        for (const read of [...finishReads, ...controlReads]) {
+          await deleteChipReadEverywhere(read.id);
+        }
+      } else if (can('timing.scan') && !isRaceCompleted) {
+        const markerIso = nextControlTimestamp([...finishReads, ...controlReads]);
+        const dequeueMarker: ChipRead = {
+          id: safeControlReadId('deq', race.id, `${bibNumber}_${Date.now()}`),
+          raceId: race.id,
+          bibNumber,
+          checkpointId: '__dequeue__',
+          timestamp: markerIso,
+          source: 'manual',
+          recordedBy: uid,
+          createdAt: markerIso,
+        };
+        enqueueScan(dequeueMarker);
+      }
+
+      if (race.disqualifiedBibs?.[bibNumber] !== undefined || race.disqualifiedBibs?.[bibNumber.toUpperCase()] !== undefined) {
+        const nextDq = { ...(race.disqualifiedBibs || {}) };
+        delete nextDq[bibNumber];
+        delete nextDq[bibNumber.toUpperCase()];
+        void updateDoc(doc(db, 'races', race.id), { disqualifiedBibs: nextDq }).catch(() => undefined);
+      }
+
+      notify({
+        tone: 'info',
+        title: `Dequeued Bib #${bibNumber}`,
+        message: `${runnerName} (${division}) removed from finishers and returned to active course status.`,
+      });
+    } catch (error: any) {
+      notify({
+        tone: 'error',
+        title: 'Could not dequeue finisher',
+        message: error.message || 'Check your connection and timing permissions.',
+      });
+    } finally {
+      setBusyFinisherBib(null);
+    }
+  };
+
+  const restoreDequeuedFinisher = async (entry: DequeuedFinisherRecord) => {
+    if (!canManageFinishers) return;
+    setBusyFinisherBib(entry.bibNumber);
+    try {
+      const dequeueMarkers = chipReads.filter(
+        (read) => read.bibNumber === entry.bibNumber && read.checkpointId === '__dequeue__',
+      );
+      if (authority || can('timing.correct')) {
+        for (const marker of dequeueMarkers) {
+          await deleteChipReadEverywhere(marker.id);
+        }
+      } else if (dequeueMarkers.length > 0 && !isRaceCompleted && can('timing.scan')) {
+        const restoreIso = nextControlTimestamp(dequeueMarkers);
+        enqueueScan({
+          id: safeControlReadId('rst', race.id, `${entry.bibNumber}_${Date.now()}`),
+          raceId: race.id,
+          bibNumber: entry.bibNumber,
+          checkpointId: '__restore__',
+          timestamp: restoreIso,
+          source: 'manual',
+          recordedBy: uid,
+          createdAt: restoreIso,
+        });
+      }
+
+      const existingIds = new Set(chipReads.map((read) => read.id));
+      for (const read of entry.reads) {
+        if (existingIds.has(read.id)) continue;
+        const restoredRead: ChipRead = {
+          ...read,
+          recordedBy: uid,
+        };
+        if (!isRaceCompleted && can('timing.scan')) {
+          enqueueScan(restoredRead);
+        } else {
+          await setDoc(doc(db, 'chipReads', restoredRead.id), restoredRead);
+          void authenticatedFetch('/api/chip-reads', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(restoredRead),
+          }).catch(() => undefined);
+        }
+      }
+      setRecentlyDequeued((current) => current.filter((item) => item.bibNumber !== entry.bibNumber));
+      notify({
+        tone: 'success',
+        title: `Restored Bib #${entry.bibNumber}`,
+        message: `${entry.runnerName} returned to ${entry.division} rankings.`,
+      });
+    } catch (error: any) {
+      notify({
+        tone: 'error',
+        title: 'Could not restore finish scan',
+        message: error.message || 'Reopen race timing first if the event is locked.',
+      });
+    } finally {
+      setBusyFinisherBib(null);
+    }
+  };
+
+  const disqualifyFinisher = async (result: RunnerResult, reason: string) => {
+    if (!canManageFinishers) return;
+    const bibNumber = result.bibNumber;
+    const runnerName = runnerTimingName(result.runnerProfile, bibNumber);
+    const division = runnerDivisionLabel(result.runnerProfile);
+    const cleanReason = (reason.trim() || 'Invalidated by race official').slice(0, 120);
+
+    setBusyFinisherBib(bibNumber);
+    try {
+      const existingControls = chipReads.filter(
+        (read) => read.bibNumber === bibNumber && ['__dq__', '__reinstate__', '__dequeue__', '__restore__'].includes(read.checkpointId),
+      );
+      const markerIso = nextControlTimestamp(existingControls);
+      const dqRecord: ChipRead = {
+        id: safeControlReadId('dq', race.id, `${bibNumber}_${Date.now()}`),
+        raceId: race.id,
+        bibNumber,
+        chipId: cleanReason,
+        checkpointId: '__dq__',
+        timestamp: markerIso,
+        source: 'manual',
+        recordedBy: uid,
+        createdAt: markerIso,
+      };
+
+      const reinstateReads = existingControls.filter((read) => read.checkpointId === '__reinstate__');
+      if (authority || can('timing.correct')) {
+        for (const read of reinstateReads) {
+          await deleteChipReadEverywhere(read.id);
+        }
+      }
+
+      let persisted = false;
+      if (!isRaceCompleted && can('timing.scan')) {
+        enqueueScan(dqRecord);
+        persisted = true;
+      }
+
+      const nextDq = { ...(race.disqualifiedBibs || {}), [bibNumber]: cleanReason };
+      if (persisted) {
+        void updateDoc(doc(db, 'races', race.id), { disqualifiedBibs: nextDq }).catch(() => undefined);
+      } else {
+        await updateDoc(doc(db, 'races', race.id), { disqualifiedBibs: nextDq });
+      }
+
+      notify({
+        tone: 'info',
+        title: `Bib #${bibNumber} marked DQ`,
+        message: `${runnerName} (${division}) excluded from official rankings: ${cleanReason}.`,
+      });
+    } catch (error: any) {
+      notify({
+        tone: 'error',
+        title: 'Could not disqualify finisher',
+        message: error.message || 'Reopen timing or verify your timing permissions.',
+      });
+    } finally {
+      setBusyFinisherBib(null);
+    }
+  };
+
+  const reinstateFinisher = async (result: RunnerResult) => {
+    if (!canManageFinishers) return;
+    const bibNumber = result.bibNumber;
+    const runnerName = runnerTimingName(result.runnerProfile, bibNumber);
+    const division = runnerDivisionLabel(result.runnerProfile);
+
+    setBusyFinisherBib(bibNumber);
+    try {
+      const dqReads = chipReads.filter(
+        (read) => read.bibNumber === bibNumber && read.checkpointId === '__dq__',
+      );
+      let persisted = false;
+      if (authority || can('timing.correct')) {
+        for (const read of dqReads) {
+          await deleteChipReadEverywhere(read.id);
+        }
+        persisted = dqReads.length > 0;
+      } else if (!isRaceCompleted && can('timing.scan')) {
+        const markerIso = nextControlTimestamp(dqReads);
+        enqueueScan({
+          id: safeControlReadId('rein', race.id, `${bibNumber}_${Date.now()}`),
+          raceId: race.id,
+          bibNumber,
+          checkpointId: '__reinstate__',
+          timestamp: markerIso,
+          source: 'manual',
+          recordedBy: uid,
+          createdAt: markerIso,
+        });
+        persisted = true;
+      }
+
+      if (race.disqualifiedBibs?.[bibNumber] !== undefined || race.disqualifiedBibs?.[bibNumber.toUpperCase()] !== undefined) {
+        const nextDq = { ...(race.disqualifiedBibs || {}) };
+        delete nextDq[bibNumber];
+        delete nextDq[bibNumber.toUpperCase()];
+        if (persisted) {
+          void updateDoc(doc(db, 'races', race.id), { disqualifiedBibs: nextDq }).catch(() => undefined);
+        } else {
+          await updateDoc(doc(db, 'races', race.id), { disqualifiedBibs: nextDq });
+        }
+      }
+
+      notify({
+        tone: 'success',
+        title: `Reinstated Bib #${bibNumber}`,
+        message: `${runnerName} restored to official ${division} rankings.`,
+      });
+    } catch (error: any) {
+      notify({
+        tone: 'error',
+        title: 'Could not reinstate finisher',
+        message: error.message || 'Check your connection and timing permissions.',
+      });
+    } finally {
+      setBusyFinisherBib(null);
     }
   };
 
@@ -765,7 +1089,10 @@ function TimingConsoleForRace({ race, uid, initialMode, initialModeNonce = 0 }: 
   };
 
   const recentReads = useMemo(
-    () => [...chipReads].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 15),
+    () => [...chipReads]
+      .filter((r) => !['__dequeue__', '__restore__', '__dq__', '__reinstate__'].includes(r.checkpointId))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 15),
     [chipReads]
   );
 
@@ -948,7 +1275,19 @@ function TimingConsoleForRace({ race, uid, initialMode, initialModeNonce = 0 }: 
         />
       )}
       {mode === 'roster' && <div className="space-y-4"><EntrySequencePanel race={race} runners={runnerProfiles} chipReads={chipReads} /><RunnerRosterPanel race={race} runnerProfiles={runnerProfiles} /></div>}
-      {mode === 'rankings' && <RaceRankingsPanel race={race} results={results} />}
+      {mode === 'rankings' && (
+        <RaceRankingsPanel
+          race={race}
+          results={results}
+          recentlyDequeued={recentlyDequeued}
+          busyFinisherBib={busyFinisherBib}
+          onDequeueFinisher={dequeueFinisher}
+          onDisqualifyFinisher={disqualifyFinisher}
+          onReinstateFinisher={reinstateFinisher}
+          onRestoreDequeued={restoreDequeuedFinisher}
+          onDismissDequeued={(bibNumber) => setRecentlyDequeued((current) => current.filter((item) => item.bibNumber !== bibNumber))}
+        />
+      )}
       {mode === 'rollcall' && (
         <StartRollCallPanel
           race={race}
@@ -1184,12 +1523,12 @@ function TimingConsoleForRace({ race, uid, initialMode, initialModeNonce = 0 }: 
                 <span className="font-mono font-bold text-[var(--text-primary)] flex items-center gap-1.5"><span>#{r.bibNumber}</span>{r.source === 'rfid-bridge' && <Cpu className="w-3 h-3 text-emerald-500" aria-label="RFID scan" />}</span>
                 <span className="text-[var(--text-secondary)]">{checkpointLabel(r.checkpointId)}</span>
                 <span className="font-mono text-[var(--text-muted)]">{formatClockTime(r.timestamp)}</span>
-                {(selectedCheckpointType === 'checkin' || selectedCheckpoint?.cutoffMinutes) && r.checkpointId === selectedCheckpointId && (
-                  <button hidden={!can('timing.correct')}
+                {(authority || can('timing.correct')) && (
+                  <button
                     type="button"
                     onClick={() => { void undoTimingRead(r); }}
-                    className="shrink-0 rounded-lg border border-amber-500/35 bg-amber-500/10 px-2 py-1 text-[9px] font-black uppercase tracking-wide text-amber-500 transition hover:bg-amber-500 hover:text-black"
-                    title="Undo this timing read"
+                    className="shrink-0 min-h-[32px] rounded-lg border border-amber-500/35 bg-amber-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400 transition hover:bg-amber-500 hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                    title={`Undo ${checkpointLabel(r.checkpointId)} timing read for Bib #${r.bibNumber}`}
                   >
                     <span className="flex items-center gap-1"><Undo2 className="h-3 w-3" /> Undo</span>
                   </button>
@@ -1211,16 +1550,62 @@ function TimingConsoleForRace({ race, uid, initialMode, initialModeNonce = 0 }: 
               const missingCheckpoints = orderedCheckpoints
                 .filter((checkpoint) => !r.splits.some((split) => split.checkpointId === checkpoint.id))
                 .map((checkpoint) => checkpointLabel(checkpoint.id));
+              const anomalies = !r.disqualified ? finisherAnomalyLabels(r) : [];
+              const busy = busyFinisherBib === r.bibNumber;
               return (
                 <div key={r.bibNumber} className="flex items-center justify-between glass-inset px-3 py-2 text-xs gap-2">
-                  <span className="font-mono font-bold text-red-500 w-8 shrink-0">{r.rank ? `#${r.rank}` : '-'}</span>
-                  <span className="flex-1 truncate">
-                    <span className="font-bold text-[var(--text-primary)]">{r.runnerProfile?.fullName || `Bib ${r.bibNumber}`}</span>
-                    <span className="text-[var(--text-muted)]"> &bull; #{r.bibNumber}</span>
+                  <span className={`font-mono font-bold w-9 shrink-0 ${r.disqualified ? 'text-rose-700 dark:text-rose-400' : 'text-red-500'}`}>
+                    {r.disqualified ? 'DQ' : r.rank ? `#${r.rank}` : '-'}
                   </span>
-                  <span className={`font-mono font-bold text-right shrink-0 ${r.finishTime ? 'text-[var(--text-primary)]' : 'text-amber-500'}`}>
+                  <span className="flex-1 min-w-0">
+                    <span className="block truncate">
+                      <span className={`font-bold ${r.disqualified ? 'line-through text-[var(--text-muted)]' : 'text-[var(--text-primary)]'}`}>
+                        {r.runnerProfile?.fullName || `Bib ${r.bibNumber}`}
+                      </span>
+                      <span className="text-[var(--text-muted)]"> &bull; #{r.bibNumber}</span>
+                    </span>
+                    {r.disqualified && r.dqReason && (
+                      <span className="block truncate text-[10px] font-semibold text-rose-700 dark:text-rose-400">DQ: {r.dqReason}</span>
+                    )}
+                    {anomalies.length > 0 && (
+                      <span className="block truncate text-[10px] font-semibold text-amber-700 dark:text-amber-400">
+                        Flag: {anomalies[0]}
+                      </span>
+                    )}
+                  </span>
+                  <span className={`font-mono font-bold text-right shrink-0 ${r.disqualified ? 'line-through text-[var(--text-muted)]' : r.finishTime ? 'text-[var(--text-primary)]' : 'text-amber-500'}`}>
                     {r.finishTime ? formatRaceTime(r.finishTime) : (missingCheckpoints.length ? `Missing: ${missingCheckpoints.join(', ')}` : 'Needs review')}
                   </span>
+                  {canManageFinishers && r.disqualified && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => { void reinstateFinisher(r); }}
+                      className="shrink-0 min-h-[32px] rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-400 transition hover:bg-emerald-600 hover:text-white disabled:opacity-50"
+                    >
+                      Reinstate
+                    </button>
+                  )}
+                  {canManageFinishers && !r.disqualified && r.finishTime && finishCheckpoint && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={async () => {
+                        const approved = await confirm({
+                          title: `Dequeue finish scan for Bib #${r.bibNumber}?`,
+                          message: `Removes ${runnerTimingName(r.runnerProfile, r.bibNumber)} from finishers and lets them re-scan at the finish line. Use Rankings -> Dequeue / DQ if you want to mark a rule DQ instead.`,
+                          confirmLabel: 'Dequeue finish',
+                          cancelLabel: 'Cancel',
+                          destructive: true,
+                        });
+                        if (approved) await dequeueFinisher(r);
+                      }}
+                      className="shrink-0 min-h-[32px] rounded-lg border border-amber-500/35 bg-amber-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400 transition hover:bg-amber-500 hover:text-black disabled:opacity-50"
+                      title={`Dequeue finish scan for Bib #${r.bibNumber}`}
+                    >
+                      Dequeue
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -2811,15 +3196,47 @@ function RunnerRosterPanel({ race, runnerProfiles }: RunnerRosterPanelProps) {
 interface RaceRankingsPanelProps {
   race: Race;
   results: RunnerResult[];
+  recentlyDequeued?: DequeuedFinisherRecord[];
+  busyFinisherBib?: string | null;
+  onDequeueFinisher?: (result: RunnerResult) => Promise<void>;
+  onDisqualifyFinisher?: (result: RunnerResult, reason: string) => Promise<void>;
+  onReinstateFinisher?: (result: RunnerResult) => Promise<void>;
+  onRestoreDequeued?: (entry: DequeuedFinisherRecord) => Promise<void>;
+  onDismissDequeued?: (bibNumber: string) => void;
 }
 
-function RaceRankingsPanel({ race, results }: RaceRankingsPanelProps) {
+function RaceRankingsPanel({
+  race,
+  results,
+  recentlyDequeued = [],
+  busyFinisherBib = null,
+  onDequeueFinisher,
+  onDisqualifyFinisher,
+  onReinstateFinisher,
+  onRestoreDequeued,
+  onDismissDequeued,
+}: RaceRankingsPanelProps) {
   const { can, authority } = useAccess();
+  const { notify } = useFeedback();
   const [presenting, setPresenting] = useState(false);
   const [reviewWindow, setReviewWindow] = useState(String(race.finishReviewWindowMs ?? 0));
   const [reviewError, setReviewError] = useState('');
   const [savingReview, setSavingReview] = useState(false);
+  const [rankingSearch, setRankingSearch] = useState('');
+  const [rankingFilter, setRankingFilter] = useState<'all' | 'flagged' | 'invalidated'>('all');
+  const [managingFinisher, setManagingFinisher] = useState<RunnerResult | null>(null);
+  const [dqReasonInput, setDqReasonInput] = useState(DQ_PRESET_REASONS[0]);
+  const [dqReasonError, setDqReasonError] = useState('');
+  const cancelManageRef = useRef<HTMLButtonElement>(null);
+
   useEffect(() => setReviewWindow(String(race.finishReviewWindowMs ?? 0)), [race.id, race.finishReviewWindowMs]);
+  useEffect(() => {
+    setRankingSearch('');
+    setRankingFilter('all');
+    setManagingFinisher(null);
+    setDqReasonError('');
+  }, [race.id]);
+
   const saveReviewWindow = async () => {
     const value = Number(reviewWindow);
     if (!reviewWindow.trim() || !Number.isFinite(value) || value < 0 || value > 60000) { setReviewError('Enter a window from 0 to 60000 milliseconds.'); return; }
@@ -2828,18 +3245,88 @@ function RaceRankingsPanel({ race, results }: RaceRankingsPanelProps) {
     catch { setReviewError('Could not save the review window.'); }
     finally { setSavingReview(false); }
   };
-  const [rankingSearch, setRankingSearch] = useState('');
+
+  const canManageFinishers = Boolean(
+    (onDequeueFinisher || onDisqualifyFinisher || onReinstateFinisher)
+    && (authority || can('timing.correct') || (can('timing.scan') && !race.completedAt)),
+  );
+
   const rankingFolders = useMemo(() => groupRankingFolders(results), [results]);
-  const visibleFolders = useMemo(() => groupRankingFolders(results, rankingSearch), [results, rankingSearch]);
-  const isSearching = rankingSearch.trim().length > 0;
+  const flaggedResults = useMemo(
+    () => results.filter((result) => result.rank !== undefined && finisherAnomalyLabels(result).length > 0),
+    [results],
+  );
+  const disqualifiedResults = useMemo(
+    () => results.filter((result) => result.disqualified),
+    [results],
+  );
+
+  const searchTerm = rankingSearch.trim().toLowerCase().replace(/^#/, '');
+  const isSearching = searchTerm.length > 0;
+
+  const matchesFinisherSearch = (bibNumber: string, profile?: RunnerProfile, fallbackName?: string): boolean => {
+    if (!searchTerm) return true;
+    const candidates = [bibNumber, `Bib ${bibNumber}`];
+    if (profile && !profile.isFreeSlot) {
+      candidates.push(profile.fullName, ...(profile.teamMembers || []));
+    } else if (fallbackName) {
+      candidates.push(fallbackName);
+    }
+    return candidates.some((value) => value.toLowerCase().includes(searchTerm));
+  };
+
+  const filteredDisqualified = useMemo(
+    () => disqualifiedResults.filter((result) => matchesFinisherSearch(result.bibNumber, result.runnerProfile)),
+    [disqualifiedResults, searchTerm],
+  );
+  const filteredDequeued = useMemo(
+    () => recentlyDequeued.filter((entry) => matchesFinisherSearch(entry.bibNumber, undefined, entry.runnerName)),
+    [recentlyDequeued, searchTerm],
+  );
+
+  const folderSourceResults = rankingFilter === 'flagged' ? flaggedResults : results;
+  const visibleFolders = useMemo(
+    () => groupRankingFolders(folderSourceResults, rankingSearch),
+    [folderSourceResults, rankingSearch],
+  );
+
   const matchCount = visibleFolders.reduce((sum, folder) => sum + folder.finisherCount, 0);
   const totalFinishers = rankingFolders.reduce((sum, folder) => sum + folder.finisherCount, 0);
+  const flaggedCount = flaggedResults.length;
+  const invalidatedCount = disqualifiedResults.length + recentlyDequeued.length;
 
-  useEffect(() => setRankingSearch(''), [race.id]);
+  const openManageFinisher = (result: RunnerResult) => {
+    setManagingFinisher(result);
+    setDqReasonInput(result.missingIntermediateLabels?.length ? 'Missed checkpoint or course cut' : DQ_PRESET_REASONS[0]);
+    setDqReasonError('');
+  };
+
+  const handleConfirmDequeue = async () => {
+    if (!managingFinisher || !onDequeueFinisher) return;
+    const target = managingFinisher;
+    setManagingFinisher(null);
+    await onDequeueFinisher(target);
+  };
+
+  const handleConfirmDq = async () => {
+    if (!managingFinisher || !onDisqualifyFinisher) return;
+    const cleaned = dqReasonInput.trim();
+    if (!cleaned) {
+      setDqReasonError('Select or enter a disqualification reason.');
+      return;
+    }
+    const target = managingFinisher;
+    setManagingFinisher(null);
+    await onDisqualifyFinisher(target, cleaned);
+  };
 
   if (presenting) {
     return <LiveRankingsScreen race={race} results={results} onClose={() => setPresenting(false)} />;
   }
+
+  const showRankedFolders = rankingFilter !== 'invalidated';
+  const showInvalidatedTray = rankingFilter === 'invalidated'
+    || (rankingFilter === 'all' && (isSearching ? (filteredDisqualified.length > 0 || filteredDequeued.length > 0) : invalidatedCount > 0));
 
   return (
     <div className="glass-panel p-5 space-y-5">
@@ -2848,19 +3335,25 @@ function RaceRankingsPanel({ race, results }: RaceRankingsPanelProps) {
           <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2">
             <Trophy className="w-4 h-4 text-red-500" /> Live Rankings by Distance
           </h3>
-          <p className="text-xs text-[var(--text-secondary)] mt-0.5">{totalFinishers} finisher{totalFinishers === 1 ? '' : 's'} ranked so far</p>
+          <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+            {totalFinishers} finisher{totalFinishers === 1 ? '' : 's'} ranked so far
+            {disqualifiedResults.length > 0 ? ` (${disqualifiedResults.length} DQ excluded)` : ''}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2 shrink-0">
           <button
             type="button"
             onClick={() => {
-              if (!generateRankingsReportPdf(race, results)) alert('No completed finishers are available for the report yet.');
+              if (!generateRankingsReportPdf(race, results)) {
+                notify({ tone: 'info', title: 'No ranked finishers yet', message: 'Record at least one valid finish before exporting the PDF report.' });
+              }
             }}
             className="text-xs font-black uppercase tracking-widest px-4 py-2.5 rounded-[var(--radius-control)] border border-[var(--border-strong)] text-[var(--text-primary)] hover:border-red-500 hover:text-red-500 flex items-center justify-center gap-2 transition"
           >
             <FileDown className="w-4 h-4" /> Download PDF
           </button>
           <button
+            type="button"
             onClick={() => setPresenting(true)}
             className="text-xs font-black uppercase tracking-widest px-4 py-2.5 rounded-[var(--radius-control)] text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 flex items-center justify-center gap-2 transition"
           >
@@ -2869,68 +3362,406 @@ function RaceRankingsPanel({ race, results }: RaceRankingsPanelProps) {
         </div>
       </div>
 
-      {(authority || can('timing.correct')) && <div className="space-y-2 text-xs">
-        <label className="block">Calibrated finish review window (milliseconds)
-          <input type="number" min="0" max="60000" step="any" value={reviewWindow} onChange={event => setReviewWindow(event.target.value)} className="ml-2 w-28 glass-inset p-2" />
-        </label>
-        <p>0 flags identical times only. Set a wider window after comparing reader detections with finish-line video. Flagged places remain provisional.</p>
-        <button type="button" disabled={savingReview} onClick={() => void saveReviewWindow()} className="glass-inset px-3 py-2">{savingReview ? 'Saving…' : 'Save review window'}</button>
-        {reviewError && <p role="alert">{reviewError}</p>}
-      </div>}
-      {rankingFolders.length === 0 ? (
-        <p className="text-xs text-[var(--text-secondary)]">No finish times recorded yet. Rankings appear once runners cross both the start and finish checkpoints.</p>
-      ) : (
-        <div className="space-y-3">
-          <div className="relative">
-            <label htmlFor="ranking-search" className="sr-only">Search rankings by name or bib number</label>
-            <Search aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 w-4 h-4 -translate-y-1/2 text-[var(--text-muted)]" />
-            <input id="ranking-search" type="search" value={rankingSearch} onChange={(event) => setRankingSearch(event.target.value)} placeholder="Search name or bib number" className="w-full glass-inset py-3 pl-10 pr-12 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 [&::-webkit-search-cancel-button]:appearance-none" />
-            {rankingSearch && <button type="button" onClick={() => setRankingSearch('')} aria-label="Clear ranking search" className="absolute right-1 top-1/2 -translate-y-1/2 p-3 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"><X aria-hidden="true" className="w-4 h-4" /></button>}
-          </div>
-          <p role="status" className="text-xs text-[var(--text-secondary)]">{isSearching ? `${matchCount} matching finisher${matchCount === 1 ? '' : 's'}. Official ranks are shown.` : 'Open a distance folder to browse entry divisions and age-category rankings.'}</p>
-          {isSearching && visibleFolders.length === 0 && <p className="glass-inset p-5 text-sm text-[var(--text-secondary)]">No rankings match “{rankingSearch.trim()}”. Try another name or bib number.</p>}
-          {visibleFolders.map((folder) => (
-            <details key={`${isSearching ? rankingSearch : 'browse'}-${folder.distance}`} open={isSearching || undefined} className="group/distance glass-inset overflow-hidden">
-              <summary className="flex cursor-pointer list-none items-center gap-3 p-4 [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-500">
-                <Folder aria-hidden="true" className="w-6 h-6 shrink-0 text-red-500 group-open/distance:hidden" />
-                <FolderOpen aria-hidden="true" className="hidden w-6 h-6 shrink-0 text-red-500 group-open/distance:block" />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-black text-[var(--text-primary)]">{folder.distance}</span>
-                  <span className="block mt-1 text-xs text-[var(--text-secondary)]">{folder.subcategories.length} subcategor{folder.subcategories.length === 1 ? 'y' : 'ies'} · {folder.finisherCount} {isSearching ? 'matching' : 'finished'}</span>
-                </span>
-                <ChevronRight aria-hidden="true" className="w-4 h-4 shrink-0 text-[var(--text-muted)] group-open/distance:rotate-90" />
-              </summary>
-              <div className="border-t border-[var(--border-default)] px-3 pb-3 sm:px-4">
-                {folder.subcategories.map((category) => (
-                  <details key={category.id} open={isSearching || undefined} className="group/category border-b last:border-b-0 border-[var(--border-default)]">
-                    <summary className="flex cursor-pointer list-none items-center gap-3 py-4 [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 rounded-lg">
-                      <Folder aria-hidden="true" className="w-4 h-4 shrink-0 text-[var(--text-secondary)] group-open/category:hidden" />
-                      <FolderOpen aria-hidden="true" className="hidden w-4 h-4 shrink-0 text-red-500 group-open/category:block" />
-                      <span className="min-w-0 flex-1 text-xs font-bold text-[var(--text-primary)]">{category.label}</span>
-                      <span className="text-[10px] text-[var(--text-secondary)] shrink-0">{category.results.length} {isSearching ? 'matching' : 'finished'}</span>
-                      <ChevronRight aria-hidden="true" className="w-4 h-4 shrink-0 text-[var(--text-muted)] group-open/category:rotate-90" />
-                    </summary>
-                    <ol aria-label={`${folder.distance} ${category.label}`} className="space-y-1.5 max-h-80 overflow-y-auto pb-3">
-                      {category.results.map((r) => {
-                        const rank = category.ranking === 'age' ? r.categoryRank! : category.ranking === 'special' ? 1 : (r.overallRank ?? r.rank!);
-                        return (
-                          <li key={r.bibNumber} className="flex items-center justify-between px-2 sm:px-3 py-2 rounded-[14px] bg-[var(--surface-inset)]/40 text-xs gap-2">
-                            <span className={`font-mono font-black w-9 shrink-0 ${rank === 1 ? 'text-amber-500' : rank === 2 ? 'text-slate-400' : rank === 3 ? 'text-orange-600' : 'text-red-500'}`}>#{rank}</span>
-                            <span className="min-w-0 flex-1" title={runnerTimingName(r.runnerProfile, r.bibNumber)}>
-                              <span className="block truncate font-bold text-[var(--text-primary)]">{runnerTimingName(r.runnerProfile, r.bibNumber)}</span>
-                              <span className="text-[var(--text-muted)]">Bib #{r.bibNumber}</span>
-                            </span>
-                            <span className="font-mono font-bold text-[var(--text-primary)] shrink-0">{formatRaceTime(r.finishTime)}{r.finishReviewRequired && <span className="block text-xs text-amber-500">Needs finish review · provisional place</span>}</span>
-                          </li>
-                        );
-                      })}
-                    </ol>
-                  </details>
-                ))}
-              </div>
-            </details>
-          ))}
+      {(authority || can('timing.correct')) && (
+        <div className="space-y-2 text-xs">
+          <label className="block">
+            Calibrated finish review window (milliseconds)
+            <input type="number" min="0" max="60000" step="any" value={reviewWindow} onChange={(event) => setReviewWindow(event.target.value)} className="ml-2 w-28 glass-inset p-2" />
+          </label>
+          <p>0 flags identical times only. Set a wider window after comparing reader detections with finish-line video. Flagged places remain provisional.</p>
+          <button type="button" disabled={savingReview} onClick={() => void saveReviewWindow()} className="glass-inset px-3 py-2">
+            {savingReview ? 'Saving…' : 'Save review window'}
+          </button>
+          {reviewError && <p role="alert">{reviewError}</p>}
         </div>
+      )}
+
+      {(rankingFolders.length > 0 || invalidatedCount > 0) ? (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="relative flex-1">
+              <label htmlFor="ranking-search" className="sr-only">Search rankings by name or bib number</label>
+              <Search aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 w-4 h-4 -translate-y-1/2 text-[var(--text-muted)]" />
+              <input
+                id="ranking-search"
+                type="search"
+                value={rankingSearch}
+                onChange={(event) => setRankingSearch(event.target.value)}
+                placeholder="Search name or bib number"
+                className="w-full glass-inset py-3 pl-10 pr-12 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 [&::-webkit-search-cancel-button]:appearance-none"
+              />
+              {rankingSearch && (
+                <button
+                  type="button"
+                  onClick={() => setRankingSearch('')}
+                  aria-label="Clear ranking search"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 p-3 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                >
+                  <X aria-hidden="true" className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Filter finisher views">
+              <button
+                type="button"
+                aria-pressed={rankingFilter === 'all'}
+                onClick={() => setRankingFilter('all')}
+                className={`min-h-[40px] px-3 py-2 rounded-[12px] text-xs font-bold border transition ${rankingFilter === 'all' ? 'border-red-500 bg-red-600 text-white' : 'glass-inset border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+              >
+                All Ranked ({totalFinishers})
+              </button>
+              <button
+                type="button"
+                aria-pressed={rankingFilter === 'flagged'}
+                onClick={() => setRankingFilter('flagged')}
+                className={`min-h-[40px] px-3 py-2 rounded-[12px] text-xs font-bold border transition flex items-center gap-1.5 ${rankingFilter === 'flagged' ? 'border-amber-500 bg-amber-500 text-black' : flaggedCount > 0 ? 'border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-400' : 'glass-inset border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+              >
+                <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" /> Flagged Splits ({flaggedCount})
+              </button>
+              <button
+                type="button"
+                aria-pressed={rankingFilter === 'invalidated'}
+                onClick={() => setRankingFilter('invalidated')}
+                className={`min-h-[40px] px-3 py-2 rounded-[12px] text-xs font-bold border transition flex items-center gap-1.5 ${rankingFilter === 'invalidated' ? 'border-rose-700 bg-rose-700 text-white' : invalidatedCount > 0 ? 'border-rose-500/35 bg-rose-500/10 text-rose-700 dark:text-rose-400' : 'glass-inset border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+              >
+                <Ban className="w-3.5 h-3.5" aria-hidden="true" /> DQ &amp; Dequeued ({invalidatedCount})
+              </button>
+            </div>
+          </div>
+
+          {showRankedFolders && (
+            <div className="space-y-3">
+              <p role="status" className="text-xs text-[var(--text-secondary)]">
+                {rankingFilter === 'flagged'
+                  ? (flaggedCount === 0
+                    ? 'No flagged finishers right now. All ranked finishers passed checkpoint and close-finish checks.'
+                    : `${matchCount} flagged finisher${matchCount === 1 ? '' : 's'} shown with official rank intact. Review or dequeue/DQ invalid scans below.`)
+                  : isSearching
+                    ? `${matchCount} matching finisher${matchCount === 1 ? '' : 's'}. Official ranks are shown.`
+                    : 'Open a distance folder to browse entry divisions and age-category rankings.'}
+              </p>
+
+              {rankingFolders.length === 0 && !isSearching && (
+                <p className="glass-inset p-4 text-xs text-[var(--text-secondary)]">
+                  No active ranked finishers right now. Re-scan the finish line or use Restore / Reinstate in the panel below.
+                </p>
+              )}
+
+              {isSearching && visibleFolders.length === 0 && filteredDisqualified.length === 0 && filteredDequeued.length === 0 && (
+                <p className="glass-inset p-5 text-sm text-[var(--text-secondary)]">
+                  No rankings match “{rankingSearch.trim()}”. Try another name or bib number.
+                </p>
+              )}
+
+              {visibleFolders.map((folder) => (
+                <details key={`${rankingFilter}-${isSearching ? rankingSearch : 'browse'}-${folder.distance}`} open={isSearching || rankingFilter === 'flagged' || undefined} className="group/distance glass-inset overflow-hidden">
+                  <summary className="flex cursor-pointer list-none items-center gap-3 p-4 [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-500">
+                    <Folder aria-hidden="true" className="w-6 h-6 shrink-0 text-red-500 group-open/distance:hidden" />
+                    <FolderOpen aria-hidden="true" className="hidden w-6 h-6 shrink-0 text-red-500 group-open/distance:block" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-black text-[var(--text-primary)]">{folder.distance}</span>
+                      <span className="block mt-1 text-xs text-[var(--text-secondary)]">
+                        {folder.subcategories.length} subcategor{folder.subcategories.length === 1 ? 'y' : 'ies'} &bull; {folder.finisherCount} {isSearching || rankingFilter === 'flagged' ? 'matching' : 'finished'}
+                      </span>
+                    </span>
+                    <ChevronRight aria-hidden="true" className="w-4 h-4 shrink-0 text-[var(--text-muted)] group-open/distance:rotate-90" />
+                  </summary>
+                  <div className="border-t border-[var(--border-default)] px-3 pb-3 sm:px-4">
+                    {folder.subcategories.map((category) => (
+                      <details key={category.id} open={isSearching || rankingFilter === 'flagged' || undefined} className="group/category border-b last:border-b-0 border-[var(--border-default)]">
+                        <summary className="flex cursor-pointer list-none items-center gap-3 py-4 [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 rounded-lg">
+                          <Folder aria-hidden="true" className="w-4 h-4 shrink-0 text-[var(--text-secondary)] group-open/category:hidden" />
+                          <FolderOpen aria-hidden="true" className="hidden w-4 h-4 shrink-0 text-red-500 group-open/category:block" />
+                          <span className="min-w-0 flex-1 text-xs font-bold text-[var(--text-primary)]">{category.label}</span>
+                          <span className="text-[10px] text-[var(--text-secondary)] shrink-0">
+                            {category.results.length} {isSearching || rankingFilter === 'flagged' ? 'matching' : 'finished'}
+                          </span>
+                          <ChevronRight aria-hidden="true" className="w-4 h-4 shrink-0 text-[var(--text-muted)] group-open/category:rotate-90" />
+                        </summary>
+                        <ol aria-label={`${folder.distance} ${category.label}`} className="space-y-2 max-h-96 overflow-y-auto pb-3">
+                          {category.results.map((r) => {
+                            const rank = category.ranking === 'age' ? r.categoryRank! : category.ranking === 'special' ? 1 : (r.overallRank ?? r.rank!);
+                            const anomalies = finisherAnomalyLabels(r);
+                            const isBusy = busyFinisherBib === r.bibNumber;
+                            return (
+                              <li key={r.bibNumber} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-[14px] bg-[var(--surface-inset)]/40 text-xs gap-2">
+                                <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
+                                  <span className={`font-mono font-black w-9 shrink-0 ${rank === 1 ? 'text-amber-500' : rank === 2 ? 'text-slate-400' : rank === 3 ? 'text-orange-600' : 'text-red-500'}`}>#{rank}</span>
+                                  <div className="min-w-0 flex-1" title={runnerTimingName(r.runnerProfile, r.bibNumber)}>
+                                    <span className="block truncate font-bold text-[var(--text-primary)]">{runnerTimingName(r.runnerProfile, r.bibNumber)}</span>
+                                    <span className="text-[var(--text-muted)]">Bib #{r.bibNumber}</span>
+                                    {anomalies.length > 0 && (
+                                      <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                        {anomalies.map((label) => (
+                                          <span key={label} className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400">
+                                            <AlertTriangle className="w-3 h-3 shrink-0" aria-hidden="true" /> {label}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pl-12 sm:pl-0">
+                                  <span className="font-mono font-bold text-[var(--text-primary)] tabular-nums">{formatRaceTime(r.finishTime)}</span>
+                                  {canManageFinishers && (
+                                    <button
+                                      type="button"
+                                      disabled={isBusy}
+                                      onClick={() => openManageFinisher(r)}
+                                      aria-label={`Manage finisher Bib #${r.bibNumber}`}
+                                      className="min-h-[36px] px-3 py-1.5 rounded-[10px] border border-[var(--border-strong)] text-[11px] font-bold text-[var(--text-secondary)] hover:border-red-500 hover:text-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-50 transition"
+                                    >
+                                      {isBusy ? 'Updating…' : 'Dequeue / DQ'}
+                                    </button>
+                                  )}
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ol>
+                      </details>
+                    ))}
+                  </div>
+                </details>
+              ))}
+            </div>
+          )}
+
+          {showInvalidatedTray && (
+            <div className="space-y-4 pt-2 border-t border-[var(--border-default)]">
+              {invalidatedCount === 0 ? (
+                <p className="glass-inset p-4 text-xs text-[var(--text-secondary)]">
+                  No disqualified or dequeued finishers right now. Use Dequeue / DQ on any finisher row to handle invalid finish scans.
+                </p>
+              ) : (
+                <>
+                  {filteredDisqualified.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="text-[11px] font-black font-display uppercase tracking-widest text-rose-700 dark:text-rose-400 flex items-center gap-2">
+                        <Ban className="w-3.5 h-3.5" aria-hidden="true" /> Disqualified Finishers ({filteredDisqualified.length})
+                      </h4>
+                      <div className="space-y-2">
+                        {filteredDisqualified.map((r) => {
+                          const isBusy = busyFinisherBib === r.bibNumber;
+                          return (
+                            <div key={r.bibNumber} className="glass-inset p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-rose-500/25">
+                              <div className="min-w-0 flex-1 space-y-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-mono text-[11px] font-black uppercase tracking-wider text-rose-700 dark:text-rose-400 px-2 py-0.5 rounded bg-rose-500/10">DQ</span>
+                                  <span className="font-bold text-xs text-[var(--text-primary)] truncate">{runnerTimingName(r.runnerProfile, r.bibNumber)}</span>
+                                  <span className="font-mono text-xs text-[var(--text-muted)]">Bib #{r.bibNumber} &bull; {runnerDivisionLabel(r.runnerProfile)}</span>
+                                </div>
+                                <p className="text-xs text-[var(--text-secondary)]">
+                                  Reason: <span className="font-semibold text-[var(--text-primary)]">{r.dqReason || 'Invalidated by race official'}</span>
+                                  {r.finishTime ? <span className="font-mono text-[var(--text-muted)]"> (Recorded scan: {formatRaceTime(r.finishTime)})</span> : null}
+                                </p>
+                              </div>
+                              {canManageFinishers && (
+                                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                                  {r.finishTime && onDequeueFinisher && (
+                                    <button
+                                      type="button"
+                                      disabled={isBusy}
+                                      onClick={() => { void onDequeueFinisher(r); }}
+                                      className="min-h-[36px] px-3 py-1.5 rounded-[10px] border border-amber-500/35 bg-amber-500/10 text-xs font-bold text-amber-700 dark:text-amber-400 hover:bg-amber-500 hover:text-black disabled:opacity-50 transition"
+                                    >
+                                      Dequeue Scan
+                                    </button>
+                                  )}
+                                  {onReinstateFinisher && (
+                                    <button
+                                      type="button"
+                                      disabled={isBusy}
+                                      onClick={() => { void onReinstateFinisher(r); }}
+                                      className="min-h-[36px] px-3 py-1.5 rounded-[10px] border border-emerald-500/35 bg-emerald-500/10 text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-700 hover:text-white disabled:opacity-50 transition"
+                                    >
+                                      {isBusy ? 'Updating…' : 'Reinstate'}
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {filteredDequeued.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="text-[11px] font-black font-display uppercase tracking-widest text-amber-700 dark:text-amber-400 flex items-center gap-2">
+                        <Undo2 className="w-3.5 h-3.5" aria-hidden="true" /> Recently Dequeued Finish Scans ({filteredDequeued.length})
+                      </h4>
+                      <p className="text-xs text-[var(--text-secondary)]">
+                        Removed from finisher standings during this session so the bib can be scanned again at the finish line. Restore returns the exact removed finish read.
+                      </p>
+                      <div className="space-y-2">
+                        {filteredDequeued.map((entry) => {
+                          const isBusy = busyFinisherBib === entry.bibNumber;
+                          return (
+                            <div key={entry.bibNumber} className="glass-inset p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-amber-500/25">
+                              <div className="min-w-0 flex-1 space-y-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-mono text-[11px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded bg-amber-500/10">Dequeued</span>
+                                  <span className="font-bold text-xs text-[var(--text-primary)] truncate">{entry.runnerName}</span>
+                                  <span className="font-mono text-xs text-[var(--text-muted)]">Bib #{entry.bibNumber} &bull; {entry.division}</span>
+                                </div>
+                                <p className="text-xs text-[var(--text-secondary)]">
+                                  Removed at {formatClockTime(entry.dequeuedAt)}
+                                  {entry.finishTime ? <span className="font-mono text-[var(--text-muted)]"> (Previous time: {formatRaceTime(entry.finishTime)})</span> : null}
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                                {onRestoreDequeued && canManageFinishers && (
+                                  <button
+                                    type="button"
+                                    disabled={isBusy}
+                                    onClick={() => { void onRestoreDequeued(entry); }}
+                                    className="min-h-[36px] px-3 py-1.5 rounded-[10px] border border-emerald-500/35 bg-emerald-500/10 text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-700 hover:text-white disabled:opacity-50 transition"
+                                  >
+                                    {isBusy ? 'Restoring…' : 'Restore Finish'}
+                                  </button>
+                                )}
+                                {onDismissDequeued && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onDismissDequeued(entry.bibNumber)}
+                                    className="min-h-[36px] px-3 py-1.5 rounded-[10px] border border-[var(--border-default)] text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition"
+                                  >
+                                    Dismiss
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="text-xs text-[var(--text-secondary)]">No finish times recorded yet. Rankings appear once runners cross both the start and finish checkpoints.</p>
+      )}
+
+      {managingFinisher && (
+        <DialogSurface
+          className="rp-confirm !max-w-xl"
+          titleId="manage-finisher-title"
+          descriptionId="manage-finisher-desc"
+          onRequestClose={() => setManagingFinisher(null)}
+          initialFocusRef={cancelManageRef}
+        >
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <h2 id="manage-finisher-title" className="text-lg font-bold font-display text-[var(--text-primary)]">
+                Manage Finisher: Bib #{managingFinisher.bibNumber}
+              </h2>
+              <p id="manage-finisher-desc" className="text-xs text-[var(--text-secondary)]">
+                {runnerTimingName(managingFinisher.runnerProfile, managingFinisher.bibNumber)} ({runnerDivisionLabel(managingFinisher.runnerProfile)})
+                {managingFinisher.finishTime ? ` · Recorded ${formatRaceTime(managingFinisher.finishTime)}` : ''}
+              </p>
+              {finisherAnomalyLabels(managingFinisher).length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pt-2">
+                  {finisherAnomalyLabels(managingFinisher).map((label) => (
+                    <span key={label} className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+                      <AlertTriangle className="w-3 h-3 shrink-0" aria-hidden="true" /> {label}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {onDequeueFinisher && (
+              <div className="glass-inset p-4 space-y-3 border border-amber-500/30">
+                <div className="space-y-1">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+                    Dequeue Finish Scan (Return to Course)
+                  </h3>
+                  <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                    Removes the finish scan so subsequent finishers move up. The bib stays unlocked and can be scanned again when the runner reaches the finish line.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={busyFinisherBib === managingFinisher.bibNumber}
+                  onClick={() => { void handleConfirmDequeue(); }}
+                  className="w-full min-h-11 rounded-[12px] bg-amber-500 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-black hover:bg-amber-400 disabled:opacity-50 transition"
+                >
+                  Dequeue Finish Scan
+                </button>
+              </div>
+            )}
+
+            {onDisqualifyFinisher && (
+              <div className="glass-inset p-4 space-y-3 border border-rose-500/30">
+                <div className="space-y-1">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400">
+                    Disqualify Finisher (Mark DQ)
+                  </h3>
+                  <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                    Excludes this finisher from official standings, podiums, age awards, and reports while keeping their finish scan locked against RFID re-reads.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {DQ_PRESET_REASONS.map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => {
+                        setDqReasonInput(preset);
+                        setDqReasonError('');
+                      }}
+                      className={`px-2.5 py-1.5 rounded-[10px] border text-[11px] font-semibold transition ${dqReasonInput === preset ? 'border-rose-500 bg-rose-500/15 text-rose-700 dark:text-rose-400' : 'border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+                <div className="space-y-1">
+                  <label htmlFor="dq-reason-input" className="block text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+                    Disqualification reason
+                  </label>
+                  <input
+                    id="dq-reason-input"
+                    type="text"
+                    maxLength={120}
+                    value={dqReasonInput}
+                    onChange={(event) => {
+                      setDqReasonInput(event.target.value);
+                      if (dqReasonError) setDqReasonError('');
+                    }}
+                    placeholder="Enter reason for official race record"
+                    className="w-full glass-inset px-3 py-2.5 text-xs text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                  {dqReasonError && <p role="alert" className="text-xs font-semibold text-rose-700 dark:text-rose-400">{dqReasonError}</p>}
+                </div>
+                <button
+                  type="button"
+                  disabled={busyFinisherBib === managingFinisher.bibNumber}
+                  onClick={() => { void handleConfirmDq(); }}
+                  className="w-full min-h-11 rounded-[12px] bg-red-600 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-white hover:bg-red-700 disabled:opacity-50 transition"
+                >
+                  Disqualify Finisher (DQ)
+                </button>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-1">
+              <button
+                ref={cancelManageRef}
+                type="button"
+                onClick={() => setManagingFinisher(null)}
+                className="rp-button rp-button-secondary"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </DialogSurface>
       )}
     </div>
   );

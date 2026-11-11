@@ -76,10 +76,10 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
   const spaceTitle = isSuperAdmin
     ? 'Super Admin Console'
     : profile.role === 'admin'
-    ? 'Admin Console'
-    : profile.role === 'organizer'
-    ? 'Organizer Console'
-    : 'Operations';
+      ? 'Admin Console'
+      : profile.role === 'organizer'
+        ? 'Organizer Console'
+        : 'Operations';
 
   const navItems = [
     { key: 'events', icon: <CalendarDays className="w-4 h-4" />, label: 'My Events', shortLabel: 'Events', active: active === 'events', onClick: () => setTab('events') },

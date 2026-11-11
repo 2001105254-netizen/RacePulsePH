@@ -158,6 +158,7 @@ export interface RaceBibTemplate {
 
 export interface Race {
   finishReviewWindowMs?: number;
+  disqualifiedBibs?: Record<string, string>;
   id: string;
   name: string;
   date: string;
@@ -247,6 +248,10 @@ export interface PublicLeaderboardEntry {
   gunTime?: string;
   finishTime: string;
   finishReviewRequired?: boolean;
+  disqualified?: boolean;
+  dqReason?: string;
+  missingStartScan?: boolean;
+  missingIntermediateLabels?: string[];
 }
 
 // Deliberately contains only publishable result data. Raw chip reads remain
@@ -342,6 +347,10 @@ export interface RunnerResult {
   runnerProfile?: RunnerProfile;
   splits: RunnerSplit[];
   finishReviewRequired?: boolean;
+  disqualified?: boolean;
+  dqReason?: string;
+  missingStartScan?: boolean;
+  missingIntermediateLabels?: string[];
   finishTime?: string; // formatted HH:MM:SSfffff elapsed from 'start' checkpoint to 'finish'
   finishSeconds?: number;
   // Preserve the actual crossing order when results have the same displayed

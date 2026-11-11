@@ -229,14 +229,137 @@ test('wall clock preserves source fractions and local time across offsets', () =
  assert.equal(formatClockTime(undefined),'—');
  assert.equal(formatDateTime(value), date.toLocaleDateString()+' '+expected);
 });
-test('presentation normalizes old result strings and keeps original finish-scan fractions', () => {
- const React=require('react');
- const {renderToStaticMarkup}=require('react-dom/server');
- const Screen=loadTs(path.join(root,'src/components/LiveRankingsScreen.tsx')).default;
- const results=compute([solo],[preciseRead('S','2026-10-26T00:30:00.1234567Z')]);
- results[0].finishTime='00:30:00.123456';
- const html=renderToStaticMarkup(React.createElement(Screen,{race,results,onClose:()=>{}}));
- assert.ok(html.includes('00:30:0012345'));
- assert.ok(!html.includes('00:30:00.123456'));
- assert.ok(html.includes('12345'));
+ test('presentation normalizes old result strings and keeps original finish-scan fractions', () => {
+  const React=require('react');
+  const {renderToStaticMarkup}=require('react-dom/server');
+  const Screen=loadTs(path.join(root,'src/components/LiveRankingsScreen.tsx')).default;
+  const results=compute([solo],[preciseRead('S','2026-10-26T00:30:00.1234567Z')]);
+  results[0].finishTime='00:30:00.123456';
+  const html=renderToStaticMarkup(React.createElement(Screen,{race,results,onClose:()=>{}}));
+  assert.ok(html.includes('00:30:0012345'));
+  assert.ok(!html.includes('00:30:00.123456'));
+  assert.ok(html.includes('12345'));
+ });
+
+test('dequeue removes false finish scan, advances next runner, allows re-scan, and supports restore', () => {
+  const r1 = runner('10-209', 'duo');
+  const r2 = runner('10-201', 'duo');
+  const raceDuo = {
+    ...race,
+    waveStartTimes: { '5K Duo': '2026-10-26T00:00:00Z' },
+  };
+  const baseReads = [
+    read('10-209', 'start', 1),
+    read('10-209', 'finish', 15), // Accidental finish scan
+    read('10-201', 'start', 1),
+    read('10-201', 'finish', 25),
+  ];
+
+  // After dequeue marker at minute 16, bib 10-209 loses finish & 10-201 moves up to #1
+  const dequeued = computeResults(raceDuo.checkpoints, [
+    ...baseReads,
+    { bibNumber: '10-209', checkpointId: '__dequeue__', timestamp: time(16) },
+  ], [r1, r2], [], raceDuo);
+  assert.equal(byBib(dequeued, '10-209').finishTime, undefined);
+  assert.equal(byBib(dequeued, '10-209').rank, undefined);
+  assert.equal(byBib(dequeued, '10-209').splits.some((s) => s.checkpointId === 'start'), true);
+  assert.equal(byBib(dequeued, '10-201').rank, 1);
+
+  // Restoring cancels the dequeue marker without losing the original finish scan
+  const restored = computeResults(raceDuo.checkpoints, [
+    ...baseReads,
+    { bibNumber: '10-209', checkpointId: '__dequeue__', timestamp: time(16) },
+    { bibNumber: '10-209', checkpointId: '__restore__', timestamp: time(17) },
+  ], [r1, r2], [], raceDuo);
+  assert.equal(byBib(restored, '10-209').rank, 1);
+  assert.equal(byBib(restored, '10-201').rank, 2);
+
+  // Or if dequeued and never restored, a later valid finish scan at minute 30 ranks behind 10-201
+  const rescanned = computeResults(raceDuo.checkpoints, [
+    ...baseReads,
+    { bibNumber: '10-209', checkpointId: '__dequeue__', timestamp: time(16) },
+    read('10-209', 'finish', 30),
+  ], [r1, r2], [], raceDuo);
+  assert.equal(byBib(rescanned, '10-201').rank, 1);
+  assert.equal(byBib(rescanned, '10-209').rank, 2);
+  assert.equal(byBib(rescanned, '10-209').finishTime, '00:30:0000000');
+});
+
+test('disqualification excludes invalid finishers from all rankings and awards, and supports reinstate', () => {
+  const f1 = runner('F1', 'solo', { gender: 'female', age: 25 });
+  const f2 = runner('F2', 'solo', { gender: 'female', age: 27 });
+  const f3 = runner('F3', 'solo', { gender: 'female', age: 29 });
+  const f4 = runner('F4', 'solo', { gender: 'female', age: 30 });
+  const f5 = runner('F5', 'solo', { gender: 'female', age: 17 });
+  const ageCategories = [{ id: 'adult-f', gender: 'female', minAge: 20, maxAge: 35, label: '20-35F' }];
+  const reads = [
+    read('F1', 'finish', 20),
+    read('F2', 'finish', 21),
+    read('F3', 'finish', 22),
+    read('F4', 'finish', 23),
+    read('F5', 'finish', 24),
+  ];
+
+  // Mark F1 DQ via __dq__ control read; F2..F4 advance, F5 wins age category or youngest, F1 retains recorded time but rank=undefined
+  const withDq = computeResults(race.checkpoints, [
+    ...reads,
+    { bibNumber: 'F1', checkpointId: '__dq__', chipId: 'Course cut', timestamp: time(25) },
+  ], [f1, f2, f3, f4, f5], ageCategories, { ...race, youngestRunnerAwardEnabled: true });
+
+  assert.equal(byBib(withDq, 'F1').disqualified, true);
+  assert.equal(byBib(withDq, 'F1').dqReason, 'Course cut');
+  assert.equal(byBib(withDq, 'F1').finishTime, '00:20:0000000');
+  assert.equal(byBib(withDq, 'F1').rank, undefined);
+  assert.equal(byBib(withDq, 'F2').rank, 1);
+  assert.equal(byBib(withDq, 'F3').rank, 2);
+  assert.equal(byBib(withDq, 'F4').rank, 3);
+
+  // Reinstate F1 via newer __reinstate__, then DQ again later (repeated organizer toggle)
+  const reinstated = computeResults(race.checkpoints, [
+    ...reads,
+    { bibNumber: 'F1', checkpointId: '__dq__', chipId: 'Course cut', timestamp: time(25) },
+    { bibNumber: 'F1', checkpointId: '__reinstate__', timestamp: time(26) },
+  ], [f1, f2, f3, f4, f5], ageCategories, race);
+  assert.equal(byBib(reinstated, 'F1').disqualified, undefined);
+  assert.equal(byBib(reinstated, 'F1').rank, 1);
+
+  const reDq = computeResults(race.checkpoints, [
+    ...reads,
+    { bibNumber: 'F1', checkpointId: '__dq__', chipId: 'Course cut', timestamp: time(25) },
+    { bibNumber: 'F1', checkpointId: '__reinstate__', timestamp: time(26) },
+    { bibNumber: 'F1', checkpointId: '__dq__', chipId: 'Bib swap', timestamp: time(27) },
+  ], [f1, f2, f3, f4, f5], ageCategories, race);
+  assert.equal(byBib(reDq, 'F1').disqualified, true);
+  assert.equal(byBib(reDq, 'F1').dqReason, 'Bib swap');
+  assert.equal(byBib(reDq, 'F2').rank, 1);
+
+  // Also test raceTiming.disqualifiedBibs map + linked sequence withdrawal
+  const linked = computeResults(race.checkpoints, [
+    read('S', 'finish', 30),
+    read('D', 'finish', 70),
+  ], [solo, duo], [], { ...race, disqualifiedBibs: { S: 'Early handoff violation' } });
+  assert.equal(byBib(linked, 'S').disqualified, true);
+  assert.equal(byBib(linked, 'D').sequenceStartTime, undefined);
+  assert.equal(byBib(linked, 'D').rank, undefined);
+});
+
+test('finishers missing start scan or intermediate checkpoint are flagged for review', () => {
+  const checkpoints = [
+    { id: 'start', label: 'Start', type: 'start', order: 0 },
+    { id: 'mid', label: 'Turnaround 5K', type: 'intermediate', order: 1 },
+    { id: 'finish', label: 'Finish', type: 'finish', order: 2 },
+  ];
+  const a = runner('A');
+  const b = runner('B');
+  const results = computeResults(checkpoints, [
+    read('A', 'start', 1),
+    read('A', 'mid', 15),
+    read('A', 'finish', 30),
+    read('B', 'finish', 28), // Missed Start & Turnaround 5K
+  ], [a, b], [], race);
+
+  assert.equal(byBib(results, 'A').missingStartScan, undefined);
+  assert.equal(byBib(results, 'A').missingIntermediateLabels, undefined);
+  assert.equal(byBib(results, 'B').missingStartScan, true);
+  assert.deepEqual(byBib(results, 'B').missingIntermediateLabels, ['Turnaround 5K']);
 });
