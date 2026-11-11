@@ -11,6 +11,7 @@ interface WorkspaceShellProps {
   workspaceSwitch?: WorkspaceSwitchProps;
   pendingApprovalNotice?: boolean;
   maxWidthClass?: string;
+  desktopLocked?: boolean;
   onOpenProfile?: () => void;
   children: React.ReactNode;
 }
@@ -25,11 +26,16 @@ export default function WorkspaceShell({
   workspaceSwitch,
   pendingApprovalNotice = false,
   maxWidthClass = 'max-w-7xl',
+  desktopLocked = false,
   onOpenProfile,
   children,
 }: WorkspaceShellProps) {
   return (
-    <div className="w-full flex-grow flex flex-col lg:flex-row min-w-0">
+    <div
+      className={`w-full flex-grow flex flex-col lg:flex-row min-w-0 ${
+        desktopLocked ? 'lg:flex-1 lg:min-h-0 lg:overflow-hidden' : ''
+      }`}
+    >
       <DesktopSidebar
         spaceTitle={spaceTitle}
         navLabel={navLabel}
@@ -39,7 +45,12 @@ export default function WorkspaceShell({
         onOpenProfile={onOpenProfile}
       />
 
-      <main aria-label={spaceTitle} className="flex-1 min-w-0">
+      <main
+        aria-label={spaceTitle}
+        className={`flex-1 min-w-0 ${
+          desktopLocked ? 'lg:min-h-0 lg:flex lg:flex-col lg:overflow-hidden' : ''
+        }`}
+      >
         {workspaceSwitch && (
           <div className="lg:hidden px-4 pt-4">
             <div
@@ -75,7 +86,13 @@ export default function WorkspaceShell({
           </div>
         )}
 
-        <div className={`w-full ${maxWidthClass} mx-auto px-4 sm:px-6 xl:px-8 py-4 sm:py-6 pb-28 lg:pb-12 space-y-6`}>
+        <div
+          className={`w-full ${maxWidthClass} mx-auto px-4 sm:px-6 xl:px-8 py-4 sm:py-6 pb-28 lg:pb-12 space-y-6 ${
+            desktopLocked
+              ? 'lg:max-w-none lg:px-0 lg:py-0 lg:pb-0 lg:space-y-0 lg:flex-1 lg:min-h-0 lg:flex lg:flex-col'
+              : ''
+          }`}
+        >
           {pendingApprovalNotice && (
             <div role="status" className="glass-inset px-4 py-3 text-sm text-[var(--text-primary)]">
               Organizer operations are awaiting approval. Your personal features remain available.

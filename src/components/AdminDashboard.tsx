@@ -6,7 +6,7 @@ import { RunnerProfile, UserProfile } from '../types';
 import WorkspaceShell from './WorkspaceShell';
 import type { WorkspaceSwitchProps } from './DesktopSidebar';
 import {
-  Award, Radio, Flag, Users, Users2, LogOut, CheckCircle, XCircle, ShieldCheck, Search, Trash2, Printer,
+  Award, CalendarDays, Timer, Tv, Flag, UserCog, Users, LogOut, CheckCircle, XCircle, ShieldCheck, Search, Trash2, Printer,
 } from 'lucide-react';
 
 const LiveBroadcastPanel = lazy(() => import('./LiveBroadcastPanel'));
@@ -46,15 +46,15 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
     : 'Operations';
 
   const navItems = [
-    { key: 'events', icon: <Flag className="w-4 h-4" />, label: 'My Events', active: active === 'events', onClick: () => setTab('events') },
-    { key: 'hub', icon: <Radio className="w-4 h-4" />, label: 'Live Hub', active: active === 'hub', onClick: () => setTab('hub') },
-    { key: 'engraving', icon: <Award className="w-4 h-4" />, label: 'Engraving', active: active === 'engraving', onClick: () => setTab('engraving') },
-    { key: 'timing', icon: <Radio className="w-4 h-4" />, label: 'Timing', active: active === 'timing', onClick: () => setTab('timing') },
-    { key: 'race', icon: <Flag className="w-4 h-4" />, label: 'Race Setup', active: active === 'race', onClick: () => setTab('race') },
-    { key: 'bibstudio', icon: <Printer className="w-4 h-4" />, label: 'Bib Studio', active: active === 'bibstudio', onClick: () => setTab('bibstudio') },
-    { key: 'organizers', icon: <Users className="w-4 h-4" />, label: 'Organizers', active: active === 'organizers', onClick: () => setTab('organizers') },
-    { key: 'runners', icon: <Users2 className="w-4 h-4" />, label: 'Runners', active: active === 'runners', onClick: () => setTab('runners') },
-    { key: 'access', icon: <ShieldCheck className="w-4 h-4" />, label: 'Access', active: active === 'access', onClick: () => setTab('access') },
+    { key: 'events', icon: <CalendarDays className="w-4 h-4" />, label: 'My Events', shortLabel: 'Events', active: active === 'events', onClick: () => setTab('events') },
+    { key: 'hub', icon: <Tv className="w-4 h-4" />, label: 'Live Hub', shortLabel: 'Live Hub', active: active === 'hub', onClick: () => setTab('hub') },
+    { key: 'engraving', icon: <Award className="w-4 h-4" />, label: 'Engraving', shortLabel: 'Engrave', active: active === 'engraving', onClick: () => setTab('engraving') },
+    { key: 'timing', icon: <Timer className="w-4 h-4" />, label: 'Timing', shortLabel: 'Timing', active: active === 'timing', onClick: () => setTab('timing') },
+    { key: 'race', icon: <Flag className="w-4 h-4" />, label: 'Race Setup', shortLabel: 'Setup', active: active === 'race', onClick: () => setTab('race') },
+    { key: 'bibstudio', icon: <Printer className="w-4 h-4" />, label: 'Bib Studio', shortLabel: 'Bibs', active: active === 'bibstudio', onClick: () => setTab('bibstudio') },
+    { key: 'organizers', icon: <UserCog className="w-4 h-4" />, label: 'Organizers', shortLabel: 'Orgs', active: active === 'organizers', onClick: () => setTab('organizers') },
+    { key: 'runners', icon: <Users className="w-4 h-4" />, label: 'Runners', shortLabel: 'Runners', active: active === 'runners', onClick: () => setTab('runners') },
+    { key: 'access', icon: <ShieldCheck className="w-4 h-4" />, label: 'Access', shortLabel: 'Access', active: active === 'access', onClick: () => setTab('access') },
   ].filter(item => allowed[item.key as AdminTab]);
 
   return (
@@ -66,23 +66,24 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
       workspaceSwitch={workspaceSwitch}
       pendingApprovalNotice={pendingApprovalNotice}
       maxWidthClass="max-w-[1800px]"
+      desktopLocked={active === 'engraving'}
     >
-      <div className="flex flex-col md:flex-row md:items-center justify-between glass-panel hero-glow px-4 sm:px-6 py-5 gap-4 animate-fadeIn">
+      {/* Mobile-only compact console header + sign out; desktop uses the sidebar avatar tooltip and persistent top bar */}
+      <div className="lg:hidden flex flex-col sm:flex-row sm:items-center justify-between glass-panel hero-glow px-4 py-4 gap-3">
         <div>
-          <span className="text-[10px] tracking-widest font-extrabold text-amber-500 font-display bg-amber-500/10 px-2.5 py-1 rounded-full uppercase border border-amber-500/20">{spaceTitle}</span>
-          <h1 className="heading-float text-2xl font-black tracking-tight font-display text-[var(--text-primary)] mt-1.5 uppercase">Welcome, {profile.displayName}</h1>
-          <p className="text-xs text-[var(--text-secondary)] mt-1">{isSuperAdmin ? 'Secure control over accounts, organizer approvals, races, timing, and engraving.' : 'Operational control over engraving, timing, and race setup.'}</p>
+          <span className="text-[11px] tracking-wider font-semibold text-red-700 dark:text-red-400 uppercase">{spaceTitle}</span>
+          <h1 className="heading-float text-xl font-semibold tracking-tight font-display text-[var(--text-primary)] mt-1">{profile.displayName}</h1>
         </div>
         <button
           type="button"
           onClick={() => signOutUser()}
-          className="lg:hidden min-h-11 text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)]/75 backdrop-blur-md hover:text-[var(--text-primary)] font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider self-start"
+          className="min-h-11 text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)] hover:text-[var(--text-primary)] font-semibold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider self-start"
         >
           <LogOut className="w-3.5 h-3.5" aria-hidden="true" /> Sign Out
         </button>
       </div>
 
-      <Suspense fallback={<div role="status" className="p-8 text-center text-xs text-[var(--text-secondary)]">Loading module…</div>}>
+      <Suspense fallback={<div role="status" className="p-8 text-center text-xs text-[var(--text-secondary)]">Loading module...</div>}>
         {active === 'engraving' && <OperatorDashboard />}
         {active === 'timing' && <TimingConsole uid={profile.uid} canSeeAllRaces />}
         {active === 'race' && <RaceSetupPanel uid={profile.uid} canSeeAllRaces canDeleteRaces={isSuperAdmin} />}
@@ -143,10 +144,11 @@ function OrganizersPanel({ canManageAccounts, currentUserId }: { canManageAccoun
 
   return (
     <div className="space-y-6">
+      <h1 className="sr-only">Organizers</h1>
       <div className="glass-panel p-5">
-        <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2 mb-3">
-          <Users className="w-4 h-4 text-red-500" /> Pending Organizer Approvals
-        </h3>
+        <h2 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2 mb-3">
+          <UserCog className="w-4 h-4 text-red-500" aria-hidden="true" /> Pending Organizer Approvals
+        </h2>
         {pending.length === 0 ? (
           <p className="text-xs text-[var(--text-secondary)]">No pending requests.</p>
         ) : (
@@ -281,6 +283,7 @@ function RunnersPanel({ canManageAccounts, currentUserId }: { canManageAccounts:
 
   return (
     <div className="space-y-6">
+      <h1 className="sr-only">Runners Directory</h1>
       <div className="grid grid-cols-2 gap-4">
         <div className="glass-panel p-5 text-center">
           <p className="text-3xl font-black font-display text-[var(--text-primary)]">{allRunners.length}</p>
@@ -293,9 +296,9 @@ function RunnersPanel({ canManageAccounts, currentUserId }: { canManageAccounts:
       </div>
 
       <div className="glass-panel p-5">
-        <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2 mb-3">
-          <Users2 className="w-4 h-4 text-red-500" /> All Runners
-        </h3>
+        <h2 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2 mb-3">
+          <Users className="w-4 h-4 text-red-500" aria-hidden="true" /> All Runners
+        </h2>
         {allRunners.length > 0 && (
           <div className="relative mb-3">
             <Search className="w-3.5 h-3.5 text-[var(--text-muted)] absolute left-3.5 top-1/2 -translate-y-1/2" />

@@ -4,6 +4,7 @@ export interface WorkspaceNavItem {
   key: string;
   icon: React.ReactNode;
   label: string;
+  shortLabel?: string;
   active: boolean;
   onClick: () => void;
 }

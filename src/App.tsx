@@ -6,6 +6,7 @@ import { auth, db, signOutUser } from './firebase';
 import PublicRaceLanding from './components/PublicRaceLanding';
 import { PublicLegalPage, PublicNotFoundView } from './components/PublicInfoPages';
 import RunningLoader, { type StartupStage } from './components/RunningLoader';
+import { WorkspaceHeaderProvider, useWorkspaceHeader } from './lib/workspaceHeader';
 import { UserProfile } from './types';
 import { Sun, Moon, RefreshCw, Clock3, LogOut, LogIn, UserPlus, ArrowLeft, ShieldCheck, ChevronUp } from 'lucide-react';
 
@@ -101,7 +102,19 @@ function useTheme() {
 }
 
 export default function App() {
+  return (
+    <WorkspaceHeaderProvider>
+      <AppContent />
+    </WorkspaceHeaderProvider>
+  );
+}
+
+function AppContent() {
   const { theme, toggleTheme } = useTheme();
+  const headerCtx = useWorkspaceHeader();
+  const setLeftSlotEl = headerCtx?.setLeftSlotEl;
+  const setRightSlotEl = headerCtx?.setRightSlotEl;
+  const desktopLocked = Boolean(headerCtx?.desktopLocked);
   const [authUser, setAuthUser] = useState<User | null | undefined>(undefined); // undefined = still checking session
   const [profile, setProfile] = useState<UserProfile | null | undefined>(undefined);
   const [profileError, setProfileError] = useState(false);
@@ -385,7 +398,9 @@ export default function App() {
           id="app_root"
           inert={!openingDone}
           aria-hidden={!openingDone || undefined}
-          className="min-h-screen bg-[var(--surface-page)] text-[var(--text-primary)] flex flex-col"
+          className={`min-h-screen bg-[var(--surface-page)] text-[var(--text-primary)] flex flex-col ${
+            desktopLocked ? 'lg:h-screen lg:h-dvh lg:overflow-hidden' : ''
+          }`}
         >
           {/* Global ambient glow - sits behind every page.
               Light mode: directional warm top-left beam via .ambient-glow.
@@ -393,16 +408,16 @@ export default function App() {
           <div className="ambient-glow fixed inset-0 -z-10 overflow-hidden pointer-events-none" />
 
           {/* Global Navigation - persistent charcoal brand bar on every page */}
-          <nav className="sticky top-0 z-40 brand-nav" aria-label="Primary navigation">
-            <div className={`${isWorkspaceShell ? 'w-full' : 'max-w-7xl mx-auto'} min-w-0 px-3 sm:px-6 h-[4.5rem] sm:h-16 flex items-center justify-between gap-2`}>
-              <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
+          <nav className="sticky top-0 z-40 brand-nav shrink-0" aria-label="Primary navigation">
+            <div className={`${isWorkspaceShell ? 'w-full' : 'max-w-7xl mx-auto'} min-w-0 px-3 sm:px-4 xl:px-6 h-[4.5rem] sm:h-16 flex items-center justify-between gap-2 sm:gap-3`}>
+              <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-2.5">
                 {showBackButton && (
                   <button
                     type="button"
                     onClick={handleBack}
                     title="Back"
                     aria-label="Go back"
-                    className="w-11 h-11 rounded-full border border-white/15 bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] flex items-center justify-center text-white/90 hover:text-red-400 hover:border-red-500/50 transition-all duration-150 motion-safe:active:scale-95"
+                    className="w-10 h-10 sm:w-11 sm:h-11 shrink-0 rounded-full border border-white/15 bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] flex items-center justify-center text-white/90 hover:text-red-400 hover:border-red-500/50 transition-all duration-150 motion-safe:active:scale-95"
                   >
                     <ArrowLeft className="w-4 h-4" aria-hidden="true" />
                   </button>
@@ -410,7 +425,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => (!authUser ? navigateGuest('landing') : handleBack())}
-                  className="flex items-center gap-2 sm:gap-2.5 min-w-0 rounded-xl py-1 pr-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                  className="flex items-center gap-2 sm:gap-2.5 shrink-0 rounded-xl py-1 pr-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
                   aria-label="RacePulsePH home"
                 >
                   <div className="w-9 h-9 rounded-[10px] border border-white/15 bg-transparent flex items-center justify-center p-1 transition-colors shrink-0">
@@ -426,9 +441,25 @@ export default function App() {
                     RacePulse<span className="text-red-500">PH</span>
                   </span>
                 </button>
+
+                {/* Desktop workspace context slot (e.g. active race event switcher next to brand mark) */}
+                {isWorkspaceShell && (
+                  <div
+                    ref={setLeftSlotEl}
+                    id="workspace_header_left_slot"
+                    className="hidden lg:flex items-center gap-2 min-w-0 flex-1"
+                  />
+                )}
               </div>
 
               <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+                {isWorkspaceShell && (
+                  <div
+                    ref={setRightSlotEl}
+                    id="workspace_header_right_slot"
+                    className="hidden lg:flex items-center gap-1.5"
+                  />
+                )}
                 {!authUser && guestScreen === 'landing' && (
                   <>
                     <button
@@ -466,7 +497,7 @@ export default function App() {
                   onClick={toggleTheme}
                   title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
                   aria-label="Toggle color theme"
-                  className="w-11 h-11 rounded-full border border-white/15 bg-white/10 text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:text-red-400 hover:border-red-500/50 transition-all duration-150 flex items-center justify-center motion-safe:active:scale-95 overflow-hidden"
+                  className="w-10 h-10 sm:w-11 sm:h-11 rounded-full border border-white/15 bg-white/10 text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:text-red-400 hover:border-red-500/50 transition-all duration-150 flex items-center justify-center motion-safe:active:scale-95 overflow-hidden"
                 >
                   <AnimatePresence mode="wait" initial={false}>
                     {theme === 'dark' ? (
@@ -505,14 +536,14 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
               transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-              className="flex-grow flex flex-col"
+              className={`flex-grow flex flex-col ${desktopLocked ? 'lg:min-h-0 lg:overflow-hidden' : ''}`}
             >
               {content}
             </m.div>
           </AnimatePresence>
 
           {/* Unified Semantic Footer with Philippine athletic greeting and legal/support navigation */}
-          <footer className="border-t border-[var(--border-default)] bg-[var(--surface-card)] mt-auto text-xs text-[var(--text-secondary)]">
+          <footer className={`border-t border-[var(--border-default)] bg-[var(--surface-card)] mt-auto text-xs text-[var(--text-secondary)] ${desktopLocked ? 'lg:hidden' : ''}`}>
             <div className={`${isWorkspaceShell ? 'w-full' : 'max-w-7xl mx-auto'} flex flex-col md:flex-row items-center justify-between px-4 sm:px-6 py-4 gap-3`}>
               <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-3 gap-y-2">
                 <span className="font-mono text-[var(--text-primary)] font-semibold">
