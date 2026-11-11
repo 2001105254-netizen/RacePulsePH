@@ -70,18 +70,34 @@ export default function OrganizerDashboard({ profile }: OrganizerDashboardProps)
       items={navItems}
       profile={profile}
       maxWidthClass="max-w-7xl"
-      desktopLocked={tab === 'myevents' || tab === 'broadcast'}
+      desktopLocked={tab === 'myevents' || tab === 'broadcast' || tab === 'timing'}
     >
-      <div className={`${tab === 'myevents' || tab === 'broadcast' ? 'lg:hidden ' : ''}flex flex-col md:flex-row md:items-center justify-between glass-panel hero-glow px-4 sm:px-6 py-5 gap-4 animate-fadeIn`}>
-        <div>
-          <span className="text-[10px] tracking-widest font-extrabold text-red-500 font-display bg-red-500/10 px-2.5 py-1 rounded-full uppercase border border-red-500/20">Organizer Console</span>
-          <h1 className="heading-float text-2xl font-black tracking-tight font-display text-[var(--text-primary)] mt-1.5 uppercase">Welcome, {profile.displayName}</h1>
-          <p className="text-xs text-[var(--text-secondary)] mt-1">Set up races and record checkpoint splits.</p>
+      <div
+        className={`${tab === 'myevents' || tab === 'broadcast' || tab === 'timing' ? 'lg:hidden ' : ''}glass-panel hero-glow animate-fadeIn flex justify-between ${
+          tab === 'timing'
+            ? 'flex-row items-center px-3 py-2 gap-2'
+            : 'flex-col md:flex-row md:items-center px-4 sm:px-6 py-5 gap-4'
+        }`}
+      >
+        <div className="min-w-0">
+          <span className={`tracking-wider font-semibold text-red-700 dark:text-red-400 font-display uppercase ${
+            tab === 'timing'
+              ? 'text-xs block truncate'
+              : 'text-xs bg-red-500/10 px-2.5 py-1 rounded-full border border-red-500/20 inline-block'
+          }`}>Organizer Console</span>
+          <h1 className={`heading-float font-semibold tracking-tight font-display text-[var(--text-primary)] truncate ${
+            tab === 'timing' ? 'text-sm' : 'text-2xl mt-1.5 uppercase'
+          }`}>{tab === 'timing' ? profile.displayName : `Welcome, ${profile.displayName}`}</h1>
+          {tab !== 'timing' && <p className="text-xs text-[var(--text-secondary)] mt-1">Set up races and record checkpoint splits.</p>}
         </div>
-        <div className="flex flex-wrap items-center gap-2 self-start">
-          <button type="button" onClick={() => setShowSetupGuide(true)} className="min-h-11 text-xs text-[var(--text-primary)] border border-[var(--border-default)] hover:border-red-500/40 hover:text-red-500 font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"><BookOpen className="w-3.5 h-3.5" aria-hidden="true" /> Setup guide</button>
-          <button type="button" onClick={() => setShowDeleteAccount(true)} title="Delete my account" className="min-h-11 text-xs text-red-500 border border-red-500/30 hover:bg-red-500 hover:text-white font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"><Trash2 className="w-3.5 h-3.5" aria-hidden="true" /> Delete account</button>
-          <button type="button" onClick={() => signOutUser()} className="lg:hidden min-h-11 text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)]/75 backdrop-blur-md hover:text-[var(--text-primary)] font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"><LogOut className="w-3.5 h-3.5" aria-hidden="true" /> Sign Out</button>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {tab !== 'timing' && (
+            <>
+              <button type="button" onClick={() => setShowSetupGuide(true)} className="min-h-11 text-xs text-[var(--text-primary)] border border-[var(--border-default)] hover:border-red-500/40 hover:text-red-500 font-semibold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"><BookOpen className="w-3.5 h-3.5" aria-hidden="true" /> Setup guide</button>
+              <button type="button" onClick={() => setShowDeleteAccount(true)} title="Delete my account" className="min-h-11 text-xs text-red-700 dark:text-red-400 border border-red-500/30 hover:bg-red-700 hover:text-white font-semibold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"><Trash2 className="w-3.5 h-3.5" aria-hidden="true" /> Delete account</button>
+            </>
+          )}
+          <button type="button" onClick={() => signOutUser()} className="lg:hidden min-h-11 text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)]/75 backdrop-blur-md hover:text-[var(--text-primary)] font-semibold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"><LogOut className="w-3.5 h-3.5" aria-hidden="true" /> Sign Out</button>
         </div>
       </div>
 

@@ -102,18 +102,24 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
       workspaceSwitch={workspaceSwitch}
       pendingApprovalNotice={pendingApprovalNotice}
       maxWidthClass="max-w-[1800px]"
-      desktopLocked={active === 'engraving' || active === 'events' || active === 'hub'}
+      desktopLocked={active === 'engraving' || active === 'events' || active === 'hub' || active === 'timing'}
     >
       {/* Mobile-only compact console header + sign out; desktop uses the sidebar avatar tooltip and persistent top bar */}
-      <div className="lg:hidden flex flex-col sm:flex-row sm:items-center justify-between glass-panel hero-glow px-4 py-4 gap-3">
-        <div>
-          <span className="text-[11px] tracking-wider font-semibold text-red-700 dark:text-red-400 uppercase">{spaceTitle}</span>
-          <h1 className="heading-float text-xl font-semibold tracking-tight font-display text-[var(--text-primary)] mt-1">{profile.displayName}</h1>
+      <div
+        className={`lg:hidden glass-panel hero-glow flex justify-between ${
+          active === 'timing'
+            ? 'flex-row items-center px-3 py-2 gap-2'
+            : 'flex-col sm:flex-row sm:items-center px-4 py-4 gap-3'
+        }`}
+      >
+        <div className="min-w-0">
+          <span className="text-xs tracking-wider font-semibold text-red-700 dark:text-red-400 uppercase block truncate">{spaceTitle}</span>
+          <h1 className={`heading-float font-semibold tracking-tight font-display text-[var(--text-primary)] truncate ${active === 'timing' ? 'text-sm' : 'text-xl mt-1'}`}>{profile.displayName}</h1>
         </div>
         <button
           type="button"
           onClick={() => signOutUser()}
-          className="min-h-11 text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)] hover:text-[var(--text-primary)] font-semibold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider self-start"
+          className="min-h-11 shrink-0 text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)] hover:text-[var(--text-primary)] font-semibold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider self-start sm:self-auto"
         >
           <LogOut className="w-3.5 h-3.5" aria-hidden="true" /> Sign Out
         </button>

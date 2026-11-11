@@ -27,22 +27,22 @@ export default function RaceList({
   emptyDescription = 'Check back once an Admin or Organizer sets one up.',
 }: RaceListProps) {
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 border-b border-[var(--border-default)] pb-4">
+    <div className="w-full space-y-5">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 border-b border-[var(--border-default)] pb-3">
         <div>
-          <h2 className="text-xl sm:text-2xl font-semibold uppercase tracking-tight text-[var(--text-primary)]">
+          <h2 className="text-xl sm:text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
             {title}
           </h2>
           <p className="text-xs font-normal text-[var(--text-secondary)] mt-1">{subtitle}</p>
         </div>
-        <span className="text-xs font-mono font-semibold text-[var(--text-muted)] self-start sm:self-end">
+        <span className="text-xs font-mono font-semibold text-[var(--text-secondary)] tabular-nums self-start sm:self-end">
           {races.length} {races.length === 1 ? 'event' : 'events'}
         </span>
       </div>
 
       {races.length === 0 ? (
         <Card className="p-8 text-center border-dashed border-[var(--border-default)] bg-[var(--surface-card)]">
-          <div className="w-12 h-12 rounded-2xl bg-[var(--surface-inset)] border border-[var(--border-default)] flex items-center justify-center mx-auto text-[var(--text-muted)]">
+          <div className="w-12 h-12 rounded-2xl bg-[var(--surface-inset)] border border-[var(--border-default)] flex items-center justify-center mx-auto text-[var(--text-secondary)]">
             <Flag className="w-6 h-6" />
           </div>
           <p className="text-sm font-semibold uppercase tracking-wide text-[var(--text-primary)] mt-4">
@@ -53,7 +53,7 @@ export default function RaceList({
           </p>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {races.map((race) => {
             const isSelected = race.id === selectedRaceId;
             const regOpen = isRaceRegistrationOpen(race);
@@ -64,32 +64,32 @@ export default function RaceList({
               <Card
                 key={race.id}
                 onClick={() => onSelectRace(race.id)}
-                className={`group cursor-pointer overflow-hidden text-left transition-colors duration-200 border-[var(--border-default)] hover:border-red-500/50 flex flex-col justify-between ${
+                className={`group cursor-pointer overflow-hidden text-left transition-colors duration-150 border-[var(--border-default)] hover:border-red-600/60 flex flex-col justify-between ${
                   isSelected ? 'ring-2 ring-red-600 border-red-600' : ''
                 }`}
               >
                 <div>
-                  {/* Poster or Fallback Banner */}
-                  <div className="relative aspect-[16/9] w-full overflow-hidden bg-zinc-900 border-b border-[var(--border-default)]">
+                  {/* Compact Poster or Fallback Banner */}
+                  <div className="relative h-32 sm:h-36 w-full overflow-hidden bg-zinc-900 border-b border-[var(--border-default)]">
                     {race.posterImage ? (
                       <img
                         src={race.posterImage}
                         alt={race.name}
-                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
                       />
                     ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-900 p-6 text-center">
-                        <Trophy className="w-10 h-10 text-zinc-600 mb-2" />
-                        <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                      <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-900 p-4 text-center">
+                        <Trophy className="w-8 h-8 text-zinc-400 mb-1.5" />
+                        <span className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
                           RacePulse Official Event
                         </span>
                       </div>
                     )}
 
                     {/* Status Badges Overlay */}
-                    <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 z-10">
+                    <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5 z-10">
                       {isLive && (
-                        <Badge variant="live" className="gap-1.5 shadow-sm">
+                        <Badge variant="live" className="gap-1.5 shadow-sm text-xs">
                           <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-ping" />
                           Live Timing
                         </Badge>
@@ -110,7 +110,7 @@ export default function RaceList({
                     </div>
 
                     {isSelected && (
-                      <div className="absolute top-3 right-3 z-10">
+                      <div className="absolute top-2.5 right-2.5 z-10">
                         <Badge variant="default" className="gap-1 shadow-sm text-xs font-semibold uppercase">
                           <CheckCircle2 className="w-3 h-3" /> Selected
                         </Badge>
@@ -118,13 +118,13 @@ export default function RaceList({
                     )}
                   </div>
 
-                  <CardContent className="p-6 space-y-4">
+                  <CardContent className="p-4 space-y-3">
                     <div>
-                      <h3 className="text-base font-semibold tracking-tight text-[var(--text-primary)] group-hover:text-red-600 transition-colors">
+                      <h3 className="text-base font-semibold tracking-tight text-[var(--text-primary)] group-hover:text-red-700 dark:group-hover:text-red-400 transition-colors">
                         {race.name}
                       </h3>
-                      <p className="text-xs font-normal text-[var(--text-secondary)] mt-1.5 flex items-center gap-1.5">
-                        <Calendar className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                      <p className="text-xs font-normal text-[var(--text-secondary)] mt-1 flex items-center gap-1.5 tabular-nums">
+                        <Calendar className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" />
                         <span>{race.date}</span>
                       </p>
                     </div>
@@ -132,16 +132,16 @@ export default function RaceList({
                     {/* Distances & Prices */}
                     <div className="flex flex-wrap gap-1.5">
                       {(race.distances || []).length === 0 ? (
-                        <span className="text-xs text-[var(--text-muted)] italic">Distances to be announced</span>
+                        <span className="text-xs text-[var(--text-muted)]">Distances to be announced</span>
                       ) : (
                         race.distances.map((d) => (
                           <Badge
                             key={d.id}
                             variant="secondary"
-                            className="text-xs py-0.5 px-2 font-semibold border-[var(--border-default)]"
+                            className="text-xs py-0.5 px-2 font-semibold border-[var(--border-default)] tabular-nums"
                           >
                             {d.label}
-                            {d.price > 0 && <span className="text-red-600 ml-1">₱{d.price.toFixed(0)}</span>}
+                            {d.price > 0 && <span className="text-red-700 dark:text-red-400 ml-1">₱{d.price.toFixed(0)}</span>}
                           </Badge>
                         ))
                       )}
@@ -150,19 +150,18 @@ export default function RaceList({
                     {/* Inclusions */}
                     {(race.inclusions || []).length > 0 && (
                       <div className="flex items-start gap-1.5 text-xs text-[var(--text-secondary)] line-clamp-1">
-                        <Tag className="w-3 h-3 text-red-600 shrink-0 mt-0.5" />
+                        <Tag className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0 mt-0.5" />
                         <span className="truncate">Includes: {race.inclusions.join(', ')}</span>
                       </div>
                     )}
                   </CardContent>
                 </div>
 
-                <div className="px-6 pb-6 pt-0">
+                <div className="px-4 pb-4 pt-0">
                   <Button
                     type="button"
                     variant={isSelected ? 'default' : 'secondary'}
-                    size="sm"
-                    className="w-full justify-between text-xs"
+                    className="w-full min-h-11 h-11 justify-between text-xs"
                   >
                     <span>{isSelected ? 'Active Selection' : actionLabel}</span>
                     <ArrowRight className="w-3.5 h-3.5" />

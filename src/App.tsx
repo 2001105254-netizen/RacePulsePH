@@ -417,7 +417,7 @@ function AppContent() {
                     onClick={handleBack}
                     title="Back"
                     aria-label="Go back"
-                    className="w-10 h-10 sm:w-11 sm:h-11 shrink-0 rounded-full border border-white/15 bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] flex items-center justify-center text-white/90 hover:text-red-400 hover:border-red-500/50 transition-all duration-150 motion-safe:active:scale-95"
+                    className="w-11 h-11 shrink-0 rounded-full border border-white/15 bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] flex items-center justify-center text-white/90 hover:text-red-400 hover:border-red-500/50 transition-all duration-150 motion-safe:active:scale-95"
                   >
                     <ArrowLeft className="w-4 h-4" aria-hidden="true" />
                   </button>
@@ -425,7 +425,7 @@ function AppContent() {
                 <button
                   type="button"
                   onClick={() => (!authUser ? navigateGuest('landing') : handleBack())}
-                  className="flex items-center gap-2 sm:gap-2.5 shrink-0 rounded-xl py-1 pr-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                  className="flex items-center gap-2 sm:gap-2.5 shrink-0 min-w-11 min-h-11 justify-center rounded-xl py-1 px-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
                   aria-label="RacePulsePH home"
                 >
                   <div className="w-9 h-9 rounded-[10px] border border-white/15 bg-transparent flex items-center justify-center p-1 transition-colors shrink-0">
@@ -497,7 +497,7 @@ function AppContent() {
                   onClick={toggleTheme}
                   title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
                   aria-label="Toggle color theme"
-                  className="w-10 h-10 sm:w-11 sm:h-11 rounded-full border border-white/15 bg-white/10 text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:text-red-400 hover:border-red-500/50 transition-all duration-150 flex items-center justify-center motion-safe:active:scale-95 overflow-hidden"
+                  className="w-11 h-11 rounded-full border border-white/15 bg-white/10 text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:text-red-400 hover:border-red-500/50 transition-all duration-150 flex items-center justify-center motion-safe:active:scale-95 overflow-hidden"
                 >
                   <AnimatePresence mode="wait" initial={false}>
                     {theme === 'dark' ? (

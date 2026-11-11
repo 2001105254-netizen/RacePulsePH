@@ -7,10 +7,10 @@ import { finishScanOrder } from '../lib/liveRankings';
 import { runnerDivisionLabel, runnerEntryCategory } from '../lib/raceEntry';
 import { getWaveStartTime } from '../lib/timing';
 
-const badge = 'inline-flex items-center rounded-md border px-2 py-1 text-xs sm:text-sm font-bold';
+const badge = 'inline-flex items-center rounded-md border px-2.5 py-1 text-xs sm:text-sm font-semibold';
 const distanceColor = 'border-red-500/35 bg-red-500/10 text-red-300';
-const divisionColor = 'border-white/15 bg-white/[0.06] text-white/80';
-const ageColor = 'border-white/25 bg-white/[0.08] text-white/75';
+const divisionColor = 'border-white/15 bg-white/[0.06] text-white/85';
+const ageColor = 'border-white/25 bg-white/[0.08] text-white/80';
 
 export default function LiveRankingsScreen({ race, results, onClose }: {
   race: Race; results: RunnerResult[]; onClose: () => void;
@@ -65,60 +65,60 @@ export default function LiveRankingsScreen({ race, results, onClose }: {
   const formatTime = formatClockTime;
   const title = distance === 'all' ? 'All categories · Finish scan order' : `${distance} · ${category?.label || 'Finish scan order'}`;
   const elapsed = (timestamp: string | undefined) => {
-    if (!timestamp || !Number.isFinite(Date.parse(timestamp))) return '—';
+    if (!timestamp || !Number.isFinite(Date.parse(timestamp))) return '--';
     return formatElapsed(Math.max(0, now - Date.parse(timestamp)) / 1000);
   };
   const clockStarts = (category ? category.results.map(waveStart) : Object.values(race.waveStartTimes || {}))
     .filter((value): value is string => !!value && Number.isFinite(Date.parse(value)));
   const clockStart = clockStarts.sort((a, b) => Date.parse(a) - Date.parse(b))[0] || race.gunStartTime;
-  const control = 'rounded-xl border border-white/20 bg-[#19191c] px-3 py-2.5 text-sm text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400';
+  const control = 'inline-flex items-center justify-center rounded-xl border border-white/20 bg-[#19191c] px-3.5 min-h-11 text-sm text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400';
 
   return (
-    <div ref={containerRef} className="fixed inset-0 z-[100] bg-[#0a0a0c] text-white flex flex-col p-4 sm:p-8 lg:p-12 overflow-y-auto">
+    <div ref={containerRef} className="fixed inset-0 z-[100] bg-[#0a0a0c] text-white flex flex-col p-4 sm:p-8 lg:p-10 overflow-hidden">
       <header className="flex items-start justify-between gap-4 shrink-0">
         <div className="min-w-0">
-          <p className="text-xs sm:text-sm tracking-[0.2em] font-black text-red-400 uppercase">{race.name}</p>
-          <h1 className="text-2xl sm:text-4xl font-black font-display uppercase tracking-tight mt-1 flex items-center gap-3"><Trophy aria-hidden="true" className="w-7 h-7 text-red-400 shrink-0" /> Live Rankings</h1>
+          <p className="text-xs sm:text-sm tracking-[0.2em] font-semibold text-red-400 uppercase truncate">{race.name}</p>
+          <h1 className="text-2xl sm:text-3xl font-semibold font-display uppercase tracking-tight mt-1 flex items-center gap-3"><Trophy aria-hidden="true" className="w-7 h-7 text-red-400 shrink-0" /> Live Rankings</h1>
         </div>
-        <div className="flex items-center gap-4 shrink-0"><div className="hidden sm:block text-right"><p className="text-[10px] uppercase tracking-widest text-white/50">{category ? 'Division gun elapsed' : 'First gun elapsed'}</p><p className="font-mono font-black text-xl">{elapsed(clockStart)}</p></div><button type="button" onClick={onClose} aria-label="Close live rankings" className={`${control} p-3 shrink-0`}><X className="w-5 h-5" /></button></div>
+        <div className="flex items-center gap-4 shrink-0"><div className="hidden sm:block text-right"><p className="text-xs uppercase tracking-wider text-white/70">{category ? 'Division gun elapsed' : 'First gun elapsed'}</p><p className="font-mono font-semibold text-xl tabular-nums">{elapsed(clockStart)}</p></div><button type="button" onClick={onClose} aria-label="Close live rankings" className={`${control} w-11 p-0 shrink-0`}><X className="w-5 h-5" /></button></div>
       </header>
 
-      <nav aria-label="Live ranking views" className="flex flex-wrap items-end gap-3 mt-5 shrink-0">
+      <nav aria-label="Live ranking views" className="flex flex-wrap items-end gap-2 mt-4 shrink-0">
         <button type="button" onClick={() => { changeDistance('all'); setSearch(''); }} className={`${control} ${distance === 'all' ? 'border-red-400 bg-red-500/15' : ''}`} aria-pressed={distance === 'all'}>All categories / Scan order</button>
-        <label className="flex flex-col gap-1 text-xs text-white/65">Distance
+        <label className="flex flex-col gap-1 text-xs text-white/75">Distance
           <select value={distance} onChange={(event) => changeDistance(event.target.value)} className={control}><option value="all">All distances</option>{distanceLabels.map((label) => <option key={label} value={label}>{label}</option>)}</select>
         </label>
-        <label className="flex flex-col gap-1 text-xs text-white/65">Category
+        <label className="flex flex-col gap-1 text-xs text-white/75">Category
           <select value={categoryId} disabled={distance === 'all'} onChange={(event) => setCategoryId(event.target.value)} className={`${control} disabled:opacity-50 max-w-[min(80vw,22rem)]`}><option value="all">All categories · Scan order</option>{folder?.subcategories.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select>
         </label>
-        <div className="flex gap-1">
-          <button type="button" aria-label="Previous distance" onClick={() => navigate(-1)} className={control}><ChevronLeft className="w-5 h-5" /></button>
-          <button type="button" aria-label="Next distance" onClick={() => navigate(1)} className={control}><ChevronRight className="w-5 h-5" /></button>
+        <div className="flex gap-2">
+          <button type="button" aria-label="Previous distance" onClick={() => navigate(-1)} className={`${control} w-11 p-0`}><ChevronLeft className="w-5 h-5" /></button>
+          <button type="button" aria-label="Next distance" onClick={() => navigate(1)} className={`${control} w-11 p-0`}><ChevronRight className="w-5 h-5" /></button>
         </div>
         <label className="relative flex-1 min-w-48">
-          <span className="sr-only">Search live rankings by name or bib</span><Search aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50" />
+          <span className="sr-only">Search live rankings by name or bib</span><Search aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/65" />
           <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or bib" className={`${control} w-full pl-9`} />
         </label>
       </nav>
 
-      <div className="flex flex-wrap gap-2 mt-4 shrink-0" aria-label="Choose a distance">{distanceLabels.map((label) => <button key={label} type="button" onClick={() => changeDistance(label)} aria-pressed={distance === label} className={`${badge} ${distanceColor} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 ${distance === label ? 'ring-1 ring-red-400' : ''}`}>{label}</button>)}</div>
-      <p className="mt-2 text-[11px] text-white/50">Red identifies race categories · 1st, 2nd, and 3rd places use podium colors · Amber: next entry running · Green: next entry finished</p>
-      <div className="flex flex-wrap items-baseline justify-between gap-2 mt-5 mb-3 shrink-0">
-        <h2 className="text-lg sm:text-2xl font-black font-display">{title}</h2>
-        <p role="status" className="text-xs text-white/60">{visibleEntries.length} finisher{visibleEntries.length === 1 ? '' : 's'} · {category ? 'Official category places' : 'Scan # is arrival order, not an overall rank'}</p>
+      <div className="flex flex-wrap gap-2 mt-3 shrink-0" aria-label="Choose a distance">{distanceLabels.map((label) => <button key={label} type="button" onClick={() => changeDistance(label)} aria-pressed={distance === label} className={`inline-flex items-center justify-center rounded-xl border px-3.5 min-h-11 text-xs sm:text-sm font-semibold ${distanceColor} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 ${distance === label ? 'ring-2 ring-red-400' : ''}`}>{label}</button>)}</div>
+      <p className="mt-2 text-xs text-white/70">Red identifies race categories · 1st, 2nd, and 3rd places use podium colors · Amber: next entry running · Green: next entry finished</p>
+      <div className="flex flex-wrap items-baseline justify-between gap-2 mt-4 mb-2 shrink-0">
+        <h2 className="text-lg sm:text-2xl font-semibold font-display">{title}</h2>
+        <p role="status" className="text-xs text-white/75 tabular-nums">{visibleEntries.length} finisher{visibleEntries.length === 1 ? '' : 's'} · {category ? 'Official category places' : 'Scan # is arrival order, not an overall rank'}</p>
       </div>
-      <div ref={listRef} className="flex-1 min-h-40 overflow-y-auto space-y-2 pr-1" aria-label={title}>
-        {visibleEntries.length === 0 && <p className="py-10 text-center text-white/60">{search ? 'No finishers match your search.' : 'Waiting for finishers in this view…'}</p>}
+      <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-1" aria-label={title}>
+        {visibleEntries.length === 0 && <p className="py-10 text-center text-white/75">{search ? 'No finishers match your search.' : 'Waiting for finishers in this view...'}</p>}
         {visibleEntries.map(({ result, scanOrder, finishedAt, finishedTimestamp }) => {
           const rank = category?.ranking === 'age' ? result.categoryRank! : result.overallRank ?? result.rank!;
           const distanceLabel = result.runnerProfile?.distance || 'Unknown';
           const nextEntry = nextByBib.get(result.bibNumber);
           return (
             <div key={result.bibNumber} className={`flex flex-wrap sm:flex-nowrap items-center gap-3 sm:gap-5 px-4 sm:px-6 py-4 rounded-2xl ${category && rank <= 3 ? 'bg-white/10 border border-white/10' : 'bg-white/5'}`}>
-              <div className="w-14 sm:w-20 shrink-0 text-center"><span className="block text-[10px] uppercase tracking-wider text-white/50">{category ? 'Place' : 'Scan'}</span><span className={`font-mono font-black text-2xl sm:text-3xl ${rank === 1 ? 'text-red-400' : rank === 2 ? 'text-slate-300' : rank === 3 ? 'text-orange-500' : 'text-white/70'}`}>{category ? rank : scanOrder}</span></div>
+              <div className="w-14 sm:w-20 shrink-0 text-center"><span className="block text-xs uppercase tracking-wider text-white/70">{category ? 'Place' : 'Scan'}</span><span className={`font-mono font-semibold text-2xl sm:text-3xl tabular-nums ${rank === 1 ? 'text-red-400' : rank === 2 ? 'text-slate-300' : rank === 3 ? 'text-orange-400' : 'text-white/80'}`}>{category ? rank : scanOrder}</span></div>
               <div className="flex-1 min-w-0">
-                <p className="text-base sm:text-xl font-bold break-words">{name(result)}</p>
-                <p className="text-xs text-white/50 mt-1">Bib #{result.bibNumber} · Finish scan {formatTime(finishedTimestamp ?? finishedAt)}</p>
+                <p className="text-base sm:text-xl font-semibold break-words">{name(result)}</p>
+                <p className="text-xs text-white/70 mt-1 tabular-nums">Bib #{result.bibNumber} · Finish scan {formatTime(finishedTimestamp ?? finishedAt)}</p>
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   <span className={`${badge} ${distanceColor}`}>{distanceLabel}</span>
                   <span className={`${badge} ${divisionColor}`}>{runnerDivisionLabel(result.runnerProfile)} · #{result.overallRank ?? result.rank}</span>
@@ -128,18 +128,18 @@ export default function LiveRankingsScreen({ race, results, onClose }: {
                 </div>
               </div>
               <div className="w-full sm:w-auto sm:text-right sm:shrink-0 pl-[4.25rem] sm:pl-0">
-                <p className="font-mono font-black text-xl sm:text-3xl">{formatRaceTime(result.finishTime)}</p>
-                {result.finishReviewRequired && <p role="status" className="text-sm font-bold text-amber-200">Provisional place · Needs finish review</p>}
-                <p className="text-[11px] text-white/55">Official {result.timingMethod === 'transition' ? 'consecutive entry' : result.timingMethod === 'gun' ? 'gun' : 'chip'} time</p>
+                <p className="font-mono font-semibold text-xl sm:text-3xl tabular-nums">{formatRaceTime(result.finishTime)}</p>
+                {result.finishReviewRequired && <p role="status" className="text-sm font-semibold text-amber-200">Provisional place · Needs finish review</p>}
+                <p className="text-xs text-white/75">Official {result.timingMethod === 'transition' ? 'consecutive entry' : result.timingMethod === 'gun' ? 'gun' : 'chip'} time</p>
                 {result.sequenceStartTime && <p className="text-xs text-amber-200 mt-1">Entry start {formatTime(result.sequenceStartTime)}</p>}
                 <p className="text-xs text-amber-200 mt-1">Gun elapsed {formatRaceTime(result.gunTime)}</p>
-                <p className="text-[11px] text-white/50">Division start {formatTime(waveStart(result))}</p>
+                <p className="text-xs text-white/70">Division start {formatTime(waveStart(result))}</p>
               </div>
             </div>
           );
         })}
       </div>
-      <p className="shrink-0 text-center text-[10px] sm:text-xs text-white/40 mt-4">Updates live · Selection stays on screen · Press Esc to exit</p>
+      <p className="shrink-0 text-center text-xs text-white/70 mt-3">Updates live · Selection stays on screen · Press Esc to exit</p>
     </div>
   );
 }
