@@ -101,16 +101,23 @@ async function reserveFreeSlotBibs(race: Race, distance: RaceDistance, entryCate
   });
 }
 
+export interface RaceSetupLaunchRequest {
+  mode: 'create' | 'edit';
+  raceId?: string;
+  nonce: number;
+}
+
 interface RaceSetupPanelProps {
   uid: string;
   // Admin sees/edits every organizer's races; an Organizer only sees/edits their own.
   canSeeAllRaces: boolean;
   canDeleteRaces: boolean;
+  launchRequest?: RaceSetupLaunchRequest | null;
 }
 
 // Shared by both the Admin "Race Setup" tab and the Organizer dashboard - organizers
 // need to be able to stand up a race day-of without waiting on an Admin.
-export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: RaceSetupPanelProps) {
+export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, launchRequest }: RaceSetupPanelProps) {
   const { can, authority, version } = useAccess();
   // `profile.uid` comes from Firestore and can be stale on older accounts.
   // Storage rules always compare against Firebase Auth's real UID, so never
@@ -262,6 +269,8 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     setError('');
   };
 
+  const handledLaunchRef = useRef<number>(0);
+
   useEffect(() => {
     window.addEventListener('racepulse:back', resetForm);
     return () => window.removeEventListener('racepulse:back', resetForm);
@@ -327,6 +336,22 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
     setRunnerNameFont(race.raceBibLayout?.runnerNameFont ?? 'display');
     setError('');
   };
+
+  useEffect(() => {
+    if (!launchRequest || launchRequest.nonce === handledLaunchRef.current) return;
+    if (launchRequest.mode === 'create') {
+      handledLaunchRef.current = launchRequest.nonce;
+      resetForm();
+      return;
+    }
+    if (launchRequest.mode === 'edit' && launchRequest.raceId) {
+      const target = races.find((race) => race.id === launchRequest.raceId);
+      if (target) {
+        handledLaunchRef.current = launchRequest.nonce;
+        loadForEdit(target);
+      }
+    }
+  }, [launchRequest, races]);
 
   const handlePosterSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

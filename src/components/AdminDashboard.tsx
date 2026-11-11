@@ -1,10 +1,14 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { collection, doc, getDoc, getDocs, onSnapshot, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { useAccess, accessCommand } from '../lib/access';
 import { db, signOutUser } from '../firebase';
 import { RunnerProfile, UserProfile } from '../types';
 import WorkspaceShell from './WorkspaceShell';
 import type { WorkspaceSwitchProps } from './DesktopSidebar';
+import type { TimingLaunchRequest } from './TimingConsole';
+import type { RaceSetupLaunchRequest } from './RaceSetupPanel';
+import type { LiveBroadcastLaunchRequest } from './LiveBroadcastPanel';
+import type { EngravingLaunchRequest } from './OperatorDashboard';
 import {
   Award, CalendarDays, Timer, Tv, Flag, UserCog, Users, LogOut, CheckCircle, XCircle, ShieldCheck, Search, Trash2, Printer,
 } from 'lucide-react';
@@ -28,6 +32,38 @@ interface AdminDashboardProps {
 export default function AdminDashboard({ profile, workspaceSwitch, pendingApprovalNotice }: AdminDashboardProps) {
   const { can, authority: isSuperAdmin } = useAccess();
   const [tab, setTab] = useState<AdminTab>(can('engraving.view') ? 'engraving' : 'events');
+  const launchSeqRef = useRef(0);
+  const [timingLaunch, setTimingLaunch] = useState<TimingLaunchRequest | null>(null);
+  const [setupLaunch, setSetupLaunch] = useState<RaceSetupLaunchRequest | null>(null);
+  const [hubLaunch, setHubLaunch] = useState<LiveBroadcastLaunchRequest | null>(null);
+  const [engravingLaunch, setEngravingLaunch] = useState<EngravingLaunchRequest | null>(null);
+
+  const nextNonce = () => {
+    launchSeqRef.current += 1;
+    return launchSeqRef.current;
+  };
+  const openRaceTiming = (raceId: string, mode: 'record' | 'roster' = 'record') => {
+    localStorage.setItem('racepulse_active_race', raceId);
+    setTimingLaunch({ raceId, mode, nonce: nextNonce() });
+    setTab('timing');
+  };
+  const openRaceEngraving = (raceId: string) => {
+    localStorage.setItem('racepulse_engraving_race', raceId);
+    setEngravingLaunch({ raceId, nonce: nextNonce() });
+    setTab('engraving');
+  };
+  const openRaceSetup = (raceId?: string) => {
+    setSetupLaunch(
+      raceId
+        ? { mode: 'edit', raceId, nonce: nextNonce() }
+        : { mode: 'create', nonce: nextNonce() },
+    );
+    setTab('race');
+  };
+  const openRaceHub = (raceId: string) => {
+    setHubLaunch({ raceId, nonce: nextNonce() });
+    setTab('hub');
+  };
   const allowed: Record<AdminTab, boolean> = { engraving: can('engraving.view'), timing: can('timing.view') || can('roster.view'), race: can('race.view') || can('race.create'), bibstudio: isSuperAdmin, organizers: can('users.view') || isSuperAdmin, runners: can('users.view') || isSuperAdmin, access: isSuperAdmin, events: can('race.view'), hub: can('hub.manage') || can('hub.publish') };
   const active = allowed[tab] ? tab : (Object.keys(allowed).find(key => allowed[key]) as AdminTab);
 
@@ -66,7 +102,7 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
       workspaceSwitch={workspaceSwitch}
       pendingApprovalNotice={pendingApprovalNotice}
       maxWidthClass="max-w-[1800px]"
-      desktopLocked={active === 'engraving'}
+      desktopLocked={active === 'engraving' || active === 'events' || active === 'hub'}
     >
       {/* Mobile-only compact console header + sign out; desktop uses the sidebar avatar tooltip and persistent top bar */}
       <div className="lg:hidden flex flex-col sm:flex-row sm:items-center justify-between glass-panel hero-glow px-4 py-4 gap-3">
@@ -84,12 +120,23 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
       </div>
 
       <Suspense fallback={<div role="status" className="p-8 text-center text-xs text-[var(--text-secondary)]">Loading module...</div>}>
-        {active === 'engraving' && <OperatorDashboard />}
-        {active === 'timing' && <TimingConsole uid={profile.uid} canSeeAllRaces />}
-        {active === 'race' && <RaceSetupPanel uid={profile.uid} canSeeAllRaces canDeleteRaces={isSuperAdmin} />}
+        {active === 'engraving' && <OperatorDashboard launchRequest={engravingLaunch} />}
+        {active === 'timing' && <TimingConsole uid={profile.uid} canSeeAllRaces launchRequest={timingLaunch} />}
+        {active === 'race' && <RaceSetupPanel uid={profile.uid} canSeeAllRaces canDeleteRaces={isSuperAdmin} launchRequest={setupLaunch} />}
         {active === 'bibstudio' && <BibStudioPanel />}
-        {active === 'events' && <MyRaceEventsPanel uid={profile.uid} onManageRace={id => { localStorage.setItem('racepulse_active_race', id); setTab('timing'); }} />}
-        {active === 'hub' && <LiveBroadcastPanel uid={profile.uid} />}
+        {active === 'events' && (
+          <MyRaceEventsPanel
+            uid={profile.uid}
+            onManageRace={(id) => openRaceTiming(id, 'record')}
+            onOpenTiming={(id) => openRaceTiming(id, 'record')}
+            onOpenRunners={(id) => openRaceTiming(id, 'roster')}
+            onOpenEngraving={openRaceEngraving}
+            onOpenSetup={(id) => openRaceSetup(id)}
+            onOpenLiveHub={openRaceHub}
+            onCreateEvent={() => openRaceSetup()}
+          />
+        )}
+        {active === 'hub' && <LiveBroadcastPanel uid={profile.uid} launchRequest={hubLaunch} />}
         {active === 'organizers' && <OrganizersPanel canManageAccounts={isSuperAdmin} currentUserId={profile.uid} />}
         {active === 'runners' && <RunnersPanel canManageAccounts={isSuperAdmin} currentUserId={profile.uid} />}
         {active === 'access' && <AccessPanel />}

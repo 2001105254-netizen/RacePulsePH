@@ -34,7 +34,7 @@ export default function AuthorizedWorkspace({ profile, raceId, onRaceHandled }: 
   const pendingApprovalNotice = profile.role === 'organizer' && !profile.approved;
 
   return (
-    <div key={`${access.version}:${workspace}`} className="flex-grow flex flex-col">
+    <div key={`${access.version}:${workspace}`} className="flex-grow flex flex-col min-h-0">
       <Suspense fallback={<div role="status" className="p-8 text-center text-xs text-[var(--text-secondary)]">Loading workspace…</div>}>
         {workspace === 'operations' ? (
           <AdminDashboard

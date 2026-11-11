@@ -148,19 +148,38 @@ function LiveClock({ gunStartTime, size = 'compact' }: LiveClockProps) {
   );
 }
 
+export interface TimingLaunchRequest {
+  raceId: string;
+  mode?: 'record' | 'roster';
+  nonce: number;
+}
+
 interface TimingConsoleProps {
   uid: string;
   // Admin can time any organizer's race; an Organizer only sees/times races they created.
   canSeeAllRaces: boolean;
+  launchRequest?: TimingLaunchRequest | null;
 }
 
 // Live checkpoint recording + results, shared by the Organizer and Admin dashboards.
 // The operator's browser validates and saves reads.  A local Windows bridge can
 // feed it live EPC sightings from a VF-787P reader through /api/rfid-events.
-export default function TimingConsole({ uid, canSeeAllRaces }: TimingConsoleProps) {
+export default function TimingConsole({ uid, canSeeAllRaces, launchRequest }: TimingConsoleProps) {
   const { can, authority, version } = useAccess();
   const races = useScopedRaces();
-  const [activeRaceId, setActiveRaceId] = useState<string>(() => localStorage.getItem('racepulse_active_race') || '');
+  const [activeRaceId, setActiveRaceId] = useState<string>(() => launchRequest?.raceId || localStorage.getItem('racepulse_active_race') || '');
+  const [pendingMode, setPendingMode] = useState<'record' | 'roster' | undefined>(() => launchRequest?.mode);
+  const [pendingModeNonce, setPendingModeNonce] = useState<number>(() => launchRequest?.nonce ?? 0);
+
+  useEffect(() => {
+    if (!launchRequest?.raceId) return;
+    localStorage.setItem('racepulse_active_race', launchRequest.raceId);
+    setActiveRaceId(launchRequest.raceId);
+    if (launchRequest.mode) {
+      setPendingMode(launchRequest.mode);
+      setPendingModeNonce(launchRequest.nonce);
+    }
+  }, [launchRequest?.nonce, launchRequest?.raceId, launchRequest?.mode]);
 
   useEffect(() => {
     const goBackToRaceList = () => {
@@ -208,7 +227,7 @@ export default function TimingConsole({ uid, canSeeAllRaces }: TimingConsoleProp
       >
         <ArrowLeft className="w-3.5 h-3.5" /> Choose a different race
       </button>
-      <TimingConsoleForRace key={activeRace.id} race={activeRace} uid={uid} />
+      <TimingConsoleForRace key={activeRace.id} race={activeRace} uid={uid} initialMode={pendingMode} initialModeNonce={pendingModeNonce} />
     </div>
   );
 }
@@ -216,11 +235,20 @@ export default function TimingConsole({ uid, canSeeAllRaces }: TimingConsoleProp
 interface TimingConsoleForRaceProps {
   race: Race;
   uid: string;
+  initialMode?: 'record' | 'roster';
+  initialModeNonce?: number;
 }
 
-function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
+function TimingConsoleForRace({ race, uid, initialMode, initialModeNonce = 0 }: TimingConsoleForRaceProps) {
   const { can, authority } = useAccess();
-  const [mode, setMode] = useState<'record' | 'mobile-checkin' | 'assign' | 'roster' | 'rankings' | 'rollcall'>(can('timing.view') ? 'record' : 'assign');
+  const defaultMode = can('timing.view') ? 'record' : (can('roster.view') ? 'roster' : 'assign');
+  const [mode, setMode] = useState<'record' | 'mobile-checkin' | 'assign' | 'roster' | 'rankings' | 'rollcall'>(() => initialMode || defaultMode);
+
+  useEffect(() => {
+    if (initialMode && initialModeNonce > 0) {
+      setMode(initialMode);
+    }
+  }, [initialMode, initialModeNonce]);
   const orderedCheckpoints = useMemo(() => [...race.checkpoints].sort((a, b) => a.order - b.order), [race.checkpoints]);
   const [selectedCheckpointId, setSelectedCheckpointId] = useState(orderedCheckpoints[0]?.id || '');
   const [bibInput, setBibInput] = useState('');

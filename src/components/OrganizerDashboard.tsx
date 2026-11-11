@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { signOutUser } from '../firebase';
 import { UserProfile } from '../types';
-import TimingConsole from './TimingConsole';
-import RaceSetupPanel from './RaceSetupPanel';
+import TimingConsole, { TimingLaunchRequest } from './TimingConsole';
+import RaceSetupPanel, { RaceSetupLaunchRequest } from './RaceSetupPanel';
 import MyRaceEventsPanel from './MyRaceEventsPanel';
-import LiveBroadcastPanel from './LiveBroadcastPanel';
+import LiveBroadcastPanel, { LiveBroadcastLaunchRequest } from './LiveBroadcastPanel';
 import WorkspaceShell from './WorkspaceShell';
 import DeleteAccountModal from './DeleteAccountModal';
 import OrganizerSetupGuide from './OrganizerSetupGuide';
@@ -20,6 +20,10 @@ export default function OrganizerDashboard({ profile }: OrganizerDashboardProps)
   const [tab, setTab] = useState<OrganizerTab>('myevents');
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [showSetupGuide, setShowSetupGuide] = useState(false);
+  const launchSeqRef = useRef(0);
+  const [timingLaunch, setTimingLaunch] = useState<TimingLaunchRequest | null>(null);
+  const [setupLaunch, setSetupLaunch] = useState<RaceSetupLaunchRequest | null>(null);
+  const [hubLaunch, setHubLaunch] = useState<LiveBroadcastLaunchRequest | null>(null);
 
   useEffect(() => {
     const goHome = () => setTab('myevents');
@@ -27,9 +31,29 @@ export default function OrganizerDashboard({ profile }: OrganizerDashboardProps)
     return () => window.removeEventListener('racepulse:back', goHome);
   }, []);
 
-  const handleManageRace = (raceId: string) => {
+  const nextNonce = () => {
+    launchSeqRef.current += 1;
+    return launchSeqRef.current;
+  };
+
+  const handleOpenTiming = (raceId: string, mode: 'record' | 'roster' = 'record') => {
     localStorage.setItem('racepulse_active_race', raceId);
+    setTimingLaunch({ raceId, mode, nonce: nextNonce() });
     setTab('timing');
+  };
+
+  const handleOpenSetup = (raceId?: string) => {
+    setSetupLaunch(
+      raceId
+        ? { mode: 'edit', raceId, nonce: nextNonce() }
+        : { mode: 'create', nonce: nextNonce() },
+    );
+    setTab('race');
+  };
+
+  const handleOpenLiveHub = (raceId: string) => {
+    setHubLaunch({ raceId, nonce: nextNonce() });
+    setTab('broadcast');
   };
 
   const navItems = [
@@ -46,8 +70,9 @@ export default function OrganizerDashboard({ profile }: OrganizerDashboardProps)
       items={navItems}
       profile={profile}
       maxWidthClass="max-w-7xl"
+      desktopLocked={tab === 'myevents' || tab === 'broadcast'}
     >
-      <div className="flex flex-col md:flex-row md:items-center justify-between glass-panel hero-glow px-4 sm:px-6 py-5 gap-4 animate-fadeIn">
+      <div className={`${tab === 'myevents' || tab === 'broadcast' ? 'lg:hidden ' : ''}flex flex-col md:flex-row md:items-center justify-between glass-panel hero-glow px-4 sm:px-6 py-5 gap-4 animate-fadeIn`}>
         <div>
           <span className="text-[10px] tracking-widest font-extrabold text-red-500 font-display bg-red-500/10 px-2.5 py-1 rounded-full uppercase border border-red-500/20">Organizer Console</span>
           <h1 className="heading-float text-2xl font-black tracking-tight font-display text-[var(--text-primary)] mt-1.5 uppercase">Welcome, {profile.displayName}</h1>
@@ -60,10 +85,20 @@ export default function OrganizerDashboard({ profile }: OrganizerDashboardProps)
         </div>
       </div>
 
-      {tab === 'myevents' && <MyRaceEventsPanel uid={profile.uid} onManageRace={handleManageRace} />}
-      {tab === 'timing' && <TimingConsole uid={profile.uid} canSeeAllRaces={false} />}
-      {tab === 'race' && <RaceSetupPanel uid={profile.uid} canSeeAllRaces={false} canDeleteRaces={false} />}
-      {tab === 'broadcast' && <LiveBroadcastPanel uid={profile.uid} />}
+      {tab === 'myevents' && (
+        <MyRaceEventsPanel
+          uid={profile.uid}
+          onManageRace={(id) => handleOpenTiming(id, 'record')}
+          onOpenTiming={(id) => handleOpenTiming(id, 'record')}
+          onOpenRunners={(id) => handleOpenTiming(id, 'roster')}
+          onOpenSetup={(id) => handleOpenSetup(id)}
+          onOpenLiveHub={handleOpenLiveHub}
+          onCreateEvent={() => handleOpenSetup()}
+        />
+      )}
+      {tab === 'timing' && <TimingConsole uid={profile.uid} canSeeAllRaces={false} launchRequest={timingLaunch} />}
+      {tab === 'race' && <RaceSetupPanel uid={profile.uid} canSeeAllRaces={false} canDeleteRaces={false} launchRequest={setupLaunch} />}
+      {tab === 'broadcast' && <LiveBroadcastPanel uid={profile.uid} launchRequest={hubLaunch} />}
 
       {showDeleteAccount && <DeleteAccountModal profile={profile} onClose={() => setShowDeleteAccount(false)} />}
       {showSetupGuide && <OrganizerSetupGuide onClose={() => setShowSetupGuide(false)} onNavigate={(destination) => setTab(destination)} />}

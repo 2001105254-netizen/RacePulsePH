@@ -9,11 +9,40 @@ type AccessContextValue = { can: (key: string) => boolean; inScope: (race: Race)
 const denied: AccessContextValue = { can: () => false, inScope: () => false, authority: false, ready: false, suspended: false, state: {}, version: '' };
 const Context = createContext(denied);
 export const useAccess = () => useContext(Context);
-export function useScopedRaces() {
+export interface ScopedRacesState {
+  races: Race[];
+  loading: boolean;
+  error: string | null;
+}
+
+export function useScopedRacesState(): ScopedRacesState {
   const { inScope, version } = useAccess();
-  const [races, setRaces] = useState<Race[]>([]);
-  useEffect(() => onSnapshot(collection(db, 'races'), snap => setRaces(snap.docs.map(d => ({ ...d.data(), id: d.id } as Race)).filter(inScope)), () => setRaces([])), [inScope, version]);
-  return races;
+  const [state, setState] = useState<ScopedRacesState>({ races: [], loading: true, error: null });
+  useEffect(() => {
+    setState(prev => ({ races: prev.races, loading: true, error: null }));
+    return onSnapshot(
+      collection(db, 'races'),
+      snap => {
+        setState({
+          races: snap.docs.map(d => ({ ...d.data(), id: d.id } as Race)).filter(inScope),
+          loading: false,
+          error: null,
+        });
+      },
+      err => {
+        setState({
+          races: [],
+          loading: false,
+          error: err?.message || 'Unable to load race events.',
+        });
+      },
+    );
+  }, [inScope, version]);
+  return state;
+}
+
+export function useScopedRaces() {
+  return useScopedRacesState().races;
 }
 export function AccessProvider({ profile, children, onLoadState }: { profile: UserProfile; children: React.ReactNode; onLoadState?: (state: 'loading' | 'ready' | 'error') => void }) {
   const [state, setState] = useState<AccessState>({}), [ready, setReady] = useState(false), [error, setError] = useState('');

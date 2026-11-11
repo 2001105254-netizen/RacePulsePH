@@ -124,7 +124,16 @@ function StatusIcon({ status }: { status: EngravingStatus }) {
   }
 }
 
-export default function OperatorDashboard() {
+export interface EngravingLaunchRequest {
+  raceId: string;
+  nonce: number;
+}
+
+interface OperatorDashboardProps {
+  launchRequest?: EngravingLaunchRequest | null;
+}
+
+export default function OperatorDashboard({ launchRequest }: OperatorDashboardProps = {}) {
   const { can, authority } = useAccess();
   const races = useScopedRaces();
   const { confirm, notify } = useFeedback();
@@ -135,8 +144,14 @@ export default function OperatorDashboard() {
   const [loading, setLoading] = useState(true);
   const [ordersError, setOrdersError] = useState<string | null>(null);
   const [selectedRaceId, setSelectedRaceId] = useState(
-    () => localStorage.getItem('racepulse_engraving_race') || '',
+    () => launchRequest?.raceId || localStorage.getItem('racepulse_engraving_race') || '',
   );
+  useEffect(() => {
+    if (!launchRequest?.raceId) return;
+    localStorage.setItem('racepulse_engraving_race', launchRequest.raceId);
+    setSelectedRaceId(launchRequest.raceId);
+    setRunnerSearch('');
+  }, [launchRequest?.nonce, launchRequest?.raceId]);
   const [eventRunners, setEventRunners] = useState<RunnerProfile[]>([]);
   const [eventRunnersLoading, setEventRunnersLoading] = useState(false);
   const [eventRunnersError, setEventRunnersError] = useState<string | null>(null);
