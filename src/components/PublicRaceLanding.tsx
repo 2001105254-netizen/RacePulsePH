@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef, Suspense, lazy } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
+import { AnimatePresence, m } from 'motion/react';
 import {
   Calendar,
   Flag,
@@ -30,6 +31,8 @@ const PublicRaceResults = lazy(() => import('./PublicRaceResults'));
 interface PublicRaceLandingProps {
   onRegister: (raceId?: string) => void;
   onLoadState?: (state: 'loading' | 'ready' | 'error') => void;
+  revealed?: boolean;
+  onActiveRaceTitle?: (raceName: string | null) => void;
 }
 
 interface FinisherBibMatch {
@@ -121,7 +124,12 @@ function toRunnerResult(entry: PublicLeaderboardEntry): RunnerResult {
   };
 }
 
-export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRaceLandingProps) {
+export default function PublicRaceLanding({
+  onRegister,
+  onLoadState,
+  revealed = true,
+  onActiveRaceTitle,
+}: PublicRaceLandingProps) {
   const [races, setRaces] = useState<Race[]>([]);
   const [resultsByRaceId, setResultsByRaceId] = useState<Record<string, PublicLiveResults>>({});
   const [selectedRaceId, setSelectedRaceId] = useState<string>(() => initialRaceIdFromUrl());
@@ -132,13 +140,30 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
   const [bibQuery, setBibQuery] = useState('');
   const [copiedRaceId, setCopiedRaceId] = useState<string | null>(null);
   const [downloadingBibKey, setDownloadingBibKey] = useState<string | null>(null);
+  const [downloadedBibKey, setDownloadedBibKey] = useState<string | null>(null);
+  const [certificateNotice, setCertificateNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+  const [heroOutOfView, setHeroOutOfView] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const bibInputRef = useRef<HTMLInputElement>(null);
+  const heroSectionRef = useRef<HTMLElement>(null);
   const didInitialUrlScrollRef = useRef(false);
 
   useEffect(() => {
     onLoadState?.(loadState);
   }, [loadState, onLoadState]);
+
+  useEffect(() => {
+    const heroEl = heroSectionRef.current;
+    if (!heroEl || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setHeroOutOfView(!entry.isIntersecting);
+      },
+      { threshold: 0.08 }
+    );
+    observer.observe(heroEl);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -298,12 +323,30 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
     }, 2200);
   };
 
+  useEffect(() => {
+    onActiveRaceTitle?.(selectedRace ? selectedRace.name : null);
+  }, [selectedRace, onActiveRaceTitle]);
+
   const handleDownloadCertificate = async (race: Race, entry: PublicLeaderboardEntry) => {
     const key = `${race.id}_${entry.bibNumber}_${entry.distance}`;
     setDownloadingBibKey(key);
+    setCertificateNotice(null);
     try {
       const { downloadFinisherCertificate } = await import('../lib/finisherCertificate');
       await downloadFinisherCertificate(race, entry, toRunnerResult(entry));
+      setDownloadedBibKey(key);
+      setCertificateNotice({
+        kind: 'success',
+        text: `Official finisher certificate prepared for bib ${entry.bibNumber} (${race.name}).`,
+      });
+      window.setTimeout(() => {
+        setDownloadedBibKey((current) => (current === key ? null : current));
+      }, 2600);
+    } catch {
+      setCertificateNotice({
+        kind: 'error',
+        text: `Could not prepare the certificate for bib ${entry.bibNumber}. Please try again.`,
+      });
     } finally {
       setDownloadingBibKey(null);
     }
@@ -325,7 +368,7 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
   };
 
   return (
-    <main className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10 pb-20 space-y-14">
+    <main className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10 pb-28 md:pb-20 space-y-14">
       {/* Network or Data Load Error Banner */}
       {loadState === 'error' && (
         <Card className="border-red-700 dark:border-red-400 p-4 text-center">
@@ -342,8 +385,63 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
         </Card>
       )}
 
+      {/* Unknown ?race= URL parameter notice */}
+      {loadState === 'ready' && selectedRaceId && !selectedRace && (
+        <div
+          role="status"
+          className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] px-4 py-3 flex flex-wrap items-center justify-between gap-3 shadow-sm"
+        >
+          <p className="text-xs sm:text-sm text-[var(--text-secondary)]">
+            No active race matched that shared link (<code className="font-mono text-xs">{selectedRaceId}</code>). Browse
+            published Philippine races below.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="min-h-11 px-4 text-xs"
+            onClick={handleCloseSelectedRace}
+          >
+            Clear race filter
+          </Button>
+        </div>
+      )}
+
+      {/* Certificate status announcement */}
+      <AnimatePresence>
+        {certificateNotice && (
+          <m.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            role={certificateNotice.kind === 'error' ? 'alert' : 'status'}
+            aria-live="polite"
+            className={`rounded-2xl border px-4 py-3 flex items-center justify-between gap-3 text-xs sm:text-sm ${
+              certificateNotice.kind === 'error'
+                ? 'border-red-600/35 bg-red-50 dark:bg-red-950/35 text-red-700 dark:text-red-300'
+                : 'border-emerald-600/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
+            }`}
+          >
+            <span className="flex items-center gap-2 font-medium">
+              <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" />
+              <span>{certificateNotice.text}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setCertificateNotice(null)}
+              aria-label="Dismiss notification"
+              className="min-h-11 min-w-11 -my-2 -mr-2 flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+            >
+              <X className="w-4 h-4" aria-hidden="true" />
+            </button>
+          </m.div>
+        )}
+      </AnimatePresence>
+
       {/* Hero Banner: Theme-native surface in light and dark mode with transparent Philippine runners cutout */}
       <section
+        ref={heroSectionRef}
         aria-label="RacePulsePH overview"
         className="relative overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-default)] shadow-[0_24px_60px_-16px_rgba(0,0,0,0.10)] dark:shadow-[0_24px_70px_-12px_rgba(0,0,0,0.65)]"
       >
@@ -353,17 +451,34 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
         <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 items-center lg:items-end gap-4 lg:gap-4">
           {/* Left Copy, Instant Bib Lookup & Action Column */}
           <div className="lg:col-span-7 p-5 sm:p-8 lg:py-9 lg:pl-10 lg:pr-4 space-y-4 sm:space-y-5">
-            <h1 className="type-hero text-[var(--text-primary)] tracking-tight">
-              Find a Philippine race. <span className="text-red-700 dark:text-red-400">Follow it live.</span> Get your
-              result.
-            </h1>
-            <p className="type-lead max-w-xl text-[var(--text-secondary)]">
-              Browse verified road runs and trail ultramarathons across the Philippines. Register for distance waves,
-              track checkpoint split times in real time, and download official finisher certificates.
-            </p>
+            <m.h1
+              initial={{ opacity: 0, y: 12 }}
+              animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 }}
+              transition={{ duration: 0.3, delay: 0.02, ease: [0.16, 1, 0.3, 1] }}
+              className="type-hero uppercase tracking-tight"
+            >
+              <span className="heading-float block">Find your next</span>
+              <span className="inline-flex flex-col items-start mt-1">
+                <span className="hero-finish-accent italic tracking-tight">finish line</span>
+                <span aria-hidden="true" className="hero-finish-tape w-full mt-1.5" />
+              </span>
+            </m.h1>
+            <m.p
+              initial={{ opacity: 0, y: 10 }}
+              animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
+              transition={{ duration: 0.28, delay: 0.07, ease: [0.16, 1, 0.3, 1] }}
+              className="type-lead max-w-xl text-[var(--text-secondary)] dark:text-white"
+            >
+              Browse upcoming{' '}
+              <span className="font-semibold text-[var(--text-primary)] dark:text-white">RacePulsePH</span> events, compare distances
+              and fees, then create an account to secure your spot.
+            </m.p>
 
             {/* Instant Finisher & Bib Lookup Form */}
-            <form
+            <m.form
+              initial={{ opacity: 0, y: 10 }}
+              animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
+              transition={{ duration: 0.3, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}
               role="search"
               aria-label="Finisher result and certificate lookup"
               onSubmit={(e) => {
@@ -376,7 +491,7 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
             >
               <label
                 htmlFor="hero-bib-search"
-                className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] font-mono"
+                className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] dark:text-white font-mono"
               >
                 Instant finisher &amp; certificate lookup
               </label>
@@ -414,7 +529,7 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
                   <span>Find result</span>
                 </Button>
               </div>
-            </form>
+            </m.form>
 
             {/* Instant Race Bib Result Matches */}
             {bibQuery.trim().length > 0 && (
@@ -496,10 +611,16 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
                               >
                                 {isDownloading ? (
                                   <RefreshCw className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                                ) : downloadedBibKey === `${race.id}_${entry.bibNumber}_${entry.distance}` ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
                                 ) : (
                                   <FileDown className="w-3.5 h-3.5" aria-hidden="true" />
                                 )}
-                                <span>Certificate</span>
+                                <span>
+                                  {downloadedBibKey === `${race.id}_${entry.bibNumber}_${entry.distance}`
+                                    ? 'Saved'
+                                    : 'Certificate'}
+                                </span>
                               </Button>
                               <Button
                                 type="button"
@@ -521,14 +642,22 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
             )}
 
             {/* Compact Action Button Strip: 2 side-by-side buttons on mobile, full row on tablet/desktop */}
-            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 pt-1">
+            <m.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
+              transition={{ duration: 0.28, delay: 0.16, ease: [0.16, 1, 0.3, 1] }}
+              className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 pt-1"
+            >
               <Button
                 size="default"
-                className="h-11 px-3 sm:px-5 text-[11px] sm:text-xs tracking-normal sm:tracking-wider"
+                className="group h-11 px-3 sm:px-5 text-[11px] sm:text-xs tracking-normal sm:tracking-wider"
                 onClick={() => document.getElementById('events-catalog')?.scrollIntoView({ behavior: 'smooth' })}
               >
                 <span>Browse races</span>
-                <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" aria-hidden="true" />
+                <ArrowRight
+                  className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 transition-transform duration-150 group-hover:translate-x-0.5"
+                  aria-hidden="true"
+                />
               </Button>
 
               <Button
@@ -550,11 +679,16 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
                 <Trophy className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" />
                 <span>Find certificates</span>
               </Button>
-            </div>
+            </m.div>
 
             {/* Single-Line Real Data Counter Ticker */}
             {loadState === 'ready' && (
-              <div className="pt-0.5 flex flex-wrap items-center gap-x-4 gap-y-1 type-caption text-[var(--text-secondary)] font-mono">
+              <m.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }}
+                transition={{ duration: 0.28, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                className="pt-0.5 flex flex-wrap items-center gap-x-4 gap-y-1 type-caption text-[var(--text-secondary)] dark:text-white font-mono"
+              >
                 <span className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-600 dark:bg-emerald-400" aria-hidden="true" />
                   <strong className="text-[var(--text-primary)] font-semibold">{activeRaces.length}</strong> upcoming
@@ -571,15 +705,20 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
                 )}
 
                 <span className="flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-[var(--text-secondary)]" aria-hidden="true" />
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[var(--text-secondary)] dark:text-white" aria-hidden="true" />
                   <strong className="text-[var(--text-primary)] font-semibold">{doneRaces.length}</strong> completed
                 </span>
-              </div>
+              </m.div>
             )}
           </div>
 
-          {/* Right Runner Cutout Column: Docked flush to the bottom edge of the banner card */}
-          <div className="lg:col-span-5 flex items-end justify-center lg:justify-end px-4 sm:px-8 lg:px-0 lg:pr-6 pt-0 lg:pt-6 self-end">
+          {/* Right Runner Cutout Column: LCP-safe translate-only glide docked flush to banner bottom */}
+          <m.div
+            initial={{ y: 8 }}
+            animate={revealed ? { y: 0 } : { y: 8 }}
+            transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
+            className="lg:col-span-5 flex items-end justify-center lg:justify-end px-4 sm:px-8 lg:px-0 lg:pr-6 pt-0 lg:pt-6 self-end"
+          >
             <img
               src="/assets/hero-runners.webp"
               alt="Philippine road and trail runners in race singlets and numbered bibs"
@@ -589,8 +728,10 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
               decoding="async"
               className="w-full max-w-[400px] sm:max-w-[480px] lg:max-w-none lg:w-[108%] lg:-ml-[8%] h-auto object-contain object-bottom block select-none pointer-events-none drop-shadow-[0_14px_24px_rgba(0,0,0,0.14)] dark:drop-shadow-[0_18px_36px_rgba(0,0,0,0.65)]"
             />
-          </div>
+          </m.div>
         </div>
+
+        <div className="track-ticks-rule relative z-10 w-full" aria-hidden="true" />
       </section>
 
       {/* Live Timing Feed Spotlight (Conditional on active broadcast) */}
@@ -710,8 +851,37 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
           )}
         </div>
 
-        {/* Events Grid or Empty State */}
-        {filteredRaces.length === 0 ? (
+        {/* Events Grid, Loading Skeletons, or Empty State */}
+        {loadState === 'loading' ? (
+          <ul
+            aria-busy="true"
+            aria-label="Loading published races"
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+          >
+            {[0, 1, 2].map((idx) => (
+              <li key={idx} className="flex">
+                <Card className="w-full overflow-hidden flex flex-col justify-between animate-pulse">
+                  <div>
+                    <div className="aspect-[16/10] w-full bg-[var(--surface-inset)] border-b border-[var(--border-default)]" />
+                    <CardContent className="p-6 space-y-4">
+                      <div className="space-y-2">
+                        <div className="h-5 w-3/4 rounded-md bg-[var(--surface-inset)]" />
+                        <div className="h-3.5 w-1/2 rounded-md bg-[var(--surface-inset)]" />
+                      </div>
+                      <div className="flex gap-2">
+                        <div className="h-7 w-20 rounded-lg bg-[var(--surface-inset)]" />
+                        <div className="h-7 w-24 rounded-lg bg-[var(--surface-inset)]" />
+                      </div>
+                    </CardContent>
+                  </div>
+                  <div className="px-6 pb-6">
+                    <div className="h-11 w-full rounded-full bg-[var(--surface-inset)]" />
+                  </div>
+                </Card>
+              </li>
+            ))}
+          </ul>
+        ) : filteredRaces.length === 0 ? (
           <Card className="p-12 text-center border-dashed space-y-4">
             <Flag className="w-8 h-8 mx-auto text-[var(--text-secondary)]" aria-hidden="true" />
             <h3 className="font-display text-lg font-semibold text-[var(--text-primary)]">
@@ -734,7 +904,7 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
           </Card>
         ) : (
           <ul className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredRaces.map((race) => {
+            {filteredRaces.map((race, idx) => {
               const isSelected = race.id === selectedRaceId;
               const regOpen = isRaceRegistrationOpen(race, today);
               const isLive = !!race.liveBroadcastEnabled;
@@ -743,9 +913,20 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
               const finisherCount = resultsByRaceId[race.id]?.officialResults?.length || 0;
 
               return (
-                <li key={race.id} className="flex">
+                <m.li
+                  key={race.id}
+                  initial={{ opacity: 0, y: 12 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, amount: 0.08 }}
+                  transition={{
+                    duration: 0.26,
+                    delay: Math.min(idx, 5) * 0.045,
+                    ease: [0.22, 1, 0.36, 1],
+                  }}
+                  className="flex"
+                >
                   <Card
-                    className={`w-full overflow-hidden flex flex-col justify-between transition-shadow duration-200 ${
+                    className={`group w-full overflow-hidden flex flex-col justify-between transition-[transform,box-shadow] duration-200 hover:-translate-y-1 hover:shadow-lg ${
                       isSelected ? 'ring-2 ring-red-700 dark:ring-red-400' : ''
                     }`}
                   >
@@ -755,10 +936,10 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
                         {race.posterImage ? (
                           <img
                             src={race.posterImage}
-                            alt=""
+                            alt={`${race.name} official event poster`}
                             width={640}
                             height={400}
-                            className="w-full h-full object-cover"
+                            className="w-full h-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03]"
                             loading="lazy"
                           />
                         ) : (
@@ -857,7 +1038,7 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
                       )}
                     </div>
                   </Card>
-                </li>
+                </m.li>
               );
             })}
           </ul>
@@ -943,14 +1124,27 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
           </div>
 
           <ul className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {featuredBibFinishers.map(({ race, entry }) => {
-              const key = `featured_${race.id}_${entry.bibNumber}_${entry.distance}`;
-              const isDownloading = downloadingBibKey === `${race.id}_${entry.bibNumber}_${entry.distance}`;
+            {featuredBibFinishers.map(({ race, entry }, idx) => {
+              const bibKey = `${race.id}_${entry.bibNumber}_${entry.distance}`;
+              const key = `featured_${bibKey}`;
+              const isDownloading = downloadingBibKey === bibKey;
+              const isDownloaded = downloadedBibKey === bibKey;
               const displayName = entry.isFreeSlot ? `Bib ${entry.bibNumber}` : entry.fullName;
 
               return (
-                <li key={key} className="flex">
-                  <div className="w-full overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] shadow-sm flex flex-col justify-between">
+                <m.li
+                  key={key}
+                  initial={{ opacity: 0, y: 12 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, amount: 0.08 }}
+                  transition={{
+                    duration: 0.26,
+                    delay: Math.min(idx, 5) * 0.045,
+                    ease: [0.22, 1, 0.36, 1],
+                  }}
+                  className="flex"
+                >
+                  <div className="w-full overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] shadow-sm transition-[transform,box-shadow] duration-200 hover:-translate-y-1 hover:shadow-md flex flex-col justify-between">
                     <div>
                       {/* Authentic Race Bib Top Header */}
                       <div className="bg-red-700 text-white px-4 py-2 flex items-center justify-between gap-2 font-mono text-xs font-semibold">
@@ -1010,19 +1204,57 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
                       >
                         {isDownloading ? (
                           <RefreshCw className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                        ) : isDownloaded ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
                         ) : (
                           <FileDown className="w-3.5 h-3.5" aria-hidden="true" />
                         )}
-                        <span>Certificate</span>
+                        <span>{isDownloaded ? 'Saved' : 'Certificate'}</span>
                       </Button>
                     </div>
                   </div>
-                </li>
+                </m.li>
               );
             })}
           </ul>
         </section>
       )}
+
+      {/* Smart Sticky Mobile Bottom CTA Bar (activates when hero scrolls out of view on narrow phones) */}
+      <AnimatePresence>
+        {heroOutOfView && (
+          <m.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="md:hidden fixed bottom-0 inset-x-0 z-40 border-t border-[var(--border-default)] bg-[var(--surface-card)]/95 backdrop-blur-md px-4 py-2.5 shadow-[0_-10px_30px_-10px_rgba(0,0,0,0.18)]"
+          >
+            <div className="max-w-md mx-auto grid grid-cols-2 gap-2.5">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 text-xs font-semibold gap-1.5"
+                onClick={() => {
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  window.setTimeout(() => bibInputRef.current?.focus(), 220);
+                }}
+              >
+                <Search className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Find bib</span>
+              </Button>
+              <Button
+                type="button"
+                className="h-11 text-xs font-semibold gap-1.5"
+                onClick={() => onRegister()}
+              >
+                <UserPlus className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Register</span>
+              </Button>
+            </div>
+          </m.div>
+        )}
+      </AnimatePresence>
     </main>
   );
 }
