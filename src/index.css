@@ -194,13 +194,17 @@ video {
 .racepulse-horizontal-scroll {
   max-width: 100%;
   overflow-x: auto;
+  overflow-y: hidden;
   overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
+  -ms-overflow-style: none;
   scrollbar-width: none;
 }
 
 .racepulse-horizontal-scroll::-webkit-scrollbar {
   display: none;
+  width: 0;
+  height: 0;
 }
 
 /* iOS Safari auto-zooms in on any <input>/<textarea>/<select> whose computed
