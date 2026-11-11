@@ -1,5 +1,4 @@
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import type { jsPDF as JsPDFInstance } from 'jspdf';
 import { Race, RunnerResult } from '../types';
 import { runnerDivisionLabel, runnerEntryCategory } from './raceEntry';
 import { orderFemaleOverallResults } from './timing';
@@ -8,7 +7,7 @@ function runnerName(result: RunnerResult): string {
   return result.runnerProfile?.isFreeSlot ? 'FREE SLOT' : (result.runnerProfile?.fullName || `Bib ${result.bibNumber}`);
 }
 
-function appendFooter(pdf: jsPDF): void {
+function appendFooter(pdf: JsPDFInstance): void {
   const pages = pdf.getNumberOfPages();
   for (let page = 1; page <= pages; page += 1) {
     pdf.setPage(page);
@@ -23,11 +22,15 @@ function appendFooter(pdf: jsPDF): void {
 // every configured age-category standing. It uses the same result/rank values
 // already visible in the timing console, so the report cannot diverge from
 // the live leaderboard.
-export function generateRankingsReportPdf(race: Race, results: RunnerResult[], distanceFilter?: string): boolean {
+export async function generateRankingsReportPdf(race: Race, results: RunnerResult[], distanceFilter?: string): Promise<boolean> {
   const finishers = results.filter((result) => (result.overallRank !== undefined || result.rank !== undefined)
     && (!distanceFilter || result.runnerProfile.distance === distanceFilter));
   if (finishers.length === 0) return false;
 
+  const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+  ]);
   const pdf = new jsPDF();
   const generatedAt = new Date().toLocaleString('en-PH');
   const sanitizedName = race.name.trim().replace(/[^a-zA-Z0-9_-]/g, '_') || 'Race';

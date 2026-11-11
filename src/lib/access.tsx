@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { collection, doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { subscribeSharedRaces } from './racesStore';
 import { auth, db } from '../firebase';
 import { Race, UserProfile } from '../types';
 import { defaults } from './accessPolicy';
@@ -19,24 +20,23 @@ export function useScopedRacesState(): ScopedRacesState {
   const { inScope, version } = useAccess();
   const [state, setState] = useState<ScopedRacesState>({ races: [], loading: true, error: null });
   useEffect(() => {
-    setState(prev => ({ races: prev.races, loading: true, error: null }));
-    return onSnapshot(
-      collection(db, 'races'),
-      snap => {
-        setState({
-          races: snap.docs.map(d => ({ ...d.data(), id: d.id } as Race)).filter(inScope),
-          loading: false,
-          error: null,
-        });
-      },
-      err => {
+    setState(prev => ({ races: prev.races, loading: prev.races.length === 0, error: null }));
+    return subscribeSharedRaces((rawList, loaded, err) => {
+      if (err) {
         setState({
           races: [],
           loading: false,
-          error: err?.message || 'Unable to load race events.',
+          error: err || 'Unable to load race events.',
         });
-      },
-    );
+        return;
+      }
+      if (!loaded) return;
+      setState({
+        races: rawList.filter(inScope),
+        loading: false,
+        error: null,
+      });
+    });
   }, [inScope, version]);
   return state;
 }

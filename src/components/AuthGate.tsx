@@ -6,6 +6,7 @@ import { db, signUpWithEmail, signInWithEmail, signInWithGoogle, signOutUser } f
 import { clearSignupDraft, getSignupDraft, saveSignupDraft } from '../lib/accountSecurity';
 import { PasswordResetFlow } from './AccountSecurity';
 import { isSuperAdminEmail } from '../lib/superAdmin';
+import type { LegalDocKey } from '../lib/legalConfig';
 import { UserProfile } from '../types';
 import type { User } from 'firebase/auth';
 import {
@@ -118,7 +119,8 @@ async function createUserProfileForRole(
   user: User,
   role: SignupRole,
   displayNameOverride: string | undefined,
-  usernameInput: string
+  usernameInput: string,
+  consentMeta: { over13Confirmed: boolean; termsAcceptedAt: string; marketingOptIn: boolean }
 ): Promise<void> {
   if (!user.emailVerified) {
     throw new Error('Verify your email with the six-digit code before completing your account.');
@@ -135,6 +137,9 @@ async function createUserProfileForRole(
     role: assignedRole,
     approved: assignedRole !== 'organizer',
     createdAt: new Date().toISOString(),
+    over13Confirmed: consentMeta.over13Confirmed,
+    termsAcceptedAt: consentMeta.termsAcceptedAt,
+    marketingOptIn: consentMeta.marketingOptIn,
   };
 
   await runTransaction(db, async (transaction) => {
@@ -174,7 +179,7 @@ interface AuthGateProps {
   initialMode?: Mode;
   onBackToRaces?: () => void;
   onModeChange?: (mode: Mode) => void;
-  onOpenLegal?: (doc: 'privacy' | 'terms') => void;
+  onOpenLegal?: (doc: LegalDocKey) => void;
   signupRoleLocked?: boolean;
 }
 
@@ -191,6 +196,9 @@ export default function AuthGate({
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
   const [signupRole, setSignupRole] = useState<SignupRole>('runner');
+  const [ageStatus, setAgeStatus] = useState<'' | '13_plus' | 'under_13'>('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [marketingOptIn, setMarketingOptIn] = useState(false);
   const [touched, setTouched] = useState<Partial<Record<FieldKey, boolean>>>({});
   const [error, setError] = useState('');
   const [errorNonce, setErrorNonce] = useState(0);
@@ -296,13 +304,31 @@ export default function AuthGate({
       triggerFormError('Password must be at least 6 characters.');
       return;
     }
+    if (ageStatus === 'under_13') {
+      triggerFormError(
+        'Athletes under 13 cannot create an independent account (COPPA / GDPR-K). A parent or legal guardian aged 18+ must register and provide verifiable consent during race entry.'
+      );
+      return;
+    }
+    if (ageStatus !== '13_plus') {
+      triggerFormError('Please confirm your age eligibility before creating an account.');
+      return;
+    }
+    if (!acceptedTerms) {
+      triggerFormError('Please accept the Terms of Service, Privacy Policy, and Refund Policy to continue.');
+      return;
+    }
 
+    const termsAcceptedAt = new Date().toISOString();
     setSubmitting(true);
     try {
       saveSignupDraft(email, {
         displayName: displayName.trim(),
         username: normalizeUsername(username),
         role: signupRoleLocked ? 'runner' : signupRole,
+        over13Confirmed: true,
+        termsAcceptedAt,
+        marketingOptIn,
       });
       await signUpWithEmail(email, password, displayName);
       setPassword('');
@@ -326,7 +352,13 @@ export default function AuthGate({
   };
 
   if (authUser) {
-    return <CompleteProfileForm user={authUser} signupRoleLocked={signupRoleLocked} />;
+    return (
+      <CompleteProfileForm
+        user={authUser}
+        signupRoleLocked={signupRoleLocked}
+        onOpenLegal={onOpenLegal}
+      />
+    );
   }
 
   if (resettingPassword) {
@@ -705,9 +737,24 @@ export default function AuthGate({
                   <RoleSelector role={signupRole} onChange={setSignupRole} />
                 )}
 
+                <SignupConsentFields
+                  idPrefix="signup"
+                  ageStatus={ageStatus}
+                  onAgeStatusChange={setAgeStatus}
+                  acceptedTerms={acceptedTerms}
+                  onAcceptedTermsChange={setAcceptedTerms}
+                  marketingOptIn={marketingOptIn}
+                  onMarketingOptInChange={setMarketingOptIn}
+                  onOpenLegal={onOpenLegal}
+                />
+
                 {errorMessage}
 
-                <button type="submit" disabled={submitting} className={primaryButton(submitting)}>
+                <button
+                  type="submit"
+                  disabled={submitting || ageStatus === 'under_13'}
+                  className={primaryButton(submitting || ageStatus === 'under_13')}
+                >
                   {submitting ? (
                     <>
                       <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> Sending code...
@@ -718,26 +765,6 @@ export default function AuthGate({
                     </>
                   )}
                 </button>
-
-                {onOpenLegal && (
-                  <p className="text-xs text-[var(--text-secondary)] text-center">
-                    <button
-                      type="button"
-                      onClick={() => onOpenLegal('terms')}
-                      className="font-semibold text-[var(--text-primary)] underline underline-offset-4 hover:text-red-700 dark:hover:text-red-400"
-                    >
-                      Terms of Use
-                    </button>
-                    {' · '}
-                    <button
-                      type="button"
-                      onClick={() => onOpenLegal('privacy')}
-                      className="font-semibold text-[var(--text-primary)] underline underline-offset-4 hover:text-red-700 dark:hover:text-red-400"
-                    >
-                      Privacy Policy
-                    </button>
-                  </p>
-                )}
                 </m.form>
               )}
             </AnimatePresence>
@@ -745,6 +772,130 @@ export default function AuthGate({
         </div>
       </div>
     </AuthStage>
+  );
+}
+
+interface SignupConsentFieldsProps {
+  idPrefix: string;
+  ageStatus: '' | '13_plus' | 'under_13';
+  onAgeStatusChange: (status: '13_plus' | 'under_13') => void;
+  acceptedTerms: boolean;
+  onAcceptedTermsChange: (accepted: boolean) => void;
+  marketingOptIn: boolean;
+  onMarketingOptInChange: (optIn: boolean) => void;
+  onOpenLegal?: (doc: LegalDocKey) => void;
+}
+
+function SignupConsentFields({
+  idPrefix,
+  ageStatus,
+  onAgeStatusChange,
+  acceptedTerms,
+  onAcceptedTermsChange,
+  marketingOptIn,
+  onMarketingOptInChange,
+  onOpenLegal,
+}: SignupConsentFieldsProps) {
+  return (
+    <div className="space-y-3 pt-1">
+      <div role="group" aria-labelledby={`${idPrefix}-age-label`} className="space-y-2">
+        <span id={`${idPrefix}-age-label`} className={labelClass}>
+          Age verification (COPPA &amp; GDPR-K)
+        </span>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            aria-pressed={ageStatus === '13_plus'}
+            onClick={() => onAgeStatusChange('13_plus')}
+            className={`min-h-11 px-3 rounded-[var(--radius-control)] border text-xs font-semibold transition-all duration-150 ${focusRing} ${
+              ageStatus === '13_plus'
+                ? `border-red-700 dark:border-red-400 bg-red-50 dark:bg-red-950/35 ${accentText}`
+                : 'glass-inset text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+            }`}
+          >
+            I am 13 or older
+          </button>
+          <button
+            type="button"
+            aria-pressed={ageStatus === 'under_13'}
+            onClick={() => onAgeStatusChange('under_13')}
+            className={`min-h-11 px-3 rounded-[var(--radius-control)] border text-xs font-semibold transition-all duration-150 ${focusRing} ${
+              ageStatus === 'under_13'
+                ? `border-red-700 dark:border-red-400 bg-red-50 dark:bg-red-950/35 ${accentText}`
+                : 'glass-inset text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+            }`}
+          >
+            I am under 13
+          </button>
+        </div>
+        {ageStatus === 'under_13' && (
+          <p
+            role="alert"
+            className="text-xs font-semibold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/60 rounded-[var(--radius-control)] p-3 leading-relaxed"
+          >
+            Children under 13 cannot open a self-service RacePulsePH account. Have a parent or legal guardian aged 18+ create an account and submit a minor registration with verifiable guardian consent.
+          </p>
+        )}
+      </div>
+
+      <div className="space-y-2.5 glass-inset p-3.5 rounded-[var(--radius-control)]">
+        <label htmlFor={`${idPrefix}-terms`} className="flex items-start gap-2.5 cursor-pointer min-h-[28px]">
+          <input
+            id={`${idPrefix}-terms`}
+            type="checkbox"
+            checked={acceptedTerms}
+            onChange={(e) => onAcceptedTermsChange(e.target.checked)}
+            className={`mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--border-default)] accent-[var(--color-red-500)] ${focusRing}`}
+          />
+          <span className="text-xs text-[var(--text-primary)] leading-relaxed">
+            I agree to the{' '}
+            {onOpenLegal ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onOpenLegal('terms')}
+                  className="font-semibold underline underline-offset-2 text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400"
+                >
+                  Terms of Service
+                </button>
+                ,{' '}
+                <button
+                  type="button"
+                  onClick={() => onOpenLegal('privacy')}
+                  className="font-semibold underline underline-offset-2 text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400"
+                >
+                  Privacy Policy
+                </button>
+                , and{' '}
+                <button
+                  type="button"
+                  onClick={() => onOpenLegal('refund')}
+                  className="font-semibold underline underline-offset-2 text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400"
+                >
+                  Refund Policy
+                </button>
+              </>
+            ) : (
+              'Terms of Service, Privacy Policy, and Refund Policy'
+            )}
+            .
+          </span>
+        </label>
+
+        <label htmlFor={`${idPrefix}-marketing`} className="flex items-start gap-2.5 cursor-pointer min-h-[28px]">
+          <input
+            id={`${idPrefix}-marketing`}
+            type="checkbox"
+            checked={marketingOptIn}
+            onChange={(e) => onMarketingOptInChange(e.target.checked)}
+            className={`mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--border-default)] accent-[var(--color-red-500)] ${focusRing}`}
+          />
+          <span className="text-xs text-[var(--text-secondary)] leading-relaxed">
+            Send me optional race announcements and post-event result alerts (you can unsubscribe anytime).
+          </span>
+        </label>
+      </div>
+    </div>
   );
 }
 
@@ -789,11 +940,24 @@ function RoleSelector({ role, onChange }: { role: SignupRole; onChange: (r: Sign
   );
 }
 
-function CompleteProfileForm({ user, signupRoleLocked = false }: { user: User; signupRoleLocked?: boolean }) {
+function CompleteProfileForm({
+  user,
+  signupRoleLocked = false,
+  onOpenLegal,
+}: {
+  user: User;
+  signupRoleLocked?: boolean;
+  onOpenLegal?: (doc: LegalDocKey) => void;
+}) {
   const [draft] = useState(() => getSignupDraft(user.email || ''));
   const [role, setRole] = useState<SignupRole>(signupRoleLocked ? 'runner' : draft?.role || 'runner');
   const [displayName, setDisplayName] = useState(draft?.displayName || user.displayName || '');
   const [username, setUsername] = useState(draft?.username || '');
+  const [ageStatus, setAgeStatus] = useState<'' | '13_plus' | 'under_13'>(
+    draft?.over13Confirmed ? '13_plus' : ''
+  );
+  const [acceptedTerms, setAcceptedTerms] = useState(Boolean(draft?.termsAcceptedAt));
+  const [marketingOptIn, setMarketingOptIn] = useState(Boolean(draft?.marketingOptIn));
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -809,9 +973,33 @@ function CompleteProfileForm({ user, signupRoleLocked = false }: { user: User; s
       setError(invalidUsername);
       return;
     }
+    if (ageStatus === 'under_13') {
+      setError(
+        'Athletes under 13 cannot complete an independent account (COPPA / GDPR-K). Sign out and ask a parent or legal guardian to register.'
+      );
+      return;
+    }
+    if (ageStatus !== '13_plus') {
+      setError('Please confirm that you are 13 or older.');
+      return;
+    }
+    if (!acceptedTerms) {
+      setError('Please accept the Terms of Service, Privacy Policy, and Refund Policy.');
+      return;
+    }
     setSubmitting(true);
     try {
-      await createUserProfileForRole(user, signupRoleLocked ? 'runner' : role, displayName, username);
+      await createUserProfileForRole(
+        user,
+        signupRoleLocked ? 'runner' : role,
+        displayName,
+        username,
+        {
+          over13Confirmed: true,
+          termsAcceptedAt: draft?.termsAcceptedAt || new Date().toISOString(),
+          marketingOptIn,
+        }
+      );
       clearSignupDraft(user.email || '');
     } catch (err: any) {
       setError(err.message?.replace('Firebase: ', '') || 'Failed to finish setting up your account.');
@@ -822,7 +1010,7 @@ function CompleteProfileForm({ user, signupRoleLocked = false }: { user: User; s
 
   const attemptedDraft = React.useRef(false);
   useEffect(() => {
-    if (!draft || attemptedDraft.current) return;
+    if (!draft || !draft.over13Confirmed || !draft.termsAcceptedAt || attemptedDraft.current) return;
     attemptedDraft.current = true;
     void handleSubmit({ preventDefault() {} } as React.FormEvent);
   }, []);
@@ -833,7 +1021,7 @@ function CompleteProfileForm({ user, signupRoleLocked = false }: { user: User; s
         <div className="flex flex-col items-center text-center space-y-4">
           <div className="w-20 h-20 rounded-[22px] border border-zinc-800 bg-[#141416] p-2.5 flex items-center justify-center shadow-sm">
             <img
-              src="/assets/racepulse-mark.png"
+              src="/assets/racepulse-mark-192.png"
               alt="RacePulsePH"
               className="w-full h-full object-contain"
             />
@@ -897,13 +1085,28 @@ function CompleteProfileForm({ user, signupRoleLocked = false }: { user: User; s
             <RoleSelector role={role} onChange={setRole} />
           )}
 
+          <SignupConsentFields
+            idPrefix="complete"
+            ageStatus={ageStatus}
+            onAgeStatusChange={setAgeStatus}
+            acceptedTerms={acceptedTerms}
+            onAcceptedTermsChange={setAcceptedTerms}
+            marketingOptIn={marketingOptIn}
+            onMarketingOptInChange={setMarketingOptIn}
+            onOpenLegal={onOpenLegal}
+          />
+
           {error && (
             <p className={`text-xs font-semibold flex items-start gap-2 ${accentText}`} role="alert">
               <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" /> <span>{error}</span>
             </p>
           )}
 
-          <button type="submit" disabled={submitting} className={primaryButton(submitting)}>
+          <button
+            type="submit"
+            disabled={submitting || ageStatus === 'under_13'}
+            className={primaryButton(submitting || ageStatus === 'under_13')}
+          >
             {submitting ? (
               <>
                 <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> Saving...

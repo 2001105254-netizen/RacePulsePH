@@ -1,5 +1,5 @@
 import { formatRaceTime } from './preciseTime';
-import { jsPDF } from 'jspdf';
+import type { jsPDF as JsPDFInstance } from 'jspdf';
 import { Race, RunnerProfile, RunnerResult } from '../types';
 
 // A public result contains only the fields printed on the certificate. Keeping
@@ -20,17 +20,17 @@ function loadCertificateLogo(): Promise<HTMLImageElement | null> {
     // Public assets work on both localhost and the installed PWA URL. The
     // logo is optional at runtime so a certificate can still download if an
     // older cached PWA cannot retrieve the current asset.
-    image.src = '/assets/racepulse-mark.png';
+    image.src = '/assets/racepulse-mark-192.png';
   });
 }
 
 // Creates the certificate on the runner's own device. No additional personal
 // data is stored: the certified details are the official result already shown
 // in the runner's private My Races view.
-export async function createFinisherCertificate(race: Race, runner: CertificateRunner, result: RunnerResult): Promise<jsPDF | null> {
+export async function createFinisherCertificate(race: Race, runner: CertificateRunner, result: RunnerResult): Promise<JsPDFInstance | null> {
   if (!result.finishTime) return null;
 
-  const logo = await loadCertificateLogo();
+  const [logo, { jsPDF }] = await Promise.all([loadCertificateLogo(), import('jspdf')]);
 
   const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const pageWidth = 297;

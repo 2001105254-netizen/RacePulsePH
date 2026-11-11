@@ -58,6 +58,12 @@ function registrationFromRequest(input) {
   if (!allowedEntryCategories.has(entryCategory)) throw new Error('Choose a valid entry category.');
   const age = Number(input?.age);
   if (!Number.isInteger(age) || age < 1 || age > 120) throw new Error('Enter a valid age.');
+  const parentalConsentConfirmed = Boolean(input?.parentalConsentConfirmed);
+  const parentalGuardianName = safeText(input?.parentalGuardianName, 100, 'Parent or guardian name', age < 13);
+  const parentalGuardianRelationship = safeText(input?.parentalGuardianRelationship, 40, 'Guardian relationship', age < 13);
+  if (age < 13 && !parentalConsentConfirmed) {
+    throw new Error('Verifiable parent or legal guardian consent is required for participants under 13.');
+  }
   const gender = safeText(input?.gender, 10, 'Gender').toLowerCase();
   if (gender !== 'male' && gender !== 'female') throw new Error('Choose a valid gender.');
   const fullName = safeText(input?.fullName, 100, 'Full name').toUpperCase();
@@ -80,6 +86,9 @@ function registrationFromRequest(input) {
     emergencyContactPhone: safeText(input?.emergencyContactPhone, 30, 'Emergency contact number'),
     ...(safeText(input?.shirtSize, 20, 'Shirt size', false) ? { shirtSize: safeText(input?.shirtSize, 20, 'Shirt size', false).toUpperCase() } : {}),
     ...(entryCategory !== 'solo' ? { teamName, teamMembers } : {}),
+    ...(age < 13 ? { parentalConsentConfirmed: true, parentalGuardianName: parentalGuardianName.toUpperCase(), parentalGuardianRelationship: parentalGuardianRelationship.toUpperCase() } : {}),
+    ...(typeof input?.termsAcceptedAt === 'string' && input.termsAcceptedAt ? { termsAcceptedAt: input.termsAcceptedAt.slice(0, 64) } : {}),
+    ...(typeof input?.marketingOptIn === 'boolean' ? { marketingOptIn: input.marketingOptIn } : {}),
   };
 }
 

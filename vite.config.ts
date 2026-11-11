@@ -16,7 +16,10 @@ export default defineConfig(() => {
       rollupOptions: {
         output: {
           manualChunks(id) {
-            if (!id.includes('node_modules')) return undefined;
+            if (!id.includes('node_modules')) {
+              if (id.includes('preload-helper') || id.includes('commonjsHelpers')) return 'vendor-react';
+              return undefined;
+            }
             if (id.includes('firebase') || id.includes('@firebase')) return 'vendor-firebase';
             if (id.includes('xlsx')) return 'vendor-xlsx';
             if (id.includes('jspdf')) return 'vendor-pdf';

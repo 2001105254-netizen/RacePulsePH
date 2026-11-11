@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { Camera, ShieldAlert, UploadCloud } from 'lucide-react';
+import { AlertTriangle, Camera, CheckCircle2, ShieldAlert, UploadCloud, X } from 'lucide-react';
 import { useAndroidBackHandler } from '../lib/capacitorAndroid';
+import DialogSurface from './ui/DialogSurface';
 
 interface QrScannerModalProps {
   onClose: () => void;
@@ -147,31 +148,37 @@ export default function QrScannerModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center pt-[max(1rem,var(--rp-safe-top))] pb-[max(1rem,var(--rp-safe-bottom))] pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] animate-fadeIn">
+    <DialogSurface
+      titleId="qr-scanner-modal-title"
+      onRequestClose={onClose}
+      className="bg-[var(--surface-card)] border border-[var(--border-default)] rounded-[26px] w-full max-w-sm md:max-w-md p-0 shadow-2xl flex flex-col"
+    >
       {/* Hidden container for file decoder */}
       <div id="temporary-file-qr-decoder" className="hidden" />
 
-      <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-default)] rounded-[26px] w-full max-w-sm md:max-w-md overflow-hidden shadow-2xl flex flex-col">
+      <div className="flex flex-col">
         {/* Header */}
-        <div className="p-5 border-b border-[var(--border-subtle)] flex items-center justify-between bg-[var(--surface-inset)]/75 backdrop-blur-md">
+        <div className="p-5 border-b border-[var(--border-subtle)] flex items-center justify-between bg-[var(--surface-inset)]">
           <div className="flex items-center gap-2">
-            <Camera className="w-5 h-5 text-violet-500" />
+            <Camera className="w-5 h-5 text-violet-700 dark:text-violet-400 shrink-0" aria-hidden="true" />
             <div>
-              <h2 className="heading-float text-md font-black tracking-tight font-display text-[var(--text-primary)] uppercase">{title}</h2>
-              <p className="text-[10px] text-[var(--text-secondary)] font-mono">{subtitle}</p>
+              <h2 id="qr-scanner-modal-title" className="heading-float text-base font-semibold tracking-tight font-display text-[var(--text-primary)] uppercase">{title}</h2>
+              <p className="text-[11px] text-[var(--text-secondary)] font-mono">{subtitle}</p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-default)] hover:border-[var(--border-default)] p-2 rounded-[20px] text-xs font-bold uppercase px-3"
+            aria-label="Close QR scanner"
+            className="min-h-11 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition bg-[var(--surface-card)] border border-[var(--border-default)] py-2 px-3 rounded-[20px] text-xs font-semibold uppercase flex items-center gap-1"
           >
-            ✕ Close
+            <X className="w-4 h-4" aria-hidden="true" /> Close
           </button>
         </div>
 
         {/* Body */}
         <div className="p-6 flex flex-col items-center justify-center space-y-4">
-          <div className="text-center text-[11px] text-[var(--text-secondary)] max-w-sm bg-[var(--surface-card)]/72 backdrop-blur-2xl p-3 rounded-[20px] border border-[var(--border-subtle)] leading-relaxed font-sans">
+          <div className="text-center text-xs text-[var(--text-secondary)] max-w-sm bg-[var(--surface-inset)] p-3 rounded-[20px] border border-[var(--border-subtle)] leading-relaxed font-sans">
             {instructions}
           </div>
 
@@ -179,96 +186,96 @@ export default function QrScannerModal({
           <div className="relative w-full aspect-square max-w-[280px] rounded-[26px] overflow-hidden border-2 border-dashed border-[var(--border-default)] bg-black flex items-center justify-center shadow-inner">
             <div id={scannerId} className="w-full h-full" />
             {!cameraActive && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-[var(--text-muted)] p-5 text-center bg-black/50 backdrop-blur-sm">
-                <div className="relative mb-3 flex items-center justify-center w-12 h-12 bg-[var(--surface-inset)]/75 backdrop-blur-md rounded-full border border-[var(--border-default)]">
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-200 p-5 text-center bg-black/70 backdrop-blur-sm">
+                <div className="relative mb-3 flex items-center justify-center w-12 h-12 bg-zinc-900/90 rounded-full border border-white/15">
                   {permissionError ? (
-                    <ShieldAlert className="w-6 h-6 text-red-500 animate-pulse" />
+                    <ShieldAlert className="w-6 h-6 text-red-400" aria-hidden="true" />
                   ) : (
-                    <Camera className="w-6 h-6 text-[var(--text-muted)] animate-pulse" />
+                    <Camera className="w-6 h-6 text-zinc-300" aria-hidden="true" />
                   )}
                 </div>
                 {permissionError ? (
                   <div className="space-y-1.5">
-                    <p className="text-xs font-mono font-black text-rose-500 tracking-wider">🚫 CAMERA ACCESS BLOCKED</p>
-                    <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
-                      Permission was denied. Please click the <strong className="text-[var(--text-primary)] bg-[var(--surface-hover)] px-1 py-0.5 rounded">Camera Icon/Lock</strong> in your browser's address bar to enable webcam access, or click "Upload QR Image" below to scan a photo of the QR ticket!
+                    <p className="text-xs font-mono font-semibold text-red-300 tracking-wider">CAMERA ACCESS BLOCKED</p>
+                    <p className="text-xs text-zinc-200 leading-relaxed">
+                      Permission was denied. Enable webcam access via the Camera icon in your browser address bar, or upload a QR image below.
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-1">
-                    <p className="text-xs font-mono select-none">{cameraError ? 'CAMERA UNAVAILABLE' : 'Awaiting Camera Feed...'}</p>
-                    <p className="text-[10px] text-[var(--text-secondary)] mt-1 max-w-xs leading-normal">{cameraError || 'Please allow camera access inside your browser when prompted.'}</p>
-                    {cameraError && <button type="button" onClick={() => setScannerAttempt((attempt) => attempt + 1)} className="mt-3 rounded-lg border border-violet-500/40 bg-violet-500/15 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-violet-300 hover:bg-violet-500 hover:text-white">Try camera again</button>}
+                    <p className="text-xs font-mono select-none text-zinc-100">{cameraError ? 'CAMERA UNAVAILABLE' : 'Awaiting Camera Feed...'}</p>
+                    <p className="text-xs text-zinc-300 mt-1 max-w-xs leading-normal">{cameraError || 'Allow camera access inside your browser when prompted.'}</p>
+                    {cameraError && <button type="button" onClick={() => setScannerAttempt((attempt) => attempt + 1)} className="mt-3 min-h-11 rounded-lg border border-violet-400/50 bg-violet-700 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white hover:bg-violet-600">Try camera again</button>}
                   </div>
                 )}
               </div>
             )}
             {cameraActive && (
-              <div className="absolute top-3 left-3 bg-violet-600/15 border border-violet-500/20 text-violet-400 text-[9px] font-mono tracking-wider py-1 px-2.5 rounded-md uppercase font-bold animate-pulse">
-                🎥 Scanner Active
+              <div className="absolute top-3 left-3 bg-zinc-900/90 border border-violet-400/40 text-violet-200 text-xs font-mono tracking-wider py-1 px-2.5 rounded-md uppercase font-semibold">
+                Scanner Active
               </div>
             )}
           </div>
 
           {/* Fallback Image Import Trigger */}
           <div className="w-full max-w-[280px] space-y-2">
-            <label className="flex flex-col items-center justify-center border border-violet-500/45 hover:border-violet-400 bg-violet-500/10 p-3 rounded-[20px] cursor-pointer transition select-none active:scale-95 duration-150">
-              <span className="text-[10px] uppercase font-black text-violet-500 flex items-center gap-1.5 font-mono">
-                <Camera className="w-3.5 h-3.5" /> Use iPhone Camera Photo
+            <label className="min-h-11 flex flex-col items-center justify-center border border-violet-500/45 hover:border-violet-400 bg-violet-500/10 p-3 rounded-[20px] cursor-pointer transition select-none active:scale-95 duration-150">
+              <span className="text-xs uppercase font-semibold text-violet-700 dark:text-violet-300 flex items-center gap-1.5 font-mono">
+                <Camera className="w-3.5 h-3.5" aria-hidden="true" /> Use iPhone Camera Photo
               </span>
-              <p className="text-[9px] text-[var(--text-secondary)] mt-1 text-center">Best fallback for iPhone: take one photo of the QR, then it scans automatically.</p>
+              <p className="text-xs text-[var(--text-secondary)] mt-1 text-center">Best fallback for mobile: take a photo of the QR to scan it automatically.</p>
               <input
                 type="file"
                 accept="image/*"
                 capture="environment"
                 onChange={handleFileUpload}
-                className="hidden"
+                className="sr-only"
               />
             </label>
-            <label className="flex flex-col items-center justify-center border border-dashed border-[var(--border-default)] hover:border-[var(--border-default)] bg-[var(--surface-card)]/72 backdrop-blur-2xl p-3 rounded-[20px] cursor-pointer transition select-none active:scale-95 duration-150">
-              <span className="text-[10px] uppercase font-bold text-[var(--text-secondary)] flex items-center gap-1.5 font-mono">
-                <UploadCloud className="w-3.5 h-3.5 text-amber-500" />
+            <label className="min-h-11 flex flex-col items-center justify-center border border-dashed border-[var(--border-default)] bg-[var(--surface-inset)] p-3 rounded-[20px] cursor-pointer transition select-none active:scale-95 duration-150">
+              <span className="text-xs uppercase font-semibold text-[var(--text-primary)] flex items-center gap-1.5 font-mono">
+                <UploadCloud className="w-3.5 h-3.5 text-amber-800 dark:text-amber-300" aria-hidden="true" />
                 Upload Existing QR Photo
               </span>
-              <p className="text-[9px] text-[var(--text-muted)] mt-1">If webcam is unavailable or blocked</p>
+              <p className="text-xs text-[var(--text-secondary)] mt-1">If webcam is unavailable or blocked</p>
               <input
                 type="file"
                 accept="image/*"
                 onChange={handleFileUpload}
-                className="hidden"
+                className="sr-only"
               />
             </label>
           </div>
 
           {/* Dynamic Alerts */}
           {successMessage && (
-            <div className="w-full text-xs text-green-400 font-bold p-3 bg-green-955/15 border border-green-900/35 rounded-[20px] text-center animate-pulse">
-              ✅ {successMessage}
+            <div role="status" className="w-full text-xs text-emerald-800 dark:text-emerald-300 font-semibold p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-[20px] text-center flex items-center justify-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" /> <span>{successMessage}</span>
             </div>
           )}
 
           {errorMessage && (
-            <div className="w-full text-xs text-red-400 font-bold p-3 bg-red-955/15 border border-red-900/35 rounded-[20px] text-center">
-              ⚠️ {errorMessage}
+            <div role="alert" className="w-full text-xs text-red-700 dark:text-red-400 font-semibold p-3 bg-red-500/10 border border-red-500/30 rounded-[20px] text-center flex items-center justify-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" /> <span>{errorMessage}</span>
             </div>
           )}
 
           {localFileError && (
-            <div className="w-full text-xs text-amber-500 font-bold p-3 bg-amber-955/15 border border-amber-900/35 rounded-[20px] text-center">
-              ⚠️ {localFileError}
+            <div role="alert" className="w-full text-xs text-amber-900 dark:text-amber-300 font-semibold p-3 bg-amber-500/10 border border-amber-500/30 rounded-[20px] text-center flex items-center justify-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" /> <span>{localFileError}</span>
             </div>
           )}
         </div>
 
         {/* Footer instruction indicator */}
-        <div className="p-4 bg-[var(--surface-inset)]/75 backdrop-blur-md border-t border-[var(--border-subtle)] flex justify-center items-center">
-          <span className="text-[9.5px] text-[var(--text-secondary)] font-mono text-center tracking-normal leading-relaxed">
-            Hint: You can import screenshots or camera pictures of QR codes directly!
+        <div className="p-4 bg-[var(--surface-inset)] border-t border-[var(--border-subtle)] flex justify-center items-center">
+          <span className="text-xs text-[var(--text-secondary)] font-mono text-center tracking-normal leading-relaxed">
+            Hint: You can import screenshots or camera pictures of QR codes directly.
           </span>
         </div>
       </div>
 
       <style>{`#${scannerId} video { width: 100% !important; height: 100% !important; object-fit: cover !important; background: #000 !important; } #${scannerId} img, #${scannerId} canvas { max-width: 100% !important; }`}</style>
-    </div>
+    </DialogSurface>
   );
 }

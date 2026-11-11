@@ -4,6 +4,7 @@ import { ArrowRight, Search, ShieldCheck } from 'lucide-react';
 import { db } from '../firebase';
 import { Race, UserProfile } from '../types';
 import { accessCommand } from '../lib/access';
+import { subscribeSharedRaces } from '../lib/racesStore';
 import { roleLabel, roles } from '../lib/accessPolicy';
 import { AccessDraft, draftKey, scopeLabel } from '../lib/accessDraft';
 import AccessWorkspace, { AccessHistoryEntry } from './AccessWorkspace';
@@ -57,7 +58,10 @@ function AccessEditor({ user, onClose }: { user: UserProfile; onClose: () => voi
     const next = fromServer(user, value); setBaseline(next); setDraft(next); setRevision(nextRevision); setLoaded(true);
   }, error => setError(error.message)), [user.uid, user.role, user.approved]);
   useEffect(() => onSnapshot(doc(db, 'accessSystem', 'rollout'), snap => setReady(snap.data()?.enforcementReady === true), error => setError(error.message)), []);
-  useEffect(() => onSnapshot(collection(db, 'races'), snap => setRaces(snap.docs.map(item => ({ ...item.data(), id: item.id } as Race)).sort((a,b) => b.date.localeCompare(a.date))), error => setError(error.message)), []);
+  useEffect(() => subscribeSharedRaces((list, loaded, err) => {
+    if (err) { setError(err); return; }
+    if (loaded) setRaces([...list].sort((a, b) => b.date.localeCompare(a.date)));
+  }), []);
   const close = async () => {
     if (busy) return;
     if (!dirty || await confirm({ title: 'Discard unsaved changes?', message: `Your edits to ${user.displayName} haven’t been saved. Discard them to return to the user list.`, confirmLabel: 'Discard changes', cancelLabel: 'Keep editing', destructive: true })) onClose();

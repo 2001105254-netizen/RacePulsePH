@@ -35,6 +35,7 @@ export default function WorkspaceShell({
   const switchGroupId = useId();
   return (
     <div
+      data-desktop-locked={desktopLocked ? 'true' : undefined}
       className={`w-full flex-grow flex flex-col lg:flex-row min-w-0 ${
         desktopLocked ? 'lg:flex-1 lg:min-h-0 lg:overflow-hidden' : ''
       }`}
@@ -49,8 +50,10 @@ export default function WorkspaceShell({
       />
 
       <main
+        id="main-content"
+        tabIndex={-1}
         aria-label={spaceTitle}
-        className={`flex-1 min-w-0 pl-[var(--rp-safe-left)] pr-[var(--rp-safe-right)] lg:pl-0 ${
+        className={`flex-1 min-w-0 pl-[var(--rp-safe-left)] pr-[var(--rp-safe-right)] lg:pl-0 focus:outline-none ${
           desktopLocked ? 'lg:min-h-0 lg:flex lg:flex-col lg:overflow-hidden' : ''
         }`}
       >

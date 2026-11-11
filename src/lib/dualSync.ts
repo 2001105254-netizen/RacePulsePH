@@ -1,4 +1,5 @@
 import { authenticatedFetch, useAccess } from './access';
+import { startLanJsonPoller } from './lanBridge';
 import { useEffect, useRef, useState } from 'react';
 import { onSnapshot, Query } from 'firebase/firestore';
 
@@ -82,30 +83,18 @@ export function useDualSync<T>({
   // 2. Onsite LAN Local Express Server Poller
   useEffect(() => {
     if (!enabled) return;
-    let active = true;
-    const pollLocalServer = async () => {
-      try {
-        const res = await authenticatedFetch(lanEndpoint);
-        if (!res.ok) {
-          if (active) setLanConnected(false);
-          return;
-        }
-        const data = await res.json();
-        if (active) setLanConnected(true);
-        lanItemsRef.current = data[lanResponseKey] || [];
+    return startLanJsonPoller({
+      endpoint: lanEndpoint,
+      fetcher: authenticatedFetch,
+      activeIntervalMs: pollIntervalMs,
+      onData: (payload) => {
+        setLanConnected(true);
+        const record = (payload && typeof payload === 'object') ? (payload as Record<string, unknown>) : {};
+        lanItemsRef.current = Array.isArray(record[lanResponseKey]) ? (record[lanResponseKey] as T[]) : [];
         mergeAndPublish();
-      } catch (err) {
-        if (active) setLanConnected(false);
-      }
-    };
-
-    pollLocalServer();
-    const interval = setInterval(pollLocalServer, pollIntervalMs);
-
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
+      },
+      onDisconnected: () => setLanConnected(false),
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version, lanEndpoint, enabled]);
 

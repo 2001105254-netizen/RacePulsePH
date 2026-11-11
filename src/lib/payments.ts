@@ -13,6 +13,11 @@ export interface PendingRegistrationPayload {
   shirtSize?: string;
   teamName?: string;
   teamMembers?: string[];
+  parentalConsentConfirmed?: boolean;
+  parentalGuardianName?: string;
+  parentalGuardianRelationship?: string;
+  termsAcceptedAt?: string;
+  marketingOptIn?: boolean;
 }
 
 export interface PaymentCheckoutResponse {

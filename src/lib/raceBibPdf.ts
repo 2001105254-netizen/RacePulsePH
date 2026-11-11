@@ -1,4 +1,3 @@
-import { jsPDF } from 'jspdf';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server.browser';
 import { QRCodeSVG } from 'qrcode.react';
@@ -206,6 +205,7 @@ export async function generateRaceBibsPdf(race: Race, runners: RunnerProfile[], 
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas rendering is not supported by this browser.');
 
+  const { jsPDF } = await import('jspdf');
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
   // A4 portrait is 210 × 297 mm. Full-width, half-page bibs deliberately use
   // the whole page with no PDF footer or outer margin for Epson borderless

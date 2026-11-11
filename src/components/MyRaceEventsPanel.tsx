@@ -15,7 +15,6 @@ import {
   Maximize2,
   Plus,
   Radio,
-  RefreshCw,
   Search,
   Settings2,
   Timer,
@@ -30,6 +29,7 @@ import { isRaceRegistrationOpen, philippineDate } from '../lib/raceRegistration'
 import { useWorkspaceHeader } from '../lib/workspaceHeader';
 import { Race, RunnerProfile } from '../types';
 import DialogSurface from './ui/DialogSurface';
+import { AnimatedMetricValue, ValueSkeleton } from './ui/MotionPrimitives';
 
 const DESKTOP_QUERY = '(min-width: 1024px)';
 
@@ -132,6 +132,7 @@ export default function MyRaceEventsPanel({
 
   const [runners, setRunners] = useState<RunnerProfile[]>([]);
   const [runnersLoading, setRunnersLoading] = useState(false);
+  const [settledRaceIds, setSettledRaceIds] = useState<Set<string>>(() => new Set());
   const [runnersWarning, setRunnersWarning] = useState<string | null>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -161,23 +162,37 @@ export default function MyRaceEventsPanel({
   useEffect(() => {
     if (raceIds.length === 0 || !canViewRoster) {
       setRunners([]);
+      setSettledRaceIds(new Set());
       setRunnersLoading(false);
       setRunnersWarning(null);
       return;
     }
 
     let active = true;
+    let flushRafId: number | null = null;
     setRunnersLoading(true);
+    setSettledRaceIds(new Set());
     setRunnersWarning(null);
     const runnersByRaceMap = new Map<string, RunnerProfile[]>();
     const settledRaces = new Set<string>();
 
-    const publish = () => {
+    const flush = () => {
+      flushRafId = null;
       if (!active) return;
-      setRunners(Array.from(runnersByRaceMap.values()).flat());
+      const merged: RunnerProfile[] = [];
+      for (const list of runnersByRaceMap.values()) {
+        for (const item of list) merged.push(item);
+      }
+      setRunners(merged);
+      setSettledRaceIds(new Set(settledRaces));
       if (settledRaces.size >= raceIds.length) {
         setRunnersLoading(false);
       }
+    };
+
+    const scheduleFlush = () => {
+      if (!active || flushRafId !== null) return;
+      flushRafId = window.requestAnimationFrame(flush);
     };
 
     const unsubscribes = raceIds.map((raceId) =>
@@ -188,7 +203,7 @@ export default function MyRaceEventsPanel({
           snapshot.forEach((docSnap) => list.push(docSnap.data() as RunnerProfile));
           runnersByRaceMap.set(raceId, list);
           settledRaces.add(raceId);
-          publish();
+          scheduleFlush();
         },
         (err) => {
           console.warn(`Runners listener failed for race ${raceId}:`, err.message);
@@ -197,13 +212,16 @@ export default function MyRaceEventsPanel({
           if (active) {
             setRunnersWarning('Some runner counts could not be loaded cleanly.');
           }
-          publish();
+          scheduleFlush();
         },
       ),
     );
 
     return () => {
       active = false;
+      if (flushRafId !== null) {
+        window.cancelAnimationFrame(flushRafId);
+      }
       unsubscribes.forEach((unsubscribe) => unsubscribe());
     };
   }, [raceIdsKey, canViewRoster]);
@@ -734,7 +752,13 @@ export default function MyRaceEventsPanel({
               >
                 <span className="font-normal">{item.label}</span>
                 <span className={`font-mono font-semibold tabular-nums ${item.accentClass}`}>
-                  {formatCountPH(item.value)}
+                  <AnimatedMetricValue
+                    value={item.value}
+                    loading={racesLoading && races.length === 0}
+                    format={formatCountPH}
+                    skeletonWidthClass="w-6"
+                    skeletonHeightClass="h-3.5"
+                  />
                 </span>
               </button>
             );
@@ -749,7 +773,15 @@ export default function MyRaceEventsPanel({
             <Users2 className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
             <span className="text-[var(--text-secondary)]">Total Runners</span>
             <span className="font-mono font-semibold tabular-nums text-[var(--text-primary)]">
-              {canViewRoster ? formatCountPH(portfolioStats.totalRunners) : 'Restricted'}
+              {canViewRoster ? (
+                <AnimatedMetricValue
+                  value={portfolioStats.totalRunners}
+                  loading={(racesLoading && races.length === 0) || (runnersLoading && settledRaceIds.size === 0)}
+                  format={formatCountPH}
+                  skeletonWidthClass="w-10"
+                  skeletonHeightClass="h-3.5"
+                />
+              ) : 'Restricted'}
             </span>
           </div>
 
@@ -757,18 +789,24 @@ export default function MyRaceEventsPanel({
             <Coins className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400 shrink-0" aria-hidden="true" />
             <span className="text-[var(--text-secondary)]">Est. Gross</span>
             <span className="font-mono font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
-              {canViewRoster && canViewRevenue
-                ? formatCurrencyPH(portfolioStats.totalRevenue)
-                : 'Restricted'}
+              {canViewRoster && canViewRevenue ? (
+                <AnimatedMetricValue
+                  value={portfolioStats.totalRevenue}
+                  loading={(racesLoading && races.length === 0) || (runnersLoading && settledRaceIds.size === 0)}
+                  format={formatCurrencyPH}
+                  skeletonWidthClass="w-16"
+                  skeletonHeightClass="h-3.5"
+                />
+              ) : 'Restricted'}
             </span>
           </div>
         </div>
 
         <div className="hidden xl:flex items-center gap-3 shrink-0 text-xs text-[var(--text-secondary)]">
           {runnersLoading && canViewRoster && (
-            <span className="inline-flex items-center gap-1 font-semibold">
-              <RefreshCw className="w-3 h-3 animate-spin" aria-hidden="true" />
-              Syncing counts
+            <span className="inline-flex items-center gap-1.5 font-semibold" role="status" aria-live="polite">
+              <ValueSkeleton widthClass="w-8" heightClass="h-2.5" label="Syncing runner counts" />
+              <span>Syncing rosters</span>
             </span>
           )}
           {runnersWarning && (
@@ -791,18 +829,27 @@ export default function MyRaceEventsPanel({
             {racesLoading && races.length === 0 ? (
               <div
                 role="status"
-                className="flex flex-col items-center justify-center py-20 px-4 text-center"
+                aria-label="Loading race events"
+                className="p-4 sm:p-5 space-y-3"
               >
-                <RefreshCw
-                  className="w-6 h-6 animate-spin text-red-700 dark:text-red-400 mb-3"
-                  aria-hidden="true"
-                />
-                <p className="text-sm font-semibold text-[var(--text-primary)]">
-                  Loading race events...
-                </p>
-                <p className="text-xs text-[var(--text-secondary)] mt-1">
-                  Fetching your authorized race directory from Firestore.
-                </p>
+                {[0, 1, 2, 3].map((rowIndex) => (
+                  <div
+                    key={rowIndex}
+                    className="flex items-center justify-between gap-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)] px-3.5 py-3"
+                  >
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <ValueSkeleton widthClass="w-10 shrink-0" heightClass="h-10 rounded-lg" />
+                      <div className="space-y-2 min-w-0 flex-1">
+                        <ValueSkeleton widthClass="w-44 max-w-full" heightClass="h-4" />
+                        <ValueSkeleton widthClass="w-24" heightClass="h-3" />
+                      </div>
+                    </div>
+                    <div className="hidden sm:flex items-center gap-6 shrink-0">
+                      <ValueSkeleton widthClass="w-12" heightClass="h-4" />
+                      <ValueSkeleton widthClass="w-20" heightClass="h-4" />
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : racesError ? (
               <div
@@ -927,15 +974,29 @@ export default function MyRaceEventsPanel({
                         <div>
                           <span className="text-[var(--text-secondary)]">Registered: </span>
                           <span className="font-mono font-semibold tabular-nums text-[var(--text-primary)]">
-                            {canViewRoster ? formatCountPH(row.runnerCount) : 'Restricted'}
+                            {canViewRoster ? (
+                              <AnimatedMetricValue
+                                value={row.runnerCount}
+                                loading={runnersLoading && !settledRaceIds.has(row.race.id)}
+                                format={formatCountPH}
+                                skeletonWidthClass="w-10"
+                                skeletonHeightClass="h-3.5"
+                              />
+                            ) : 'Restricted'}
                           </span>
                         </div>
                         <div>
                           <span className="text-[var(--text-secondary)]">Est. Gross: </span>
                           <span className="font-mono font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
-                            {canViewRoster && canViewRevenue
-                              ? formatCurrencyPH(row.estRevenue)
-                              : 'Restricted'}
+                            {canViewRoster && canViewRevenue ? (
+                              <AnimatedMetricValue
+                                value={row.estRevenue}
+                                loading={runnersLoading && !settledRaceIds.has(row.race.id)}
+                                format={formatCurrencyPH}
+                                skeletonWidthClass="w-16"
+                                skeletonHeightClass="h-3.5"
+                              />
+                            ) : 'Restricted'}
                           </span>
                         </div>
                       </div>
@@ -1117,15 +1178,29 @@ export default function MyRaceEventsPanel({
 
                         <td className="py-2 px-3 align-middle text-right whitespace-nowrap">
                           <span className="font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">
-                            {canViewRoster ? formatCountPH(row.runnerCount) : 'Restricted'}
+                            {canViewRoster ? (
+                              <AnimatedMetricValue
+                                value={row.runnerCount}
+                                loading={runnersLoading && !settledRaceIds.has(row.race.id)}
+                                format={formatCountPH}
+                                skeletonWidthClass="w-10"
+                                skeletonHeightClass="h-4"
+                              />
+                            ) : 'Restricted'}
                           </span>
                         </td>
 
                         <td className="py-2 px-3 align-middle text-right whitespace-nowrap">
                           <span className="font-mono text-sm font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
-                            {canViewRoster && canViewRevenue
-                              ? formatCurrencyPH(row.estRevenue)
-                              : 'Restricted'}
+                            {canViewRoster && canViewRevenue ? (
+                              <AnimatedMetricValue
+                                value={row.estRevenue}
+                                loading={runnersLoading && !settledRaceIds.has(row.race.id)}
+                                format={formatCurrencyPH}
+                                skeletonWidthClass="w-20"
+                                skeletonHeightClass="h-4"
+                              />
+                            ) : 'Restricted'}
                           </span>
                         </td>
 
@@ -1253,7 +1328,15 @@ export default function MyRaceEventsPanel({
                       <Users2 className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
                     </div>
                     <div className="mt-1 font-mono text-lg font-semibold tabular-nums text-[var(--text-primary)]">
-                      {canViewRoster ? formatCountPH(selectedEvent.runnerCount) : 'Restricted'}
+                      {canViewRoster ? (
+                        <AnimatedMetricValue
+                          value={selectedEvent.runnerCount}
+                          loading={runnersLoading && !settledRaceIds.has(selectedEvent.race.id)}
+                          format={formatCountPH}
+                          skeletonWidthClass="w-16"
+                          skeletonHeightClass="h-6"
+                        />
+                      ) : 'Restricted'}
                     </div>
                   </div>
                   <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-3">
@@ -1262,9 +1345,15 @@ export default function MyRaceEventsPanel({
                       <Coins className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
                     </div>
                     <div className="mt-1 font-mono text-lg font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
-                      {canViewRoster && canViewRevenue
-                        ? formatCurrencyPH(selectedEvent.estRevenue)
-                        : 'Restricted'}
+                      {canViewRoster && canViewRevenue ? (
+                        <AnimatedMetricValue
+                          value={selectedEvent.estRevenue}
+                          loading={runnersLoading && !settledRaceIds.has(selectedEvent.race.id)}
+                          format={formatCurrencyPH}
+                          skeletonWidthClass="w-24"
+                          skeletonHeightClass="h-6"
+                        />
+                      ) : 'Restricted'}
                     </div>
                   </div>
                 </div>

@@ -63,8 +63,7 @@ export default function RaceList({
             return (
               <Card
                 key={race.id}
-                onClick={() => onSelectRace(race.id)}
-                className={`group cursor-pointer overflow-hidden text-left transition-[border-color,transform] duration-150 motion-safe:active:scale-[0.99] border-[var(--border-default)] hover:border-red-600/60 flex flex-col justify-between ${
+                className={`group overflow-hidden text-left transition-[border-color,transform] duration-150 border-[var(--border-default)] hover:border-red-600/60 flex flex-col justify-between ${
                   isSelected ? 'ring-2 ring-red-600 border-red-600' : ''
                 }`}
               >
@@ -79,7 +78,7 @@ export default function RaceList({
                       />
                     ) : (
                       <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-900 p-4 text-center">
-                        <Trophy className="w-8 h-8 text-zinc-400 mb-1.5" />
+                        <Trophy className="w-8 h-8 text-zinc-400 mb-1.5" aria-hidden="true" />
                         <span className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
                           RacePulse Official Event
                         </span>
@@ -160,11 +159,13 @@ export default function RaceList({
                 <div className="px-4 pb-4 pt-0">
                   <Button
                     type="button"
+                    aria-pressed={isSelected}
+                    onClick={() => onSelectRace(race.id)}
                     variant={isSelected ? 'default' : 'secondary'}
                     className="w-full min-h-11 h-11 justify-between text-xs"
                   >
                     <span>{isSelected ? 'Active Selection' : actionLabel}</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
+                    <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
                   </Button>
                 </div>
               </Card>

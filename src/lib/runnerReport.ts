@@ -1,6 +1,4 @@
 import { formatDateTime } from './preciseTime';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { AgeCategory, Gender, Race, RunnerProfile } from '../types';
 import { runnerDivisionLabel, runnerEntryCategory } from './raceEntry';
 import { findRunnerAgeCategory } from './timing';
@@ -78,9 +76,13 @@ export function groupRunnersByDistance(runners: RunnerProfile[]): DistanceGroup[
 
 // Renders the kit inventory first (runner totals by distance and shirt size),
 // followed by the full roster grouped by distance and age category.
-export function generateRunnerRosterPdf(race: Race, runners: RunnerProfile[]): boolean {
+export async function generateRunnerRosterPdf(race: Race, runners: RunnerProfile[]): Promise<boolean> {
   if (runners.length === 0) return false;
 
+  const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+  ]);
   const groups = groupRunnersForReport(runners, race.ageCategories || []);
   const pdf = new jsPDF();
 

@@ -1,5 +1,4 @@
 import { ChangeEvent, useMemo, useRef, useState } from 'react';
-import * as XLSX from 'xlsx';
 import { FileDown, FileSpreadsheet, ImagePlus, Printer, RefreshCw, Upload, WandSparkles } from 'lucide-react';
 import { Race, RaceBibFont, RaceBibLayout, RaceBibTemplate, RunnerProfile } from '../types';
 import { generateRaceBibsPdf } from '../lib/raceBibPdf';
@@ -83,6 +82,7 @@ export default function BibStudioPanel() {
   const readRoster = async (file: File) => {
     setMessage('');
     try {
+      const XLSX = await import('xlsx');
       const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       if (!worksheet) throw new Error('No worksheet was found in that file.');

@@ -1,5 +1,5 @@
-import { type ReactNode } from 'react';
-import { AnimatePresence, m, type Variants } from 'motion/react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { m, useReducedMotion, type Variants } from 'motion/react';
 
 export type NavDirection = 'forward' | 'back';
 
@@ -117,21 +117,31 @@ export function AnimatedTabView({
   className?: string;
   children: ReactNode;
 }) {
+  // Single-instance keyed enter unmounts the previous tab immediately so portaled
+  // top-header controls and desktop viewport locks never overlap across switches.
   return (
     <div className={`relative overflow-x-clip ${className}`}>
-      <AnimatePresence mode="popLayout" initial={false} custom={direction}>
-        <m.div
-          key={tabKey}
-          custom={direction}
-          variants={directionalTabVariants}
-          initial="initial"
-          animate="animate"
-          exit="exit"
-          className={`w-full [backface-visibility:hidden] ${className}`}
-        >
-          {children}
-        </m.div>
-      </AnimatePresence>
+      <m.div
+        key={tabKey}
+        initial={{
+          opacity: 0,
+          x: direction === 'forward' ? 12 : -12,
+        }}
+        animate={{
+          opacity: 1,
+          x: 0,
+          transitionEnd: {
+            transform: 'none',
+          },
+        }}
+        transition={{
+          duration: 0.16,
+          ease: EMIL_EASE,
+        }}
+        className={`w-full [backface-visibility:hidden] ${className}`}
+      >
+        {children}
+      </m.div>
     </div>
   );
 }
@@ -144,6 +154,103 @@ export function ShimmerSweep() {
       className="rp-shimmer-sweep pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-black/5 dark:via-white/10 to-transparent"
     />
   );
+}
+
+/** Inline geometry-preserving shimmer pill shown while async numbers or text resolve. */
+export function ValueSkeleton({
+  widthClass = 'w-14',
+  heightClass = 'h-4',
+  className = '',
+  label = 'Loading value',
+}: {
+  widthClass?: string;
+  heightClass?: string;
+  className?: string;
+  label?: string;
+}) {
+  return (
+    <span
+      role="status"
+      aria-label={label}
+      className={`relative inline-block align-middle overflow-hidden rounded-md bg-[var(--surface-inset)] border border-[var(--border-subtle)] ${widthClass} ${heightClass} ${className}`}
+    >
+      <ShimmerSweep />
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+}
+
+/**
+ * Animates numeric metric transitions smoothly via requestAnimationFrame (compositor-clean,
+ * no layout jitter when styled with tabular-nums) and swaps to ValueSkeleton while loading.
+ */
+export function AnimatedMetricValue({
+  value,
+  format,
+  loading = false,
+  skeletonWidthClass = 'w-14',
+  skeletonHeightClass = 'h-4',
+  className = '',
+  durationMs = 220,
+}: {
+  value: number;
+  format?: (val: number) => string;
+  loading?: boolean;
+  skeletonWidthClass?: string;
+  skeletonHeightClass?: string;
+  className?: string;
+  durationMs?: number;
+}) {
+  const prefersReducedMotion = useReducedMotion();
+  const [displayValue, setDisplayValue] = useState(value);
+  const currentRef = useRef(value);
+
+  useEffect(() => {
+    if (loading) {
+      currentRef.current = 0;
+      setDisplayValue(0);
+      return;
+    }
+    if (prefersReducedMotion || currentRef.current === value) {
+      currentRef.current = value;
+      setDisplayValue(value);
+      return;
+    }
+
+    const from = currentRef.current;
+    const delta = value - from;
+    const start = performance.now();
+    let frame = 0;
+
+    const tick = (now: number) => {
+      const progress = Math.min(1, (now - start) / durationMs);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const next = from + delta * eased;
+      currentRef.current = next;
+      setDisplayValue(progress >= 1 ? value : Math.round(next));
+      if (progress < 1) {
+        frame = requestAnimationFrame(tick);
+      } else {
+        currentRef.current = value;
+      }
+    };
+
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [value, loading, prefersReducedMotion, durationMs]);
+
+  if (loading) {
+    return (
+      <ValueSkeleton
+        widthClass={skeletonWidthClass}
+        heightClass={skeletonHeightClass}
+        className={className}
+      />
+    );
+  }
+
+  const formatted = format ? format(displayValue) : String(Math.round(displayValue));
+  return <span className={`tabular-nums ${className}`}>{formatted}</span>;
 }
 
 export function CardSkeletonLoader({

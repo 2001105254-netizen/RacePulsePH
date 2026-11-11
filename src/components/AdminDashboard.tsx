@@ -5,7 +5,8 @@ import { db, signOutUser } from '../firebase';
 import { RunnerProfile, UserProfile } from '../types';
 import WorkspaceShell from './WorkspaceShell';
 import type { WorkspaceSwitchProps } from './DesktopSidebar';
-import { AnimatedTabView, ViewLoadingSkeleton, resolveTabDirection, type NavDirection } from './ui/MotionPrimitives';
+import AccountPrivacyModal from './AccountPrivacyModal';
+import { AnimatedMetricValue, AnimatedTabView, ViewLoadingSkeleton, resolveTabDirection, type NavDirection } from './ui/MotionPrimitives';
 import type { TimingLaunchRequest } from './TimingConsole';
 import type { RaceSetupLaunchRequest } from './RaceSetupPanel';
 import type { LiveBroadcastLaunchRequest } from './LiveBroadcastPanel';
@@ -36,6 +37,7 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
   const { can, authority: isSuperAdmin } = useAccess();
   const [tab, setTab] = useState<AdminTab>(can('engraving.view') ? 'engraving' : 'events');
   const [tabDirection, setTabDirection] = useState<NavDirection>('forward');
+  const [showAccountPrivacy, setShowAccountPrivacy] = useState(false);
   const launchSeqRef = useRef(0);
   const [timingLaunch, setTimingLaunch] = useState<TimingLaunchRequest | null>(null);
   const [setupLaunch, setSetupLaunch] = useState<RaceSetupLaunchRequest | null>(null);
@@ -128,8 +130,9 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
       pendingApprovalNotice={pendingApprovalNotice}
       maxWidthClass="max-w-[1800px]"
       desktopLocked={isLocked}
+      onOpenProfile={() => setShowAccountPrivacy(true)}
     >
-      {/* Mobile-only compact console header + sign out; desktop uses the sidebar avatar tooltip and persistent top bar */}
+      {/* Mobile-only compact console header + account privacy + sign out; desktop uses the sidebar avatar tooltip and persistent top bar */}
       <div
         className={`lg:hidden glass-panel hero-glow flex justify-between ${
           active === 'timing'
@@ -141,13 +144,22 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
           <span className="text-xs tracking-wider font-semibold text-red-700 dark:text-red-400 uppercase block truncate">{spaceTitle}</span>
           <h1 className={`heading-float font-semibold tracking-tight font-display text-[var(--text-primary)] truncate ${active === 'timing' ? 'text-sm' : 'text-xl mt-1'}`}>{profile.displayName}</h1>
         </div>
-        <button
-          type="button"
-          onClick={() => signOutUser()}
-          className="min-h-11 shrink-0 text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)] hover:text-[var(--text-primary)] font-semibold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider self-start sm:self-auto"
-        >
-          <LogOut className="w-3.5 h-3.5" aria-hidden="true" /> Sign Out
-        </button>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowAccountPrivacy(true)}
+            className="min-h-11 shrink-0 text-xs text-[var(--text-primary)] border border-[var(--border-default)] hover:border-red-500/40 hover:text-red-700 dark:hover:text-red-400 font-semibold px-3 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
+          >
+            <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" /> Privacy
+          </button>
+          <button
+            type="button"
+            onClick={() => signOutUser()}
+            className="min-h-11 shrink-0 text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)] hover:text-[var(--text-primary)] font-semibold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
+          >
+            <LogOut className="w-3.5 h-3.5" aria-hidden="true" /> Sign Out
+          </button>
+        </div>
       </div>
 
       <AnimatedTabView
@@ -178,6 +190,8 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
           {active === 'access' && <AccessPanel />}
         </Suspense>
       </AnimatedTabView>
+
+      {showAccountPrivacy && <AccountPrivacyModal profile={profile} onClose={() => setShowAccountPrivacy(false)} />}
     </WorkspaceShell>
   );
 }
@@ -313,7 +327,9 @@ function OrganizersPanel({ canManageAccounts, currentUserId }: { canManageAccoun
 
 function RunnersPanel({ canManageAccounts, currentUserId }: { canManageAccounts: boolean; currentUserId: string }) {
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [usersLoaded, setUsersLoaded] = useState(false);
   const [registrationCounts, setRegistrationCounts] = useState<Record<string, number>>({});
+  const [registrationsLoaded, setRegistrationsLoaded] = useState(false);
   const [search, setSearch] = useState('');
 
   useEffect(() => {
@@ -321,7 +337,11 @@ function RunnersPanel({ canManageAccounts, currentUserId }: { canManageAccounts:
       const list: UserProfile[] = [];
       snapshot.forEach((docSnap) => list.push(docSnap.data() as UserProfile));
       setUsers(list.filter(user => !user.accessRemoved));
-    }, (err) => console.warn('Users listener failed:', err.message));
+      setUsersLoaded(true);
+    }, (err) => {
+      console.warn('Users listener failed:', err.message);
+      setUsersLoaded(true);
+    });
     return () => unsubscribe();
   }, []);
 
@@ -335,7 +355,11 @@ function RunnersPanel({ canManageAccounts, currentUserId }: { canManageAccounts:
         counts[data.uid] = (counts[data.uid] || 0) + 1;
       });
       setRegistrationCounts(counts);
-    }, (err) => console.warn('Runner registrations listener failed:', err.message));
+      setRegistrationsLoaded(true);
+    }, (err) => {
+      console.warn('Runner registrations listener failed:', err.message);
+      setRegistrationsLoaded(true);
+    });
     return () => unsubscribe();
   }, []);
 
@@ -370,11 +394,25 @@ function RunnersPanel({ canManageAccounts, currentUserId }: { canManageAccounts:
       <h1 className="sr-only">Runners Directory</h1>
       <div className="grid grid-cols-2 gap-4">
         <div className="glass-panel p-5 text-center">
-          <p className="text-3xl font-black font-display text-[var(--text-primary)]">{allRunners.length}</p>
+          <p className="text-3xl font-black font-display text-[var(--text-primary)]">
+            <AnimatedMetricValue
+              value={allRunners.length}
+              loading={!usersLoaded}
+              skeletonWidthClass="w-16"
+              skeletonHeightClass="h-8"
+            />
+          </p>
           <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] mt-1">Total Runner Accounts</p>
         </div>
         <div className="glass-panel p-5 text-center">
-          <p className="text-3xl font-black font-display text-red-500">{activeRunnerCount}</p>
+          <p className="text-3xl font-black font-display text-red-500">
+            <AnimatedMetricValue
+              value={activeRunnerCount}
+              loading={!usersLoaded || !registrationsLoaded}
+              skeletonWidthClass="w-16"
+              skeletonHeightClass="h-8"
+            />
+          </p>
           <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] mt-1">Registered for a Race</p>
         </div>
       </div>

@@ -42,6 +42,10 @@ export interface UserProfile {
   emergencyContactPhone?: string;
   shirtSize?: string;
   medicalNotes?: string;
+  over13Confirmed?: boolean;
+  termsAcceptedAt?: string;
+  marketingOptIn?: boolean;
+  marketingUpdatedAt?: string;
 }
 
 // Deliberately separate from UserProfile: this is the small, consent-based
@@ -296,6 +300,12 @@ export interface RunnerProfile {
   // is never presented as a real age or used for a division.
   ageNotProvided?: boolean;
   ageCategoryOverrideId?: string;
+  // Verifiable parental/guardian consent metadata when participant age is under 13.
+  parentalConsentConfirmed?: boolean;
+  parentalGuardianName?: string;
+  parentalGuardianRelationship?: string;
+  termsAcceptedAt?: string;
+  marketingOptIn?: boolean;
   // A pre-created, anonymous race-day place. It uses a normal unique bib but
   // must never be placed in a gender/age category.
   isFreeSlot?: boolean;

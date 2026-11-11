@@ -295,11 +295,11 @@ video {
 }
 
 .dark .glass-panel {
-  background: color-mix(in srgb, var(--surface-card) 62%, transparent);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid color-mix(in srgb, var(--border-default) 70%, transparent);
-  box-shadow: 0 24px 70px -12px rgba(0, 0, 0, 0.65), 0 1px 0 0 rgba(255, 255, 255, 0.04) inset;
+  background: color-mix(in srgb, var(--surface-card) 94%, #000000);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid color-mix(in srgb, var(--border-default) 85%, transparent);
+  box-shadow: 0 18px 44px -16px rgba(0, 0, 0, 0.55), 0 1px 0 0 rgba(255, 255, 255, 0.04) inset;
 }
 
 .glass-inset {
@@ -311,9 +311,9 @@ video {
 }
 
 .dark .glass-inset {
-  background: color-mix(in srgb, var(--surface-inset) 72%, transparent);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: color-mix(in srgb, var(--surface-inset) 92%, #000000);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
 }
@@ -322,9 +322,6 @@ video {
    shadow and glow, not motion - the text should look suspended while staying
    completely still. Dark mode gets a brushed-metal embossed fill (light mode
    stays solid text - a silver gradient has no contrast on a white page). */
-/* Static "floating" heading treatment:
-   Light mode: clean, high-contrast typography using var(--text-primary) without blurry shadows.
-   Dark mode: brushed-metal embossed fill with subtle depth glow. */
 .heading-float {
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
   color: var(--text-primary);
@@ -335,7 +332,6 @@ video {
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.65));
 }
 
 /* Athletic finish-line focal accent: calibrated >= 5.14:1 WCAG AA in both themes */
@@ -682,23 +678,31 @@ input[type="submit"], input[type="button"], input[type="reset"], input[type="ran
     height: calc(100vh - 4rem - 1px - var(--rp-safe-top));
     height: calc(100dvh - 4rem - 1px - var(--rp-safe-top));
   }
+
+  /* Locked workspace panels clip inside an overflow-hidden row below .brand-nav,
+     so switch sidebar to static full-height flow instead of sticky top:65px offset. */
+  [data-desktop-locked="true"] > .desktop-workspace-sidebar {
+    position: static;
+    top: auto;
+    align-self: stretch;
+    height: 100%;
+  }
 }
 
-/* Unified default custom scrollbar across root document and all scrollable regions
-   (8px footprint, pill thumb, no native stepper arrows). Kept unlayered so it takes precedence
-   over base/component/utility layers while leaving .racepulse-horizontal-scroll clean.
-   Standard scrollbar-width/color are scoped to engines without ::-webkit-scrollbar (Firefox)
-   because Chromium 121+ disables ::-webkit-scrollbar when scrollbar-width is set. */
+/* Targeted slim scrollbar styling on document root and overflow containers
+   (avoids universal wildcard selector matching on every DOM element). */
 :root::-webkit-scrollbar,
 html::-webkit-scrollbar,
-*:not(.racepulse-horizontal-scroll)::-webkit-scrollbar {
+.overflow-y-auto::-webkit-scrollbar,
+.overflow-auto::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 :root::-webkit-scrollbar-button,
 html::-webkit-scrollbar-button,
-*:not(.racepulse-horizontal-scroll)::-webkit-scrollbar-button {
+.overflow-y-auto::-webkit-scrollbar-button,
+.overflow-auto::-webkit-scrollbar-button {
   display: none;
   width: 0;
   height: 0;
@@ -713,15 +717,19 @@ html::-webkit-scrollbar-corner {
   background: var(--surface-page);
 }
 
-*:not(.racepulse-horizontal-scroll)::-webkit-scrollbar-track,
-*:not(.racepulse-horizontal-scroll)::-webkit-scrollbar-track-piece,
-*:not(.racepulse-horizontal-scroll)::-webkit-scrollbar-corner {
+.overflow-y-auto::-webkit-scrollbar-track,
+.overflow-y-auto::-webkit-scrollbar-track-piece,
+.overflow-y-auto::-webkit-scrollbar-corner,
+.overflow-auto::-webkit-scrollbar-track,
+.overflow-auto::-webkit-scrollbar-track-piece,
+.overflow-auto::-webkit-scrollbar-corner {
   background: transparent;
 }
 
 :root::-webkit-scrollbar-thumb,
 html::-webkit-scrollbar-thumb,
-*:not(.racepulse-horizontal-scroll)::-webkit-scrollbar-thumb {
+.overflow-y-auto::-webkit-scrollbar-thumb,
+.overflow-auto::-webkit-scrollbar-thumb {
   background-color: var(--scrollbar-thumb);
   border-radius: 9999px;
   border: 1px solid transparent;
@@ -732,24 +740,27 @@ html::-webkit-scrollbar-thumb,
 
 :root::-webkit-scrollbar-thumb:hover,
 html::-webkit-scrollbar-thumb:hover,
-*:not(.racepulse-horizontal-scroll)::-webkit-scrollbar-thumb:hover {
+.overflow-y-auto::-webkit-scrollbar-thumb:hover,
+.overflow-auto::-webkit-scrollbar-thumb:hover {
   background-color: var(--scrollbar-thumb-hover);
 }
 
 :root::-webkit-scrollbar-thumb:active,
 html::-webkit-scrollbar-thumb:active,
-*:not(.racepulse-horizontal-scroll)::-webkit-scrollbar-thumb:active {
+.overflow-y-auto::-webkit-scrollbar-thumb:active,
+.overflow-auto::-webkit-scrollbar-thumb:active {
   background-color: var(--scrollbar-thumb-active);
 }
 
 @supports not selector(::-webkit-scrollbar) {
-  *:not(.racepulse-horizontal-scroll) {
+  html,
+  .overflow-y-auto,
+  .overflow-auto {
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) transparent;
   }
 
   html {
-    scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) var(--surface-page);
   }
 }
@@ -757,14 +768,54 @@ html::-webkit-scrollbar-thumb:active,
 @media (forced-colors: active) {
   :root::-webkit-scrollbar-thumb,
   html::-webkit-scrollbar-thumb,
-  *:not(.racepulse-horizontal-scroll)::-webkit-scrollbar-thumb {
+  .overflow-y-auto::-webkit-scrollbar-thumb,
+  .overflow-auto::-webkit-scrollbar-thumb {
     background-color: ButtonText;
   }
 
   @supports not selector(::-webkit-scrollbar) {
     html,
-    *:not(.racepulse-horizontal-scroll) {
+    .overflow-y-auto,
+    .overflow-auto {
       scrollbar-color: auto;
     }
+  }
+}
+
+/* Accessibility: high-contrast skip link and universal keyboard focus-visible indicator */
+.skip-link {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+  z-index: 9999;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background-color: #141416;
+  color: #ffffff;
+  border: 2px solid #ffffff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  left: 16px;
+  top: 16px;
+  outline: 2px solid #ff6259;
+  outline-offset: 2px;
+}
+
+@layer base {
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  summary:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--color-red-500);
+    outline-offset: 2px;
   }
 }

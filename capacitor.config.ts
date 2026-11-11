@@ -28,6 +28,15 @@ const config: CapacitorConfig = {
     },
   },
   plugins: {
+    SocialLogin: {
+      logLevel: 2,
+      providers: {
+        google: true,
+        facebook: false,
+        apple: false,
+        twitter: false,
+      },
+    },
     SystemBars: {
       insetsHandling: 'css',
       initialViewportFitValueHint: 'cover',

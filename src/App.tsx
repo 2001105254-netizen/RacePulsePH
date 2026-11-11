@@ -5,12 +5,14 @@ import { AnimatePresence, LazyMotion, MotionConfig, domMax, m } from 'motion/rea
 import { auth, db, signOutUser } from './firebase';
 import PublicRaceLanding from './components/PublicRaceLanding';
 import { PublicLegalPage, PublicNotFoundView } from './components/PublicInfoPages';
-import RunningLoader, { type StartupStage } from './components/RunningLoader';
+import CookieConsentBanner from './components/CookieConsentBanner';
+import UnsubscribePage from './components/UnsubscribePage';
+import { LEGAL_CONFIG, LEGAL_DOCUMENTS, type LegalDocKey } from './lib/legalConfig';
 import { exitAndroidApp, subscribeAndroidBackButton, syncAndroidSystemBars } from './lib/capacitorAndroid';
 import { WorkspaceHeaderProvider, useWorkspaceHeader } from './lib/workspaceHeader';
 import { UserProfile } from './types';
 import { Sun, Moon, RefreshCw, Clock3, LogOut, LogIn, UserPlus, ArrowLeft, ShieldCheck, ChevronUp } from 'lucide-react';
-import { ViewLoadingSkeleton, directionalPageVariants, type NavDirection } from './components/ui/MotionPrimitives';
+import { EMIL_EASE, ViewLoadingSkeleton, type NavDirection } from './components/ui/MotionPrimitives';
 
 // Lazy-load signed-in workspaces and authentication screens so public landing
 // visitors do not download admin/operator consoles, QR scanners, or spreadsheet libraries.
@@ -23,17 +25,15 @@ const AuthorizedSession = lazy(async () => {
   return {
     default: function LazyAuthorizedSession({
       profile,
-      onLoadState,
       raceId,
       onRaceHandled,
     }: {
       profile: UserProfile;
-      onLoadState: (state: LoadState) => void;
       raceId: string | null;
       onRaceHandled: () => void;
     }) {
       return (
-        <AccessProvider key={profile.uid} profile={profile} onLoadState={onLoadState}>
+        <AccessProvider key={profile.uid} profile={profile}>
           <AuthorizedWorkspace profile={profile} raceId={raceId} onRaceHandled={onRaceHandled} />
         </AccessProvider>
       );
@@ -45,8 +45,8 @@ const EmailVerificationScreen = lazy(() =>
 );
 
 type Theme = 'light' | 'dark';
-type LoadState = 'loading' | 'ready' | 'error';
-type GuestScreen = 'landing' | 'login' | 'signup' | 'privacy' | 'terms' | 'not-found';
+type GuestScreen = 'landing' | 'login' | 'signup' | LegalDocKey | 'unsubscribe' | 'not-found';
+type SignedInUtilityView = LegalDocKey | 'unsubscribe' | null;
 
 function normalizedPathname(): string {
   const raw = window.location.pathname.toLowerCase();
@@ -62,14 +62,23 @@ function registrationRaceIdFromUrl(): string | null {
   return raceId || null;
 }
 
+function utilityViewFromPath(path: string): SignedInUtilityView {
+  if (path === '/privacy' || path === '/privacy-policy') return 'privacy';
+  if (path === '/terms' || path === '/terms-of-service' || path === '/terms-of-use') return 'terms';
+  if (path === '/refund-policy' || path === '/refund') return 'refund';
+  if (path === '/cookie-policy' || path === '/cookies') return 'cookies';
+  if (path === '/unsubscribe') return 'unsubscribe';
+  return null;
+}
+
 function guestScreenFromLocation(): GuestScreen {
   if (registrationRaceIdFromUrl()) return 'signup';
   const path = normalizedPathname();
   if (path === '/' || path === '/index.html') return 'landing';
   if (path === '/login' || path === '/signin') return 'login';
   if (path === '/register' || path === '/signup') return 'signup';
-  if (path === '/privacy' || path === '/privacy-policy') return 'privacy';
-  if (path === '/terms' || path === '/terms-of-use') return 'terms';
+  const utility = utilityViewFromPath(path);
+  if (utility) return utility;
   return 'not-found';
 }
 
@@ -80,9 +89,15 @@ function pathForGuestScreen(screen: GuestScreen): string {
     case 'signup':
       return '/register';
     case 'privacy':
-      return '/privacy';
+      return '/privacy-policy';
     case 'terms':
-      return '/terms';
+      return '/terms-of-service';
+    case 'refund':
+      return '/refund-policy';
+    case 'cookies':
+      return '/cookie-policy';
+    case 'unsubscribe':
+      return '/unsubscribe';
     default:
       return '/';
   }
@@ -118,25 +133,26 @@ function AppContent() {
   const setLeftSlotEl = headerCtx?.setLeftSlotEl;
   const setRightSlotEl = headerCtx?.setRightSlotEl;
   const desktopLocked = Boolean(headerCtx?.desktopLocked);
+  useEffect(() => {
+    if (desktopLocked) {
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    }
+  }, [desktopLocked]);
   const [authUser, setAuthUser] = useState<User | null | undefined>(undefined); // undefined = still checking session
   const [profile, setProfile] = useState<UserProfile | null | undefined>(undefined);
   const [profileError, setProfileError] = useState(false);
   const [authError, setAuthError] = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
   const [guestScreen, setGuestScreen] = useState<GuestScreen>(() => guestScreenFromLocation());
+  const [signedInUtilityView, setSignedInUtilityView] = useState<SignedInUtilityView>(() =>
+    utilityViewFromPath(normalizedPathname())
+  );
   const [navDirection, setNavDirection] = useState<NavDirection>('forward');
   const wasSignedInRef = React.useRef<boolean | null>(null);
   const [currentPathname, setCurrentPathname] = useState<string>(() => window.location.pathname);
   const [activeRaceTitle, setActiveRaceTitle] = useState<string | null>(null);
   const [pendingRaceId, setPendingRaceId] = useState<string | null>(() => registrationRaceIdFromUrl());
   const [runnerSignupIntent, setRunnerSignupIntent] = useState(() => !!registrationRaceIdFromUrl());
-  const [openingDone, setOpeningDone] = useState(false);
-  const [accessLoad, setAccessLoad] = useState<{ uid: string; state: LoadState }>({ uid: '', state: 'loading' });
-  const [racesLoad, setRacesLoad] = useState<LoadState>('loading');
-  const finishOpening = useCallback(() => setOpeningDone(true), []);
-  const accessUid = profile?.uid || '';
-  const reportAccessLoad = useCallback((state: LoadState) => setAccessLoad({ uid: accessUid, state }), [accessUid]);
-  const reportRacesLoad = useCallback((state: LoadState) => setRacesLoad(state), []);
 
   const navigateGuest = useCallback(
     (
@@ -166,10 +182,52 @@ function AppContent() {
     []
   );
 
+  const closeSignedInUtility = useCallback(() => {
+    setSignedInUtilityView(null);
+    const url = new URL(window.location.href);
+    url.pathname = '/';
+    url.search = '';
+    window.history.pushState({}, '', url.pathname);
+    setCurrentPathname('/');
+    setNavDirection('back');
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }, []);
+
+  const openUtilityView = useCallback(
+    (next: Exclude<SignedInUtilityView, null>) => {
+      if (!authUser || !profile) {
+        navigateGuest(next);
+        return;
+      }
+      const targetPath = pathForGuestScreen(next);
+      const url = new URL(window.location.href);
+      url.pathname = targetPath;
+      const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+      if (`${window.location.pathname}${window.location.search}${window.location.hash}` !== nextUrl) {
+        window.history.pushState({}, '', nextUrl);
+      }
+      setNavDirection('forward');
+      setCurrentPathname(url.pathname);
+      setSignedInUtilityView(next);
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    },
+    [authUser, navigateGuest, profile]
+  );
+
+  useEffect(() => {
+    const onOpenLegalEvent = (event: Event) => {
+      const detail = (event as CustomEvent<LegalDocKey | 'unsubscribe'>).detail;
+      if (detail) openUtilityView(detail);
+    };
+    window.addEventListener('racepulse:open-legal', onOpenLegalEvent);
+    return () => window.removeEventListener('racepulse:open-legal', onOpenLegalEvent);
+  }, [openUtilityView]);
+
   useEffect(() => {
     const onPopState = () => {
       setNavDirection('back');
       setCurrentPathname(window.location.pathname);
+      setSignedInUtilityView(utilityViewFromPath(normalizedPathname()));
       if (!authUser) {
         const regId = registrationRaceIdFromUrl();
         setPendingRaceId(regId);
@@ -199,6 +257,11 @@ function AppContent() {
         return;
       }
 
+      if (signedInUtilityView) {
+        closeSignedInUtility();
+        return;
+      }
+
       const backEvent = new CustomEvent('racepulse:back', {
         cancelable: true,
         detail: { hardware: true },
@@ -208,7 +271,7 @@ function AppContent() {
         exitAndroidApp();
       }
     });
-  }, [authUser, guestScreen, navigateGuest]);
+  }, [authUser, closeSignedInUtility, guestScreen, navigateGuest, signedInUtilityView]);
 
   // Dashboard navigation lives in React state, so browser history is not a
   // safe back action. Each signed-in console listens for this event and goes
@@ -217,6 +280,10 @@ function AppContent() {
     setNavDirection('back');
     if (!authUser) {
       navigateGuest('landing', { direction: 'back' });
+      return;
+    }
+    if (signedInUtilityView) {
+      closeSignedInUtility();
       return;
     }
     window.dispatchEvent(new Event('racepulse:back'));
@@ -265,7 +332,6 @@ function AppContent() {
       setProfile(null);
       return;
     }
-    setAccessLoad({ uid: authUser.uid, state: 'loading' });
     setProfile(undefined);
     setProfileError(false);
     const unsubscribe = onSnapshot(
@@ -281,12 +347,25 @@ function AppContent() {
     return () => unsubscribe();
   }, [authUser, emailVerified]);
 
+  const [cookiePreferencesNonce, setCookiePreferencesNonce] = useState(0);
+
   useEffect(() => {
     let title = 'RacePulsePH | Philippine Race Timing, Bib Lookup, and Finisher Results';
     let description =
       'Find verified Philippine road runs and trail races, look up runner bibs and checkpoint split times live, and download official finisher certificates.';
 
-    if (authUser && profile) {
+    const activeUtility = signedInUtilityView || (!authUser ? guestScreen : null);
+    const legalDocMeta = activeUtility
+      ? LEGAL_DOCUMENTS.find((entry) => entry.key === activeUtility)
+      : undefined;
+
+    if (legalDocMeta) {
+      title = `${legalDocMeta.title} | RacePulsePH`;
+      description = legalDocMeta.description;
+    } else if (activeUtility === 'unsubscribe') {
+      title = 'Email Preferences & Unsubscribe | RacePulsePH';
+      description = 'Opt out of RacePulsePH promotional and announcement emails with one click without signing in.';
+    } else if (authUser && profile) {
       title = 'Workspace | RacePulsePH';
     } else if (guestScreen === 'landing' && activeRaceTitle) {
       title = `${activeRaceTitle} | Live Timing and Results | RacePulsePH`;
@@ -299,14 +378,6 @@ function AppContent() {
       title = 'Create Account | RacePulsePH';
       description =
         'Create a RacePulsePH account to register for upcoming Philippine runs, claim wave bibs, and download verified finisher certificates.';
-    } else if (guestScreen === 'privacy') {
-      title = 'Privacy Policy | RacePulsePH';
-      description =
-        'How RacePulsePH handles runner registrations, published race timing records, and account verification.';
-    } else if (guestScreen === 'terms') {
-      title = 'Terms of Use | RacePulsePH';
-      description =
-        'Terms governing athlete registrations, official checkpoint split results, and organizer operations on RacePulsePH.';
     } else if (guestScreen === 'not-found') {
       title = 'Page Not Found (404) | RacePulsePH';
       description = 'The requested RacePulsePH route does not exist. Return to the Philippine race directory or sign in.';
@@ -315,103 +386,135 @@ function AppContent() {
     document.title = title;
     const metaDesc = document.querySelector('meta[name="description"]');
     if (metaDesc) metaDesc.setAttribute('content', description);
-  }, [authUser, profile, guestScreen, activeRaceTitle]);
+  }, [authUser, profile, guestScreen, activeRaceTitle, signedInUtilityView]);
 
   const stillLoading = authUser === undefined || (!!authUser && profile === undefined);
-  // Completion is driven by the initial usable screen, not elapsed animation
-  // time. Live race updates continue normally after the opening has finished.
-  const currentAccessLoad = accessLoad.uid === authUser?.uid ? accessLoad.state : 'loading';
-  let startupStage: StartupStage;
-  if (authError || (authUser && profileError)) startupStage = 'error';
-  else if (authUser === undefined) startupStage = 'session';
-  else if (authUser && profile === undefined) startupStage = 'profile';
-  else if (authUser && profile) startupStage = currentAccessLoad === 'loading' ? 'access' : currentAccessLoad;
-  else if (!authUser && guestScreen === 'landing') startupStage = racesLoad === 'loading' ? 'races' : racesLoad;
-  else startupStage = 'ready';
 
   const suspenseFallback = <ViewLoadingSkeleton label="Loading RacePulsePH view" />;
 
   let content: React.ReactNode;
   if (authError || (profileError && authUser)) {
     content = (
-      <div className="flex-grow flex flex-col items-center justify-center gap-4 px-4 py-20 text-center">
+      <main id="main-content" tabIndex={-1} className="flex-grow flex flex-col items-center justify-center gap-4 px-4 py-20 text-center focus:outline-none">
         <p role="alert">{authError ? 'Could not check your session.' : 'Could not load your account.'} Please try again.</p>
-        <button onClick={() => window.location.reload()} className="rounded-xl bg-red-600 px-5 py-3 font-bold text-white">
+        <button onClick={() => window.location.reload()} className="min-h-11 rounded-xl bg-red-700 hover:bg-red-600 px-5 py-3 font-semibold text-white">
           Try again
         </button>
         {authUser && (
-          <button onClick={() => signOutUser()} className="text-sm text-[var(--text-secondary)]">
+          <button onClick={() => signOutUser()} className="min-h-11 px-4 text-sm text-[var(--text-secondary)]">
             Sign out
           </button>
         )}
-      </div>
+      </main>
     );
   } else if (stillLoading) {
-    content = suspenseFallback;
+    content = (
+      <main id="main-content" tabIndex={-1} className="flex-grow focus:outline-none">
+        {suspenseFallback}
+      </main>
+    );
   } else if (authUser && !emailVerified && !profile) {
     content = (
-      <Suspense fallback={suspenseFallback}>
-        <EmailVerificationScreen key={authUser.uid} user={authUser} onVerified={() => setEmailVerified(true)} />
-      </Suspense>
+      <main id="main-content" tabIndex={-1} className="flex-grow flex flex-col focus:outline-none">
+        <Suspense fallback={suspenseFallback}>
+          <EmailVerificationScreen key={authUser.uid} user={authUser} onVerified={() => setEmailVerified(true)} />
+        </Suspense>
+      </main>
     );
   } else if (!authUser || !profile) {
     if (authUser) {
       content = (
-        <Suspense fallback={suspenseFallback}>
-          <AuthGate authUser={authUser} signupRoleLocked={runnerSignupIntent} />
-        </Suspense>
+        <main id="main-content" tabIndex={-1} className="flex-grow flex flex-col focus:outline-none">
+          <Suspense fallback={suspenseFallback}>
+            <AuthGate
+              authUser={authUser}
+              onOpenLegal={(docView) => navigateGuest(docView)}
+              signupRoleLocked={runnerSignupIntent}
+            />
+          </Suspense>
+        </main>
       );
     } else if (guestScreen === 'landing') {
       content = (
         <PublicRaceLanding
-          revealed={openingDone}
+          revealed
           onActiveRaceTitle={setActiveRaceTitle}
-          onLoadState={reportRacesLoad}
           onRegister={(raceId) => {
             navigateGuest('signup', { raceId: raceId || null, lockRunner: true });
           }}
         />
       );
-    } else if (guestScreen === 'privacy' || guestScreen === 'terms') {
+    } else if (
+      guestScreen === 'privacy' ||
+      guestScreen === 'terms' ||
+      guestScreen === 'refund' ||
+      guestScreen === 'cookies'
+    ) {
       content = (
-        <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10 flex-grow">
+        <main id="main-content" tabIndex={-1} className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10 flex-grow focus:outline-none">
           <PublicLegalPage
             doc={guestScreen}
             onBack={() => navigateGuest('landing')}
             onSwitchDoc={(nextDoc) => navigateGuest(nextDoc)}
             onOpenAuth={() => navigateGuest('login')}
+            onOpenCookiePreferences={() => setCookiePreferencesNonce((n) => n + 1)}
+            onOpenUnsubscribe={() => navigateGuest('unsubscribe')}
           />
-        </div>
+        </main>
+      );
+    } else if (guestScreen === 'unsubscribe') {
+      content = (
+        <main id="main-content" tabIndex={-1} className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10 flex-grow focus:outline-none">
+          <UnsubscribePage onBack={() => navigateGuest('landing')} />
+        </main>
       );
     } else if (guestScreen === 'not-found') {
       content = (
-        <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10 flex-grow flex items-center justify-center">
+        <main id="main-content" tabIndex={-1} className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10 flex-grow flex items-center justify-center focus:outline-none">
           <PublicNotFoundView
             pathname={currentPathname}
             onGoHome={() => navigateGuest('landing')}
             onGoLogin={() => navigateGuest('login')}
           />
-        </div>
+        </main>
       );
     } else {
       content = (
-        <Suspense fallback={suspenseFallback}>
-          <AuthGate
-            initialMode={guestScreen}
-            onBackToRaces={() => navigateGuest('landing')}
-            onModeChange={(nextMode) => navigateGuest(nextMode, { preserveScroll: true })}
-            onOpenLegal={(docView) => navigateGuest(docView)}
-            signupRoleLocked={runnerSignupIntent}
-          />
-        </Suspense>
+        <main id="main-content" tabIndex={-1} className="flex-grow flex flex-col focus:outline-none">
+          <Suspense fallback={suspenseFallback}>
+            <AuthGate
+              initialMode={guestScreen}
+              onBackToRaces={() => navigateGuest('landing')}
+              onModeChange={(nextMode) => navigateGuest(nextMode, { preserveScroll: true })}
+              onOpenLegal={(docView) => navigateGuest(docView)}
+              signupRoleLocked={runnerSignupIntent}
+            />
+          </Suspense>
+        </main>
       );
     }
+  } else if (signedInUtilityView) {
+    content = (
+      <main id="main-content" tabIndex={-1} className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10 flex-grow focus:outline-none">
+        {signedInUtilityView === 'unsubscribe' ? (
+          <UnsubscribePage onBack={closeSignedInUtility} />
+        ) : (
+          <PublicLegalPage
+            doc={signedInUtilityView}
+            onBack={closeSignedInUtility}
+            onSwitchDoc={(nextDoc) => openUtilityView(nextDoc)}
+            onOpenAuth={closeSignedInUtility}
+            onOpenCookiePreferences={() => setCookiePreferencesNonce((n) => n + 1)}
+            onOpenUnsubscribe={() => openUtilityView('unsubscribe')}
+          />
+        )}
+      </main>
+    );
   } else {
     content = (
-      <Suspense fallback={suspenseFallback}>
+      <Suspense fallback={<main id="main-content" tabIndex={-1} className="flex-grow focus:outline-none">{suspenseFallback}</main>}>
         <AuthorizedSession
           profile={profile}
-          onLoadState={reportAccessLoad}
           raceId={pendingRaceId}
           onRaceHandled={() => {
             setPendingRaceId(null);
@@ -424,21 +527,30 @@ function AppContent() {
     );
   }
 
-  const showBackButton = !authUser && guestScreen !== 'landing';
-  const isWorkspaceShell = Boolean(authUser && profile && !authError && !profileError);
-  const viewKey = authUser ? (profile ? 'workspace' : 'auth-setup') : guestScreen === 'login' || guestScreen === 'signup' ? 'auth-portal' : guestScreen;
+  const showBackButton = (!authUser && guestScreen !== 'landing') || Boolean(signedInUtilityView);
+  const isWorkspaceShell = Boolean(authUser && profile && !authError && !profileError && !signedInUtilityView);
+  const viewKey = signedInUtilityView
+    ? `utility-${signedInUtilityView}`
+    : authUser
+      ? profile
+        ? 'workspace'
+        : 'auth-setup'
+      : guestScreen === 'login' || guestScreen === 'signup'
+        ? 'auth-portal'
+        : guestScreen;
 
   return (
     <LazyMotion features={domMax}>
       <MotionConfig reducedMotion="user">
         <div
           id="app_root"
-          inert={!openingDone}
-          aria-hidden={!openingDone || undefined}
           className={`min-h-screen min-h-dvh bg-[var(--surface-page)] text-[var(--text-primary)] flex flex-col ${
-            desktopLocked ? 'lg:h-screen lg:h-dvh lg:overflow-hidden' : ''
+            desktopLocked && !signedInUtilityView ? 'lg:h-screen lg:h-dvh lg:overflow-hidden' : ''
           }`}
         >
+          <a href="#main-content" className="skip-link">
+            Skip to main content
+          </a>
           {/* Global ambient glow - sits behind every page.
               Light mode: directional warm top-left beam via .ambient-glow.
               Dark mode: dramatic red light-ray beaming in from top-left. */}
@@ -467,7 +579,7 @@ function AppContent() {
                 >
                   <div className="w-9 h-9 rounded-[10px] border border-white/15 bg-transparent flex items-center justify-center p-1 transition-colors shrink-0">
                     <img
-                      src="/assets/racepulse-mark.png"
+                      src="/assets/racepulse-mark-192.png"
                       alt="RacePulsePH"
                       width={28}
                       height={28}
@@ -484,17 +596,17 @@ function AppContent() {
                   <div
                     ref={setLeftSlotEl}
                     id="workspace_header_left_slot"
-                    className="hidden lg:flex items-center gap-2 min-w-0 flex-1"
+                    className="hidden lg:flex items-center gap-2 min-w-0 flex-1 overflow-hidden"
                   />
                 )}
               </div>
 
-              <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+              <div className={`flex items-center gap-1.5 sm:gap-2 ${isWorkspaceShell ? 'min-w-0 shrink' : 'shrink-0'}`}>
                 {isWorkspaceShell && (
                   <div
                     ref={setRightSlotEl}
                     id="workspace_header_right_slot"
-                    className="hidden lg:flex items-center gap-1.5"
+                    className="hidden lg:flex items-center gap-1.5 min-w-0 overflow-x-auto racepulse-horizontal-scroll"
                   />
                 )}
                 {!authUser && guestScreen === 'landing' && (
@@ -566,71 +678,117 @@ function AppContent() {
             </div>
           </nav>
 
-          <div className={`relative flex-grow flex flex-col overflow-x-clip ${desktopLocked ? 'lg:min-h-0 lg:overflow-hidden' : ''}`}>
-            <AnimatePresence mode="popLayout" initial={false} custom={navDirection}>
-              <m.div
-                key={viewKey}
-                custom={navDirection}
-                variants={directionalPageVariants}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                className={`w-full flex-grow flex flex-col [backface-visibility:hidden] ${desktopLocked ? 'lg:min-h-0 lg:overflow-hidden' : ''}`}
-              >
-                {content}
-              </m.div>
-            </AnimatePresence>
+          <div className={`relative flex-grow flex flex-col overflow-x-clip ${desktopLocked && !signedInUtilityView ? 'lg:min-h-0 lg:overflow-hidden' : ''}`}>
+            <m.div
+              key={viewKey}
+              initial={{ opacity: 0, x: navDirection === 'forward' ? 14 : -14 }}
+              animate={{
+                opacity: 1,
+                x: 0,
+                transitionEnd: { transform: 'none' },
+              }}
+              transition={{ duration: 0.16, ease: EMIL_EASE }}
+              className={`w-full flex-grow flex flex-col [backface-visibility:hidden] ${desktopLocked && !signedInUtilityView ? 'lg:min-h-0 lg:overflow-hidden' : ''}`}
+            >
+              {content}
+            </m.div>
           </div>
 
-          {/* Unified Semantic Footer with Philippine athletic greeting and legal/support navigation */}
-          <footer className={`border-t border-[var(--border-default)] bg-[var(--surface-card)] mt-auto text-xs text-[var(--text-secondary)] ${isWorkspaceShell ? 'pb-24 lg:pb-0' : 'pb-[var(--rp-safe-bottom)]'} ${desktopLocked ? 'lg:hidden' : ''}`}>
-            <div className={`${isWorkspaceShell ? 'w-full' : 'max-w-7xl mx-auto'} flex flex-col md:flex-row items-center justify-between pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))] py-4 gap-3`}>
-              <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-3 gap-y-2">
-                <span className="font-mono text-[var(--text-primary)] font-semibold">
-                  &copy; {new Date().getFullYear()} RacePulsePH
-                </span>
-                <span aria-hidden="true">&bull;</span>
-                <span>Happy running ka Racepulse!</span>
-              </div>
+          {/* Global Footer: verifiable business identity, 4 required legal routes, consent controls, and email unsubscribe */}
+          <footer className={`border-t border-[var(--border-default)] bg-[var(--surface-card)] mt-auto text-xs text-[var(--text-secondary)] ${isWorkspaceShell ? 'pb-24 lg:pb-0' : 'pb-[var(--rp-safe-bottom)]'} ${desktopLocked && !signedInUtilityView ? 'lg:hidden' : ''}`}>
+            <div className={`${isWorkspaceShell ? 'w-full' : 'max-w-7xl mx-auto'} pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))] py-5 space-y-4`}>
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="space-y-1 text-center lg:text-left">
+                  <p className="text-[var(--text-primary)] font-semibold">
+                    &copy; {new Date().getFullYear()} {LEGAL_CONFIG.companyName}
+                  </p>
+                  <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                    {LEGAL_CONFIG.businessAddress} &bull; {LEGAL_CONFIG.jurisdiction} &bull; Happy running ka Racepulse!
+                  </p>
+                </div>
 
-              <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
-                {!authUser && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => navigateGuest('privacy')}
-                      className="min-h-11 px-1.5 font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
-                    >
-                      Privacy Policy
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => navigateGuest('terms')}
-                      className="min-h-11 px-1.5 font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
-                    >
-                      Terms of Use
-                    </button>
-                  </>
-                )}
-                <a
-                  href="mailto:events@racepulseph.com"
-                  className="min-h-11 px-1.5 inline-flex items-center font-mono text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
-                >
-                  events@racepulseph.com
-                </a>
-                <button
-                  type="button"
-                  onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                  className="h-11 px-4 rounded-full border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50 hover:text-red-600 dark:hover:text-red-400 transition-colors flex items-center gap-1.5"
-                >
-                  <span>Back to top</span>
-                  <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" />
-                </button>
+                <nav aria-label="Legal and compliance links" className="flex flex-wrap items-center justify-center lg:justify-end gap-x-4 gap-y-2">
+                  <a
+                    href="/privacy-policy"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      openUtilityView('privacy');
+                    }}
+                    className="min-h-11 px-1.5 inline-flex items-center font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
+                  >
+                    Privacy Policy
+                  </a>
+                  <a
+                    href="/terms-of-service"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      openUtilityView('terms');
+                    }}
+                    className="min-h-11 px-1.5 inline-flex items-center font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
+                  >
+                    Terms of Service
+                  </a>
+                  <a
+                    href="/refund-policy"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      openUtilityView('refund');
+                    }}
+                    className="min-h-11 px-1.5 inline-flex items-center font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
+                  >
+                    Refund Policy
+                  </a>
+                  <a
+                    href="/cookie-policy"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      openUtilityView('cookies');
+                    }}
+                    className="min-h-11 px-1.5 inline-flex items-center font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
+                  >
+                    Cookie Policy
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setCookiePreferencesNonce((n) => n + 1)}
+                    className="min-h-11 px-1.5 font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
+                  >
+                    Cookie Preferences
+                  </button>
+                  <a
+                    href="/unsubscribe"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      openUtilityView('unsubscribe');
+                    }}
+                    className="min-h-11 px-1.5 inline-flex items-center font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
+                  >
+                    Unsubscribe
+                  </a>
+                  <a
+                    href={`mailto:${LEGAL_CONFIG.supportEmail}`}
+                    className="min-h-11 px-1.5 inline-flex items-center font-mono text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
+                  >
+                    {LEGAL_CONFIG.supportEmail}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                    className="h-11 px-4 rounded-full border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50 hover:text-red-700 dark:hover:text-red-400 transition-colors flex items-center gap-1.5"
+                  >
+                    <span>Back to top</span>
+                    <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" />
+                  </button>
+                </nav>
               </div>
             </div>
           </footer>
+
+          <CookieConsentBanner
+            preferencesRequestNonce={cookiePreferencesNonce}
+            onOpenCookiePolicy={() => openUtilityView('cookies')}
+          />
         </div>
-        {!openingDone && <RunningLoader stage={startupStage} onComplete={finishOpening} />}
       </MotionConfig>
     </LazyMotion>
   );
@@ -650,7 +808,7 @@ function PendingApprovalScreen({ displayName }: { displayName: string }) {
         </p>
         <button
           onClick={() => signOutUser()}
-          className="text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)]/75 backdrop-blur-md hover:text-[var(--text-primary)] font-bold px-4 py-2.5 rounded-[20px] transition flex items-center justify-center gap-1.5 uppercase tracking-wider mx-auto"
+          className="text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)] hover:text-[var(--text-primary)] font-bold px-4 py-2.5 rounded-[20px] transition-colors flex items-center justify-center gap-1.5 uppercase tracking-wider mx-auto"
         >
           <LogOut className="w-3.5 h-3.5" /> Sign Out
         </button>
@@ -688,16 +846,17 @@ function SuperAdminClaimScreen({ profile }: { profile: UserProfile }) {
         <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
           This account is configured as the one-time RacePulsePH Super Admin.
         </p>
-        {error && <p className="text-xs text-red-500 font-semibold">⚠️ {error}</p>}
+        {error && <p role="alert" className="text-xs text-red-700 dark:text-red-400 font-semibold">{error}</p>}
         <button
+          type="button"
           onClick={claim}
           disabled={claiming}
-          className="w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-black uppercase text-xs tracking-widest text-white bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 shadow-xl shadow-amber-900/30 disabled:opacity-60 flex items-center justify-center gap-2"
+          className="min-h-11 w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-semibold uppercase text-xs tracking-widest text-white bg-gradient-to-r from-amber-700 to-amber-800 hover:from-amber-600 hover:to-amber-700 shadow-xl shadow-amber-900/30 disabled:opacity-60 flex items-center justify-center gap-2"
         >
-          {claiming ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />} Claim Super
+          {claiming ? <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <ShieldCheck className="w-4 h-4" aria-hidden="true" />} Claim Super
           Admin Access
         </button>
-        <button onClick={() => signOutUser()} className="text-xs text-[var(--text-secondary)] hover:text-red-500 font-bold">
+        <button type="button" onClick={() => signOutUser()} className="min-h-11 px-4 text-xs text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 font-bold">
           Sign out
         </button>
       </div>

@@ -11,6 +11,7 @@ import { generateRaceBibsPdf } from '../lib/raceBibPdf';
 import { hasRaceBibTemplate } from '../lib/raceBib';
 import { ensureRaceBibCustomFont, raceBibFontFamily } from '../lib/raceBibFont';
 import { useAndroidBackHandler } from '../lib/capacitorAndroid';
+import DialogSurface from './ui/DialogSurface';
 import { QRCodeSVG } from 'qrcode.react';
 import { Flag, Trash2, Plus, Save, Pencil, RefreshCw, Users2, FileDown, ImagePlus, X, QrCode, Copy, Download } from 'lucide-react';
 
@@ -709,7 +710,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
       const runners: RunnerProfile[] = [];
       snapshot.forEach((docSnap) => runners.push(docSnap.data() as RunnerProfile));
 
-      if (!generateRunnerRosterPdf(race, runners)) {
+      if (!(await generateRunnerRosterPdf(race, runners))) {
         alert('No registered runners for this race yet.');
       }
     } catch (err) {
@@ -1394,7 +1395,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
             </div>
           </div>
 
-          {error && <p className="text-xs text-red-500 font-semibold">⚠️ {error}</p>}
+          {error && <p role="alert" className="text-xs text-red-700 dark:text-red-400 font-semibold">{error}</p>}
 
           <div className="flex gap-2">
             <button type="submit" disabled={saving}
@@ -1459,61 +1460,67 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
         </div>
       </div>
       {qrRace && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 pt-[max(1rem,var(--rp-safe-top))] pb-[max(1rem,var(--rp-safe-bottom))] pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="registration-qr-title" onClick={() => setQrRace(null)}>
-          <div className="w-full max-w-sm max-h-[calc(100dvh-2rem-var(--rp-safe-top)-var(--rp-safe-bottom))] overflow-y-auto rounded-[24px] border border-[var(--border-default)] bg-[var(--surface-page)] p-6 text-center shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <div className="flex items-start justify-between gap-3 text-left">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-violet-500">Event registration QR</p>
-                <h3 id="registration-qr-title" className="mt-1 text-base font-black uppercase tracking-tight text-[var(--text-primary)]">{qrRace.name}</h3>
-                <p className="mt-1 text-[10.5px] text-[var(--text-secondary)]">Scan to open this event’s registration form.</p>
-              </div>
-              <button hidden={!can('race.registration')} type="button" onClick={() => setQrRace(null)} className="rounded-full p-1.5 text-[var(--text-muted)] transition hover:text-red-500" aria-label="Close registration QR"><X className="h-4 w-4" /></button>
+        <DialogSurface
+          titleId="registration-qr-title"
+          onRequestClose={() => setQrRace(null)}
+          className="w-full max-w-sm rounded-[24px] border border-[var(--border-default)] bg-[var(--surface-page)] p-6 text-center shadow-2xl"
+        >
+          <div className="flex items-start justify-between gap-3 text-left">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-widest text-violet-700 dark:text-violet-400">Event registration QR</p>
+              <h3 id="registration-qr-title" className="mt-1 text-base font-semibold uppercase tracking-tight text-[var(--text-primary)]">{qrRace.name}</h3>
+              <p className="mt-1 text-xs text-[var(--text-secondary)]">Scan to open this event registration form.</p>
             </div>
-            <div className="mx-auto mt-5 inline-block rounded-[18px] bg-white p-4 shadow-lg">
-              <QRCodeSVG ref={registrationQrRef} value={registrationUrl(qrRace.id)} size={224} level="M" includeMargin />
-            </div>
-            <p className="mt-3 break-all rounded-xl bg-[var(--surface-inset)] px-3 py-2 font-mono text-[9px] text-[var(--text-muted)]">{registrationUrl(qrRace.id)}</p>
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => void copyRegistrationUrl()} className="flex items-center justify-center gap-1.5 rounded-[14px] glass-inset px-3 py-2.5 text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)] transition hover:text-violet-500"><Copy className="h-3.5 w-3.5" /> Copy link</button>
-              <button type="button" onClick={downloadRegistrationQr} className="flex items-center justify-center gap-1.5 rounded-[14px] bg-violet-600 px-3 py-2.5 text-[10px] font-black uppercase tracking-wide text-white transition hover:bg-violet-500"><Download className="h-3.5 w-3.5" /> Download QR</button>
-            </div>
+            <button hidden={!can('race.registration')} type="button" onClick={() => setQrRace(null)} className="min-h-11 min-w-11 flex items-center justify-center rounded-full text-[var(--text-secondary)] transition hover:text-red-700 dark:hover:text-red-400" aria-label="Close registration QR"><X className="h-4 w-4" aria-hidden="true" /></button>
           </div>
-        </div>
+          <div className="mx-auto mt-5 inline-block rounded-[18px] bg-white p-4 shadow-lg">
+            <QRCodeSVG ref={registrationQrRef} value={registrationUrl(qrRace.id)} size={224} level="M" includeMargin />
+          </div>
+          <p className="mt-3 break-all rounded-xl bg-[var(--surface-inset)] px-3 py-2 font-mono text-xs text-[var(--text-secondary)]">{registrationUrl(qrRace.id)}</p>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => void copyRegistrationUrl()} className="min-h-11 flex items-center justify-center gap-1.5 rounded-[14px] glass-inset px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)] transition hover:text-violet-700 dark:hover:text-violet-400"><Copy className="h-3.5 w-3.5" aria-hidden="true" /> Copy link</button>
+            <button type="button" onClick={downloadRegistrationQr} className="min-h-11 flex items-center justify-center gap-1.5 rounded-[14px] bg-violet-700 px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-violet-600"><Download className="h-3.5 w-3.5" aria-hidden="true" /> Download QR</button>
+          </div>
+        </DialogSurface>
       )}
       {freeSlotRace && <FreeSlotsDialog race={freeSlotRace} onClose={() => setFreeSlotRace(null)} />}
       {bibDownloadRace && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 pt-[max(1rem,var(--rp-safe-top))] pb-[max(1rem,var(--rp-safe-bottom))] pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="bib-download-title" onClick={() => !raceBibPdfBusyRaceId && setBibDownloadRace(null)}>
-          <div className="w-full max-w-md max-h-[calc(100dvh-2rem-var(--rp-safe-top)-var(--rp-safe-bottom))] overflow-y-auto rounded-[24px] border border-[var(--border-default)] bg-[var(--surface-page)] p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 id="bib-download-title" className="text-lg font-display font-black text-[var(--text-primary)]">Download Race Bibs</h3>
-                <p className="mt-1 text-xs text-[var(--text-secondary)]">Choose all runners or one distance. Each PDF keeps two borderless bibs per A4 page. Group members receive separate same-number bibs; attach the single RFID chip to the captain’s bib only.</p>
-              </div>
-              <button hidden={!can('bibs.export')} type="button" onClick={() => setBibDownloadRace(null)} disabled={(Boolean(raceBibPdfBusyRaceId)) || (!!editingId && !can('race.bibs'))} className="rounded-lg p-2 text-[var(--text-secondary)] hover:text-red-500 disabled:opacity-40" aria-label="Close bib download options"><X className="w-5 h-5" /></button>
+        <DialogSurface
+          titleId="bib-download-title"
+          onRequestClose={() => {
+            if (!raceBibPdfBusyRaceId) setBibDownloadRace(null);
+          }}
+          className="w-full max-w-md rounded-[24px] border border-[var(--border-default)] bg-[var(--surface-page)] p-6 shadow-2xl"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 id="bib-download-title" className="text-lg font-display font-semibold text-[var(--text-primary)]">Download Race Bibs</h3>
+              <p className="mt-1 text-xs text-[var(--text-secondary)]">Choose all runners or one distance. Each PDF keeps two borderless bibs per A4 page. Group members receive separate same-number bibs; attach the single RFID chip to the captain bib only.</p>
             </div>
-            <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <button hidden={!can('bibs.export')}
-                type="button"
-                onClick={() => void handleGenerateRaceBibs(bibDownloadRace)}
-                disabled={(Boolean(raceBibPdfBusyRaceId)) || (!!editingId && !can('race.bibs'))}
-                className="sm:col-span-2 rounded-xl bg-red-600 px-4 py-3 text-xs font-black uppercase tracking-widest text-white hover:bg-red-500 transition disabled:opacity-60 flex items-center justify-center gap-2"
-              >
-                {raceBibPdfBusyRaceId ? <RefreshCw className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />} Download All Race Bibs
-              </button>
-              {(bibDownloadRace.distances || []).map((distance) => (
-                <button hidden={!can('bibs.export')}
-                  key={distance.id}
-                  type="button"
-                  onClick={() => void handleGenerateRaceBibs(bibDownloadRace, distance.label)}
-                  disabled={(Boolean(raceBibPdfBusyRaceId)) || (!!editingId && !can('race.bibs'))}
-                  className="rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 py-3 text-xs font-black uppercase tracking-widest text-violet-500 hover:bg-violet-500 hover:text-white transition disabled:opacity-60 flex items-center justify-center gap-2"
-                >
-                  {raceBibPdfBusyRaceId ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} {distance.label} Bibs
-                </button>
-              ))}
-            </div>
+            <button hidden={!can('bibs.export')} type="button" onClick={() => setBibDownloadRace(null)} disabled={(Boolean(raceBibPdfBusyRaceId)) || (!!editingId && !can('race.bibs'))} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg p-2 text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 disabled:opacity-40" aria-label="Close bib download options"><X className="w-5 h-5" aria-hidden="true" /></button>
           </div>
-        </div>
+          <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button hidden={!can('bibs.export')}
+              type="button"
+              onClick={() => void handleGenerateRaceBibs(bibDownloadRace)}
+              disabled={(Boolean(raceBibPdfBusyRaceId)) || (!!editingId && !can('race.bibs'))}
+              className="sm:col-span-2 min-h-11 rounded-xl bg-red-700 px-4 py-3 text-xs font-semibold uppercase tracking-widest text-white hover:bg-red-600 transition disabled:opacity-60 flex items-center justify-center gap-2"
+            >
+              {raceBibPdfBusyRaceId ? <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <FileDown className="w-4 h-4" aria-hidden="true" />} Download All Race Bibs
+            </button>
+            {(bibDownloadRace.distances || []).map((distance) => (
+              <button hidden={!can('bibs.export')}
+                key={distance.id}
+                type="button"
+                onClick={() => void handleGenerateRaceBibs(bibDownloadRace, distance.label)}
+                disabled={(Boolean(raceBibPdfBusyRaceId)) || (!!editingId && !can('race.bibs'))}
+                className="min-h-11 rounded-xl border border-violet-500/35 bg-violet-500/10 px-4 py-3 text-xs font-semibold uppercase tracking-widest text-violet-700 dark:text-violet-300 hover:bg-violet-700 hover:text-white transition disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {raceBibPdfBusyRaceId ? <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <Download className="w-4 h-4" aria-hidden="true" />} {distance.label} Bibs
+              </button>
+            ))}
+          </div>
+        </DialogSurface>
       )}
     </div>
   );
@@ -1608,57 +1615,61 @@ function FreeSlotsDialog({ race, onClose }: FreeSlotsDialogProps) {
   }))).filter((group) => group.slots.length > 0);
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 pt-[max(1rem,var(--rp-safe-top))] pb-[max(1rem,var(--rp-safe-bottom))] pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="free-slots-title" onClick={() => !creating && onClose()}>
-      <div className="w-full max-w-lg max-h-[calc(100dvh-2rem-var(--rp-safe-top)-var(--rp-safe-bottom))] overflow-y-auto rounded-[24px] border border-[var(--border-default)] bg-[var(--surface-page)] p-5 sm:p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-cyan-500">Race-day roster</p>
-            <h3 id="free-slots-title" className="mt-1 text-lg font-display font-black text-[var(--text-primary)]">Free Slots</h3>
-            <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">Create empty Solo, Duo, Trio, or Group bib slots for late/on-site runners. They show as bib-only in timing and never join age categories.</p>
-          </div>
-          <button type="button" onClick={onClose} disabled={creating} className="rounded-lg p-2 text-[var(--text-secondary)] hover:text-red-500 disabled:opacity-40" aria-label="Close Free Slots"><X className="w-5 h-5" /></button>
+    <DialogSurface
+      titleId="free-slots-title"
+      onRequestClose={() => {
+        if (!creating) onClose();
+      }}
+      className="w-full max-w-lg rounded-[24px] border border-[var(--border-default)] bg-[var(--surface-page)] p-5 sm:p-6 shadow-2xl"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-cyan-800 dark:text-cyan-300">Race-day roster</p>
+          <h3 id="free-slots-title" className="mt-1 text-lg font-display font-semibold text-[var(--text-primary)]">Free Slots</h3>
+          <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">Create empty Solo, Duo, Trio, or Group bib slots for late/on-site runners. They show as bib-only in timing and never join age categories.</p>
         </div>
-
-        <div className="mt-5 grid grid-cols-1 sm:grid-cols-[1fr_8rem_7rem] gap-2">
-          <label className="block">
-            <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)]">Distance</span>
-            <select value={distanceLabel} onChange={(event) => setDistanceLabel(event.target.value)} disabled={(creating) || (!can('roster.slots'))} className="w-full glass-inset px-3 py-3 text-sm font-bold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50">
-              {race.distances.map((distance) => <option key={distance.id} value={distance.label}>{distance.label}</option>)}
-            </select>
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)]">Entry type</span>
-            <select value={entryCategory} onChange={(event) => setEntryCategory(event.target.value as RaceEntryCategory)} disabled={(creating) || (!can('roster.slots'))} className="w-full glass-inset px-3 py-3 text-sm font-bold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50">
-              {supportedCategories.map((category) => <option key={category} value={category}>{entryCategoryLabels[category]}</option>)}
-            </select>
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)]">Slots</span>
-            <input type="number" min="1" max="100" step="1" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} disabled={creating} className="w-full glass-inset px-3 py-3 text-sm font-bold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50" />
-          </label>
-        </div>
-        <button type="button" onClick={() => void createSlots()} disabled={creating || race.distances.length === 0} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600 px-4 py-3 text-xs font-black uppercase tracking-widest text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-55">
-          {creating ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} {creating ? 'Creating slots…' : 'Create Free Slots'}
-        </button>
-        {message && <p className={`mt-3 rounded-xl px-3 py-2.5 text-xs font-semibold ${message.startsWith('Could') || message.startsWith('Choose') || message.startsWith('Enter') ? 'bg-red-500/10 text-red-500' : 'bg-emerald-500/10 text-emerald-500'}`}>{message}</p>}
-
-        <div className="mt-5 border-t border-[var(--border-subtle)] pt-4">
-          <div className="flex items-center justify-between gap-3">
-            <h4 className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)]">Created Free Slots</h4>
-            <span className="font-mono text-xs font-black text-cyan-500">{slots.length}</span>
-          </div>
-          {slots.length === 0 ? <p className="mt-3 text-xs text-[var(--text-muted)]">No empty slots yet.</p> : (
-            <div className="mt-3 max-h-48 space-y-2 overflow-y-auto pr-1">
-              {slotsByDivision.map(({ distance, entryCategory: category, slots: distanceSlots }) => (
-                <div key={`${distance.id}_${category}`} className="rounded-xl glass-inset px-3 py-2.5">
-                  <p className="text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)]">{distance.label} {entryCategoryLabels[category]} · {distanceSlots.length} slots</p>
-                  <p className="mt-1 break-words font-mono text-xs font-bold text-[var(--text-primary)]">{distanceSlots.map((slot) => slot.bibNumber).join(' · ')}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <button type="button" onClick={onClose} disabled={creating} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg p-2 text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 disabled:opacity-40" aria-label="Close Free Slots"><X className="w-5 h-5" aria-hidden="true" /></button>
       </div>
-    </div>
+
+      <div className="mt-5 grid grid-cols-1 sm:grid-cols-[1fr_8rem_7rem] gap-2">
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Distance</span>
+          <select value={distanceLabel} onChange={(event) => setDistanceLabel(event.target.value)} disabled={(creating) || (!can('roster.slots'))} className="w-full glass-inset px-3 py-3 text-sm font-bold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50">
+            {race.distances.map((distance) => <option key={distance.id} value={distance.label}>{distance.label}</option>)}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Entry type</span>
+          <select value={entryCategory} onChange={(event) => setEntryCategory(event.target.value as RaceEntryCategory)} disabled={(creating) || (!can('roster.slots'))} className="w-full glass-inset px-3 py-3 text-sm font-bold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50">
+            {supportedCategories.map((category) => <option key={category} value={category}>{entryCategoryLabels[category]}</option>)}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Slots</span>
+          <input type="number" min="1" max="100" step="1" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} disabled={creating} className="w-full glass-inset px-3 py-3 text-sm font-bold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50" />
+        </label>
+      </div>
+      <button type="button" onClick={() => void createSlots()} disabled={creating || race.distances.length === 0} className="mt-3 min-h-11 flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-700 px-4 py-3 text-xs font-semibold uppercase tracking-widest text-white transition hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-55">
+        {creating ? <RefreshCw className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" /> : <Plus className="h-4 w-4" aria-hidden="true" />} {creating ? 'Creating slots...' : 'Create Free Slots'}
+      </button>
+      {message && <p role="status" className={`mt-3 rounded-xl px-3 py-2.5 text-xs font-semibold ${message.startsWith('Could') || message.startsWith('Choose') || message.startsWith('Enter') ? 'bg-red-500/10 text-red-700 dark:text-red-400' : 'bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'}`}>{message}</p>}
+
+      <div className="mt-5 border-t border-[var(--border-subtle)] pt-4">
+        <div className="flex items-center justify-between gap-3">
+          <h4 className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Created Free Slots</h4>
+          <span className="font-mono text-xs font-bold text-cyan-800 dark:text-cyan-300">{slots.length}</span>
+        </div>
+        {slots.length === 0 ? <p className="mt-3 text-xs text-[var(--text-muted)]">No empty slots yet.</p> : (
+          <div className="mt-3 max-h-48 space-y-2 overflow-y-auto pr-1">
+            {slotsByDivision.map(({ distance, entryCategory: category, slots: distanceSlots }) => (
+              <div key={`${distance.id}_${category}`} className="rounded-xl glass-inset px-3 py-2.5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">{distance.label} {entryCategoryLabels[category]} &bull; {distanceSlots.length} slots</p>
+                <p className="mt-1 break-words font-mono text-xs font-bold text-[var(--text-primary)]">{distanceSlots.map((slot) => slot.bibNumber).join(' • ')}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </DialogSurface>
   );
 }

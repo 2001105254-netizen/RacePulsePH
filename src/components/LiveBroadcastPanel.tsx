@@ -34,6 +34,7 @@ import {
   RunnerResult,
 } from '../types';
 import { useFeedback } from './ui/FeedbackProvider';
+import { AnimatedMetricValue, ValueSkeleton } from './ui/MotionPrimitives';
 
 export interface LiveBroadcastLaunchRequest {
   raceId: string;
@@ -964,9 +965,9 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
       ) : sortedRaces.length === 0 ? (
         <div className="glass-panel p-8 m-2 text-center space-y-2">
           {racesLoading ? (
-            <div role="status" className="space-y-2">
-              <RefreshCw className="w-7 h-7 text-[var(--text-muted)] mx-auto animate-spin" aria-hidden="true" />
-              <p className="text-sm font-semibold text-[var(--text-primary)]">Loading race events...</p>
+            <div role="status" aria-label="Loading race events" className="max-w-md mx-auto space-y-3 py-2">
+              <ValueSkeleton widthClass="w-44 mx-auto" heightClass="h-4" />
+              <ValueSkeleton widthClass="w-64 mx-auto" heightClass="h-3" />
             </div>
           ) : (
             <>
@@ -1009,19 +1010,34 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
                 <span className="text-[var(--text-secondary)]">
                   Registered:{' '}
                   <strong className="font-mono tabular-nums font-semibold text-[var(--text-primary)]">
-                    {registeredCount}
+                    <AnimatedMetricValue
+                      value={registeredCount}
+                      loading={!runnersLoaded}
+                      skeletonWidthClass="w-8"
+                      skeletonHeightClass="h-3.5"
+                    />
                   </strong>
                 </span>
                 <span className="text-[var(--text-secondary)]">
                   Started:{' '}
                   <strong className="font-mono tabular-nums font-semibold text-[var(--text-primary)]">
-                    {displayStartedCount}
+                    <AnimatedMetricValue
+                      value={displayStartedCount}
+                      loading={!runnersLoaded || !readsLoaded}
+                      skeletonWidthClass="w-8"
+                      skeletonHeightClass="h-3.5"
+                    />
                   </strong>
                 </span>
                 <span className="text-[var(--text-secondary)]">
                   Finished:{' '}
                   <strong className="font-mono tabular-nums font-semibold text-emerald-700 dark:text-emerald-400">
-                    {displayFinishedCount}
+                    <AnimatedMetricValue
+                      value={displayFinishedCount}
+                      loading={!runnersLoaded || !readsLoaded}
+                      skeletonWidthClass="w-8"
+                      skeletonHeightClass="h-3.5"
+                    />
                   </strong>
                 </span>
               </div>
@@ -1285,14 +1301,16 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
                     </p>
                   </div>
                 ) : !runnersLoaded || !readsLoaded ? (
-                  <div role="status" className="p-8 text-center space-y-2">
-                    <RefreshCw
-                      className="w-6 h-6 text-[var(--text-muted)] mx-auto animate-spin"
-                      aria-hidden="true"
-                    />
-                    <p className="text-xs font-semibold text-[var(--text-secondary)]">
-                      Syncing runner roster and checkpoint scans...
-                    </p>
+                  <div role="status" aria-label="Syncing runner roster and checkpoint scans" className="p-4 space-y-2.5">
+                    {[0, 1, 2, 3, 4].map((idx) => (
+                      <div key={idx} className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3.5 py-2.5">
+                        <div className="flex items-center gap-3">
+                          <ValueSkeleton widthClass="w-8" heightClass="h-4" />
+                          <ValueSkeleton widthClass="w-40" heightClass="h-4" />
+                        </div>
+                        <ValueSkeleton widthClass="w-20" heightClass="h-4" />
+                      </div>
+                    ))}
                   </div>
                 ) : masterTab === 'leaderboard' ? (
                   filteredResults.length === 0 ? (

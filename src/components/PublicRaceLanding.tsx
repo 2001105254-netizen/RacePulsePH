@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef, Suspense, lazy } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
+import { subscribeSharedRaces } from '../lib/racesStore';
 import { AnimatePresence, m } from 'motion/react';
 import {
   Calendar,
@@ -174,22 +175,18 @@ export default function PublicRaceLanding({
   }, []);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, 'races'),
-      (snapshot) => {
-        const list: Race[] = [];
-        snapshot.forEach((docSnap) => list.push(docSnap.data() as Race));
-        list.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-        setRaces(list);
-        setLoadState('ready');
-      },
-      (err) => {
-        console.warn('Public race list failed to load:', err.message);
+    return subscribeSharedRaces((rawList, loaded, err) => {
+      if (err) {
+        console.warn('Public race list failed to load:', err);
         setRaces([]);
         setLoadState('error');
+        return;
       }
-    );
-    return () => unsubscribe();
+      if (!loaded) return;
+      const list = [...rawList].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      setRaces(list);
+      setLoadState('ready');
+    });
   }, []);
 
   useEffect(() => {
@@ -376,7 +373,7 @@ export default function PublicRaceLanding({
   };
 
   return (
-    <main className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10 pb-28 md:pb-20 space-y-14">
+    <main id="main-content" tabIndex={-1} className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10 pb-28 md:pb-20 space-y-14 focus:outline-none">
       {/* Network or Data Load Error Banner */}
       {loadState === 'error' && (
         <Card className="border-red-700 dark:border-red-400 p-4 text-center">

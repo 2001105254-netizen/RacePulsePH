@@ -5,7 +5,7 @@ import { useAndroidBackHandler } from '../lib/capacitorAndroid';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { collection, query, where, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch, deleteField, runTransaction } from 'firebase/firestore';
-import * as XLSX from 'xlsx';
+import type * as XLSXTypes from 'xlsx';
 import { db } from '../firebase';
 import { useDualSync } from '../lib/dualSync';
 import { checkpointType, computeResults, getCheckpointByType, getWaveStartTime } from '../lib/timing';
@@ -760,7 +760,11 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
       polling = true;
       try {
         const response = await authenticatedFetch(`/api/rfid-events?raceId=${encodeURIComponent(race.id)}&after=${encodeURIComponent(after)}`, { cache: 'no-store' });
-        if (!response.ok) return;
+        const contentType = response.headers.get('content-type') || '';
+        if (!response.ok || !contentType.includes('application/json')) {
+          if (active) setBridgeEndpointReady(false);
+          return;
+        }
         const payload = await response.json() as { events?: RfidBridgeEvent[] };
         if (!active) return;
         setBridgeEndpointReady(true);
@@ -2397,7 +2401,12 @@ function matchImportDistance(value: unknown, race: Race): string | null {
   return matchingKm?.label || null;
 }
 
-function parseRosterWorkbook(workbook: XLSX.WorkBook, fileName: string, race: Race): RosterImportPreview {
+function parseRosterWorkbook(
+  workbook: XLSXTypes.WorkBook,
+  utils: typeof XLSXTypes.utils,
+  fileName: string,
+  race: Race,
+): RosterImportPreview {
   const rowsByBib = new Map<string, ImportedRunner>();
   const detectedSheets: string[] = [];
   const skipped: string[] = [];
@@ -2405,7 +2414,7 @@ function parseRosterWorkbook(workbook: XLSX.WorkBook, fileName: string, race: Ra
 
   for (const sheetName of workbook.SheetNames) {
     const sheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', raw: false });
+    const rows = utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', raw: false });
     const headers = rows[0] || [];
     const nameColumn = headerIndex(headers, ['fullname', 'runnername', 'participantname', 'name']);
     const bibColumn = headerIndex(headers, ['racebibnumber', 'bibnumber', 'racebib', 'bib']);
@@ -2719,6 +2728,7 @@ function RosterImportPanel({ race, runnerProfiles }: RosterImportPanelProps) {
     }
 
     try {
+      const XLSX = await import('xlsx');
       const data = await file.arrayBuffer();
       // CSV has no column typing. Without `raw: true`, SheetJS sees a bib
       // such as 12-20-01 as a calendar date and formats it as 12/20/01.
@@ -2726,7 +2736,7 @@ function RosterImportPanel({ race, runnerProfiles }: RosterImportPanelProps) {
       // normal cell formatting and date support for date-of-birth columns.
       const isCsv = /\.csv$/i.test(file.name);
       const workbook = XLSX.read(data, { type: 'array', cellDates: !isCsv, raw: isCsv });
-      const parsed = parseRosterWorkbook(workbook, file.name, race);
+      const parsed = parseRosterWorkbook(workbook, XLSX.utils, file.name, race);
       if (parsed.detectedSheets.length === 0) {
         setFeedback({ type: 'error', text: 'No importable roster tab found. The file needs Full name, Race bib number, Distance, Entry category, and Age or Date of birth. Sex/Gender is required only for Solo.' });
         return;
@@ -3841,8 +3851,8 @@ function RunnerRosterPanel({ race, runnerProfiles }: RunnerRosterPanelProps) {
       .filter((group) => group.runners.length > 0);
   }, [distanceFilter, distanceGroups, rosterSearch]);
 
-  const handleDownload = () => {
-    if (!generateRunnerRosterPdf(race, runnerProfiles)) {
+  const handleDownload = async () => {
+    if (!(await generateRunnerRosterPdf(race, runnerProfiles))) {
       notify({ tone: 'info', title: 'Empty roster', message: 'No registered runners for this race yet.' });
     }
   };
@@ -4358,8 +4368,8 @@ function RaceRankingsPanel({
           </button>
           <button
             type="button"
-            onClick={() => {
-              if (!generateRankingsReportPdf(race, results)) {
+            onClick={async () => {
+              if (!(await generateRankingsReportPdf(race, results))) {
                 notify({ tone: 'info', title: 'No ranked finishers yet', message: 'Record at least one valid finish before exporting the PDF report.' });
               }
             }}

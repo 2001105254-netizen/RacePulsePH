@@ -46,16 +46,16 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { db } from '../firebase';
 import { authenticatedFetch, useAccess, useScopedRaces } from '../lib/access';
+import { startLanJsonPoller } from '../lib/lanBridge';
 import { formatDateTime, formatRaceTime } from '../lib/preciseTime';
 import { useWorkspaceHeader } from '../lib/workspaceHeader';
 import { EngravingOrder, EngravingStats, EngravingStatus, RunnerProfile } from '../types';
 import QrScannerModal from './QrScannerModal';
 import DialogSurface from './ui/DialogSurface';
 import { useFeedback } from './ui/FeedbackProvider';
+import { AnimatedMetricValue, ValueSkeleton } from './ui/MotionPrimitives';
 
 type MasterView = 'queue' | 'roster';
 
@@ -390,26 +390,19 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
 
   // 2. Local Express LAN Server Sync
   useEffect(() => {
-    const pollLocalServer = async () => {
-      try {
-        const res = await authenticatedFetch('/api/orders');
-        if (!res.ok) {
-          setLanConnected(false);
-          return;
-        }
-        const data = await res.json();
+    return startLanJsonPoller({
+      endpoint: '/api/orders',
+      fetcher: authenticatedFetch,
+      activeIntervalMs: 2000,
+      onData: (payload) => {
+        const record = (payload && typeof payload === 'object') ? (payload as { orders?: EngravingOrder[] }) : {};
         setLanConnected(true);
         setOrdersError(null);
-        localOrdersRef.current = data.orders || [];
+        localOrdersRef.current = record.orders || [];
         mergeAndPublish();
-      } catch {
-        setLanConnected(false);
-      }
-    };
-
-    pollLocalServer();
-    const interval = setInterval(pollLocalServer, 2000);
-    return () => clearInterval(interval);
+      },
+      onDisconnected: () => setLanConnected(false),
+    });
   }, []);
 
   // Stats calculation
@@ -592,7 +585,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
     });
   };
 
-  const handleGeneratePdfReport = () => {
+  const handleGeneratePdfReport = async () => {
     const ordersToExport =
       pdfReportFilter === 'all' ? orders : orders.filter((o) => o.status === pdfReportFilter);
 
@@ -605,6 +598,10 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
       return;
     }
 
+    const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+      import('jspdf'),
+      import('jspdf-autotable'),
+    ]);
     const pdfDoc = new jsPDF({ orientation: 'landscape' });
 
     pdfDoc.setFillColor(20, 20, 22);
@@ -1504,7 +1501,12 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
               >
                 <span className="font-normal">{item.label}</span>
                 <span className={`font-mono font-semibold tabular-nums ${item.accentClass}`}>
-                  {item.value}
+                  <AnimatedMetricValue
+                    value={item.value}
+                    loading={loading}
+                    skeletonWidthClass="w-6"
+                    skeletonHeightClass="h-3.5"
+                  />
                 </span>
               </button>
             );
@@ -1516,10 +1518,22 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
           <div className="h-8 px-2.5 rounded-lg bg-[var(--surface-inset)] border border-[var(--border-subtle)] inline-flex items-center gap-2 text-xs whitespace-nowrap">
             <span className="text-[var(--text-secondary)]">Earned</span>
             <span className="font-mono font-semibold text-emerald-700 dark:text-emerald-400">
-              ₱{(stats.completed * pricePerMedal).toLocaleString()}
+              <AnimatedMetricValue
+                value={stats.completed * pricePerMedal}
+                loading={loading}
+                format={(v) => `₱${v.toLocaleString()}`}
+                skeletonWidthClass="w-14"
+                skeletonHeightClass="h-3.5"
+              />
             </span>
             <span className="text-[var(--text-secondary)] hidden sm:inline font-mono">
-              / ₱{(stats.total * pricePerMedal).toLocaleString()} pot.
+              / <AnimatedMetricValue
+                value={stats.total * pricePerMedal}
+                loading={loading}
+                format={(v) => `₱${v.toLocaleString()} pot.`}
+                skeletonWidthClass="w-16"
+                skeletonHeightClass="h-3.5"
+              />
             </span>
           </div>
         </div>
@@ -1675,7 +1689,12 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                           active ? 'text-white/90' : 'text-[var(--text-primary)]'
                         }`}
                       >
-                        {count}
+                        <AnimatedMetricValue
+                          value={count}
+                          loading={loading}
+                          skeletonWidthClass="w-5"
+                          skeletonHeightClass="h-3"
+                        />
                       </span>
                     </button>
                   );
@@ -1698,9 +1717,13 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                   </p>
                 </div>
               ) : eventRunnersLoading ? (
-                <div role="status" className="flex items-center justify-center gap-2 py-16 text-xs font-semibold text-[var(--text-secondary)]">
-                  <RefreshCw className="w-4 h-4 animate-spin text-red-700 dark:text-red-400" aria-hidden="true" />
-                  <span>Loading event roster...</span>
+                <div role="status" aria-label="Loading event roster" className="p-4 space-y-2.5">
+                  {[0, 1, 2, 3].map((idx) => (
+                    <div key={idx} className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-2.5">
+                      <ValueSkeleton widthClass="w-40" heightClass="h-4" />
+                      <ValueSkeleton widthClass="w-16" heightClass="h-4" />
+                    </div>
+                  ))}
                 </div>
               ) : eventRunnersError ? (
                 <div role="alert" className="flex flex-col items-center justify-center py-16 px-4 text-center">

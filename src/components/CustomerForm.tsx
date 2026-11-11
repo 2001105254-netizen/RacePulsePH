@@ -1,12 +1,14 @@
 import { formatRaceTime } from '../lib/preciseTime';
 import { useAccess, authenticatedFetch } from '../lib/access';
-import React, { useState, useEffect } from 'react';
+import { startLanJsonPoller } from '../lib/lanBridge';
+import React, { useState, useEffect, useRef } from 'react';
 import { doc, setDoc, onSnapshot, collection, query, where, getDocs, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { EngravingOrder, EngravingStatus } from '../types';
 import { Award, Clock, ArrowRight, CheckCircle, RefreshCw, XCircle, Wifi, WifiOff, AlertTriangle, User, Hash, MapPin, Trophy, MessageSquare, ChevronDown } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useAndroidBackHandler } from '../lib/capacitorAndroid';
+import DialogSurface from './ui/DialogSurface';
 
 interface CustomerFormProps {
   onBackToRoleSelection: () => void;
@@ -51,6 +53,7 @@ export default function CustomerForm({
   const [activeQueueCount, setActiveQueueCount] = useState(0);
   const [isQrMaximized, setIsQrMaximized] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [formError, setFormError] = useState('');
 
   useAndroidBackHandler(isQrMaximized, () => setIsQrMaximized(false));
   useAndroidBackHandler(showCancelConfirm, () => setShowCancelConfirm(false));
@@ -87,41 +90,36 @@ export default function CustomerForm({
     return () => unsubscribe();
   }, [createdOrder?.id]);
 
+  const createdOrderRef = useRef(createdOrder);
+  createdOrderRef.current = createdOrder;
+
   // Supplement with local LAN polling interval (runs offline when connected to local server)
   useEffect(() => {
-    let active = true;
-    const interval = setInterval(async () => {
-      try {
-        const res = await authenticatedFetch('/api/orders');
-        if (!res.ok) {
-          if (active) setLanConnected(false);
-          return;
-        }
-        const data = await res.json();
-        if (active) setLanConnected(true);
-        const localOrdersList: EngravingOrder[] = data.orders || [];
+    return startLanJsonPoller({
+      endpoint: '/api/orders',
+      fetcher: authenticatedFetch,
+      activeIntervalMs: 2500,
+      onData: (payload) => {
+        setLanConnected(true);
+        const record = (payload && typeof payload === 'object') ? (payload as { orders?: EngravingOrder[] }) : {};
+        const localOrdersList: EngravingOrder[] = record.orders || [];
 
         // 1. Update queue count
         const activeCount = localOrdersList.filter(o => o.status === 'queued' || o.status === 'inprogress').length;
-        if (active) setActiveQueueCount(activeCount);
+        setActiveQueueCount(activeCount);
 
         // 2. Update created order status if matching
-        if (createdOrder?.id) {
-          const matching = localOrdersList.find(o => o.id === createdOrder.id);
-          if (matching && JSON.stringify(matching) !== JSON.stringify(createdOrder)) {
-            if (active) setCreatedOrder(matching);
+        const activeCreated = createdOrderRef.current;
+        if (activeCreated?.id) {
+          const matching = localOrdersList.find(o => o.id === activeCreated.id);
+          if (matching && JSON.stringify(matching) !== JSON.stringify(activeCreated)) {
+            setCreatedOrder(matching);
           }
         }
-      } catch (err) {
-        if (active) setLanConnected(false);
-      }
-    }, 2500); // Low-latency 2.5s polling loop for reliable local LAN updates
-
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, [createdOrder]);
+      },
+      onDisconnected: () => setLanConnected(false),
+    });
+  }, []);
 
   // Helper generator of 4-character uppercase code (unique)
   const generateShortCode = (): string => {
@@ -136,8 +134,15 @@ export default function CustomerForm({
   // Submit form data
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!runnerName.trim()) return alert('Please enter your full name');
-    if (!bibNumber.trim()) return alert('Please enter your Bib Number');
+    setFormError('');
+    if (!runnerName.trim()) {
+      setFormError('Please enter your full name.');
+      return;
+    }
+    if (!bibNumber.trim()) {
+      setFormError('Please enter your bib number.');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -207,7 +212,7 @@ export default function CustomerForm({
       setViewState('confirmed');
     } catch (err) {
       console.error("Submission failed: ", err);
-      alert("Error submitting order. Please try again.");
+      setFormError('Could not submit your medal engraving order. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -287,7 +292,7 @@ export default function CustomerForm({
             )}
           </div>
           <h1 className="heading-float text-2xl sm:text-3xl font-black tracking-tight font-display text-[var(--text-primary)] mt-1">MEDAL PERSONALIZATION BOOTH</h1>
-          <p className="text-xs sm:text-sm text-[var(--text-secondary)] mt-1">Configure your personalized medal with zero errors. Submissions sync in real-time to the laser station!</p>
+          <p className="text-xs sm:text-sm text-[var(--text-secondary)] mt-1">Enter your race details carefully before confirming. Entries sync with the on-site laser station.</p>
         </div>
         <button
           onClick={onBackToRoleSelection}
@@ -527,6 +532,13 @@ export default function CustomerForm({
                   </div>
                 </div>
 
+                {formError && (
+                  <p role="alert" className="text-xs font-semibold text-red-700 dark:text-red-400 bg-red-500/10 border border-red-500/30 rounded-[var(--radius-control)] px-4 py-3 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
+                    <span>{formError}</span>
+                  </p>
+                )}
+
                 {/* Submit Button */}
                 <button
                   type="submit"
@@ -620,22 +632,23 @@ export default function CustomerForm({
 
             {/* Offline-resilient Sync QR Code Ticket block */}
             <div className="mt-6 pt-5 border-t border-[var(--border-subtle)] flex flex-col items-center">
-              <span className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-1.5 font-mono flex items-center gap-1.5 font-sans">
-                <WifiOff className="w-3.5 h-3.5 text-red-500" />
+              <span className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase tracking-widest mb-1.5 font-mono flex items-center gap-1.5 font-sans">
+                <WifiOff className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
                 Offline Ultra-Scan QR Sync
               </span>
-              <p className="text-[10px] text-[var(--text-secondary)] max-w-xs mb-3.5 text-center leading-relaxed font-sans font-medium">
-                No internet on-site? Show this QR to the operator's laptop camera. <strong className="text-red-500">Click or tap the QR below to make it full screen</strong> for easier scanning!
+              <p className="text-xs text-[var(--text-secondary)] max-w-xs mb-3.5 text-center leading-relaxed font-sans font-medium">
+                No internet on-site? Show this QR to the operator laptop camera. <strong className="text-red-700 dark:text-red-400">Select the QR below to view it full screen</strong> for easier scanning.
               </p>
 
-              <div
+              <button
+                type="button"
                 onClick={() => setIsQrMaximized(true)}
-                className="bg-white p-3.5 sm:p-4 rounded-2xl inline-block shadow-2xl border border-[var(--border-default)] cursor-pointer hover:scale-105 active:scale-95 transition-all duration-300 relative group"
-                title="Click to zoom in full screen"
+                aria-label="Open full-screen sync QR code"
+                className="bg-white p-3.5 sm:p-4 rounded-2xl inline-block shadow-2xl border border-[var(--border-default)] cursor-pointer hover:scale-105 active:scale-95 transition-all duration-200 relative group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
               >
-                <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition duration-150 rounded-2xl flex items-center justify-center">
-                  <span className="bg-black/90 text-white font-mono text-[9px] py-1 px-2 rounded-lg tracking-wider">🔎 CLICK TO ZOOM</span>
-                </div>
+                <span className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition duration-150 rounded-2xl flex items-center justify-center">
+                  <span className="bg-black/90 text-white font-mono text-[10px] py-1 px-2 rounded-lg tracking-wider">TAP TO ZOOM</span>
+                </span>
                 <QRCodeSVG
                   value={[
                     "RXPv2",
@@ -650,71 +663,74 @@ export default function CustomerForm({
                   size={180}
                   level="M"
                 />
-              </div>
-              <span className="text-[10px] text-red-500 font-mono mt-3 uppercase tracking-widest font-extrabold flex items-center gap-1 cursor-pointer" onClick={() => setIsQrMaximized(true)}>
-                🔎 TAP TO ENLARGE (FULLSCREEN)
-              </span>
-              <span className="text-[8.5px] text-[var(--text-muted)] font-mono tracking-wide mt-1">SUPER COMPACT DOT-DENSITY (FAST SCAN)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsQrMaximized(true)}
+                className="min-h-11 px-3 text-xs text-red-700 dark:text-red-400 font-mono mt-2 uppercase tracking-widest font-semibold hover:underline"
+              >
+                Tap to enlarge full screen
+              </button>
+              <span className="text-[10px] text-[var(--text-muted)] font-mono tracking-wide mt-0.5">HIGH-CONTRAST QR SYNC TICKET</span>
             </div>
 
             {/* FULL SCREEN MAXIMIZED QR MODAL */}
             {isQrMaximized && (
-              <div
-                className="fixed inset-0 bg-black/95 backdrop-blur-xl z-50 flex flex-col items-center justify-center pt-[max(1rem,var(--rp-safe-top))] pb-[max(1rem,var(--rp-safe-bottom))] pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] animate-fadeIn"
-                onClick={() => setIsQrMaximized(false)}
+              <DialogSurface
+                titleId="engraving-qr-zoom-title"
+                onRequestClose={() => setIsQrMaximized(false)}
+                className="glass-panel p-8 max-w-md w-full flex flex-col items-center text-center space-y-6 relative"
               >
-                <div
-                  className="glass-panel p-8 max-w-md w-full flex flex-col items-center text-center space-y-6 relative"
-                  onClick={(e) => e.stopPropagation()}
+                <button
+                  type="button"
+                  onClick={() => setIsQrMaximized(false)}
+                  aria-label="Close zoomed QR ticket"
+                  className="min-h-11 px-3.5 py-2 absolute top-4 right-4 glass-inset hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)] text-[var(--text-secondary)] text-xs font-mono tracking-wider font-semibold uppercase transition"
                 >
-                  <button
-                    onClick={() => setIsQrMaximized(false)}
-                    className="absolute top-4 right-4 glass-inset hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)] text-[var(--text-secondary)] py-1.5 px-3 text-xs font-mono tracking-wider font-extrabold uppercase transition"
-                  >
-                    ✕ Close Zoom
-                  </button>
+                  Close Zoom
+                </button>
 
-                  <div className="space-y-1 pt-4">
-                    <span className="text-[11px] font-black text-red-500 uppercase tracking-widest font-mono flex items-center justify-center gap-1.5">
-                      <WifiOff className="w-4 h-4 text-red-500" />
-                      FULL SCREEN SYNC TICKET
-                    </span>
-                    <h3 className="heading-float text-md font-bold text-[var(--text-primary)] uppercase font-display tracking-tight">Runner {createdOrder?.runnerName}</h3>
-                    <p className="text-[10.5px] text-[var(--text-secondary)] max-w-xs leading-normal">
-                      Hold your phone or screen directly in front of the laser station's camera.
-                    </p>
-                  </div>
-
-                  <div className="bg-white p-6 rounded-3xl shadow-3xl border-4 border-red-500/30">
-                    <QRCodeSVG
-                      value={[
-                        "RXPv2",
-                        createdOrder?.id || 'OFF1',
-                        createdOrder?.runnerName || '',
-                        createdOrder?.bibNumber || '',
-                        createdOrder?.distance || '',
-                        formatRaceTime(createdOrder?.finishingTime),
-                        createdOrder?.rank || '',
-                        createdOrder?.customInscription || ''
-                      ].map(val => String(val).replace(/\|/g, " ")).join('|')}
-                      size={280}
-                      level="L"
-                    />
-                  </div>
-
-                  <div className="glass-inset w-full p-3">
-                    <span className="text-[10px] font-mono text-[var(--text-secondary)] uppercase block tracking-wider mb-1">Engraver Quick Code</span>
-                    <span className="text-xl font-mono font-black text-red-500 tracking-widest">{createdOrder?.id}</span>
-                  </div>
-
-                  <button
-                    onClick={() => setIsQrMaximized(false)}
-                    className="w-full bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-mono font-black py-3 rounded-[var(--radius-control)] uppercase text-xs tracking-wider transition shadow-lg shadow-red-900/30"
-                  >
-                    Done Scanning, Back to Status
-                  </button>
+                <div className="space-y-1 pt-6">
+                  <span className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase tracking-widest font-mono flex items-center justify-center gap-1.5">
+                    <WifiOff className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" />
+                    FULL SCREEN SYNC TICKET
+                  </span>
+                  <h3 id="engraving-qr-zoom-title" className="heading-float text-base font-bold text-[var(--text-primary)] uppercase font-display tracking-tight">Runner {createdOrder?.runnerName}</h3>
+                  <p className="text-xs text-[var(--text-secondary)] max-w-xs leading-normal">
+                    Hold your screen directly in front of the laser station camera.
+                  </p>
                 </div>
-              </div>
+
+                <div className="bg-white p-6 rounded-3xl shadow-2xl border-4 border-red-500/30">
+                  <QRCodeSVG
+                    value={[
+                      "RXPv2",
+                      createdOrder?.id || 'OFF1',
+                      createdOrder?.runnerName || '',
+                      createdOrder?.bibNumber || '',
+                      createdOrder?.distance || '',
+                      formatRaceTime(createdOrder?.finishingTime),
+                      createdOrder?.rank || '',
+                      createdOrder?.customInscription || ''
+                    ].map(val => String(val).replace(/\|/g, " ")).join('|')}
+                    size={280}
+                    level="L"
+                  />
+                </div>
+
+                <div className="glass-inset w-full p-3">
+                  <span className="text-xs font-mono text-[var(--text-secondary)] uppercase block tracking-wider mb-1">Engraver Quick Code</span>
+                  <span className="text-xl font-mono font-black text-red-700 dark:text-red-400 tracking-widest">{createdOrder?.id}</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsQrMaximized(false)}
+                  className="min-h-11 w-full bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-mono font-semibold py-3 rounded-[var(--radius-control)] uppercase text-xs tracking-wider transition shadow-lg shadow-red-900/30"
+                >
+                  Done Scanning, Back to Status
+                </button>
+              </DialogSurface>
             )}
           </div>
 
@@ -851,34 +867,39 @@ export default function CustomerForm({
 
       {/* CUSTOM CONFIRMATION DIALOG FOR CANCEL ORDER */}
       {showCancelConfirm && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center pt-[max(1rem,var(--rp-safe-top))] pb-[max(1rem,var(--rp-safe-bottom))] pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] animate-fadeIn">
-          <div className="glass-panel border-red-500/20 p-6 sm:p-8 max-w-md w-full text-center space-y-6 relative">
-            <div className="mx-auto w-12 h-12 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center">
-              <AlertTriangle className="w-6 h-6 text-red-500" />
-            </div>
-            <div className="space-y-2">
-              <h3 className="heading-float text-lg font-bold text-[var(--text-primary)] uppercase tracking-tight">Cancel Medal Registration?</h3>
-              <p className="text-xs text-[var(--text-secondary)] lg:text-sm leading-relaxed">
-                Are you absolutely sure you want to cancel and delete your engraving request? This action is permanent and cannot be undone.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3.5 pt-2">
-              <button
-                onClick={() => setShowCancelConfirm(false)}
-                className="w-full glass-inset hover:bg-[var(--surface-hover)] text-[var(--text-primary)] font-bold py-3 px-4 text-xs uppercase tracking-wider transition active:scale-95"
-              >
-                No, Keep It
-              </button>
-              <button
-                onClick={handleExecuteCancelOrder}
-                className="w-full bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-bold py-3 px-4 rounded-[var(--radius-control)] text-xs uppercase tracking-wider transition active:scale-95 shadow-lg shadow-red-900/30"
-              >
-                Yes, Cancel Order
-              </button>
-            </div>
+        <DialogSurface
+          alert
+          titleId="cancel-medal-order-title"
+          onRequestClose={() => setShowCancelConfirm(false)}
+          className="glass-panel border-red-500/20 p-6 sm:p-8 max-w-md w-full text-center space-y-6 relative"
+        >
+          <div className="mx-auto w-12 h-12 bg-red-500/10 text-red-700 dark:text-red-400 rounded-full flex items-center justify-center">
+            <AlertTriangle className="w-6 h-6" aria-hidden="true" />
           </div>
-        </div>
+          <div className="space-y-2">
+            <h3 id="cancel-medal-order-title" className="heading-float text-lg font-bold text-[var(--text-primary)] uppercase tracking-tight">Cancel Medal Registration?</h3>
+            <p className="text-xs text-[var(--text-secondary)] lg:text-sm leading-relaxed">
+              This cancels and deletes your engraving request immediately.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3.5 pt-2">
+            <button
+              type="button"
+              onClick={() => setShowCancelConfirm(false)}
+              className="min-h-11 w-full glass-inset hover:bg-[var(--surface-hover)] text-[var(--text-primary)] font-semibold py-3 px-4 text-xs uppercase tracking-wider transition active:scale-95"
+            >
+              No, Keep It
+            </button>
+            <button
+              type="button"
+              onClick={handleExecuteCancelOrder}
+              className="min-h-11 w-full bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-semibold py-3 px-4 rounded-[var(--radius-control)] text-xs uppercase tracking-wider transition active:scale-95 shadow-lg shadow-red-900/30"
+            >
+              Yes, Cancel Order
+            </button>
+          </div>
+        </DialogSurface>
       )}
     </div>
   );
