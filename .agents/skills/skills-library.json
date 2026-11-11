@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "updated": "2026-11-11",
+  "updated": "2026-11-12",
   "canonicalRoot": ".agents/skills",
   "mirrorRoot": "skills",
   "namingConvention": {
     "repoPrefix": "racepulse-",
-    "allowedRepoExceptions": ["iso-ui-layout-auditor"],
+    "allowedRepoExceptions": ["iso-ui-layout-auditor", "capacitor-android-architect", "android-layout-specialist", "motion-transition-architect"],
     "descriptionLength": [20, 400]
   },
   "rulesSources": [
@@ -358,6 +358,48 @@
       ],
       "scripts": [],
       "mirror": "skills/iso-ui-layout-auditor"
+    },
+    {
+      "name": "capacitor-android-architect",
+      "path": ".agents/skills/capacitor-android-architect",
+      "origin": "repo",
+      "status": "active",
+      "category": "mobile",
+      "description": "Convert React Native or React applications into production-ready Capacitor Android apps with optimal performance and native integration. Use when the user asks to convert React Native to Capacitor, migrate a mobile app to Capacitor, wrap a React or React Native Web project into an Android APK/AAB, replace React Native modules with Capacitor plugins, or optimize a Capacitor Android build.",
+      "dependsOn": ["antislop", "antislop-layoutmobile"],
+      "loadWith": ["racepulse-responsive-ui", "racepulse-release-engineering", "racepulse-delivery-performance"],
+      "rules": ["C-1", "C-2", "C-4", "C-5", "R-02", "R-03", "R-25", "R-26", "R-33", "R-35", "R-36", "R-37"],
+      "references": ["migration-workflow.md", "android-hardening.md"],
+      "scripts": [],
+      "mirror": "skills/capacitor-android-architect"
+    },
+    {
+      "name": "android-layout-specialist",
+      "path": ".agents/skills/android-layout-specialist",
+      "origin": "repo",
+      "status": "active",
+      "category": "layout",
+      "description": "Design, build, debug, and optimize native and hybrid Android UI layouts across Jetpack Compose, XML ConstraintLayout, and Capacitor/React Native WebViews. Use when the user asks to create Android screens, fix broken edge-to-edge WindowInsets on Android 15/16+, eliminate nested scroll crashes, build adaptive/foldable UIs with WindowSizeClass, or eliminate frame drops and unnecessary recompositions.",
+      "dependsOn": ["antislop", "antislop-layoutmobile", "antislop-human", "capacitor-android-architect"],
+      "loadWith": ["racepulse-responsive-ui"],
+      "rules": ["C-1", "C-2", "C-4", "C-5", "R-02", "R-03", "R-25", "R-26", "R-27", "R-32", "R-33", "R-35", "R-36", "R-37"],
+      "references": ["edge-to-edge-insets.md", "adaptive-performance.md"],
+      "scripts": [],
+      "mirror": "skills/android-layout-specialist"
+    },
+    {
+      "name": "motion-transition-architect",
+      "path": ".agents/skills/motion-transition-architect",
+      "origin": "repo",
+      "status": "active",
+      "category": "motion",
+      "description": "Engineer 60/120fps page transitions, staggered component mounts, shared element morphs, shimmer skeletons, and vector graphics for React, Capacitor, and Android apps. Use when animating page switches, adding loading motion, building skeleton loaders, or implementing layoutId and View Transitions.",
+      "dependsOn": ["antislop", "antislop-ui", "antislop-layoutmobile", "capacitor-android-architect", "android-layout-specialist"],
+      "loadWith": ["antislop-human", "racepulse-responsive-ui", "racepulse-delivery-performance"],
+      "rules": ["C-1", "C-2", "C-4", "C-5", "R-02", "R-03", "R-10", "R-19", "R-23", "R-26", "R-27", "R-31", "R-33", "R-35", "R-36", "R-37", "R-39", "R-40"],
+      "references": ["transitions-and-gestures.md", "skeletons-and-vectors.md"],
+      "scripts": [],
+      "mirror": "skills/motion-transition-architect"
     }
   ],
   "backlog": [],
