@@ -10,7 +10,7 @@ Location: `.agents/skills/skills-library.json`. Version 1. The validator in `scr
 | `updated` | string | ISO date of the last edit. |
 | `canonicalRoot` | string | Folder the agent loads skills from (`.agents/skills`). |
 | `mirrorRoot` | string | Folder holding identical copies for repo skills (`skills`). |
-| `namingConvention` | object | `repoPrefix` for new skills and the `description` length range. |
+| `namingConvention` | object | `repoPrefix` for new skills, optional `allowedRepoExceptions` for cross-project names, and `descriptionLength` range. |
 | `rulesSources` | string[] | Rule files that must exist. |
 | `coreRules` | object | `skill`, `version`, and the rule IDs per tier. Compared to `antislop`. |
 | `projectGates` | object[] | `id`, `summary`, `rule` for the AGENTS.md prohibitions. |
@@ -36,7 +36,7 @@ Location: `.agents/skills/skills-library.json`. Version 1. The validator in `scr
 | `scripts` | yes | Files under `scripts/`. May be empty. |
 | `mirror` | yes | Mirror path for repo skills, `null` for vendor skills. |
 
-Checks applied only to `origin: "repo"`: `racepulse-` prefix, no U+2014 in markdown files, `SKILL.md` under 120 lines, relative links resolve, mirror is byte-identical.
+Checks applied only to `origin: "repo"`: `racepulse-` prefix (unless listed in `namingConvention.allowedRepoExceptions`), no U+2014 in markdown files, `SKILL.md` under 120 lines, relative links resolve, mirror is byte-identical.
 
 ## `backlog[]` entry
 

@@ -5,6 +5,7 @@
   "mirrorRoot": "skills",
   "namingConvention": {
     "repoPrefix": "racepulse-",
+    "allowedRepoExceptions": ["iso-ui-layout-auditor"],
     "descriptionLength": [20, 400]
   },
   "rulesSources": [
@@ -331,6 +332,32 @@
       "references": ["checklist.md"],
       "scripts": [],
       "mirror": "skills/racepulse-realtime-delivery"
+    },
+    {
+      "name": "iso-ui-layout-auditor",
+      "path": ".agents/skills/iso-ui-layout-auditor",
+      "origin": "repo",
+      "status": "active",
+      "category": "layout",
+      "description": "Critique, audit, and refactor web and mobile UI screenshots or React/Tailwind code into high-density, zero-waste layouts governed by ISO ergonomics standards with separate Desktop (100vh) and Mobile (100dvh) checklists and blueprints. Use when auditing or refactoring consoles, dashboards, or field-staff views.",
+      "dependsOn": ["antislop", "antislop-layoutmobile", "antislop-human"],
+      "loadWith": ["racepulse-responsive-ui", "racepulse-feedback"],
+      "rules": ["C-1", "C-2", "C-3", "C-4", "C-5", "R-02", "R-03", "R-04", "R-25", "R-26", "R-27", "R-31", "R-32", "R-34", "R-35", "R-36", "R-37", "R-39"],
+      "references": [
+        "iso-9241-110.md",
+        "iso-9241-112.md",
+        "iso-9241-115.md",
+        "iso-9241-125.md",
+        "iso-9241-161.md",
+        "iso-11064-4.md",
+        "iso-11064-5.md",
+        "iso-iec-11581-10.md",
+        "iso-9241-920.md",
+        "iso-iec-25010.md",
+        "desktop-mobile-blueprints.md"
+      ],
+      "scripts": [],
+      "mirror": "skills/iso-ui-layout-auditor"
     }
   ],
   "backlog": [],

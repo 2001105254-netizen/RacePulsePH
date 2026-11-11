@@ -81,6 +81,7 @@ if (missingTop.length) usage(`Registry is missing fields: ${missingTop.join(', '
 const canonical = path.join(root, lib.canonicalRoot);
 const mirrorRoot = path.join(root, lib.mirrorRoot);
 const prefix = lib.namingConvention.repoPrefix;
+const exceptions = new Set(lib.namingConvention.allowedRepoExceptions || []);
 const [descMin, descMax] = lib.namingConvention.descriptionLength;
 
 // Rule sources exist.
@@ -167,7 +168,9 @@ for (const skill of lib.skills) {
   for (const script of skill.scripts || []) if (!fs.existsSync(path.join(dir, script))) bad(`${script} is missing`);
 
   if (skill.origin === 'repo') {
-    if (!skill.name.startsWith(prefix)) bad(`name must start with ${prefix}`);
+    if (!skill.name.startsWith(prefix) && !exceptions.has(skill.name)) {
+      bad(`name must start with ${prefix} or be listed in namingConvention.allowedRepoExceptions`);
+    }
     if (text.split(/\r?\n/).length > MAX_REPO_SKILL_LINES) bad(`SKILL.md exceeds ${MAX_REPO_SKILL_LINES} lines`);
 
     const mdFiles = listFiles(dir).filter((file) => file.endsWith('.md'));
