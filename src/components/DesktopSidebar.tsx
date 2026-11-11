@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { LogOut, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, User } from 'lucide-react';
 import { signOutUser } from '../firebase';
 import { UserProfile } from '../types';
@@ -56,7 +57,39 @@ export default function DesktopSidebar({
   const [collapsed, setCollapsed] = useState<boolean>(readInitialCollapsed);
   const [identityPinned, setIdentityPinned] = useState(false);
   const [identityHovered, setIdentityHovered] = useState(false);
+  const [tooltipPos, setTooltipPos] = useState<{ left: number; bottom: number } | null>(null);
   const identityWrapRef = useRef<HTMLDivElement>(null);
+
+  const showIdentityTooltip = identityPinned || identityHovered;
+
+  useLayoutEffect(() => {
+    if (!showIdentityTooltip) {
+      setTooltipPos(null);
+      return;
+    }
+
+    const updatePosition = () => {
+      const el = identityWrapRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) {
+        setTooltipPos(null);
+        return;
+      }
+      setTooltipPos({
+        left: Math.round(rect.right + 10),
+        bottom: Math.round(Math.max(12, window.innerHeight - rect.bottom)),
+      });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [showIdentityTooltip, collapsed]);
 
   useEffect(() => {
     if (!identityPinned) return;
@@ -92,7 +125,6 @@ export default function DesktopSidebar({
   const shortName = profile.nickname || profile.displayName || 'Account';
   const roleLabel = roleDisplayLabel(profile.role);
   const avatarInitial = displayName.trim().charAt(0).toUpperCase() || 'R';
-  const showIdentityTooltip = identityPinned || identityHovered;
 
   const identityMarkup = (
     <>
@@ -117,7 +149,7 @@ export default function DesktopSidebar({
   return (
     <aside
       aria-label={`${spaceTitle} navigation`}
-      className={`hidden lg:flex lg:flex-col lg:self-start desktop-workspace-sidebar shrink-0 border-r border-[var(--border-default)] bg-[var(--surface-card)] ${
+      className={`hidden lg:flex lg:flex-col lg:self-start desktop-workspace-sidebar lg:z-30 shrink-0 border-r border-[var(--border-default)] bg-[var(--surface-card)] ${
         collapsed ? 'w-20' : 'w-60'
       }`}
     >
@@ -237,10 +269,15 @@ export default function DesktopSidebar({
           <button
             type="button"
             onClick={() => {
-              if (onOpenProfile) onOpenProfile();
-              else setIdentityPinned((prev) => !prev);
+              if (onOpenProfile) {
+                setIdentityHovered(false);
+                onOpenProfile();
+              } else {
+                setIdentityPinned((prev) => !prev);
+              }
             }}
             aria-expanded={!onOpenProfile ? identityPinned : undefined}
+            aria-describedby={showIdentityTooltip && tooltipPos ? 'sidebar-identity-tooltip' : undefined}
             aria-label={`${displayName} (${roleLabel})`}
             title={`${displayName} (${roleLabel})`}
             className={`min-h-11 rounded-xl hover:bg-[var(--surface-hover)] flex items-center transition-colors duration-150 ${focusRing} ${
@@ -250,18 +287,24 @@ export default function DesktopSidebar({
             {identityMarkup}
           </button>
 
-          {showIdentityTooltip && (
-            <div
-              role="tooltip"
-              className="absolute left-full bottom-0 ml-2.5 z-50 w-60 rounded-xl border border-white/15 bg-[#141416] text-white p-3 shadow-xl pointer-events-none"
-            >
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-red-400">{roleLabel}</p>
-              <p className="text-sm font-semibold text-white truncate mt-0.5">{displayName}</p>
-              {profile.email && (
-                <p className="text-xs text-zinc-300 truncate mt-0.5">{profile.email}</p>
-              )}
-            </div>
-          )}
+          {showIdentityTooltip &&
+            tooltipPos &&
+            typeof document !== 'undefined' &&
+            createPortal(
+              <div
+                id="sidebar-identity-tooltip"
+                role="tooltip"
+                style={{ left: `${tooltipPos.left}px`, bottom: `${tooltipPos.bottom}px` }}
+                className="fixed z-[45] max-w-[min(20rem,calc(100vw-6rem))] min-w-[15rem] rounded-xl border border-white/15 bg-[#141416] text-white p-3 shadow-2xl pointer-events-none"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-red-400">{roleLabel}</p>
+                <p className="text-sm font-semibold text-white break-words mt-0.5">{displayName}</p>
+                {profile.email && (
+                  <p className="text-xs text-zinc-300 break-all mt-0.5">{profile.email}</p>
+                )}
+              </div>,
+              document.body,
+            )}
         </div>
 
         <button

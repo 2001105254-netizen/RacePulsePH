@@ -87,11 +87,11 @@ export default function WorkspaceShell({
         )}
 
         <div
-          className={`w-full ${maxWidthClass} mx-auto px-4 sm:px-6 xl:px-8 py-4 sm:py-6 pb-28 lg:pb-12 space-y-6 ${
+          className={
             desktopLocked
-              ? 'lg:max-w-none lg:px-0 lg:py-0 lg:pb-0 lg:space-y-0 lg:flex-1 lg:min-h-0 lg:flex lg:flex-col'
-              : ''
-          }`}
+              ? 'w-full px-4 sm:px-6 py-4 sm:py-6 pb-28 lg:max-w-none lg:px-0 lg:py-0 lg:pb-0 lg:flex-1 lg:min-h-0 lg:flex lg:flex-col'
+              : `w-full ${maxWidthClass} mx-auto px-4 sm:px-6 xl:px-8 py-4 sm:py-6 pb-28 lg:pb-12 space-y-6`
+          }
         >
           {pendingApprovalNotice && (
             <div role="status" className="glass-inset px-4 py-3 text-sm text-[var(--text-primary)]">

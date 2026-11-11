@@ -387,7 +387,7 @@ function AppContent() {
     );
   }
 
-  const showBackButton = Boolean(authUser) || guestScreen !== 'landing';
+  const showBackButton = !authUser && guestScreen !== 'landing';
   const isWorkspaceShell = Boolean(authUser && profile && !authError && !profileError);
   const viewKey = authUser ? (profile ? 'workspace' : 'auth-setup') : guestScreen === 'login' || guestScreen === 'signup' ? 'auth-portal' : guestScreen;
 

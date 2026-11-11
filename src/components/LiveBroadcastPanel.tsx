@@ -359,12 +359,12 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
     () =>
       activeRace && canInspectTiming
         ? computeResults(
-            activeRace.checkpoints,
-            chipReads,
-            runnerProfiles,
-            activeRace.ageCategories || [],
-            activeRace,
-          )
+          activeRace.checkpoints,
+          chipReads,
+          runnerProfiles,
+          activeRace.ageCategories || [],
+          activeRace,
+        )
         : [],
     [activeRace, canInspectTiming, chipReads, runnerProfiles],
   );
@@ -701,25 +701,25 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
   const publishDisabledReason = !activeRace
     ? 'Select a race event first'
     : activeRace.completedAt
-    ? 'Completed races are locked here; republish corrections from Timing Console'
-    : !enabled
-    ? 'Turn Public Live on before publishing'
-    : !canInspectTiming
-    ? 'Requires timing.view and roster.view permissions'
-    : !runnersLoaded || !readsLoaded
-    ? 'Waiting for roster and timing reads to sync'
-    : 'Push current official leaderboard to public spectators';
+      ? 'Completed races are locked here; republish corrections from Timing Console'
+      : !enabled
+        ? 'Turn Public Live on before publishing'
+        : !canInspectTiming
+          ? 'Requires timing.view and roster.view permissions'
+          : !runnersLoaded || !readsLoaded
+            ? 'Waiting for roster and timing reads to sync'
+            : 'Push current official leaderboard to public spectators';
 
   const streamStatusLabel = streamEmbed
     ? 'YouTube'
     : externalStreamHref
-    ? 'External'
-    : 'Unlinked';
+      ? 'External'
+      : 'Unlinked';
   const mapStatusLabel = mapEmbed
     ? 'Embedded'
     : externalMapHref
-    ? 'External'
-    : 'Unlinked';
+      ? 'External'
+      : 'Unlinked';
 
   const renderRaceEventSelect = (id: string, className: string, optionClassName?: string) => (
     <select
@@ -792,11 +792,10 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
               : 'Live Hub is hidden from visitors. Click to go publicly live.'
             : 'You need hub.publish permission to toggle public visibility'
         }
-        className={`h-9 px-2.5 xl:px-3 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap disabled:opacity-50 ${
-          enabled
+        className={`h-9 px-2.5 xl:px-3 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap disabled:opacity-50 ${enabled
             ? 'bg-emerald-700 hover:bg-emerald-600 border-emerald-500/40 text-white'
             : 'bg-white/10 hover:bg-white/15 border-white/15 text-zinc-200 hover:text-white'
-        }`}
+          }`}
       >
         <Radio className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
         <span>{togglingPublic ? 'Updating...' : enabled ? 'Public Live: On' : 'Public Live: Off'}</span>
@@ -875,11 +874,10 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
               </p>
             </div>
             <span
-              className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${
-                enabled
+              className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${enabled
                   ? 'bg-emerald-700 text-white border-emerald-500/40'
                   : 'bg-[var(--surface-inset)] text-[var(--text-secondary)] border-[var(--border-default)]'
-              }`}
+                }`}
             >
               {enabled ? 'Public Live: On' : 'Draft Mode'}
             </span>
@@ -905,11 +903,10 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
               aria-checked={enabled}
               disabled={!activeRace || !can('hub.publish') || togglingPublic}
               onClick={() => void handleTogglePublicLive()}
-              className={`min-h-11 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-50 ${
-                enabled
+              className={`min-h-11 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-50 ${enabled
                   ? 'bg-emerald-700 hover:bg-emerald-600 border-emerald-500/40 text-white'
                   : 'bg-[var(--surface-inset)] hover:bg-[var(--surface-card)] border-[var(--border-default)] text-[var(--text-primary)]'
-              }`}
+                }`}
             >
               <Radio className="w-4 h-4 shrink-0" aria-hidden="true" />
               <span>{enabled ? 'Public Live: On' : 'Public Live: Off'}</span>
@@ -992,11 +989,10 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
               <div className="flex items-center gap-1.5 shrink-0">
                 <span className="text-[var(--text-secondary)]">Status:</span>
                 <span
-                  className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border ${
-                    enabled
+                  className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border ${enabled
                       ? 'bg-emerald-700 text-white border-emerald-500/40'
                       : 'bg-[var(--surface-inset)] text-[var(--text-secondary)] border-[var(--border-default)]'
-                  }`}
+                    }`}
                 >
                   {enabled ? 'PUBLIC LIVE' : 'DRAFT'}
                 </span>
@@ -1036,11 +1032,10 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
                   onClick={toggleStartDeltaFilter}
                   aria-pressed={statusFilter === 'missing-start'}
                   title="Finished runners lack a recorded Start checkpoint scan. Click to inspect affected bibs."
-                  className={`px-2 py-0.5 rounded-full border text-[11px] font-semibold flex items-center gap-1 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500 shrink-0 ${
-                    statusFilter === 'missing-start'
+                  className={`px-2 py-0.5 rounded-full border text-[11px] font-semibold flex items-center gap-1 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500 shrink-0 ${statusFilter === 'missing-start'
                       ? 'bg-yellow-300 text-yellow-950 border-yellow-600 dark:bg-yellow-500 dark:text-zinc-950 dark:border-yellow-400'
                       : 'bg-yellow-100 text-yellow-900 border-yellow-400 hover:bg-yellow-200 dark:bg-yellow-950/60 dark:text-yellow-300 dark:border-yellow-700 dark:hover:bg-yellow-900/60'
-                  }`}
+                    }`}
                 >
                   <AlertTriangle className="w-3 h-3 shrink-0" aria-hidden="true" />
                   <span>Start Delta (+{startDeltaBadgeCount})</span>
@@ -1053,11 +1048,10 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
                 <button
                   type="button"
                   onClick={() => setPreviewTab('stream')}
-                  className={`px-2 py-0.5 rounded-md border text-[11px] font-semibold flex items-center gap-1 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${
-                    previewTab === 'stream'
+                  className={`px-2 py-0.5 rounded-md border text-[11px] font-semibold flex items-center gap-1 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${previewTab === 'stream'
                       ? 'border-red-500/40 bg-red-500/10 text-[var(--text-primary)]'
                       : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                  }`}
+                    }`}
                 >
                   <CirclePlay className="w-3 h-3 text-red-500 shrink-0" aria-hidden="true" />
                   <span>Stream: {streamStatusLabel}</span>
@@ -1065,11 +1059,10 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
                 <button
                   type="button"
                   onClick={() => setPreviewTab('map')}
-                  className={`px-2 py-0.5 rounded-md border text-[11px] font-semibold flex items-center gap-1 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${
-                    previewTab === 'map'
+                  className={`px-2 py-0.5 rounded-md border text-[11px] font-semibold flex items-center gap-1 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${previewTab === 'map'
                       ? 'border-red-500/40 bg-red-500/10 text-[var(--text-primary)]'
                       : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                  }`}
+                    }`}
                 >
                   <MapPinned className="w-3 h-3 text-red-500 shrink-0" aria-hidden="true" />
                   <span>Map: {mapStatusLabel}</span>
@@ -1084,15 +1077,15 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
             </div>
           </section>
 
-          {/* 64% / 36% Split Control Room Workspace */}
-          <div className="flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-[minmax(0,64fr)_minmax(0,36fr)] gap-4 lg:gap-0 lg:overflow-hidden">
+          {/* 64% / 36% Split Control Room Workspace with 5px perimeter/gutter margin */}
+          <div className="flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-[minmax(0,64fr)_minmax(0,36fr)] gap-4 lg:gap-[5px] lg:p-[5px] lg:overflow-hidden">
             {/* LEFT MASTER PANE (64%): WYSIWYG Public Leaderboard & Checkpoint Scan Stream */}
             <section
               aria-label="Live leaderboard and scan monitor"
-              className="flex-1 min-h-0 flex flex-col glass-panel lg:rounded-none lg:border-0 lg:border-r lg:border-[var(--border-default)] overflow-hidden"
+              className="flex-1 min-h-0 flex flex-col rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] overflow-hidden"
             >
               {/* Filter & Tab Header */}
-              <div className="shrink-0 px-3 sm:px-4 py-2.5 border-b border-[var(--border-default)] space-y-2 bg-[var(--surface-card)]">
+              <div className="shrink-0 px-4 py-3 border-b border-[var(--border-default)] space-y-2.5 bg-[var(--surface-card)]">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div
                     role="tablist"
@@ -1104,11 +1097,10 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
                       role="tab"
                       aria-selected={masterTab === 'leaderboard'}
                       onClick={() => setMasterTab('leaderboard')}
-                      className={`min-h-9 lg:min-h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${
-                        masterTab === 'leaderboard'
+                      className={`min-h-9 lg:min-h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${masterTab === 'leaderboard'
                           ? 'bg-[var(--surface-card)] text-[var(--text-primary)] shadow-sm'
                           : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                      }`}
+                        }`}
                     >
                       <Trophy className="w-3.5 h-3.5 text-red-500 shrink-0" aria-hidden="true" />
                       <span>Leaderboard Preview</span>
@@ -1121,11 +1113,10 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
                       role="tab"
                       aria-selected={masterTab === 'scans'}
                       onClick={() => setMasterTab('scans')}
-                      className={`min-h-9 lg:min-h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${
-                        masterTab === 'scans'
+                      className={`min-h-9 lg:min-h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${masterTab === 'scans'
                           ? 'bg-[var(--surface-card)] text-[var(--text-primary)] shadow-sm'
                           : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                      }`}
+                        }`}
                     >
                       <Radio className="w-3.5 h-3.5 text-emerald-500 shrink-0" aria-hidden="true" />
                       <span>Checkpoint Scans</span>
@@ -1223,11 +1214,10 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
                     <button
                       type="button"
                       onClick={() => setDistanceFilter('all')}
-                      className={`min-h-8 px-2.5 rounded-lg border text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${
-                        distanceFilter === 'all'
+                      className={`min-h-8 px-2.5 rounded-lg border text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${distanceFilter === 'all'
                           ? 'bg-red-700 text-white border-red-500/40'
                           : 'bg-[var(--surface-inset)] text-[var(--text-secondary)] border-[var(--border-default)] hover:text-[var(--text-primary)]'
-                      }`}
+                        }`}
                     >
                       All
                     </button>
@@ -1236,11 +1226,10 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
                         key={distance.label}
                         type="button"
                         onClick={() => setDistanceFilter(distance.label)}
-                        className={`min-h-8 px-2.5 rounded-lg border text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${
-                          distanceFilter === distance.label
+                        className={`min-h-8 px-2.5 rounded-lg border text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${distanceFilter === distance.label
                             ? 'bg-red-700 text-white border-red-500/40'
                             : 'bg-[var(--surface-inset)] text-[var(--text-secondary)] border-[var(--border-default)] hover:text-[var(--text-primary)]'
-                        }`}
+                          }`}
                       >
                         {distance.label}
                       </button>
@@ -1321,14 +1310,14 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
                   ) : (
                     <>
                       {/* Desktop High-Density Table */}
-                      <table className="hidden lg:table w-full text-left border-collapse">
+                      <table className="hidden lg:table w-full table-fixed text-left border-collapse">
                         <thead className="sticky top-0 z-10 bg-[var(--surface-card)] border-b border-[var(--border-default)] text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                           <tr>
-                            <th className="py-2.5 pl-4 pr-2 w-16">Rank</th>
+                            <th className="py-2.5 pl-4 pr-2 w-14">Rank</th>
                             <th className="py-2.5 px-2">Runner / Bib</th>
-                            <th className="py-2.5 px-2">Division</th>
-                            <th className="py-2.5 px-2">Official Time</th>
-                            <th className="py-2.5 pl-2 pr-4 text-right">Status</th>
+                            <th className="py-2.5 px-2 w-24">Division</th>
+                            <th className="py-2.5 px-2 w-48">Official Time</th>
+                            <th className="py-2.5 pl-2 pr-4 w-36 text-right">Status</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[var(--border-default)] text-xs">
@@ -1371,13 +1360,13 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
                                     </div>
                                   )}
                                 </td>
-                                <td className="py-2.5 px-2 text-[var(--text-secondary)] whitespace-nowrap">
+                                <td className="py-2.5 px-2 text-[var(--text-secondary)] truncate">
                                   {division}
                                 </td>
-                                <td className="py-2.5 px-2 whitespace-nowrap">
+                                <td className="py-2.5 px-2">
                                   {isFinished ? (
                                     <div>
-                                      <div className="flex items-center gap-1.5">
+                                      <div className="flex items-center gap-1.5 whitespace-nowrap">
                                         <span className="font-mono tabular-nums font-semibold text-[var(--text-primary)]">
                                           {formatDisplayTime(result.finishTime)}
                                         </span>
@@ -1386,7 +1375,7 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
                                         </span>
                                       </div>
                                       {(result.chipTime || result.gunTime) && (
-                                        <div className="text-[11px] font-mono tabular-nums text-[var(--text-muted)]">
+                                        <div className="text-[11px] font-mono tabular-nums text-[var(--text-muted)] leading-tight mt-0.5">
                                           {result.chipTime ? `Chip ${formatDisplayTime(result.chipTime)}` : 'No chip start'}
                                           {result.gunTime ? ` / Gun ${formatDisplayTime(result.gunTime)}` : ''}
                                         </div>
@@ -1396,8 +1385,8 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
                                     <span className="font-mono text-[var(--text-muted)]">--</span>
                                   )}
                                 </td>
-                                <td className="py-2.5 pl-2 pr-4 text-right whitespace-nowrap">
-                                  <div className="inline-flex items-center justify-end gap-1">
+                                <td className="py-2.5 pl-2 pr-4 text-right">
+                                  <div className="inline-flex flex-wrap items-center justify-end gap-1">
                                     {result.finishReviewRequired && (
                                       <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold border bg-yellow-100 text-yellow-900 border-yellow-400 dark:bg-yellow-950/60 dark:text-yellow-300 dark:border-yellow-700">
                                         Review
@@ -1462,23 +1451,22 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
                                     {isFinished ? formatDisplayTime(result.finishTime) : '--'}
                                   </p>
                                   <span
-                                    className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${
-                                      isMissingStart
+                                    className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${isMissingStart
                                         ? 'bg-yellow-100 text-yellow-900 border-yellow-400 dark:bg-yellow-950/60 dark:text-yellow-300 dark:border-yellow-700'
                                         : isFinished
-                                        ? 'bg-emerald-700 text-white border-emerald-500/40'
-                                        : hasStarted
-                                        ? 'bg-blue-100 text-blue-900 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800'
-                                        : 'bg-[var(--surface-inset)] text-[var(--text-secondary)] border-[var(--border-default)]'
-                                    }`}
+                                          ? 'bg-emerald-700 text-white border-emerald-500/40'
+                                          : hasStarted
+                                            ? 'bg-blue-100 text-blue-900 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800'
+                                            : 'bg-[var(--surface-inset)] text-[var(--text-secondary)] border-[var(--border-default)]'
+                                      }`}
                                   >
                                     {isMissingStart
                                       ? 'No Start Scan'
                                       : isFinished
-                                      ? 'Finished'
-                                      : hasStarted
-                                      ? 'Started'
-                                      : 'Registered'}
+                                        ? 'Finished'
+                                        : hasStarted
+                                          ? 'Started'
+                                          : 'Registered'}
                                   </span>
                                 </div>
                               </div>
@@ -1502,14 +1490,14 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
                   </div>
                 ) : (
                   <>
-                    <table className="hidden lg:table w-full text-left border-collapse">
+                    <table className="hidden lg:table w-full table-fixed text-left border-collapse">
                       <thead className="sticky top-0 z-10 bg-[var(--surface-card)] border-b border-[var(--border-default)] text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                         <tr>
-                          <th className="py-2.5 pl-4 pr-2">Clock</th>
+                          <th className="py-2.5 pl-4 pr-2 w-28">Clock</th>
                           <th className="py-2.5 px-2">Bib / Runner</th>
-                          <th className="py-2.5 px-2">Distance</th>
-                          <th className="py-2.5 px-2">Checkpoint</th>
-                          <th className="py-2.5 pl-2 pr-4 text-right">Source</th>
+                          <th className="py-2.5 px-2 w-20">Distance</th>
+                          <th className="py-2.5 px-2 w-32">Checkpoint</th>
+                          <th className="py-2.5 pl-2 pr-4 w-28 text-right">Source</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[var(--border-default)] text-xs">
@@ -1533,10 +1521,10 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
                                   </span>
                                 </div>
                               </td>
-                              <td className="py-2.5 px-2 text-[var(--text-secondary)] whitespace-nowrap">
+                              <td className="py-2.5 px-2 text-[var(--text-secondary)] truncate">
                                 {profile?.distance || '--'}
                               </td>
-                              <td className="py-2.5 px-2 font-semibold text-[var(--text-primary)] whitespace-nowrap">
+                              <td className="py-2.5 px-2 font-semibold text-[var(--text-primary)] truncate">
                                 {checkpointNameById.get(read.checkpointId) || read.checkpointId}
                               </td>
                               <td className="py-2.5 pl-2 pr-4 text-right whitespace-nowrap">
@@ -1591,9 +1579,9 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
             {/* RIGHT DETAIL DOCK (36%): Media URL Inputs + Tabbed 16:9 Live Preview */}
             <aside
               aria-label="Broadcast media and route preview studio"
-              className="shrink-0 lg:shrink lg:min-h-0 flex flex-col glass-panel lg:rounded-none lg:border-0 bg-[var(--surface-card)] overflow-hidden"
+              className="shrink-0 lg:shrink lg:min-h-0 flex flex-col rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] overflow-hidden"
             >
-              <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 space-y-4">
+              <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 space-y-4">
                 {/* Co-located URL Inputs */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between gap-2">
@@ -1643,9 +1631,8 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
                         }}
                         placeholder="YouTube Live or Facebook Live URL"
                         aria-invalid={!!streamUrlError}
-                        className={`w-full min-h-11 lg:min-h-10 rounded-xl border bg-[var(--surface-inset)] px-3 pr-9 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-60 ${
-                          streamUrlError ? 'border-red-500' : 'border-[var(--border-default)]'
-                        }`}
+                        className={`w-full min-h-11 lg:min-h-10 rounded-xl border bg-[var(--surface-inset)] px-3 pr-9 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-60 ${streamUrlError ? 'border-red-500' : 'border-[var(--border-default)]'
+                          }`}
                       />
                       {livestreamUrl && can('hub.manage') && (
                         <button
@@ -1704,9 +1691,8 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
                         }}
                         placeholder="Google Maps embed or route share URL"
                         aria-invalid={!!mapUrlError}
-                        className={`w-full min-h-11 lg:min-h-10 rounded-xl border bg-[var(--surface-inset)] px-3 pr-9 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-60 ${
-                          mapUrlError ? 'border-red-500' : 'border-[var(--border-default)]'
-                        }`}
+                        className={`w-full min-h-11 lg:min-h-10 rounded-xl border bg-[var(--surface-inset)] px-3 pr-9 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-60 ${mapUrlError ? 'border-red-500' : 'border-[var(--border-default)]'
+                          }`}
                       />
                       {routeMapUrl && can('hub.manage') && (
                         <button
@@ -1747,11 +1733,10 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
                         role="tab"
                         aria-selected={previewTab === 'stream'}
                         onClick={() => setPreviewTab('stream')}
-                        className={`min-h-9 lg:min-h-8 px-2.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${
-                          previewTab === 'stream'
+                        className={`min-h-9 lg:min-h-8 px-2.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${previewTab === 'stream'
                             ? 'bg-[var(--surface-card)] text-[var(--text-primary)] shadow-sm'
                             : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                        }`}
+                          }`}
                       >
                         <CirclePlay className="w-3.5 h-3.5 text-red-500 shrink-0" aria-hidden="true" />
                         <span>Stream</span>
@@ -1761,11 +1746,10 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
                         role="tab"
                         aria-selected={previewTab === 'map'}
                         onClick={() => setPreviewTab('map')}
-                        className={`min-h-9 lg:min-h-8 px-2.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${
-                          previewTab === 'map'
+                        className={`min-h-9 lg:min-h-8 px-2.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${previewTab === 'map'
                             ? 'bg-[var(--surface-card)] text-[var(--text-primary)] shadow-sm'
                             : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                        }`}
+                          }`}
                       >
                         <MapPinned className="w-3.5 h-3.5 text-red-500 shrink-0" aria-hidden="true" />
                         <span>Map</span>
