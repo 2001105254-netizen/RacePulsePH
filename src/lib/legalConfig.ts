@@ -32,10 +32,10 @@ const envValue = (key: string, fallback: string): string => {
 
 /** Public company and compliance metadata read from environment variables with explicit placeholders. */
 export const LEGAL_CONFIG = {
-  companyName: envValue('VITE_COMPANY_NAME', '[COMPANY_NAME: RacePulsePH]'),
-  businessAddress: envValue('VITE_BUSINESS_ADDRESS', '[BUSINESS_ADDRESS: Metro Manila, Philippines]'),
+  companyName: envValue('VITE_COMPANY_NAME', 'RacePulsePH'),
+  businessAddress: envValue('VITE_BUSINESS_ADDRESS', 'Malaybalay City, Bukidnon, Philippines'),
   supportEmail: envValue('VITE_SUPPORT_EMAIL', 'events@racepulseph.com'),
-  jurisdiction: envValue('VITE_JURISDICTION', '[JURISDICTION: Republic of the Philippines]'),
+  jurisdiction: envValue('VITE_JURISDICTION', 'Republic of the Philippines'),
   appUrl: envValue('VITE_APP_URL', 'https://racepulseph.com'),
   effectiveDate: 'November 12, 2026',
 } as const;

@@ -76,8 +76,9 @@ Refactor all microcopy through this 4-stage workflow:
 
 Before declaring any task complete or delivering output, execute an objective audit and output a PASS/FAIL report:
 
-- **Interactive Verification**: Recorded list of element-by-element click-through tests (e.g., `"Explore Races -> scrolls smoothly to #events-catalog"`, `"Search input -> filters race events by name or distance"`, `"Clear button -> resets filter query"`).
+- **Playwright Visual Check (Mandatory)**: Run headless Playwright against the running dev server after the final UI edit, capture screenshots across desktop (`1440x900` and `1280x800`) and mobile (`390x844` or `375x812`) in both light and dark modes (written to the conversation scratch directory), and inspect every screenshot directly with `read_file`. Verify `scrollWidth <= innerWidth`, balanced gutters and grid occupancy, above-the-fold content visibility, zero wasted blank voids, zero overlapping/clipped elements, and zero runtime console errors.
+- **Interactive Verification**: Recorded list of element-by-element click-through tests executed in Playwright (e.g., `"Browse races -> scrolls smoothly to #events-catalog"`, `"Search input -> filters race events by name or distance"`, `"Clear button -> resets filter query"`).
 - **CLI/AST Guard Contract**: Report exit codes from deterministic check tools (`0` = clean pass, `1` = slop detected, `2` = usage error).
 - **Purpose Log**: 1-line written functional justification for every major layout, color, and visual accent choice.
 
-If any item fails, fix the underlying code and re-run the gate before shipping.
+If any item fails (including any visual defect or wasted whitespace seen in Playwright screenshots), fix the underlying code and re-run the full gate and fresh Playwright capture before shipping.

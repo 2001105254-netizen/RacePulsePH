@@ -78,10 +78,10 @@ export default function CookieConsentBanner({
         <section
           role="region"
           aria-label="Cookie and storage preferences"
-          className="fixed bottom-4 left-4 right-4 z-40 mx-auto max-w-4xl rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-4 sm:p-6 shadow-xl"
+          className="fixed bottom-3 left-4 right-4 sm:left-6 sm:right-6 z-40 mx-auto max-w-[1552px] rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-3.5 sm:px-5 sm:py-3.5 shadow-xl"
         >
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            <div className="space-y-2 min-w-0">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div className="space-y-1 min-w-0">
               <div className="flex items-center gap-2 text-red-700 dark:text-red-400">
                 <Cookie className="w-4 h-4 shrink-0" aria-hidden="true" />
                 <h2 className="text-sm font-semibold text-[var(--text-primary)]">
@@ -108,21 +108,21 @@ export default function CookieConsentBanner({
               <button
                 type="button"
                 onClick={() => setShowPreferences(true)}
-                className="min-h-11 px-4 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] transition-colors"
+                className="min-h-11 px-3.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] transition-colors"
               >
                 Manage Preferences
               </button>
               <button
                 type="button"
                 onClick={handleRejectNonEssential}
-                className="min-h-11 px-4 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] transition-colors"
+                className="min-h-11 px-3.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] transition-colors"
               >
                 Reject Non-Essential
               </button>
               <button
                 type="button"
                 onClick={handleAcceptAll}
-                className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-800 text-white text-xs font-semibold transition-colors"
+                className="min-h-11 px-3.5 rounded-xl bg-red-700 hover:bg-red-800 text-white text-xs font-semibold transition-colors"
               >
                 Accept All
               </button>

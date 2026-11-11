@@ -31,7 +31,6 @@ import {
   QUINT_EASE,
   RaceCardSkeletonGrid,
   ResultsSkeletonList,
-  cappedStaggerDelay,
 } from './ui/MotionPrimitives';
 
 const PublicLiveRaceHub = lazy(() => import('./PublicLiveRaceHub'));
@@ -373,7 +372,7 @@ export default function PublicRaceLanding({
   };
 
   return (
-    <main id="main-content" tabIndex={-1} className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10 pb-28 md:pb-20 space-y-14 focus:outline-none">
+    <main id="main-content" tabIndex={-1} className="w-full max-w-[1600px] mx-auto pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))] py-4 sm:py-5 pb-[calc(6.5rem+var(--rp-safe-bottom))] md:pb-8 space-y-5 focus:outline-none">
       {/* Network or Data Load Error Banner */}
       {loadState === 'error' && (
         <Card className="border-red-700 dark:border-red-400 p-4 text-center">
@@ -422,11 +421,10 @@ export default function PublicRaceLanding({
             transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
             role={certificateNotice.kind === 'error' ? 'alert' : 'status'}
             aria-live="polite"
-            className={`rounded-2xl border px-4 py-3 flex items-center justify-between gap-3 text-xs sm:text-sm ${
-              certificateNotice.kind === 'error'
+            className={`rounded-2xl border px-4 py-3 flex items-center justify-between gap-3 text-xs sm:text-sm ${certificateNotice.kind === 'error'
                 ? 'border-red-600/35 bg-red-50 dark:bg-red-950/35 text-red-700 dark:text-red-300'
                 : 'border-emerald-600/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
-            }`}
+              }`}
           >
             <span className="flex items-center gap-2 font-medium">
               <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" />
@@ -448,14 +446,14 @@ export default function PublicRaceLanding({
       <section
         ref={heroSectionRef}
         aria-label="RacePulsePH overview"
-        className="relative overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-default)] shadow-[0_24px_60px_-16px_rgba(0,0,0,0.10)] dark:shadow-[0_24px_70px_-12px_rgba(0,0,0,0.65)]"
+        className="glass-panel relative overflow-hidden"
       >
-        {/* Luminous light red gradient backdrop consistent across light and dark mode */}
-        <div aria-hidden="true" className="hero-banner-glow pointer-events-none absolute inset-0" />
+        {/* Luminous light red gradient backdrop consistent with dashboard panel headers */}
+        <div aria-hidden="true" className="hero-glow hero-banner-glow pointer-events-none absolute inset-0" />
 
-        <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 items-center lg:items-end gap-4 lg:gap-4">
+        <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 items-center lg:items-end gap-3">
           {/* Left Copy, Instant Bib Lookup & Action Column */}
-          <div className="lg:col-span-7 p-5 sm:p-8 lg:py-9 lg:pl-10 lg:pr-4 space-y-4 sm:space-y-5">
+          <div className="lg:col-span-7 p-4 sm:p-5 lg:p-6 space-y-3">
             <m.h1
               initial={{ opacity: 0, y: 12 }}
               animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 }}
@@ -512,7 +510,7 @@ export default function PublicRaceLanding({
                     type="search"
                     value={bibQuery}
                     onChange={(e) => setBibQuery(e.target.value)}
-                    placeholder="Bib or runner name"
+                    placeholder="Bib or name"
                     className={`h-11 pl-9 ${bibQuery ? 'pr-9' : 'pr-3'} text-xs sm:text-sm [&::-webkit-search-cancel-button]:hidden`}
                   />
                   {bibQuery && (
@@ -529,7 +527,7 @@ export default function PublicRaceLanding({
                     </button>
                   )}
                 </div>
-                <Button type="submit" size="default" className="h-11 px-3.5 sm:px-5 shrink-0 text-[11px] sm:text-xs">
+                <Button type="submit" size="default" className="h-11 px-4 sm:px-5 shrink-0 text-xs">
                   <Trophy className="w-4 h-4" aria-hidden="true" />
                   <span>Find result</span>
                 </Button>
@@ -581,8 +579,8 @@ export default function PublicRaceLanding({
                           <div className="p-3.5 sm:px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                             <div className="flex items-center gap-3 min-w-0">
                               <div className="px-3 py-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] text-center shrink-0">
-                                <span className="block text-[10px] font-mono uppercase tracking-wider text-[var(--text-secondary)]">
-                                  BIB
+                                <span className="block text-xs font-mono text-[var(--text-secondary)]">
+                                  Bib
                                 </span>
                                 <span className="block font-mono text-base sm:text-lg font-semibold text-[var(--text-primary)] leading-tight">
                                   {entry.bibNumber}
@@ -646,16 +644,16 @@ export default function PublicRaceLanding({
               </div>
             )}
 
-            {/* Compact Action Button Strip: 2 side-by-side buttons on mobile, full row on tablet/desktop */}
+            {/* Compact Action Button Strip: single wrapping row across phone, tablet, and desktop */}
             <m.div
               initial={{ opacity: 0, y: 10 }}
               animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
               transition={{ duration: 0.22, delay: 0.14, ease: QUINT_EASE }}
-              className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 pt-1"
+              className="flex flex-wrap items-center gap-2 pt-0.5"
             >
               <Button
                 size="default"
-                className="group h-11 px-3 sm:px-5 text-[11px] sm:text-xs tracking-normal sm:tracking-wider"
+                className="group h-11 px-4 text-xs tracking-normal sm:tracking-wider"
                 onClick={() => document.getElementById('events-catalog')?.scrollIntoView({ behavior: 'smooth' })}
               >
                 <span>Browse races</span>
@@ -668,21 +666,21 @@ export default function PublicRaceLanding({
               <Button
                 size="default"
                 variant="outline"
-                className="h-11 gap-1.5 sm:gap-2 px-2 sm:px-5 text-[10.5px] sm:text-xs tracking-normal sm:tracking-wider"
+                className="h-11 gap-2 px-3.5 sm:px-4 text-xs tracking-normal sm:tracking-wider"
                 onClick={() => onRegister()}
               >
                 <UserPlus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" aria-hidden="true" />
-                <span>Create an account</span>
+                <span>Create account</span>
               </Button>
 
               <Button
                 size="default"
                 variant="outline"
-                className="hidden sm:inline-flex h-11 px-4 text-[var(--text-primary)]"
+                className="h-11 gap-2 px-3.5 sm:px-4 text-xs tracking-normal sm:tracking-wider text-[var(--text-primary)]"
                 onClick={handleSwitchToCompletedAndSearch}
               >
                 <Trophy className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" />
-                <span>Find certificates</span>
+                <span>Certificates</span>
               </Button>
             </m.div>
 
@@ -701,10 +699,7 @@ export default function PublicRaceLanding({
 
                 {liveRaces.length > 0 && (
                   <span className="flex items-center gap-1.5 text-red-700 dark:text-red-400 font-semibold">
-                    <span className="relative flex h-2 w-2">
-                      <span className="motion-safe:animate-ping absolute inline-flex h-full w-full rounded-full bg-red-700 dark:bg-red-400 opacity-75" />
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-red-700 dark:bg-red-400" />
-                    </span>
+                    <span className="inline-flex rounded-full h-2 w-2 bg-red-700 dark:bg-red-400" aria-hidden="true" />
                     <strong className="text-red-700 dark:text-red-400">{liveRaces.length}</strong> live now
                   </span>
                 )}
@@ -722,7 +717,7 @@ export default function PublicRaceLanding({
             initial={{ y: 8 }}
             animate={revealed ? { y: 0 } : { y: 8 }}
             transition={{ duration: 0.26, ease: QUINT_EASE }}
-            className="lg:col-span-5 flex items-end justify-center lg:justify-end px-4 sm:px-8 lg:px-0 lg:pr-6 pt-0 lg:pt-6 self-end"
+            className="lg:col-span-5 flex items-end justify-center lg:justify-end px-4 sm:px-6 lg:px-0 lg:pr-6 pt-0 self-end"
           >
             <img
               src="/assets/hero-runners.webp"
@@ -731,7 +726,7 @@ export default function PublicRaceLanding({
               height={571}
               fetchPriority="high"
               decoding="async"
-              className="w-full max-w-[400px] sm:max-w-[480px] lg:max-w-none lg:w-[108%] lg:-ml-[8%] h-auto object-contain object-bottom block select-none pointer-events-none drop-shadow-[0_14px_24px_rgba(0,0,0,0.14)] dark:drop-shadow-[0_18px_36px_rgba(0,0,0,0.65)]"
+              className="w-auto max-w-full max-h-40 sm:max-h-52 lg:max-h-[280px] h-auto object-contain object-bottom block select-none pointer-events-none drop-shadow-[0_14px_24px_rgba(0,0,0,0.14)] dark:drop-shadow-[0_18px_36px_rgba(0,0,0,0.65)]"
             />
           </m.div>
         </div>
@@ -743,10 +738,7 @@ export default function PublicRaceLanding({
       {liveRaces.length > 0 && (
         <section className="space-y-4" aria-labelledby="live-heading">
           <div className="flex items-center gap-2 border-b border-[var(--border-default)] pb-3">
-            <span className="relative flex h-2.5 w-2.5" aria-hidden="true">
-              <span className="motion-safe:animate-ping absolute inline-flex h-full w-full rounded-full bg-red-700 dark:bg-red-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-700 dark:bg-red-400" />
-            </span>
+            <span className="inline-flex rounded-full h-2.5 w-2.5 bg-red-700 dark:bg-red-400" aria-hidden="true" />
             <h2 id="live-heading" className="type-section text-[var(--text-primary)]">
               Live checkpoint split board
             </h2>
@@ -758,8 +750,8 @@ export default function PublicRaceLanding({
       )}
 
       {/* Events Catalog: Tab switcher, full-width tablet-safe search, scrollable distance bib chips, and card grid */}
-      <section id="events-catalog" className="space-y-6 scroll-mt-24" aria-labelledby="catalog-heading">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-[var(--border-default)] pb-4">
+      <section id="events-catalog" className="space-y-3 scroll-mt-20" aria-labelledby="catalog-heading">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 border-b border-[var(--border-default)] pb-3">
           <div className="space-y-1">
             <h2 id="catalog-heading" className="type-section text-[var(--text-primary)]">
               {activeTab === 'upcoming' ? 'Upcoming races' : 'Completed races'}
@@ -854,7 +846,7 @@ export default function PublicRaceLanding({
         {loadState === 'loading' ? (
           <RaceCardSkeletonGrid count={3} />
         ) : filteredRaces.length === 0 ? (
-          <Card className="p-12 text-center border-dashed space-y-4">
+          <Card className="p-8 sm:p-10 text-center border-dashed space-y-4">
             <Flag className="w-8 h-8 mx-auto text-[var(--text-secondary)]" aria-hidden="true" />
             <h3 className="font-display text-lg font-semibold text-[var(--text-primary)]">
               {searchQuery || selectedDistanceFilter !== 'all'
@@ -875,8 +867,13 @@ export default function PublicRaceLanding({
             )}
           </Card>
         ) : (
-          <ul className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredRaces.map((race, idx) => {
+          <ul
+            className={`grid gap-4 ${filteredRaces.length <= 2
+                ? 'grid-cols-1 md:grid-cols-2'
+                : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+              }`}
+          >
+            {filteredRaces.map((race) => {
               const isSelected = race.id === selectedRaceId;
               const regOpen = isRaceRegistrationOpen(race, today);
               const isLive = !!race.liveBroadcastEnabled;
@@ -885,26 +882,17 @@ export default function PublicRaceLanding({
               const finisherCount = resultsByRaceId[race.id]?.officialResults?.length || 0;
 
               return (
-                <m.li
+                <li
                   key={race.id}
-                  initial={{ opacity: 0, y: 12 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, amount: 0.08 }}
-                  transition={{
-                    duration: 0.24,
-                    delay: cappedStaggerDelay(idx),
-                    ease: EMIL_EASE,
-                  }}
                   className="flex"
                 >
                   <Card
-                    className={`group w-full overflow-hidden flex flex-col justify-between transition-[transform,box-shadow] duration-200 hover:-translate-y-1 hover:shadow-lg ${
-                      isSelected ? 'ring-2 ring-red-700 dark:ring-red-400' : ''
-                    }`}
+                    className={`group w-full overflow-hidden flex flex-col justify-between transition-[transform,box-shadow] duration-200 hover:-translate-y-1 hover:shadow-lg ${isSelected ? 'ring-2 ring-red-700 dark:ring-red-400' : ''
+                      }`}
                   >
                     <div>
-                      {/* Poster Art with Status Badges */}
-                      <div className="relative aspect-[16/10] w-full overflow-hidden bg-[var(--surface-inset)] border-b border-[var(--border-default)]">
+                      {/* Poster Art with Status Badges matching Dashboard RaceList height */}
+                      <div className="relative h-36 sm:h-40 w-full overflow-hidden bg-[var(--surface-inset)] border-b border-[var(--border-default)]">
                         {race.posterImage ? (
                           <img
                             src={race.posterImage}
@@ -920,7 +908,7 @@ export default function PublicRaceLanding({
                           </div>
                         )}
 
-                        <div className="absolute top-4 left-4 flex flex-wrap gap-2">
+                        <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
                           {isLive && <Badge variant="live">Live timing</Badge>}
                           {isCompleted ? (
                             <Badge variant="secondary">
@@ -934,7 +922,7 @@ export default function PublicRaceLanding({
                         </div>
                       </div>
 
-                      <CardContent className="p-6 space-y-4">
+                      <CardContent className="p-4 sm:p-5 space-y-3">
                         <div className="space-y-1.5">
                           <h3 className="font-display font-semibold text-lg sm:text-xl tracking-tight text-[var(--text-primary)] line-clamp-2">
                             {race.name}
@@ -986,7 +974,7 @@ export default function PublicRaceLanding({
                     </div>
 
                     {/* Action Footer (>= 44px tap targets) */}
-                    <div className="px-6 pb-6 flex gap-2">
+                    <div className="px-4 sm:px-5 pb-4 sm:pb-5 flex gap-2">
                       <Button
                         type="button"
                         variant={isSelected ? 'default' : 'secondary'}
@@ -1010,7 +998,7 @@ export default function PublicRaceLanding({
                       )}
                     </div>
                   </Card>
-                </m.li>
+                </li>
               );
             })}
           </ul>
@@ -1076,10 +1064,10 @@ export default function PublicRaceLanding({
       {/* Official Finisher Bib Board: Driven by real published finishers instead of generic feature template cards */}
       {featuredBibFinishers.length > 0 && (
         <section
-          className="space-y-6 pt-4 border-t border-[var(--border-default)]"
+          className="space-y-4 pt-5 border-t border-[var(--border-default)]"
           aria-labelledby="bib-board-heading"
         >
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
             <div className="space-y-1">
               <h2 id="bib-board-heading" className="type-section text-[var(--text-primary)]">
                 Recent official finisher bibs
@@ -1100,8 +1088,13 @@ export default function PublicRaceLanding({
             </Button>
           </div>
 
-          <ul className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {featuredBibFinishers.map(({ race, entry }, idx) => {
+          <ul
+            className={`grid gap-4 ${featuredBibFinishers.length <= 2
+                ? 'grid-cols-1 md:grid-cols-2'
+                : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+              }`}
+          >
+            {featuredBibFinishers.map(({ race, entry }) => {
               const bibKey = `${race.id}_${entry.bibNumber}_${entry.distance}`;
               const key = `featured_${bibKey}`;
               const isDownloading = downloadingBibKey === bibKey;
@@ -1109,16 +1102,8 @@ export default function PublicRaceLanding({
               const displayName = entry.isFreeSlot ? `Bib ${entry.bibNumber}` : entry.fullName;
 
               return (
-                <m.li
+                <li
                   key={key}
-                  initial={{ opacity: 0, y: 12 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, amount: 0.08 }}
-                  transition={{
-                    duration: 0.26,
-                    delay: Math.min(idx, 5) * 0.045,
-                    ease: [0.22, 1, 0.36, 1],
-                  }}
                   className="flex"
                 >
                   <div className="w-full overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] shadow-sm transition-[transform,box-shadow] duration-200 hover:-translate-y-1 hover:shadow-md flex flex-col justify-between">
@@ -1136,7 +1121,7 @@ export default function PublicRaceLanding({
                       </div>
 
                       {/* Race Bib Number & Runner Plate */}
-                      <div className="p-5 space-y-3">
+                      <div className="p-4 sm:p-5 space-y-3">
                         <div className="flex items-baseline justify-between gap-2 border-b border-dashed border-[var(--border-default)] pb-3">
                           <span className="font-mono text-3xl sm:text-4xl font-semibold tracking-tight text-[var(--text-primary)]">
                             {entry.bibNumber}
@@ -1161,7 +1146,7 @@ export default function PublicRaceLanding({
                     </div>
 
                     {/* Bib Bottom Tear-Off Stub Actions */}
-                    <div className="px-5 py-3 bg-[var(--surface-inset)] border-t border-dashed border-[var(--border-default)] flex items-center justify-between gap-2">
+                    <div className="px-4 sm:px-5 py-3 bg-[var(--surface-inset)] border-t border-dashed border-[var(--border-default)] flex items-center justify-between gap-2">
                       <Button
                         type="button"
                         variant="ghost"
@@ -1190,14 +1175,14 @@ export default function PublicRaceLanding({
                       </Button>
                     </div>
                   </div>
-                </m.li>
+                </li>
               );
             })}
           </ul>
         </section>
       )}
 
-      {/* Smart Sticky Mobile Bottom CTA Bar (activates when hero scrolls out of view on narrow phones) */}
+      {/* Smart Sticky Mobile Bottom CTA Bar (matches dashboard BottomNav floating glass-panel dock when scrolled past hero) */}
       <AnimatePresence>
         {heroOutOfView && (
           <m.div
@@ -1205,7 +1190,7 @@ export default function PublicRaceLanding({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
             transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-            className="md:hidden fixed bottom-0 inset-x-0 z-40 border-t border-[var(--border-default)] bg-[var(--surface-card)]/95 backdrop-blur-md pt-2.5 pb-[max(0.625rem,var(--rp-safe-bottom))] pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] shadow-[0_-10px_30px_-10px_rgba(0,0,0,0.18)]"
+            className="md:hidden fixed bottom-3 inset-x-3 z-30 glass-panel px-3 py-2.5 mb-[var(--rp-safe-bottom)] shadow-[0_12px_32px_rgba(0,0,0,0.22)]"
           >
             <div className="max-w-md mx-auto grid grid-cols-2 gap-2.5">
               <Button

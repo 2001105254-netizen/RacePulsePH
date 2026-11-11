@@ -73,46 +73,53 @@ export default function PublicRaceResults({ race, onRegister }: PublicRaceResult
 
   return (
     <section className="glass-panel overflow-hidden scroll-mt-6 animate-fadeIn" aria-label={`${race.name} official results`}>
-      <div className="relative px-5 py-6 sm:px-7 sm:py-8 border-b border-[var(--border-default)] overflow-hidden">
+      <div className="relative p-4 sm:p-6 border-b border-[var(--border-default)] hero-glow overflow-hidden">
         {race.posterImage && <img src={race.posterImage} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover opacity-[0.1]" />}
-        <div className="absolute inset-0 bg-gradient-to-r from-red-950/35 to-[var(--surface-panel)]/85" />
+        <div className="absolute inset-0 bg-gradient-to-r from-red-950/35 to-[var(--surface-card)]/90" />
         <div className="relative flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div className="min-w-0">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-700/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-emerald-800 dark:text-emerald-300"><Trophy className="w-3.5 h-3.5" aria-hidden="true" /> Official Results</span>
-            <h2 className="heading-float font-display mt-3 text-xl sm:text-2xl font-semibold uppercase tracking-tight text-[var(--text-primary)]">{race.name}</h2>
-            <p className="mt-1.5 flex items-center gap-1.5 text-xs text-[var(--text-secondary)]"><Calendar className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" /> {race.date}</p>
+            <h2 className="heading-float font-display text-xl sm:text-2xl font-semibold tracking-tight text-[var(--text-primary)]">{race.name}</h2>
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <p className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
+                <Calendar className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
+                <span>{race.date}</span>
+              </p>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-700/30 bg-emerald-700/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300">
+                <Trophy className="w-3.5 h-3.5" aria-hidden="true" /> Official results
+              </span>
+            </div>
           </div>
           {registrationOpen && (
-            <button type="button" onClick={() => onRegister(race.id)} className="shrink-0 h-10 px-5 rounded-full font-semibold uppercase text-xs tracking-wider text-white bg-red-700 hover:bg-red-600 border border-red-500/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.35)] transition-all duration-150 flex items-center justify-center gap-2 motion-safe:active:scale-[0.97]">
-              <UserPlus className="w-4 h-4" /> Sign up to register
+            <button type="button" onClick={() => onRegister(race.id)} className="shrink-0 min-h-11 h-11 px-5 rounded-full font-semibold text-xs text-white bg-red-700 hover:bg-red-600 border border-[#3d0b09] dark:border-red-500/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.35)] transition-[background-color,transform] duration-150 flex items-center justify-center gap-2 motion-safe:active:scale-[0.97]">
+              <UserPlus className="w-4 h-4" aria-hidden="true" /> Sign up to register
             </button>
           )}
         </div>
       </div>
 
-      <div className="p-5 sm:p-7 space-y-4">
+      <div className="p-4 sm:p-6 space-y-4">
         {summary === undefined ? (
           <ResultsSkeletonList rows={5} />
         ) : summary === null || officialResults.length === 0 ? (
           <div className="glass-inset px-5 py-8 text-center space-y-2">
-            <Medal className="w-8 h-8 mx-auto text-[var(--text-muted)]" />
-            <p className="text-sm font-bold text-[var(--text-primary)]">Official results are not published yet</p>
+            <Medal className="w-8 h-8 mx-auto text-[var(--text-secondary)]" aria-hidden="true" />
+            <p className="text-sm font-semibold text-[var(--text-primary)]">Official results are not published yet</p>
             <p className="text-xs text-[var(--text-secondary)]">Results and E-certificates become available after the organizer starts the race and records finishers.</p>
           </div>
         ) : (
           <>
             <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
               <div>
-                <h3 className="text-xs font-black uppercase tracking-widest text-[var(--text-secondary)]">Official Ranking</h3>
+                <h3 className="text-sm font-semibold text-[var(--text-primary)]">Official ranking</h3>
                 <p className="mt-1 text-xs text-[var(--text-secondary)]">{officialResults.length} official finishers. Search your name or bib, then download your certificate. Free Slots are identified by bib only.</p>
               </div>
-              {summary.updatedAt && <span className="text-[10px] text-[var(--text-muted)]">Updated {formatDateTime(summary.updatedAt)}</span>}
+              {summary.updatedAt && <span className="text-xs text-[var(--text-secondary)]">Updated {formatDateTime(summary.updatedAt)}</span>}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
               <label className="relative block">
                 <span className="sr-only">Search official finishers by name or bib number</span>
-                <Search className="pointer-events-none absolute left-3.5 top-1/2 w-4 h-4 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden="true" />
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 w-4 h-4 -translate-y-1/2 text-[var(--text-secondary)]" aria-hidden="true" />
                 <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or bib number" className="w-full glass-inset py-3 pl-10 pr-4 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700 dark:focus:ring-red-400" />
               </label>
               {distances.length > 1 && <select aria-label="Filter results by distance" value={distance} onChange={(event) => setDistance(event.target.value)} className="min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700 dark:focus:ring-red-400"><option value="all">All distances</option>{distances.map((item) => <option key={item} value={item}>{item}</option>)}</select>}

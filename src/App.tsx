@@ -360,7 +360,7 @@ function AppContent() {
       : undefined;
 
     if (legalDocMeta) {
-      title = `${legalDocMeta.title} | RacePulsePH`;
+      title = legalDocMeta.title;
       description = legalDocMeta.description;
     } else if (activeUtility === 'unsubscribe') {
       title = 'Email Preferences & Unsubscribe | RacePulsePH';
@@ -451,7 +451,7 @@ function AppContent() {
       guestScreen === 'cookies'
     ) {
       content = (
-        <main id="main-content" tabIndex={-1} className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10 flex-grow focus:outline-none">
+        <main id="main-content" tabIndex={-1} className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 py-4 sm:py-6 flex-grow focus:outline-none">
           <PublicLegalPage
             doc={guestScreen}
             onBack={() => navigateGuest('landing')}
@@ -464,13 +464,13 @@ function AppContent() {
       );
     } else if (guestScreen === 'unsubscribe') {
       content = (
-        <main id="main-content" tabIndex={-1} className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10 flex-grow focus:outline-none">
+        <main id="main-content" tabIndex={-1} className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 py-4 sm:py-6 flex-grow focus:outline-none">
           <UnsubscribePage onBack={() => navigateGuest('landing')} />
         </main>
       );
     } else if (guestScreen === 'not-found') {
       content = (
-        <main id="main-content" tabIndex={-1} className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10 flex-grow flex items-center justify-center focus:outline-none">
+        <main id="main-content" tabIndex={-1} className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 py-4 sm:py-6 flex-grow flex items-center justify-center focus:outline-none">
           <PublicNotFoundView
             pathname={currentPathname}
             onGoHome={() => navigateGuest('landing')}
@@ -495,7 +495,7 @@ function AppContent() {
     }
   } else if (signedInUtilityView) {
     content = (
-      <main id="main-content" tabIndex={-1} className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10 flex-grow focus:outline-none">
+      <main id="main-content" tabIndex={-1} className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 py-4 sm:py-6 flex-grow focus:outline-none">
         {signedInUtilityView === 'unsubscribe' ? (
           <UnsubscribePage onBack={closeSignedInUtility} />
         ) : (
@@ -558,7 +558,7 @@ function AppContent() {
 
           {/* Global Navigation - persistent charcoal brand bar on every page */}
           <nav className="sticky top-0 z-40 brand-nav shrink-0" aria-label="Primary navigation">
-            <div className={`${isWorkspaceShell ? 'w-full' : 'max-w-7xl mx-auto'} min-w-0 px-3 sm:px-4 xl:px-6 h-[4.5rem] sm:h-16 flex items-center justify-between gap-2 sm:gap-3`}>
+            <div className={`${isWorkspaceShell ? 'w-full px-3 sm:px-4 xl:px-6' : 'w-full max-w-[1600px] mx-auto pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))]'} min-w-0 h-[4.5rem] sm:h-16 flex items-center justify-between gap-2 sm:gap-3`}>
               <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-2.5">
                 {showBackButton && (
                   <button
@@ -695,8 +695,8 @@ function AppContent() {
           </div>
 
           {/* Global Footer: verifiable business identity, 4 required legal routes, consent controls, and email unsubscribe */}
-          <footer className={`border-t border-[var(--border-default)] bg-[var(--surface-card)] mt-auto text-xs text-[var(--text-secondary)] ${isWorkspaceShell ? 'pb-24 lg:pb-0' : 'pb-[var(--rp-safe-bottom)]'} ${desktopLocked && !signedInUtilityView ? 'lg:hidden' : ''}`}>
-            <div className={`${isWorkspaceShell ? 'w-full' : 'max-w-7xl mx-auto'} pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))] py-5 space-y-4`}>
+          <footer className={`border-t border-[var(--border-default)] bg-[var(--surface-card)] mt-auto text-xs text-[var(--text-secondary)] ${isWorkspaceShell ? 'pb-24 lg:pb-0' : 'pb-24 md:pb-[var(--rp-safe-bottom)]'} ${desktopLocked && !signedInUtilityView ? 'lg:hidden' : ''}`}>
+            <div className={`${isWorkspaceShell ? 'w-full pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))]' : 'w-full max-w-[1600px] mx-auto pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))]'} py-4 space-y-3`}>
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div className="space-y-1 text-center lg:text-left">
                   <p className="text-[var(--text-primary)] font-semibold">
