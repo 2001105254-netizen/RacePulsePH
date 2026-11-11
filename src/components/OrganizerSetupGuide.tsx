@@ -20,7 +20,7 @@ const steps: Array<{
     number: '01',
     title: 'Create the race',
     description: 'Open Race Setup, then enter the race name, date, race distances, registration deadline, and Start / Finish checkpoints.',
-    tips: ['Add every distance before opening registration.', 'For printable race bibs, upload a blank 1200 × 800 px landscape (3:2) layout; you can use a different bib design for every distance. The PDF prints two full-bleed bibs per A4—set your printer to Borderless, then cut once across the centre.', 'Age categories apply to Solo entries; Duo and Trio use their team category.'],
+    tips: ['Add every distance before opening registration.', 'For printable race bibs, upload a blank 1200 × 800 px landscape (3:2) layout; you can use a different bib design for every distance. The PDF prints two full-bleed bibs per A4: set your printer to Borderless, then cut once across the centre.', 'Age categories apply to Solo entries; Duo and Trio use their team category.'],
     destination: 'race',
     action: 'Open Race Setup',
     icon: Flag,

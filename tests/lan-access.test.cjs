@@ -19,4 +19,5 @@ test('LAN reset requires protected authority and corrections cannot change read 
  assert.equal(authorize({...operator,authority:true,scope:'all'},'POST','/api/chip-reads/reset',{}),true);
  assert.equal(authorize({...operator,authority:true},'DELETE','/api/chip-reads/other',{}, {raceId:'race_b'}),false);
  assert.equal(authorize(operator,'POST','/api/chip-reads',{raceId:'race_a',recordedBy:'operator',bibNumber:'new'},{raceId:'race_a',recordedBy:'operator',bibNumber:'old'}),false);
+ assert.equal(authorize({...operator,permissions:{...operator.permissions,'engraving.status':true}},'POST','/api/orders',{id:'ord1',status:'invalid_status'},{id:'ord1',status:'queued'}),false);
 });

@@ -1,28 +1,32 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { collection, doc, getDoc, getDocs, onSnapshot, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { useAccess, accessCommand } from '../lib/access';
-import LiveBroadcastPanel from './LiveBroadcastPanel';
-import MyRaceEventsPanel from './MyRaceEventsPanel';
 import { db, signOutUser } from '../firebase';
 import { RunnerProfile, UserProfile } from '../types';
-import OperatorDashboard from './OperatorDashboard';
-import TimingConsole from './TimingConsole';
-import RaceSetupPanel from './RaceSetupPanel';
-import BottomNav from './BottomNav';
-import AccessPanel from './AccessPanel';
-import BibStudioPanel from './BibStudioPanel';
+import WorkspaceShell from './WorkspaceShell';
+import type { WorkspaceSwitchProps } from './DesktopSidebar';
 import {
   Award, Radio, Flag, Users, Users2, LogOut, CheckCircle, XCircle, ShieldCheck, Search, Trash2, Printer,
 } from 'lucide-react';
+
+const LiveBroadcastPanel = lazy(() => import('./LiveBroadcastPanel'));
+const MyRaceEventsPanel = lazy(() => import('./MyRaceEventsPanel'));
+const OperatorDashboard = lazy(() => import('./OperatorDashboard'));
+const TimingConsole = lazy(() => import('./TimingConsole'));
+const RaceSetupPanel = lazy(() => import('./RaceSetupPanel'));
+const AccessPanel = lazy(() => import('./AccessPanel'));
+const BibStudioPanel = lazy(() => import('./BibStudioPanel'));
 
 type AdminTab = 'engraving' | 'timing' | 'race' | 'bibstudio' | 'organizers' | 'runners' | 'access' | 'events' | 'hub';
 
 interface AdminDashboardProps {
   profile: UserProfile;
+  workspaceSwitch?: WorkspaceSwitchProps;
+  pendingApprovalNotice?: boolean;
 }
 
-export default function AdminDashboard({ profile }: AdminDashboardProps) {
-  const { can, authority: isSuperAdmin, state } = useAccess();
+export default function AdminDashboard({ profile, workspaceSwitch, pendingApprovalNotice }: AdminDashboardProps) {
+  const { can, authority: isSuperAdmin } = useAccess();
   const [tab, setTab] = useState<AdminTab>(can('engraving.view') ? 'engraving' : 'events');
   const allowed: Record<AdminTab, boolean> = { engraving: can('engraving.view'), timing: can('timing.view') || can('roster.view'), race: can('race.view') || can('race.create'), bibstudio: isSuperAdmin, organizers: can('users.view') || isSuperAdmin, runners: can('users.view') || isSuperAdmin, access: isSuperAdmin, events: can('race.view'), hub: can('hub.manage') || can('hub.publish') };
   const active = allowed[tab] ? tab : (Object.keys(allowed).find(key => allowed[key]) as AdminTab);
@@ -33,46 +37,63 @@ export default function AdminDashboard({ profile }: AdminDashboardProps) {
     return () => window.removeEventListener('racepulse:back', goHome);
   }, []);
 
+  const spaceTitle = isSuperAdmin
+    ? 'Super Admin Console'
+    : profile.role === 'admin'
+    ? 'Admin Console'
+    : profile.role === 'organizer'
+    ? 'Organizer Console'
+    : 'Operations';
+
+  const navItems = [
+    { key: 'events', icon: <Flag className="w-4 h-4" />, label: 'My Events', active: active === 'events', onClick: () => setTab('events') },
+    { key: 'hub', icon: <Radio className="w-4 h-4" />, label: 'Live Hub', active: active === 'hub', onClick: () => setTab('hub') },
+    { key: 'engraving', icon: <Award className="w-4 h-4" />, label: 'Engraving', active: active === 'engraving', onClick: () => setTab('engraving') },
+    { key: 'timing', icon: <Radio className="w-4 h-4" />, label: 'Timing', active: active === 'timing', onClick: () => setTab('timing') },
+    { key: 'race', icon: <Flag className="w-4 h-4" />, label: 'Race Setup', active: active === 'race', onClick: () => setTab('race') },
+    { key: 'bibstudio', icon: <Printer className="w-4 h-4" />, label: 'Bib Studio', active: active === 'bibstudio', onClick: () => setTab('bibstudio') },
+    { key: 'organizers', icon: <Users className="w-4 h-4" />, label: 'Organizers', active: active === 'organizers', onClick: () => setTab('organizers') },
+    { key: 'runners', icon: <Users2 className="w-4 h-4" />, label: 'Runners', active: active === 'runners', onClick: () => setTab('runners') },
+    { key: 'access', icon: <ShieldCheck className="w-4 h-4" />, label: 'Access', active: active === 'access', onClick: () => setTab('access') },
+  ].filter(item => allowed[item.key as AdminTab]);
+
   return (
-    <div className="w-full max-w-[1800px] mx-auto px-4 sm:px-6 xl:px-8 py-6 pb-28 space-y-6">
+    <WorkspaceShell
+      spaceTitle={spaceTitle}
+      navLabel="Operations navigation"
+      items={navItems}
+      profile={profile}
+      workspaceSwitch={workspaceSwitch}
+      pendingApprovalNotice={pendingApprovalNotice}
+      maxWidthClass="max-w-[1800px]"
+    >
       <div className="flex flex-col md:flex-row md:items-center justify-between glass-panel hero-glow px-4 sm:px-6 py-5 gap-4 animate-fadeIn">
         <div>
-          <span className="text-[10px] tracking-widest font-extrabold text-amber-500 font-display bg-amber-500/10 px-2.5 py-1 rounded-full uppercase border border-amber-500/20">{isSuperAdmin ? 'Super Admin Console' : profile.role === 'admin' ? 'Admin Console' : profile.role === 'organizer' ? 'Organizer Console' : 'Operations'}</span>
+          <span className="text-[10px] tracking-widest font-extrabold text-amber-500 font-display bg-amber-500/10 px-2.5 py-1 rounded-full uppercase border border-amber-500/20">{spaceTitle}</span>
           <h1 className="heading-float text-2xl font-black tracking-tight font-display text-[var(--text-primary)] mt-1.5 uppercase">Welcome, {profile.displayName}</h1>
           <p className="text-xs text-[var(--text-secondary)] mt-1">{isSuperAdmin ? 'Secure control over accounts, organizer approvals, races, timing, and engraving.' : 'Operational control over engraving, timing, and race setup.'}</p>
         </div>
         <button
+          type="button"
           onClick={() => signOutUser()}
-          className="text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)]/75 backdrop-blur-md hover:text-[var(--text-primary)] font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider self-start"
+          className="lg:hidden min-h-11 text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)]/75 backdrop-blur-md hover:text-[var(--text-primary)] font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider self-start"
         >
-          <LogOut className="w-3.5 h-3.5" /> Sign Out
+          <LogOut className="w-3.5 h-3.5" aria-hidden="true" /> Sign Out
         </button>
       </div>
 
-      {active === 'engraving' && <OperatorDashboard />}
-      {active === 'timing' && <TimingConsole uid={profile.uid} canSeeAllRaces />}
-      {active === 'race' && <RaceSetupPanel uid={profile.uid} canSeeAllRaces canDeleteRaces={isSuperAdmin} />}
-      {active === 'bibstudio' && <BibStudioPanel />}
-      {active === 'events' && <MyRaceEventsPanel uid={profile.uid} onManageRace={id => { localStorage.setItem('racepulse_active_race', id); setTab('timing'); }} />}
-      {active === 'hub' && <LiveBroadcastPanel uid={profile.uid} />}
-      {active === 'organizers' && <OrganizersPanel canManageAccounts={isSuperAdmin} currentUserId={profile.uid} />}
-      {active === 'runners' && <RunnersPanel canManageAccounts={isSuperAdmin} currentUserId={profile.uid} />}
-      {active === 'access' && <AccessPanel />}
-
-      <BottomNav
-        items={[
-          { key: 'events', icon: <Flag className="w-4 h-4" />, label: 'My Events', active: active === 'events', onClick: () => setTab('events') },
-          { key: 'hub', icon: <Radio className="w-4 h-4" />, label: 'Live Hub', active: active === 'hub', onClick: () => setTab('hub') },
-          { key: 'engraving', icon: <Award className="w-4 h-4" />, label: 'Engraving', active: active === 'engraving', onClick: () => setTab('engraving') },
-          { key: 'timing', icon: <Radio className="w-4 h-4" />, label: 'Timing', active: active === 'timing', onClick: () => setTab('timing') },
-          { key: 'race', icon: <Flag className="w-4 h-4" />, label: 'Race Setup', active: active === 'race', onClick: () => setTab('race') },
-          { key: 'bibstudio', icon: <Printer className="w-4 h-4" />, label: 'Bib Studio', active: active === 'bibstudio', onClick: () => setTab('bibstudio') },
-          { key: 'organizers', icon: <Users className="w-4 h-4" />, label: 'Organizers', active: active === 'organizers', onClick: () => setTab('organizers') },
-          { key: 'runners', icon: <Users2 className="w-4 h-4" />, label: 'Runners', active: active === 'runners', onClick: () => setTab('runners') },
-          { key: 'access', icon: <ShieldCheck className="w-4 h-4" />, label: 'Access', active: active === 'access', onClick: () => setTab('access') },
-        ].filter(item => allowed[item.key])}
-      />
-    </div>
+      <Suspense fallback={<div role="status" className="p-8 text-center text-xs text-[var(--text-secondary)]">Loading module…</div>}>
+        {active === 'engraving' && <OperatorDashboard />}
+        {active === 'timing' && <TimingConsole uid={profile.uid} canSeeAllRaces />}
+        {active === 'race' && <RaceSetupPanel uid={profile.uid} canSeeAllRaces canDeleteRaces={isSuperAdmin} />}
+        {active === 'bibstudio' && <BibStudioPanel />}
+        {active === 'events' && <MyRaceEventsPanel uid={profile.uid} onManageRace={id => { localStorage.setItem('racepulse_active_race', id); setTab('timing'); }} />}
+        {active === 'hub' && <LiveBroadcastPanel uid={profile.uid} />}
+        {active === 'organizers' && <OrganizersPanel canManageAccounts={isSuperAdmin} currentUserId={profile.uid} />}
+        {active === 'runners' && <RunnersPanel canManageAccounts={isSuperAdmin} currentUserId={profile.uid} />}
+        {active === 'access' && <AccessPanel />}
+      </Suspense>
+    </WorkspaceShell>
   );
 }
 

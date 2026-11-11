@@ -611,3 +611,17 @@ input[type="submit"], input[type="button"], input[type="reset"], input[type="ran
 :disabled, [aria-disabled="true"] {
   cursor: not-allowed;
 }
+
+@media (min-width: 1024px) {
+  .desktop-workspace-sidebar {
+    position: sticky;
+    top: calc(4rem + 1px);
+    height: calc(100vh - 4rem - 1px);
+    height: calc(100dvh - 4rem - 1px);
+  }
+}
+
+.racepulse-sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-secondary) 35%, transparent) transparent;
+}

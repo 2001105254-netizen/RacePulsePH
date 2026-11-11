@@ -58,6 +58,27 @@ interface RfidBridgeEvent {
 }
 
 const PORT = Number(process.env.PORT || 3000);
+const VALID_ID_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+const FORBIDDEN_IDS = new Set([
+  '__proto__',
+  'prototype',
+  'constructor',
+  'toString',
+  'toLocaleString',
+  'valueOf',
+  'hasOwnProperty',
+  'isPrototypeOf',
+  'propertyIsEnumerable',
+]);
+const VALID_ORDER_STATUSES = new Set(['queued', 'inprogress', 'ready', 'completed']);
+
+function isValidRecordId(value: unknown): value is string {
+  return typeof value === 'string' && VALID_ID_RE.test(value) && !FORBIDDEN_IDS.has(value);
+}
+
+function ownRecord<T>(store: Record<string, T>, id: unknown): T | undefined {
+  return typeof id === 'string' && Object.hasOwn(store, id) ? store[id] : undefined;
+}
 // Timing Station.exe runs the local server from Program Files, which Windows
 // intentionally protects from normal writes.  The desktop wrapper supplies a
 // user-writable RACEPULSE_DATA_DIR; the normal developer workflow keeps using
@@ -85,9 +106,20 @@ try {
   orders = {};
 }
 
+function writeJsonAtomic(filePath: string, data: unknown): void {
+  const serialized = JSON.stringify(data, null, 2);
+  const tmpFile = `${filePath}.tmp`;
+  try {
+    fs.writeFileSync(tmpFile, serialized, "utf-8");
+    fs.renameSync(tmpFile, filePath);
+  } catch {
+    fs.writeFileSync(filePath, serialized, "utf-8");
+  }
+}
+
 function saveDB() {
   try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(orders, null, 2), "utf-8");
+    writeJsonAtomic(DB_FILE, orders);
   } catch (err) {
     console.error("[Local Server DB] Write failed:", err);
   }
@@ -108,7 +140,7 @@ try {
 
 function saveChipReadsDB() {
   try {
-    fs.writeFileSync(CHIP_READS_DB_FILE, JSON.stringify(chipReads, null, 2), "utf-8");
+    writeJsonAtomic(CHIP_READS_DB_FILE, chipReads);
   } catch (err) {
     console.error("[Local Server DB] Chip reads write failed:", err);
   }
@@ -143,7 +175,7 @@ function pruneRfidEvents(): void {
 function saveRfidEventsDB(): void {
   try {
     pruneRfidEvents();
-    fs.writeFileSync(RFID_EVENTS_DB_FILE, JSON.stringify(rfidEvents, null, 2), "utf-8");
+    writeJsonAtomic(RFID_EVENTS_DB_FILE, rfidEvents);
   } catch (err) {
     console.error("[RFID Bridge] Event queue write failed:", err);
   }
@@ -152,8 +184,8 @@ function saveRfidEventsDB(): void {
 async function startServer() {
   const app = express();
 
-  // Allow JSON payloads
-  app.use(express.json());
+  // Allow bounded JSON payloads
+  app.use(express.json({ limit: "64kb" }));
 
   // CORS Headers (so if they reference local server IP from another subnet, browser doesn't block it)
   app.use((req, res, next) => {
@@ -165,6 +197,16 @@ async function startServer() {
       return;
     }
     next();
+  });
+
+  app.get('/api/health', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      status: 'ok',
+      service: 'racepulse-lan-hub',
+      bridgeConfigured: Boolean((process.env.RACEPULSE_BRIDGE_KEY || '').length >= 32 && process.env.RACEPULSE_BRIDGE_RACE_ID),
+      timestamp: new Date().toISOString(),
+    });
   });
 
   app.use('/api', async (req, res, next) => {
@@ -183,7 +225,16 @@ async function startServer() {
       if (!response.ok) return res.status(response.status).json({ error: 'Current authorization could not be confirmed. Work remains queued.' });
       const session = await response.json();
       const id = route.split('/').at(-1);
-      const existing = route.startsWith('/api/orders') ? orders[id!] || orders[req.body?.id] : chipReads[id!] || chipReads[req.body?.id];
+      const bodyId = typeof req.body?.id === 'string' ? req.body.id : undefined;
+      if (req.method !== 'GET' && !route.endsWith('/reset')) {
+        const candidateId = req.method === 'DELETE' ? id : bodyId;
+        if (candidateId !== undefined && !isValidRecordId(candidateId)) {
+          return res.status(400).json({ error: 'Invalid record identifier.' });
+        }
+      }
+      const existing = route.startsWith('/api/orders')
+        ? ownRecord(orders, id) || ownRecord(orders, bodyId)
+        : ownRecord(chipReads, id) || ownRecord(chipReads, bodyId);
       if (!lanPolicy.authorize(session, req.method, route, { ...req.body, raceId: req.query.raceId || req.body?.raceId }, existing)) return res.status(403).json({ error: 'This action is disabled for your account or race.' });
       res.locals.accessSession = session;
       next();
@@ -201,13 +252,21 @@ async function startServer() {
   // POST/Create/Update order
   app.post("/api/orders", (req, res) => {
     const orderData = req.body as Partial<EngravingOrder>;
-    if (!orderData.id || !orderData.runnerName || !orderData.bibNumber) {
-      res.status(400).json({ error: "Missing required fields (id, runnerName, bibNumber)" });
+    if (
+      !isValidRecordId(orderData.id) ||
+      typeof orderData.runnerName !== "string" || !orderData.runnerName.trim() || orderData.runnerName.trim().length > 100 ||
+      typeof orderData.bibNumber !== "string" || !orderData.bibNumber.trim() || orderData.bibNumber.trim().length > 20 ||
+      (orderData.distance !== undefined && (typeof orderData.distance !== "string" || orderData.distance.trim().length > 50)) ||
+      (orderData.status !== undefined && !VALID_ORDER_STATUSES.has(orderData.status)) ||
+      (orderData.rank !== undefined && (typeof orderData.rank !== "string" || orderData.rank.trim().length > 50)) ||
+      (orderData.customInscription !== undefined && (typeof orderData.customInscription !== "string" || orderData.customInscription.trim().length > 150))
+    ) {
+      res.status(400).json({ error: "Missing or invalid required fields (id, runnerName, bibNumber, status)" });
       return;
     }
 
     const orderId = orderData.id;
-    const existing = orders[orderId];
+    const existing = ownRecord(orders, orderId);
     const timestamp = new Date().toISOString();
 
     const merged: EngravingOrder = {
@@ -234,8 +293,9 @@ async function startServer() {
   // DELETE single order
   app.delete("/api/orders/:id", (req, res) => {
     const orderId = req.params.id;
-    if (orders[orderId]) {
-      const removedName = orders[orderId].runnerName;
+    const existing = ownRecord(orders, orderId);
+    if (existing) {
+      const removedName = existing.runnerName;
       delete orders[orderId];
       saveDB();
       console.log(`[Local Server DB] Removed order ${orderId} for runner ${removedName}.`);
@@ -265,8 +325,15 @@ async function startServer() {
   // POST/Create a new chip read
   app.post("/api/chip-reads", (req, res) => {
     const readData = req.body as Partial<ChipRead>;
-    if (!readData.id || !readData.raceId || !readData.bibNumber || !readData.checkpointId || !readData.timestamp) {
-      res.status(400).json({ error: "Missing required fields (id, raceId, bibNumber, checkpointId, timestamp)" });
+    if (
+      !isValidRecordId(readData.id) ||
+      !isValidRecordId(readData.raceId) ||
+      typeof readData.bibNumber !== "string" || !readData.bibNumber.trim() || readData.bibNumber.trim().length > 20 ||
+      typeof readData.checkpointId !== "string" || !readData.checkpointId.trim() || readData.checkpointId.trim().length > 64 ||
+      typeof readData.timestamp !== "string" || !readData.timestamp.trim() || readData.timestamp.length > 64 ||
+      (readData.source !== undefined && readData.source !== "manual" && readData.source !== "rfid-bridge")
+    ) {
+      res.status(400).json({ error: "Missing or invalid required fields (id, raceId, bibNumber, checkpointId, timestamp)" });
       return;
     }
 
@@ -294,7 +361,7 @@ async function startServer() {
   // DELETE single chip read
   app.delete("/api/chip-reads/:id", (req, res) => {
     const readId = req.params.id;
-    if (chipReads[readId]) {
+    if (ownRecord(chipReads, readId)) {
       delete chipReads[readId];
       saveChipReadsDB();
       res.json({ success: true, message: `Chip read ${readId} deleted.` });
@@ -332,12 +399,13 @@ async function startServer() {
     const antenna = Number(eventData.antenna);
     const timestamp = typeof eventData.timestamp === 'string' ? eventData.timestamp : '';
 
-    if (!id || !/^[0-9A-F]{8,128}$/.test(epc) || !Number.isInteger(antenna) || antenna < 1 || antenna > 8 || Number.isNaN(Date.parse(timestamp))) {
-      res.status(400).json({ error: 'Expected id, hexadecimal EPC, antenna (1-8), and ISO timestamp.' });
+    if (!isValidRecordId(id) || !/^[0-9A-F]{8,128}$/.test(epc) || !Number.isInteger(antenna) || antenna < 1 || antenna > 8 || Number.isNaN(Date.parse(timestamp))) {
+      res.status(400).json({ error: 'Expected valid id, hexadecimal EPC, antenna (1-8), and ISO timestamp.' });
       return;
     }
 
-    if (rfidEvents[id]) { res.json({ success: true, event: rfidEvents[id] }); return; }
+    const existingEvent = ownRecord(rfidEvents, id);
+    if (existingEvent) { res.json({ success: true, event: existingEvent }); return; }
     const event: RfidBridgeEvent = {
       ...(Number.isSafeInteger(eventData.readerSequence) ? { readerSequence: eventData.readerSequence } : {}),
       ...(typeof eventData.monotonicTicks === 'string' ? { monotonicTicks: eventData.monotonicTicks } : {}),

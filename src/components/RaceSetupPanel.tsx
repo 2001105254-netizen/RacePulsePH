@@ -788,7 +788,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
               {approvedOrganizers
                 .filter((organizer) => !organizerIds.includes(organizer.uid))
                 .map((organizer) => (
-                  <option key={organizer.uid} value={organizer.uid}>{organizer.displayName} — {organizer.email}</option>
+                  <option key={organizer.uid} value={organizer.uid}>{organizer.displayName} ({organizer.email})</option>
                 ))}
             </select>
             {organizerIds.length > 0 ? (
@@ -835,8 +835,8 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
                   onChange={(e) => setPaymentFeeMode(e.target.value as 'absorbed' | 'passed_on')}
                   className="w-full glass-inset px-3 py-2.5 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
                 >
-                  <option value="absorbed">Organizer absorbs the fee — runner pays the listed price</option>
-                  <option value="passed_on">Pass fee to runner — checkout adds PayMongo's fee</option>
+                  <option value="absorbed">Organizer absorbs the fee: runner pays the listed price</option>
+                  <option value="passed_on">Pass fee to runner: checkout adds PayMongo's fee</option>
                 </select>
               </div>
             )}
@@ -931,7 +931,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
             <p className="text-[10.5px] text-[var(--text-secondary)] mb-2">Upload a blank horizontal bib layout as the default/fallback. RacePulse automatically adds each runner’s name and bib number after registration.</p>
             <div className="mb-3 rounded-[14px] border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-[10.5px] leading-relaxed text-[var(--text-secondary)]">
               <span className="font-black uppercase tracking-wide text-emerald-500">Print standard: </span>
-              Design at <strong className="text-[var(--text-primary)]">1200 × 800 px</strong> (landscape, 3:2 ratio). The All Race Bibs PDF prints <strong className="text-[var(--text-primary)]">2 borderless bibs per A4 page</strong>, each one exact half-A4 (210 × 148.5 mm) for one straight centre cut. Keep important artwork at least 40 px from the edges; upload a blank template only—no runner name or bib number.
+              Design at <strong className="text-[var(--text-primary)]">1200 × 800 px</strong> (landscape, 3:2 ratio). The All Race Bibs PDF prints <strong className="text-[var(--text-primary)]">2 borderless bibs per A4 page</strong>, each one exact half-A4 (210 × 148.5 mm) for one straight centre cut. Keep important artwork at least 40 px from the edges; upload a blank template only (no runner name or bib number).
             </div>
             <input disabled={(!!editingId && !can('race.bibs'))} ref={raceBibInputRef} type="file" accept="image/*" onChange={handleRaceBibTemplateSelected} className="hidden" />
             {raceBibTemplateImage ? (
@@ -1011,7 +1011,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
             ) : (
               <button type="button" onClick={() => raceBibInputRef.current?.click()} disabled={(raceBibUploading) || (!!editingId && !can('race.bibs'))} className="w-full aspect-[3/2] rounded-[16px] border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-2 text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 transition disabled:opacity-60">
                 {raceBibUploading ? <RefreshCw className="w-6 h-6 animate-spin" /> : <ImagePlus className="w-6 h-6" />}
-                <span className="text-xs font-bold uppercase tracking-wide">{raceBibUploading ? 'Processing...' : 'Upload Bib Layout — 1200 × 800 px'}</span>
+                <span className="text-xs font-bold uppercase tracking-wide">{raceBibUploading ? 'Processing...' : 'Upload Bib Layout (1200 × 800 px)'}</span>
               </button>
             )}
           </div>
@@ -1389,7 +1389,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces }: 
                     onClick={() => setBibDownloadRace(race)}
                     disabled={(!hasRaceBibTemplate(race) || raceBibPdfBusyRaceId === race.id) || (!!editingId && !can('race.bibs'))}
                     className="flex items-center gap-1 rounded-lg px-2 py-2 text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)] transition hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-35"
-                    title={hasRaceBibTemplate(race) ? 'Download personalized race bibs by distance or for all runners — two bibs per A4 page' : 'Upload a race bib template first'}
+                    title={hasRaceBibTemplate(race) ? 'Download personalized race bibs by distance or for all runners (two bibs per A4 page)' : 'Upload a race bib template first'}
                   >
                     {raceBibPdfBusyRaceId === race.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />} BIB PDF
                   </button>

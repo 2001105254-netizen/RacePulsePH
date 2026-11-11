@@ -14,10 +14,12 @@ before(async()=>{
 after(async()=>{child?.kill();await new Promise(resolve=>fixture.close(resolve));});
 const request=(route,method='GET',token,body)=>fetch(`http://127.0.0.1:${port}/api/${route}`,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},...(body?{body:JSON.stringify(body)}:{})});
 test('actual local HTTP routes deny anonymous reads and unpaired bridge input',async()=>{
+ const health=await(await request('health')).json();assert.equal(health.status,'ok');assert.equal(health.bridgeConfigured,true);
  assert.equal((await request('orders')).status,401);assert.equal((await request('rfid-events','POST',undefined,{epc:'DEADBEEF'})).status,401);
 });
 test('actual local HTTP routes enforce record owner, scope and status authority',async()=>{
  const order={id:'test_order',ownerUid:'runner',runnerName:'Runner',bibNumber:'5-001',distance:'5K',finishingTime:'00:20:00',status:'queued',createdAt:'2026-10-28',updatedAt:'2026-10-28'};
+ assert.equal((await request('orders','POST','runner',{...order,id:'__proto__'})).status,400);
  assert.equal((await request('orders','POST','runner',order)).status,200);
  assert.equal((await request('orders','POST','runner',{...order,status:'completed'})).status,403);
  assert.equal((await request('orders/reset','POST','operator',{})).status,403);

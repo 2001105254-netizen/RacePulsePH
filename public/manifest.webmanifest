@@ -4,8 +4,8 @@
   "description": "Race registration, live timing, and race-day operations.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0a0a0a",
-  "theme_color": "#0a0a0a",
+  "background_color": "#141416",
+  "theme_color": "#141416",
   "icons": [
     {
       "src": "/assets/racepulse-mark-192.png",

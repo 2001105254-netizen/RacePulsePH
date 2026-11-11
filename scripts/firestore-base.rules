@@ -11,10 +11,12 @@ service cloud.firestore {
         || exists(/databases/$(database)/documents/users/$(request.auth.uid)));
     }
 
-    // One-time codes, reset grants and delivery limits are backend-only.
+    // One-time codes, reset grants, delivery limits and payment sessions are backend-only.
     match /accountChallenges/{id} { allow read, write: if false; }
     match /accountResetGrants/{id} { allow read, write: if false; }
     match /accountRateLimits/{id} { allow read, write: if false; }
+    match /payments/{id} { allow read, write: if false; }
+    match /pendingRegistrations/{id} { allow read, write: if false; }
 
     function callerDoc() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid));
@@ -243,7 +245,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['uid', 'recentRaces', 'updatedAt'])
         && request.resource.data.uid == uid
         && request.resource.data.recentRaces is list && request.resource.data.recentRaces.size() <= 6
-        && request.resource.data.updatedAt is string;
+        && request.resource.data.updatedAt is string && request.resource.data.updatedAt.size() <= 40;
       allow delete: if isSignedIn() && request.auth.uid == uid;
     }
 

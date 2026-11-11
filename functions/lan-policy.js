@@ -13,7 +13,7 @@ function authorize(s, method, route, body, existing) {
     if (method === 'DELETE') return s.authority === true || (can(s, 'personal.engraving') && existing?.ownerUid === s.uid && existing?.status === 'queued');
     if (method !== 'POST') return false;
     if (!existing) return body.status === 'queued' && (can(s, 'engraving.create') || (can(s, 'personal.engraving') && body.ownerUid === s.uid));
-    return can(s, 'engraving.status') && Object.keys(body).every(key => ['status','updatedAt'].includes(key) || JSON.stringify(body[key]) === JSON.stringify(existing[key]));
+    return can(s, 'engraving.status') && (!body.status || ['queued', 'inprogress', 'ready', 'completed'].includes(body.status)) && Object.keys(body).every(key => ['status','updatedAt'].includes(key) || JSON.stringify(body[key]) === JSON.stringify(existing[key]));
   }
   if (route.startsWith('/api/chip-reads')) {
     if (method === 'DELETE') return !!existing && scope(s, existing.raceId) && (s.authority === true || can(s, 'timing.correct'));

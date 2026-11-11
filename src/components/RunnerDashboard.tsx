@@ -12,7 +12,8 @@ import { ChipRead, FriendActivity, FriendProfile, Gender, PublicLeaderboardEntry
 import CustomerForm from './CustomerForm';
 import { QRCodeSVG } from 'qrcode.react';
 import { LogOut, User, Hash, MapPin, RefreshCw, Award, ClipboardList, Clock, ArrowLeft, ArrowRight, Flag, Calendar, CheckSquare, Coins, PackageCheck, Camera, Trophy, X, Pencil, CheckCircle2, Circle, Radio, Phone, HeartPulse, Mail, FileDown, Maximize2, Users2, UserPlus, UserCheck } from 'lucide-react';
-import BottomNav from './BottomNav';
+import WorkspaceShell from './WorkspaceShell';
+import type { WorkspaceSwitchProps } from './DesktopSidebar';
 import RaceList from './RaceList';
 import { isRaceRegistrationOpen } from '../lib/raceRegistration';
 import { entryCategoryLabels, entryMemberCount, raceEntryCategories, runnerDivisionLabel, runnerEntryCategory } from '../lib/raceEntry';
@@ -29,6 +30,8 @@ interface RunnerDashboardProps {
   profile: UserProfile;
   initialRaceId?: string | null;
   onInitialRaceHandled?: () => void;
+  workspaceSwitch?: WorkspaceSwitchProps;
+  pendingApprovalNotice?: boolean;
 }
 
 type RunnerTab = 'events' | 'allraces' | 'myraces' | 'friends' | 'engraving';
@@ -195,7 +198,7 @@ function mostRecent(profiles: RunnerProfile[]): RunnerProfile | undefined {
   return [...profiles].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
 }
 
-export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceHandled }: RunnerDashboardProps) {
+export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceHandled, workspaceSwitch, pendingApprovalNotice }: RunnerDashboardProps) {
   const { can, authority } = useAccess();
   const [runnerProfiles, setRunnerProfiles] = useState<RunnerProfile[] | undefined>(undefined); // undefined = loading
   const [tab, setTab] = useState<RunnerTab>(can('personal.register') ? 'events' : can('personal.results') || can('personal.bibs') ? 'myraces' : can('personal.friends') ? 'friends' : 'engraving');
@@ -315,7 +318,7 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
         setEventQrMessage('Checking your race bib…');
         const preview = await previewRaceBibClaim(bibPayload);
         setPendingBibClaim({ ...preview, payload: bibPayload });
-        setEventQrMessage(preview.alreadyLinked ? 'This race is already in My Races.' : 'Race bib found — review the details to add it.');
+        setEventQrMessage(preview.alreadyLinked ? 'This race is already in My Races.' : 'Race bib found: review the details to add it.');
         window.setTimeout(() => setShowEventQrScanner(false), 300);
         return true;
       } catch (error: any) {
@@ -332,7 +335,7 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
         return false;
       }
       setEventQrError('');
-      setEventQrMessage('Event found — opening its registration form…');
+      setEventQrMessage('Event found: opening its registration form…');
       setScannedRaceId(raceId);
       setTab('events');
       window.setTimeout(() => setShowEventQrScanner(false), 450);
@@ -362,37 +365,58 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
     }
   };
 
+  const navItems = [
+    { key: 'events', icon: <Flag className="w-4 h-4" />, label: 'Events', active: tab === 'events', onClick: () => setTab('events') },
+    { key: 'allraces', icon: <Trophy className="w-4 h-4" />, label: 'All Races', active: tab === 'allraces', onClick: () => setTab('allraces') },
+    { key: 'myraces', icon: <ClipboardList className="w-4 h-4" />, label: 'My Races', active: tab === 'myraces', onClick: () => setTab('myraces') },
+    { key: 'friends', icon: <Users2 className="w-4 h-4" />, label: 'Friends', active: tab === 'friends', onClick: () => setTab('friends') },
+    { key: 'engraving', icon: <Award className="w-4 h-4" />, label: 'Engraving', active: tab === 'engraving', onClick: () => setTab('engraving') },
+  ].filter(item => item.key === 'myraces' || can(({ events: 'personal.register', friends: 'personal.friends', engraving: 'personal.engraving' })[item.key]));
+
   return (
-    <div className="w-full max-w-7xl mx-auto px-4 py-4 pb-28 space-y-6">
+    <WorkspaceShell
+      spaceTitle="Runner Portal"
+      navLabel="Runner navigation"
+      items={navItems}
+      profile={profile}
+      workspaceSwitch={workspaceSwitch}
+      pendingApprovalNotice={pendingApprovalNotice}
+      maxWidthClass="max-w-7xl"
+      onOpenProfile={() => setShowProfile(true)}
+    >
       <div className="flex flex-col md:flex-row md:items-center justify-between glass-panel hero-glow px-4 sm:px-6 py-5 gap-4 animate-fadeIn">
         <div>
           <span className="text-[10px] tracking-widest font-extrabold text-red-500 font-display bg-red-500/10 px-2.5 py-1 rounded-full uppercase border border-red-500/20">Runner Portal</span>
           <h1 className="heading-float text-2xl font-black tracking-tight font-display text-[var(--text-primary)] mt-1.5 uppercase">Welcome, {profile.displayName}</h1>
           <p className="text-xs text-[var(--text-secondary)] mt-1">Register for races, track your splits, and personalize your finisher medal.</p>
         </div>
-        <div className="flex items-center gap-2 self-start">
+        <div className="flex flex-wrap items-center gap-2 self-start">
           <button
+            type="button"
             onClick={() => { setEventQrError(''); setEventQrMessage(''); setBibClaimError(''); setShowEventQrScanner(true); }}
-            className="text-xs text-violet-500 border border-violet-500/30 hover:bg-violet-500/10 font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
+            className="min-h-11 text-xs text-violet-500 border border-violet-500/30 hover:bg-violet-500/10 font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
           >
-            <Camera className="w-3.5 h-3.5" /> Scan Race / Bib QR
+            <Camera className="w-3.5 h-3.5" aria-hidden="true" /> Scan Race / Bib QR
           </button>
           <button
+            type="button"
             onClick={() => setShowProfile(true)}
             title="My Profile"
-            className="w-10 h-10 rounded-full overflow-hidden glass-inset flex items-center justify-center text-red-500 font-black text-sm hover:border-red-500/40 transition shrink-0"
+            aria-label="Open my profile"
+            className="w-11 h-11 rounded-full overflow-hidden glass-inset flex items-center justify-center text-red-500 font-black text-sm hover:border-red-500/40 transition shrink-0"
           >
             {profile.photoURL ? (
-              <img src={profile.photoURL} alt="" className="w-full h-full object-cover" />
+              <img src={profile.photoURL} alt="" width={44} height={44} className="w-full h-full object-cover" />
             ) : (
               (profile.nickname || profile.displayName || '?').charAt(0).toUpperCase()
             )}
           </button>
           <button
+            type="button"
             onClick={() => signOutUser()}
-            className="text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)]/75 backdrop-blur-md hover:text-[var(--text-primary)] font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
+            className="lg:hidden min-h-11 text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)]/75 backdrop-blur-md hover:text-[var(--text-primary)] font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
           >
-            <LogOut className="w-3.5 h-3.5" /> Sign Out
+            <LogOut className="w-3.5 h-3.5" aria-hidden="true" /> Sign Out
           </button>
         </div>
       </div>
@@ -481,17 +505,6 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
         />
       )}
 
-      {runnerProfiles !== undefined && (
-        <BottomNav
-          items={[
-            { key: 'events', icon: <Flag className="w-4 h-4" />, label: 'Events', active: tab === 'events', onClick: () => setTab('events') },
-            { key: 'allraces', icon: <Trophy className="w-4 h-4" />, label: 'All Races', active: tab === 'allraces', onClick: () => setTab('allraces') },
-            { key: 'myraces', icon: <ClipboardList className="w-4 h-4" />, label: 'My Races', active: tab === 'myraces', onClick: () => setTab('myraces') },
-            { key: 'friends', icon: <Users2 className="w-4 h-4" />, label: 'Friends', active: tab === 'friends', onClick: () => setTab('friends') },
-            { key: 'engraving', icon: <Award className="w-4 h-4" />, label: 'Engraving', active: tab === 'engraving', onClick: () => setTab('engraving') },
-          ].filter(item => item.key === 'myraces' || can(({ events: 'personal.register', friends: 'personal.friends', engraving: 'personal.engraving' })[item.key]))}
-        />
-      )}
       {showEventQrScanner && (
         <QrScannerModal
           onClose={() => setShowEventQrScanner(false)}
@@ -503,7 +516,7 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
           instructions="Scan an organizer event QR to open registration, or scan the QR printed on your race bib to add that event and its result to My Races."
         />
       )}
-    </div>
+    </WorkspaceShell>
   );
 }
 
@@ -1334,7 +1347,7 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
             <div className="flex flex-wrap gap-2">
               {selectedRace!.distances.map((d) => (
                 <span key={d.id} className="text-xs font-bold px-3 py-1.5 rounded-full bg-red-500/10 border border-red-500/20 text-red-500">
-                  {d.label}{d.price > 0 && ` — ₱${d.price.toFixed(0)}`}
+                  {d.label}{d.price > 0 && `: ₱${d.price.toFixed(0)}`}
                 </span>
               ))}
             </div>

@@ -1075,7 +1075,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
         {pendingScanCount > 0 && (
           <div className="px-4 py-3 rounded-[14px] border border-amber-500/30 bg-amber-500/10 text-xs text-amber-500 flex items-start gap-2">
             <WifiOff className="w-4 h-4 shrink-0 mt-0.5" />
-            <span><strong>{pendingScanCount} scan{pendingScanCount === 1 ? '' : 's'} safely stored on this device.</strong> Keep scanning—RacePulsePH will automatically sync them when the internet reconnects.</span>
+            <span><strong>{pendingScanCount} scan{pendingScanCount === 1 ? '' : 's'} safely stored on this device.</strong> Keep scanning. RacePulsePH will automatically sync them when the internet reconnects.</span>
           </div>
         )}
 
@@ -1084,7 +1084,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
             <input
               ref={scanInputRef}
               type="text"
-              placeholder={scanSource === 'keyboard' ? 'SCAN WITH KEYBOARD OR TYPE BIB' : 'VF-787P MODE — USE CAMERA OR SWITCH TO KEYBOARD'}
+              placeholder={scanSource === 'keyboard' ? 'SCAN WITH KEYBOARD OR TYPE BIB' : 'VF-787P MODE: USE CAMERA OR SWITCH TO KEYBOARD'}
               value={bibInput}
               onChange={(e) => setBibInput(e.target.value.toUpperCase())}
               autoComplete="off"
@@ -1095,7 +1095,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
             />
             {bibSuggestions.length > 0 && !recording && (
               <div className="absolute z-30 left-0 right-0 top-[calc(100%+0.45rem)] overflow-hidden rounded-[16px] border border-emerald-500/45 bg-[var(--surface-card)] shadow-2xl shadow-black/25">
-                <p className="border-b border-[var(--border-default)] bg-[var(--surface-inset)] px-3.5 py-2 text-[9px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Matching runners — tap to select</p>
+                <p className="border-b border-[var(--border-default)] bg-[var(--surface-inset)] px-3.5 py-2 text-[9px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Matching runners: tap to select</p>
                 <div className="max-h-64 overflow-y-auto p-1.5">
                   {bibSuggestions.map((runner) => (
                     <button
@@ -1136,7 +1136,7 @@ function TimingConsoleForRace({ race, uid }: TimingConsoleForRaceProps) {
 
         {feedback && (
           <p role="status" className={`text-xs sm:text-sm font-bold px-4 py-3 rounded-[14px] border ${feedback.type === 'success' ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/25' : feedback.type === 'warning' ? 'text-amber-500 bg-amber-500/10 border-amber-500/30' : 'text-red-500 bg-red-500/10 border-red-500/25'}`}>
-            {feedback.type === 'success' ? '✓ Scan saved' : feedback.type === 'warning' ? '⚠ Duplicate warning' : '⚠ Scan issue'} <span className="font-medium">— {feedback.text}</span>
+            {feedback.type === 'success' ? '✓ Scan saved' : feedback.type === 'warning' ? '⚠ Duplicate warning' : '⚠ Scan issue'} <span className="font-medium">: {feedback.text}</span>
           </p>
         )}
       </div>
@@ -1383,7 +1383,7 @@ function MobileCheckInPanel({
 
       {feedback && (
         <p role="status" className={`text-sm font-bold px-4 py-3.5 rounded-[16px] border ${feedback.type === 'success' ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/25' : feedback.type === 'warning' ? 'text-amber-500 bg-amber-500/10 border-amber-500/30' : 'text-red-500 bg-red-500/10 border-red-500/25'}`}>
-          {feedback.type === 'success' ? '✓ Check-in saved' : feedback.type === 'warning' ? '⚠ Check-in notice' : '⚠ Check-in issue'} <span className="font-medium">— {feedback.text}</span>
+          {feedback.type === 'success' ? '✓ Check-in saved' : feedback.type === 'warning' ? '⚠ Check-in notice' : '⚠ Check-in issue'} <span className="font-medium">: {feedback.text}</span>
         </p>
       )}
 
@@ -1772,7 +1772,7 @@ function ManualRunnerPanel({ race, runnerProfiles }: ManualRunnerPanelProps) {
         <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2">
           <Users2 className="w-4 h-4 text-red-500" /> Add Runner Manually
         </h3>
-        <p className="text-xs text-[var(--text-secondary)] mt-1">For late registrations or paper-form entries. This adds a race roster entry only—no login account is created.</p>
+        <p className="text-xs text-[var(--text-secondary)] mt-1">For late registrations or paper-form entries. This adds a race roster entry only (no login account is created).</p>
       </div>
 
       <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-3"><fieldset className="contents" disabled={!can('roster.add')} >
@@ -1928,7 +1928,7 @@ function RosterImportPanel({ race, runnerProfiles }: RosterImportPanelProps) {
         }
         await batch.commit();
       }
-      setFeedback({ type: 'success', text: `Import complete — ${created} created, ${updated} updated. Open the roster below to assign timing chips.` });
+      setFeedback({ type: 'success', text: `Import complete: ${created} created, ${updated} updated. Open the roster below to assign timing chips.` });
     } catch (error: any) {
       setFeedback({ type: 'error', text: error.message || 'Could not import the runner roster.' });
     } finally {

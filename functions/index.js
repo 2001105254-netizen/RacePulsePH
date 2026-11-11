@@ -22,8 +22,11 @@ const paymongoWebhookSecret = defineSecret('PAYMONGO_WEBHOOK_SECRET');
 const appUrl = defineString('PAYMENTS_APP_URL', { default: 'https://racepulseph.web.app' });
 
 const allowedOrigins = new Set([
+  'https://racepulseph.com',
+  'https://www.racepulseph.com',
   'https://racepulseph.web.app',
   'https://racepulseph.firebaseapp.com',
+  'capacitor://localhost',
   'http://localhost:3000',
   'http://localhost:5173',
 ]);
@@ -109,13 +112,23 @@ function verifyWebhookSignature(request) {
     return [key, rest.join('=')];
   }));
   const timestamp = fields.t;
+  const tsSeconds = Number(timestamp);
   const rawBody = Buffer.isBuffer(request.rawBody) ? request.rawBody.toString('utf8') : JSON.stringify(request.body || {});
-  if (!timestamp || !rawBody) return false;
+  if (!timestamp || !Number.isFinite(tsSeconds) || Math.abs(Date.now() / 1000 - tsSeconds) > 86400 || !rawBody) return false;
   const expected = crypto.createHmac('sha256', paymongoWebhookSecret.value()).update(`${timestamp}.${rawBody}`).digest('hex');
   const payload = request.body || {};
   const candidate = payload?.data?.attributes?.livemode ? fields.li : fields.te;
   if (!candidate || candidate.length !== expected.length) return false;
   return crypto.timingSafeEqual(Buffer.from(candidate), Buffer.from(expected));
+}
+
+function manilaDateToday() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
 }
 
 function counterIdFor(raceId, distance, entryCategory) {
@@ -152,7 +165,7 @@ async function createCheckout(request, response) {
     if (!raceSnapshot.exists) throw new Error('This race is no longer available.');
     race = raceSnapshot.data();
     if (race.registrationOpen === false || !race.onlinePaymentEnabled) throw new Error('Online registration is not open for this race.');
-    if (race.registrationCloseDate && race.registrationCloseDate < new Date().toISOString().slice(0, 10)) throw new Error('Registration for this race has closed.');
+    if (race.registrationCloseDate && race.registrationCloseDate < manilaDateToday()) throw new Error('Registration for this race has closed.');
     const distance = (race.distances || []).find((item) => item.label === registration.distance);
     if (!distance || !Number.isFinite(Number(distance.price)) || Number(distance.price) <= 0) throw new Error('Choose a paid race distance configured by the organizer.');
     const allowedEntries = Array.isArray(race.entryCategories) && race.entryCategories.length ? race.entryCategories : ['solo'];
@@ -211,7 +224,7 @@ async function createCheckout(request, response) {
         data: {
           attributes: {
             billing: { name: registration.fullName, email: decoded.email || '', phone: registration.emergencyContactPhone },
-            line_items: [{ name: `${race.name} — ${registration.distance}`, amount, currency: 'PHP', quantity: 1 }],
+            line_items: [{ name: `${race.name}: ${registration.distance}`, amount, currency: 'PHP', quantity: 1 }],
             payment_method_types: ['card', 'gcash', 'paymaya', 'qrph'],
             reference_number: paymentId,
             success_url: `${origin}/?payment=${encodeURIComponent(paymentId)}`,
@@ -223,6 +236,7 @@ async function createCheckout(request, response) {
           },
         },
       }),
+      signal: AbortSignal.timeout(15000),
     });
     const result = await paymongoResponse.json();
     const checkoutUrl = result?.data?.attributes?.checkout_url;
@@ -315,10 +329,15 @@ async function handleWebhook(request, response) {
 
 exports.paymentsApi = onRequest({
   region: 'asia-southeast1',
+  maxInstances: 20,
   secrets: [paymongoSecretKey, paymongoWebhookSecret],
 }, async (request, response) => {
+  response.set('Cache-Control', 'no-store');
   setCors(request, response);
   if (request.method === 'OPTIONS') return response.status(204).send('');
+  if (request.method === 'POST' && (!request.is('application/json') || (request.rawBody?.length || 0) > 65536)) {
+    return sendJson(response, 400, { error: 'Invalid request.' });
+  }
   const path = (request.path || '/').replace(/\/+$/, '') || '/';
   if (request.method === 'POST' && path === '/checkout') return createCheckout(request, response);
   if (request.method === 'POST' && path === '/webhooks/paymongo') return handleWebhook(request, response);

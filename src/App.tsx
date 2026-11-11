@@ -375,6 +375,7 @@ export default function App() {
   }
 
   const showBackButton = Boolean(authUser) || guestScreen !== 'landing';
+  const isWorkspaceShell = Boolean(authUser && profile && !authError && !profileError);
   const viewKey = authUser ? (profile ? 'workspace' : 'auth-setup') : guestScreen === 'login' || guestScreen === 'signup' ? 'auth-portal' : guestScreen;
 
   return (
@@ -393,7 +394,7 @@ export default function App() {
 
           {/* Global Navigation - persistent charcoal brand bar on every page */}
           <nav className="sticky top-0 z-40 brand-nav" aria-label="Primary navigation">
-            <div className="max-w-7xl mx-auto min-w-0 px-3 sm:px-6 h-[4.5rem] sm:h-16 flex items-center justify-between gap-2">
+            <div className={`${isWorkspaceShell ? 'w-full' : 'max-w-7xl mx-auto'} min-w-0 px-3 sm:px-6 h-[4.5rem] sm:h-16 flex items-center justify-between gap-2`}>
               <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
                 {showBackButton && (
                   <button
@@ -512,7 +513,7 @@ export default function App() {
 
           {/* Unified Semantic Footer with Philippine athletic greeting and legal/support navigation */}
           <footer className="border-t border-[var(--border-default)] bg-[var(--surface-card)] mt-auto text-xs text-[var(--text-secondary)]">
-            <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between px-4 sm:px-6 py-4 gap-3">
+            <div className={`${isWorkspaceShell ? 'w-full' : 'max-w-7xl mx-auto'} flex flex-col md:flex-row items-center justify-between px-4 sm:px-6 py-4 gap-3`}>
               <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-3 gap-y-2">
                 <span className="font-mono text-[var(--text-primary)] font-semibold">
                   &copy; {new Date().getFullYear()} RacePulsePH

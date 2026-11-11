@@ -160,7 +160,8 @@ async function claim(request, response) {
   return response.json(publicResponse(raceSnapshot.data(), claimedRunner, alreadyLinked));
 }
 
-exports.raceBibClaimApi = onRequest({ region: 'asia-southeast1' }, async (request, response) => {
+exports.raceBibClaimApi = onRequest({ region: 'asia-southeast1', maxInstances: 20 }, async (request, response) => {
+  response.set('Cache-Control', 'no-store');
   setCors(request, response);
   if (request.method === 'OPTIONS') return response.status(204).send('');
   if (request.method !== 'POST' || !request.is('application/json') || (request.rawBody?.length || 0) > 65536) {

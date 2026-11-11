@@ -42,7 +42,11 @@ export async function authenticatedFetch(url: string, init: RequestInit = {}) {
   const user = auth.currentUser;
   if (!user) throw new Error('Sign in to continue.');
   const token = await user.getIdToken();
-  return fetch(url, { ...init, headers: { ...Object.fromEntries(new Headers(init.headers)), Authorization: `Bearer ${token}` } });
+  return fetch(url, {
+    ...init,
+    signal: init.signal ?? AbortSignal.timeout(15000),
+    headers: { ...Object.fromEntries(new Headers(init.headers)), Authorization: `Bearer ${token}` },
+  });
 }
 export async function accessCommand(path: string, body: object) {
   const url = (import.meta.env.VITE_ACCESS_API_URL || 'https://asia-southeast1-racepulseph.cloudfunctions.net/accessApi').replace(/\/$/, '');

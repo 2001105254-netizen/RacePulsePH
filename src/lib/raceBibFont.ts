@@ -16,9 +16,23 @@ const canvasFallbacks: Record<Exclude<RaceBibFont, 'custom'>, string> = {
 
 const loadedFonts = new Map<string, Promise<void>>();
 
+function sanitizeFontFamily(family: string): string {
+  return family.replace(/["'\\;{}()<>]/g, '').trim().slice(0, 80);
+}
+
+function isAllowedFontUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl, typeof window !== 'undefined' ? window.location.origin : 'https://racepulseph.com');
+    return (parsed.protocol === 'https:' || parsed.protocol === 'blob:') && !/["'\\()\s]/.test(rawUrl);
+  } catch {
+    return false;
+  }
+}
+
 export function raceBibFontFamily(font: RaceBibFont | undefined, customFont?: RaceBibCustomFont, canvas = false): string {
-  if (font === 'custom' && customFont?.family) {
-    return canvas ? `${customFont.family}, Arial, sans-serif` : `"${customFont.family}", Arial, sans-serif`;
+  const safeFamily = customFont?.family ? sanitizeFontFamily(customFont.family) : '';
+  if (font === 'custom' && safeFamily) {
+    return canvas ? `${safeFamily}, Arial, sans-serif` : `"${safeFamily}", Arial, sans-serif`;
   }
   const selected = font === 'custom' ? 'mono' : (font || 'mono');
   return canvas ? canvasFallbacks[selected] : browserFallbacks[selected];
@@ -28,12 +42,14 @@ export function raceBibFontFamily(font: RaceBibFont | undefined, customFont?: Ra
 // bib PNGs, and the canvas used for the bulk PDF all use the same typeface.
 export async function ensureRaceBibCustomFont(customFont?: RaceBibCustomFont): Promise<void> {
   if (!customFont || typeof document === 'undefined' || typeof FontFace === 'undefined') return;
-  const key = `${customFont.family}:${customFont.url}`;
+  const safeFamily = sanitizeFontFamily(customFont.family || '');
+  if (!safeFamily || !customFont.url || !isAllowedFontUrl(customFont.url)) return;
+  const key = `${safeFamily}:${customFont.url}`;
   const existing = loadedFonts.get(key);
   if (existing) return existing;
 
   const loading = (async () => {
-    const font = new FontFace(customFont.family, `url("${customFont.url}")`);
+    const font = new FontFace(safeFamily, `url("${customFont.url}")`);
     await font.load();
     document.fonts.add(font);
   })();
