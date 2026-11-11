@@ -249,7 +249,7 @@ export default function AuthGate({ authUser, initialMode = 'login', onBackToRace
       <div className="w-full max-w-md space-y-8">
 
         <div className="flex flex-col items-center text-center space-y-6">
-          <div className="w-full max-w-[16rem] rounded-[var(--radius-panel)] bg-[#0a0a0a] p-4 ring-1 ring-white/10">
+          <div className="w-full max-w-[16rem] rounded-[var(--radius-panel)] border border-[var(--border-default)] bg-transparent p-4 flex items-center justify-center transition-colors">
             <img
               src="/assets/racepulse-logo.png"
               alt="RacePulsePH"
@@ -480,7 +480,7 @@ function CompleteProfileForm({ user, signupRoleLocked = false }: { user: User; s
     <AuthStage>
       <div className="w-full max-w-md space-y-8">
         <div className="flex flex-col items-center text-center space-y-6">
-          <div className="w-20 h-20 rounded-[22px] overflow-hidden bg-[#0a0a0a] ring-1 ring-white/10">
+          <div className="w-20 h-20 rounded-[22px] border border-[var(--border-default)] bg-transparent p-2 flex items-center justify-center transition-colors">
             <img
               src="/assets/racepulse-mark.png"
               alt="RacePulsePH"

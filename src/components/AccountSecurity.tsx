@@ -21,7 +21,7 @@ function useCountdown() {
 
 function SecurityFrame({ title, detail, children }: { title: string; detail: React.ReactNode; children: React.ReactNode }) {
   return <section className="w-full max-w-md mx-auto space-y-7 animate-fadeIn" aria-label={title}>
-    <div className="flex justify-center"><div className="w-36 bg-[#0a0a0a] rounded-[22px] p-3 ring-1 ring-white/10"><img src="/assets/racepulse-logo.png" alt="RacePulsePH" className="w-full h-auto" /></div></div>
+    <div className="flex justify-center"><div className="w-36 rounded-[22px] p-3 border border-[var(--border-default)] bg-transparent transition-colors"><img src="/assets/racepulse-logo.png" alt="RacePulsePH" className="w-full h-auto" /></div></div>
     <div className="glass-panel p-6 sm:p-8 space-y-6">
       <div className="flex items-center gap-2 text-red-500 text-[10px] font-black uppercase tracking-[0.2em]"><ShieldCheck size={15} /> Your account, protected</div>
       <div className="space-y-3"><h1 className="font-display font-bold text-2xl tracking-tight text-[var(--text-primary)]">{title}</h1><div className="text-sm leading-relaxed text-[var(--text-secondary)] break-words">{detail}</div></div>

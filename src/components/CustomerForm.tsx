@@ -626,7 +626,7 @@ export default function CustomerForm({
 
               <div
                 onClick={() => setIsQrMaximized(true)}
-                className="bg-white p-3.5 sm:p-4 rounded-2xl inline-block shadow-2xl border border-zinc-200 cursor-pointer hover:scale-105 active:scale-95 transition-all duration-300 relative group"
+                className="bg-white p-3.5 sm:p-4 rounded-2xl inline-block shadow-2xl border border-[var(--border-default)] cursor-pointer hover:scale-105 active:scale-95 transition-all duration-300 relative group"
                 title="Click to zoom in full screen"
               >
                 <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition duration-150 rounded-2xl flex items-center justify-center">

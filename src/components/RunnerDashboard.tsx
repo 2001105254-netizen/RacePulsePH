@@ -1622,7 +1622,7 @@ function RunnerRacePass({ race, runnerProfile, result, orderedCheckpoints }: {
               <span className="block text-[9px] font-bold uppercase tracking-widest text-[var(--text-secondary)]">Bib number</span>
               <span className="block text-xl font-mono font-black tracking-wider text-red-500 mt-0.5">#{runnerProfile.bibNumber}</span>
             </div>
-            <div className="bg-white p-2 rounded-xl shadow-xl border border-zinc-200" title="Show this QR code at a race checkpoint">
+            <div className="bg-white p-2 rounded-xl shadow-xl border border-[var(--border-default)]" title="Show this QR code at a race checkpoint">
               <QRCodeSVG value={`RPCHIPv1|${runnerProfile.raceId}|${runnerProfile.bibNumber}`} size={66} level="M" />
             </div>
           </div>
@@ -1868,7 +1868,7 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
         <div className="glass-panel p-5 text-center space-y-4">
           <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)]">Your Checkpoint Bib QR</h3>
           <p className="text-[11px] text-[var(--text-secondary)]">Show this to organizers at each checkpoint to scan-and-record your time.</p>
-          <div className="bg-white p-4 rounded-2xl inline-block shadow-xl border border-zinc-200">
+          <div className="bg-white p-4 rounded-2xl inline-block shadow-xl border border-[var(--border-default)]">
             <QRCodeSVG value={`RPCHIPv1|${runnerProfile.raceId}|${runnerProfile.bibNumber}`} size={180} level="M" />
           </div>
           <div className="glass-inset p-3">

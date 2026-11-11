@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+/* Fonts loaded non-blocking via <link> in index.html */
 @import "tailwindcss";
 @import './access-ui.css';
 
@@ -57,7 +57,7 @@ html {
 /* Semantic surface/text tokens: light values are the default, .dark overrides them */
 :root {
   /* Mathematical Modular Scale (16px base, Perfect Fourth 1.333 / Golden Ratio display) */
-  --font-size-hero: clamp(2.125rem, 1.4891rem + 2.8261vw, 3.75rem);
+  --font-size-hero: clamp(2rem, 1.5rem + 2.1vw, 2.875rem);
   --font-size-section: clamp(1.5rem, 1.2065rem + 1.3043vw, 2.25rem);
   --font-size-lead: clamp(1rem, 0.9511rem + 0.2174vw, 1.125rem);
   --font-size-body: 1rem;
@@ -72,16 +72,22 @@ html {
   --tracking-section: -0.025em;
   --tracking-lead: -0.011em;
   --tracking-caption: 0.02em;
-  --surface-page: #f5f5f7;
-  --surface-card: #ffffff;
-  --surface-inset: #f5f5f7;
-  --surface-hover: #e8e8ec;
-  --border-default: #e4e4e7;
-  --border-subtle: #edeef0;
+  --surface-page: oklch(96.5% 0.008 25);
+  --surface-card: oklch(100% 0 0);
+  --surface-inset: oklch(95% 0.012 25);
+  --surface-hover: oklch(92.5% 0.014 25);
+  --border-default: #27272a;
+  --border-subtle: rgba(39, 39, 42, 0.22);
+  --border-strong: #18181b;
+  --border-button: #27272a;
   --text-primary: #0a0a0a;
   --text-secondary: #52525b;
   --text-muted: #86868b;
   color-scheme: light;
+
+  /* Calibrated red text contrast: clears 4.5:1 WCAG AA against light surfaces */
+  --color-red-500: #d72c20;
+  --color-amber-500: #d72c20;
 
   /* Design-system constants: shared across every page for a consistent look */
   --radius-panel: 26px;
@@ -90,12 +96,16 @@ html {
 }
 
 .dark {
+  --color-red-500: #ff3b30;
+  --color-amber-500: #ff3b30;
   --surface-page: #0a0a0a;
   --surface-card: #141414;
   --surface-inset: #0a0a0b;
   --surface-hover: #27272a;
   --border-default: #27272a;
   --border-subtle: #1c1c1e;
+  --border-strong: #3f3f46;
+  --border-button: #3f3f46;
   --text-primary: #f5f5f7;
   --text-secondary: #a1a1aa;
   --text-muted: #86868b;
@@ -214,20 +224,40 @@ video {
    nav, inputs - so the whole app reads as one visual system.
    ============================================================ */
 
+/* Charcoal brand header: defined in .impeccable.md as consistent across both themes */
+.brand-nav,
+.glass-nav {
+  background: #141416;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3);
+}
+
 .glass-panel {
+  background: var(--surface-card);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-panel);
+  box-shadow: 0 1px 2px oklch(20% 0.02 25 / 0.06), 0 12px 32px -16px oklch(20% 0.02 25 / 0.18);
+}
+
+.dark .glass-panel {
   background: color-mix(in srgb, var(--surface-card) 62%, transparent);
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
   border: 1px solid color-mix(in srgb, var(--border-default) 70%, transparent);
-  border-radius: var(--radius-panel);
-  box-shadow: 0 24px 60px -16px rgba(0, 0, 0, 0.16), 0 1px 0 0 rgba(255, 255, 255, 0.4) inset;
-}
-
-.dark .glass-panel {
   box-shadow: 0 24px 70px -12px rgba(0, 0, 0, 0.65), 0 1px 0 0 rgba(255, 255, 255, 0.04) inset;
 }
 
 .glass-inset {
+  background: var(--surface-inset);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+}
+
+.dark .glass-inset {
   background: color-mix(in srgb, var(--surface-inset) 72%, transparent);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -235,19 +265,16 @@ video {
   border-radius: var(--radius-control);
 }
 
-.glass-nav {
-  background: color-mix(in srgb, var(--surface-card) 55%, transparent);
-  backdrop-filter: blur(24px) saturate(150%);
-  -webkit-backdrop-filter: blur(24px) saturate(150%);
-  border: 1px solid color-mix(in srgb, var(--border-default) 70%, transparent);
-}
-
 /* Static "floating" heading treatment: elevation is implied through layered
    shadow and glow, not motion - the text should look suspended while staying
    completely still. Dark mode gets a brushed-metal embossed fill (light mode
    stays solid text - a silver gradient has no contrast on a white page). */
+/* Static "floating" heading treatment:
+   Light mode: clean, high-contrast typography using var(--text-primary) without blurry shadows.
+   Dark mode: brushed-metal embossed fill with subtle depth glow. */
 .heading-float {
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5), 0 18px 34px rgba(0, 0, 0, 0.18);
+  text-shadow: none;
+  color: var(--text-primary);
 }
 
 .dark .heading-float {
@@ -272,8 +299,8 @@ video {
    page-wide glow). */
 .hero-glow {
   background-image:
-    radial-gradient(ellipse 60% 100% at 12% 0%, rgba(255, 59, 48, 0.16), transparent 60%),
-    linear-gradient(120deg, rgba(255, 59, 48, 0.10), transparent 55%);
+    radial-gradient(ellipse 65% 100% at 12% 0%, oklch(62% 0.22 25 / 0.22), transparent 65%),
+    linear-gradient(120deg, oklch(90% 0.08 25 / 0.35), transparent 55%);
 }
 
 .dark .hero-glow {
@@ -282,11 +309,36 @@ video {
     linear-gradient(120deg, rgba(255, 59, 48, 0.16), transparent 55%);
 }
 
-/* Full-page dark-mode backdrop: a single dramatic red light beam shining in
-   from the top-left corner, fading through deep red into black - replaces
-   the softer scattered-blob glow used in light mode. Built from layered
-   gradients (a bright corner hotspot, a conic "ray" fan, a broad soft
-   falloff) rather than a bitmap so it stays crisp at any size. */
+/* Hero banner gradient for public landing:
+   Light mode: luminous light red corner wash, subtle diagonal tint, and athletic runner backlight.
+   Dark mode: high-contrast red energy flare consistent with brand identity. */
+.hero-banner-glow {
+  background-color: var(--surface-card);
+  background-image:
+    radial-gradient(ellipse 70% 85% at 5% 0%, rgba(255, 59, 48, 0.16) 0%, rgba(255, 235, 233, 0.75) 45%, transparent 75%),
+    radial-gradient(ellipse 65% 85% at 85% 55%, rgba(255, 59, 48, 0.18) 0%, rgba(255, 225, 222, 0.7) 50%, transparent 80%),
+    linear-gradient(135deg, rgba(255, 241, 240, 0.85) 0%, #ffffff 45%, rgba(255, 241, 240, 0.6) 100%);
+}
+
+.dark .hero-banner-glow {
+  background-color: #111215;
+  background-image:
+    radial-gradient(ellipse 70% 85% at 5% 0%, rgba(255, 59, 48, 0.28) 0%, rgba(190, 20, 15, 0.12) 45%, transparent 75%),
+    radial-gradient(ellipse 65% 85% at 85% 55%, rgba(255, 59, 48, 0.32) 0%, rgba(190, 20, 15, 0.15) 50%, transparent 80%),
+    linear-gradient(135deg, rgba(255, 59, 48, 0.10) 0%, transparent 50%, rgba(255, 59, 48, 0.06) 100%);
+}
+
+/* Ambient glow backdrop:
+   Light mode: directional warm light beam from the top-left, matching the light source in dark mode.
+   Dark mode: dramatic red light beam and conic rays from the top-left corner into deep black. */
+.ambient-glow {
+  background-color: var(--surface-page);
+  background-image:
+    radial-gradient(ellipse 70% 55% at 0% 0%, oklch(93% 0.05 30 / 0.85), transparent 60%),
+    radial-gradient(ellipse 50% 40% at 100% 100%, oklch(95% 0.02 25 / 0.55), transparent 70%);
+  background-repeat: no-repeat;
+}
+
 .dark .ambient-glow {
   background-color: #000000;
   background-image:
@@ -442,4 +494,22 @@ video {
   .auth-pulse {
     opacity: 0;
   }
+}
+
+/* Tactile button definition: in light mode, interactive buttons have a distinct dark border */
+:root:not(.dark) button.border-\[var\(--border-default\)\] {
+  border-color: var(--border-button);
+}
+
+/* Pointer cursor base layer (R-39): Tailwind v4 preflight resets button cursor to default */
+a[href], button, summary, select, label[for],
+label:has(> input[type="checkbox"], > input[type="radio"]),
+[role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="option"], [role="switch"],
+input[type="checkbox"], input[type="radio"], input[type="file"],
+input[type="submit"], input[type="button"], input[type="reset"], input[type="range"], input[type="color"] {
+  cursor: pointer;
+}
+
+:disabled, [aria-disabled="true"] {
+  cursor: not-allowed;
 }

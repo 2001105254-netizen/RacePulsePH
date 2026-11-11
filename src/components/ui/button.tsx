@@ -13,13 +13,13 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          'bg-red-700 hover:bg-red-600 text-white border border-red-500/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.35)]',
+          'bg-red-700 hover:bg-red-600 text-white border border-[#3d0b09] dark:border-red-500/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.35)]',
         destructive:
-          'bg-red-800 hover:bg-red-900 text-white border border-red-600/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),inset_0_-1px_0_rgba(0,0,0,0.4)]',
+          'bg-red-800 hover:bg-red-900 text-white border border-[#2b0806] dark:border-red-600/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),inset_0_-1px_0_rgba(0,0,0,0.4)]',
         outline:
-          'border border-[var(--border-default)] bg-[var(--surface-card)] dark:bg-[#141416] text-[var(--text-primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.25)] hover:border-red-600/50 hover:text-red-600 dark:hover:text-red-400',
+          'border border-[var(--border-button)] bg-[var(--surface-card)] dark:bg-[#141416] text-[var(--text-primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.25)] hover:border-red-600 hover:text-red-600 dark:hover:text-red-400',
         secondary:
-          'bg-[var(--surface-inset)] dark:bg-[#161619] border border-[var(--border-default)] text-[var(--text-primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.25)] hover:border-red-600/40 hover:text-[var(--text-primary)]',
+          'bg-[var(--surface-inset)] dark:bg-[#161619] border border-[var(--border-button)] text-[var(--text-primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.25)] hover:border-red-600 hover:text-[var(--text-primary)]',
         ghost:
           'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)] rounded-full',
         link:

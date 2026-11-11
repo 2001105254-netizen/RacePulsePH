@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef, Suspense, lazy } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import {
   Calendar,
@@ -8,48 +8,133 @@ import {
   Trophy,
   ArrowRight,
   X,
-  Radio,
-  Timer,
-  FileText,
-  ShieldCheck,
   CheckCircle2,
-  ChevronUp,
+  FileDown,
+  Link2,
+  Check,
+  RefreshCw,
 } from 'lucide-react';
 import { db } from '../firebase';
-import { Race } from '../types';
-import PublicLiveRaceHub from './PublicLiveRaceHub';
-import PublicRaceResults from './PublicRaceResults';
+import { PublicLeaderboardEntry, PublicLiveResults, Race, RunnerResult } from '../types';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Card, CardContent } from './ui/card';
 import { Input } from './ui/input';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { isRaceRegistrationOpen, philippineDate } from '../lib/raceRegistration';
+import { formatRaceTime } from '../lib/preciseTime';
+
+const PublicLiveRaceHub = lazy(() => import('./PublicLiveRaceHub'));
+const PublicRaceResults = lazy(() => import('./PublicRaceResults'));
 
 interface PublicRaceLandingProps {
   onRegister: (raceId?: string) => void;
   onLoadState?: (state: 'loading' | 'ready' | 'error') => void;
 }
 
+interface FinisherBibMatch {
+  race: Race;
+  entry: PublicLeaderboardEntry;
+}
+
 // Accent text clears 4.5:1 WCAG AA on both surfaces: red-700 on light, red-400 on dark.
 const accentText = 'text-red-700 dark:text-red-400';
 
-// Tactile Stopwatch Chip Tokens (Sports Watch Hardware Language)
+// Tactile Stopwatch Chip Tokens (Sports Watch Hardware Language, >= 44px tap height)
 const chipBase =
-  'text-xs font-semibold px-4 py-2 rounded-full border transition-all duration-150 motion-safe:active:scale-[0.96] select-none';
+  'min-h-11 text-xs font-semibold px-4 py-2 rounded-full border transition-all duration-150 motion-safe:active:scale-[0.96] select-none shrink-0 inline-flex items-center justify-center gap-1.5 font-mono';
 const chipIdle =
-  'border-[var(--border-default)] bg-[var(--surface-card)] dark:bg-[#141416] text-[var(--text-secondary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.25)] hover:border-red-600/50 hover:text-[var(--text-primary)]';
+  'border border-[var(--border-button)] bg-[var(--surface-card)] dark:bg-[#141416] text-[var(--text-secondary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.25)] hover:border-red-600 hover:text-[var(--text-primary)]';
 const chipActive =
-  'bg-red-700 text-white border-red-500/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.35)]';
+  'bg-red-700 text-white border border-[#3d0b09] dark:border-red-500/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.35)]';
+
+function initialRaceIdFromUrl(): string {
+  if (typeof window === 'undefined') return '';
+  return new URLSearchParams(window.location.search).get('race')?.trim() || '';
+}
+
+function syncRaceIdToUrl(raceId: string) {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  if (raceId) {
+    url.searchParams.set('race', raceId);
+  } else {
+    url.searchParams.delete('race');
+  }
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
+function formatReadableRaceDate(dateStr: string): string {
+  const parts = dateStr.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) return dateStr;
+  const [year, month, day] = parts;
+  const dt = new Date(Date.UTC(year, month - 1, day));
+  return new Intl.DateTimeFormat('en-PH', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(dt);
+}
+
+function formatRaceScheduleNote(race: Race, todayStr: string): string | null {
+  if (race.completedAt) return null;
+  const toUtcMs = (ymd: string) => {
+    const [y, m, d] = ymd.split('-').map(Number);
+    if (!y || !m || !d) return NaN;
+    return Date.UTC(y, m - 1, d);
+  };
+  const raceMs = toUtcMs(race.date);
+  const todayMs = toUtcMs(todayStr);
+  if (Number.isNaN(raceMs) || Number.isNaN(todayMs)) return null;
+
+  const diffDays = Math.round((raceMs - todayMs) / 86_400_000);
+  const closeNote =
+    race.registrationCloseDate && race.registrationCloseDate < race.date
+      ? `Closes ${formatReadableRaceDate(race.registrationCloseDate).replace(/, \d{4}$/, '')}`
+      : null;
+
+  if (diffDays === 0) return 'Race day today';
+  if (diffDays === 1) return closeNote ? `Tomorrow · ${closeNote}` : 'Tomorrow';
+  if (diffDays > 1 && diffDays <= 60) {
+    return closeNote ? `In ${diffDays} days · ${closeNote}` : `In ${diffDays} days`;
+  }
+  return closeNote;
+}
+
+function toRunnerResult(entry: PublicLeaderboardEntry): RunnerResult {
+  return {
+    bibNumber: entry.bibNumber,
+    finishTime: entry.finishTime,
+    finishReviewRequired: entry.finishReviewRequired,
+    rank: entry.rank,
+    overallRank: entry.overallRank ?? entry.rank,
+    categoryRank: entry.categoryRank,
+    categoryLabel: entry.categoryLabel,
+    specialAgeAwards: entry.specialAgeAwards,
+    timingMethod: entry.timingMethod,
+    sequenceStartTime: entry.sequenceStartTime,
+    chipTime: entry.chipTime,
+    gunTime: entry.gunTime,
+    splits: [],
+  };
+}
 
 export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRaceLandingProps) {
   const [races, setRaces] = useState<Race[]>([]);
-  const [selectedRaceId, setSelectedRaceId] = useState('');
+  const [resultsByRaceId, setResultsByRaceId] = useState<Record<string, PublicLiveResults>>({});
+  const [selectedRaceId, setSelectedRaceId] = useState<string>(() => initialRaceIdFromUrl());
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [activeTab, setActiveTab] = useState<'upcoming' | 'completed'>('upcoming');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDistanceFilter, setSelectedDistanceFilter] = useState<string>('all');
+  const [bibQuery, setBibQuery] = useState('');
+  const [copiedRaceId, setCopiedRaceId] = useState<string | null>(null);
+  const [downloadingBibKey, setDownloadingBibKey] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const bibInputRef = useRef<HTMLInputElement>(null);
+  const didInitialUrlScrollRef = useRef(false);
 
   useEffect(() => {
     onLoadState?.(loadState);
@@ -74,6 +159,24 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, 'liveResults'),
+      (snapshot) => {
+        const map: Record<string, PublicLiveResults> = {};
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data() as PublicLiveResults;
+          map[docSnap.id] = data;
+        });
+        setResultsByRaceId(map);
+      },
+      (err) => {
+        console.warn('Public liveResults listener failed:', err.message);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
   const today = philippineDate();
 
   const liveRaces = useMemo(() => races.filter((race) => race.liveBroadcastEnabled), [races]);
@@ -89,7 +192,12 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
         if (d.label) set.add(d.label.trim().toUpperCase());
       });
     });
-    return Array.from(set).sort();
+    return Array.from(set).sort((a, b) => {
+      const numA = parseFloat(a);
+      const numB = parseFloat(b);
+      if (!Number.isNaN(numA) && !Number.isNaN(numB)) return numA - numB;
+      return a.localeCompare(b);
+    });
   }, [races]);
 
   const filteredRaces = useMemo(() => {
@@ -99,6 +207,7 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
         !query ||
         race.name.toLowerCase().includes(query) ||
         race.date.includes(query) ||
+        formatReadableRaceDate(race.date).toLowerCase().includes(query) ||
         (race.distances || []).some((d) => d.label.toLowerCase().includes(query));
 
       const matchesDistance =
@@ -109,21 +218,101 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
     });
   }, [currentTabRaces, searchQuery, selectedDistanceFilter]);
 
-  const selectedRace = useMemo(
-    () => races.find((race) => race.id === selectedRaceId),
-    [races, selectedRaceId]
-  );
+  const selectedRace = useMemo(() => races.find((race) => race.id === selectedRaceId), [races, selectedRaceId]);
+
+  // All published official finishers across races that have started or completed
+  const allPublishedFinishers = useMemo<FinisherBibMatch[]>(() => {
+    const list: FinisherBibMatch[] = [];
+    const sortedRaces = [...races].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    for (const race of sortedRaces) {
+      const raceHasStarted = Object.keys(race.waveStartTimes || {}).length > 0 || !!race.gunStartTime;
+      const resultsArePublic = !!race.completedAt || raceHasStarted;
+      if (!resultsArePublic) continue;
+      const summary = resultsByRaceId[race.id];
+      if (!summary?.officialResults) continue;
+      for (const entry of summary.officialResults) {
+        if (entry.distance === 'Unknown') continue;
+        list.push({ race, entry });
+      }
+    }
+    return list;
+  }, [races, resultsByRaceId]);
+
+  const matchingBibResults = useMemo<FinisherBibMatch[]>(() => {
+    const term = bibQuery.trim().toLowerCase();
+    if (!term) return [];
+    return allPublishedFinishers
+      .filter(({ entry, race }) => {
+        const bibMatch = entry.bibNumber.toLowerCase().includes(term);
+        const nameMatch = !entry.isFreeSlot && entry.fullName.toLowerCase().includes(term);
+        const raceMatch = race.name.toLowerCase().includes(term);
+        return bibMatch || nameMatch || raceMatch;
+      })
+      .slice(0, 6);
+  }, [allPublishedFinishers, bibQuery]);
+
+  // Top podium finishers across recent completed/live races for the Bib Showcase board
+  const featuredBibFinishers = useMemo<FinisherBibMatch[]>(() => {
+    const podiumOnly = allPublishedFinishers.filter(({ entry }) => (entry.overallRank ?? entry.rank) <= 3);
+    return (podiumOnly.length > 0 ? podiumOnly : allPublishedFinishers).slice(0, 6);
+  }, [allPublishedFinishers]);
+
+  // Scroll to deep-linked ?race=<id> once races finish loading
+  useEffect(() => {
+    if (loadState === 'ready' && selectedRace && !didInitialUrlScrollRef.current) {
+      didInitialUrlScrollRef.current = true;
+      if (selectedRace.completedAt || selectedRace.date < today) {
+        setActiveTab('completed');
+      }
+      requestAnimationFrame(() => {
+        document.getElementById('public-race-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+  }, [loadState, selectedRace, today]);
 
   const handleSelectRace = (raceId: string) => {
+    didInitialUrlScrollRef.current = true;
     setSelectedRaceId(raceId);
+    syncRaceIdToUrl(raceId);
     requestAnimationFrame(() => {
       document.getElementById('public-race-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   };
 
+  const handleCloseSelectedRace = () => {
+    setSelectedRaceId('');
+    syncRaceIdToUrl('');
+  };
+
+  const handleCopyRaceLink = async (raceId: string) => {
+    syncRaceIdToUrl(raceId);
+    const shareUrl = window.location.href;
+    try {
+      await navigator.clipboard?.writeText(shareUrl);
+    } catch {
+      // Fallback if clipboard permission is restricted
+    }
+    setCopiedRaceId(raceId);
+    window.setTimeout(() => {
+      setCopiedRaceId((current) => (current === raceId ? null : current));
+    }, 2200);
+  };
+
+  const handleDownloadCertificate = async (race: Race, entry: PublicLeaderboardEntry) => {
+    const key = `${race.id}_${entry.bibNumber}_${entry.distance}`;
+    setDownloadingBibKey(key);
+    try {
+      const { downloadFinisherCertificate } = await import('../lib/finisherCertificate');
+      await downloadFinisherCertificate(race, entry, toRunnerResult(entry));
+    } finally {
+      setDownloadingBibKey(null);
+    }
+  };
+
   const handleSwitchToCompletedAndSearch = () => {
     setActiveTab('completed');
     setSelectedRaceId('');
+    syncRaceIdToUrl('');
     requestAnimationFrame(() => {
       document.getElementById('events-catalog')?.scrollIntoView({ behavior: 'smooth' });
       searchInputRef.current?.focus();
@@ -136,7 +325,7 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
   };
 
   return (
-    <main className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12 pb-24 space-y-16">
+    <main className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10 pb-20 space-y-14">
       {/* Network or Data Load Error Banner */}
       {loadState === 'error' && (
         <Card className="border-red-700 dark:border-red-400 p-4 text-center">
@@ -153,60 +342,255 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
         </Card>
       )}
 
-      {/* Hero Section: Leads directly with functional H1 headline */}
-      <section className="space-y-6 py-4 sm:py-8">
-        <h1 className="type-hero max-w-4xl text-[var(--text-primary)] tracking-tight">
-          Find a Philippine race. <span className="text-red-700 dark:text-red-400">Follow it live.</span> Get your result.
-        </h1>
-        <p className="type-lead max-w-2xl text-[var(--text-secondary)]">
-          Browse verified road runs and trail ultramarathons across the Philippines. Register for distance waves, track checkpoint split times in real time, and download official finisher certificates.
-        </p>
+      {/* Hero Banner: Theme-native surface in light and dark mode with transparent Philippine runners cutout */}
+      <section
+        aria-label="RacePulsePH overview"
+        className="relative overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-default)] shadow-[0_24px_60px_-16px_rgba(0,0,0,0.10)] dark:shadow-[0_24px_70px_-12px_rgba(0,0,0,0.65)]"
+      >
+        {/* Luminous light red gradient backdrop consistent across light and dark mode */}
+        <div aria-hidden="true" className="hero-banner-glow pointer-events-none absolute inset-0" />
 
-        {/* Action Button Strip in Tactile Stopwatch Language */}
-        <div className="flex flex-wrap items-center gap-3 pt-2">
-          <Button
-            size="lg"
-            onClick={() => document.getElementById('events-catalog')?.scrollIntoView({ behavior: 'smooth' })}
-          >
-            <span>Browse races</span>
-            <ArrowRight className="w-4 h-4" aria-hidden="true" />
-          </Button>
+        <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 items-center lg:items-end gap-4 lg:gap-4">
+          {/* Left Copy, Instant Bib Lookup & Action Column */}
+          <div className="lg:col-span-7 p-5 sm:p-8 lg:py-9 lg:pl-10 lg:pr-4 space-y-4 sm:space-y-5">
+            <h1 className="type-hero text-[var(--text-primary)] tracking-tight">
+              Find a Philippine race. <span className="text-red-700 dark:text-red-400">Follow it live.</span> Get your
+              result.
+            </h1>
+            <p className="type-lead max-w-xl text-[var(--text-secondary)]">
+              Browse verified road runs and trail ultramarathons across the Philippines. Register for distance waves,
+              track checkpoint split times in real time, and download official finisher certificates.
+            </p>
 
-          <Button size="lg" variant="outline" onClick={() => onRegister()}>
-            <UserPlus className="w-4 h-4" aria-hidden="true" />
-            <span>Create an account</span>
-          </Button>
+            {/* Instant Finisher & Bib Lookup Form */}
+            <form
+              role="search"
+              aria-label="Finisher result and certificate lookup"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!bibQuery.trim()) {
+                  handleSwitchToCompletedAndSearch();
+                }
+              }}
+              className="space-y-2 pt-1 max-w-xl"
+            >
+              <label
+                htmlFor="hero-bib-search"
+                className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] font-mono"
+              >
+                Instant finisher &amp; certificate lookup
+              </label>
+              <div className="flex flex-row items-center gap-2">
+                <div className="relative flex-1 min-w-0">
+                  <Search
+                    className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] pointer-events-none"
+                    aria-hidden="true"
+                  />
+                  <Input
+                    ref={bibInputRef}
+                    id="hero-bib-search"
+                    type="search"
+                    value={bibQuery}
+                    onChange={(e) => setBibQuery(e.target.value)}
+                    placeholder="Bib or runner name"
+                    className={`h-11 pl-9 ${bibQuery ? 'pr-9' : 'pr-3'} text-xs sm:text-sm [&::-webkit-search-cancel-button]:hidden`}
+                  />
+                  {bibQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBibQuery('');
+                        bibInputRef.current?.focus();
+                      }}
+                      className="absolute right-0 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                      aria-label="Clear bib search"
+                    >
+                      <X className="w-4 h-4" aria-hidden="true" />
+                    </button>
+                  )}
+                </div>
+                <Button type="submit" size="default" className="h-11 px-3.5 sm:px-5 shrink-0 text-[11px] sm:text-xs">
+                  <Trophy className="w-4 h-4" aria-hidden="true" />
+                  <span>Find result</span>
+                </Button>
+              </div>
+            </form>
 
-          <Button size="lg" variant="ghost" onClick={handleSwitchToCompletedAndSearch}>
-            <Trophy className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" />
-            <span>Find certificates</span>
-          </Button>
-        </div>
+            {/* Instant Race Bib Result Matches */}
+            {bibQuery.trim().length > 0 && (
+              <div
+                role="region"
+                aria-live="polite"
+                aria-label="Matching finisher results"
+                className="space-y-2.5 pt-1 max-w-xl"
+              >
+                {matchingBibResults.length === 0 ? (
+                  <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <p className="text-xs text-[var(--text-secondary)]">
+                      No published finisher matches <strong className="text-[var(--text-primary)]">"{bibQuery}"</strong>.
+                    </p>
+                    <Button type="button" variant="outline" size="sm" className="h-11 px-4" onClick={handleSwitchToCompletedAndSearch}>
+                      Browse completed races
+                    </Button>
+                  </div>
+                ) : (
+                  <ul className="space-y-2.5">
+                    {matchingBibResults.map(({ race, entry }) => {
+                      const key = `${race.id}_${entry.bibNumber}_${entry.distance}`;
+                      const isDownloading = downloadingBibKey === key;
+                      const displayName = entry.isFreeSlot ? `Bib ${entry.bibNumber}` : entry.fullName;
 
-        {/* Real Data Counter Ticker */}
-        {loadState === 'ready' && (
-          <div className="pt-2 flex flex-wrap items-center gap-6 type-caption text-[var(--text-secondary)] font-mono">
-            <span className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-600 dark:bg-emerald-400" aria-hidden="true" />
-              <strong className="text-[var(--text-primary)]">{activeRaces.length}</strong> upcoming races
-            </span>
+                      return (
+                        <li
+                          key={key}
+                          className="overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)] shadow-sm"
+                        >
+                          {/* Physical Race Bib Header Strip */}
+                          <div className="bg-red-700 text-white px-3.5 py-1.5 flex items-center justify-between gap-2 text-xs font-mono font-semibold">
+                            <span className="flex items-center gap-2 min-w-0 truncate">
+                              <span className="w-2 h-2 rounded-full bg-white/75 shrink-0" aria-hidden="true" />
+                              <span className="truncate">{race.name}</span>
+                            </span>
+                            <span className="flex items-center gap-2 shrink-0">
+                              <span>{entry.distance}</span>
+                              <span className="w-2 h-2 rounded-full bg-white/75 shrink-0" aria-hidden="true" />
+                            </span>
+                          </div>
 
-            {liveRaces.length > 0 && (
-              <span className="flex items-center gap-2 text-red-700 dark:text-red-400 font-semibold">
-                <span className="relative flex h-2 w-2">
-                  <span className="motion-safe:animate-ping absolute inline-flex h-full w-full rounded-full bg-red-700 dark:bg-red-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-700 dark:bg-red-400" />
-                </span>
-                <strong className="text-red-700 dark:text-red-400">{liveRaces.length}</strong> live timing feeds
-              </span>
+                          {/* Race Bib Body */}
+                          <div className="p-3.5 sm:px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="px-3 py-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] text-center shrink-0">
+                                <span className="block text-[10px] font-mono uppercase tracking-wider text-[var(--text-secondary)]">
+                                  BIB
+                                </span>
+                                <span className="block font-mono text-base sm:text-lg font-semibold text-[var(--text-primary)] leading-tight">
+                                  {entry.bibNumber}
+                                </span>
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-display font-semibold text-sm sm:text-base text-[var(--text-primary)] truncate">
+                                  {displayName}
+                                </p>
+                                <p className="text-xs font-mono text-[var(--text-secondary)] flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                  <span className={accentText}>#{entry.overallRank ?? entry.rank} Overall</span>
+                                  {entry.categoryRank && (
+                                    <span>
+                                      &bull; {entry.categoryLabel || 'Division'} #{entry.categoryRank}
+                                    </span>
+                                  )}
+                                  <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                                    &bull; {formatRaceTime(entry.finishTime)}
+                                  </span>
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="h-11 px-3.5"
+                                disabled={isDownloading}
+                                onClick={() => handleDownloadCertificate(race, entry)}
+                              >
+                                {isDownloading ? (
+                                  <RefreshCw className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                                ) : (
+                                  <FileDown className="w-3.5 h-3.5" aria-hidden="true" />
+                                )}
+                                <span>Certificate</span>
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-11 px-3.5"
+                                onClick={() => handleSelectRace(race.id)}
+                              >
+                                <span>Leaderboard</span>
+                              </Button>
+                            </div>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
             )}
 
-            <span className="flex items-center gap-2">
-              <CheckCircle2 className="w-3.5 h-3.5 text-zinc-500" aria-hidden="true" />
-              <strong className="text-[var(--text-primary)]">{doneRaces.length}</strong> completed archives
-            </span>
+            {/* Compact Action Button Strip: 2 side-by-side buttons on mobile, full row on tablet/desktop */}
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 pt-1">
+              <Button
+                size="default"
+                className="h-11 px-3 sm:px-5 text-[11px] sm:text-xs tracking-normal sm:tracking-wider"
+                onClick={() => document.getElementById('events-catalog')?.scrollIntoView({ behavior: 'smooth' })}
+              >
+                <span>Browse races</span>
+                <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" aria-hidden="true" />
+              </Button>
+
+              <Button
+                size="default"
+                variant="outline"
+                className="h-11 gap-1.5 sm:gap-2 px-2 sm:px-5 text-[10.5px] sm:text-xs tracking-normal sm:tracking-wider"
+                onClick={() => onRegister()}
+              >
+                <UserPlus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" aria-hidden="true" />
+                <span>Create an account</span>
+              </Button>
+
+              <Button
+                size="default"
+                variant="outline"
+                className="hidden sm:inline-flex h-11 px-4 text-[var(--text-primary)]"
+                onClick={handleSwitchToCompletedAndSearch}
+              >
+                <Trophy className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" />
+                <span>Find certificates</span>
+              </Button>
+            </div>
+
+            {/* Single-Line Real Data Counter Ticker */}
+            {loadState === 'ready' && (
+              <div className="pt-0.5 flex flex-wrap items-center gap-x-4 gap-y-1 type-caption text-[var(--text-secondary)] font-mono">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-600 dark:bg-emerald-400" aria-hidden="true" />
+                  <strong className="text-[var(--text-primary)] font-semibold">{activeRaces.length}</strong> upcoming
+                </span>
+
+                {liveRaces.length > 0 && (
+                  <span className="flex items-center gap-1.5 text-red-700 dark:text-red-400 font-semibold">
+                    <span className="relative flex h-2 w-2">
+                      <span className="motion-safe:animate-ping absolute inline-flex h-full w-full rounded-full bg-red-700 dark:bg-red-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-red-700 dark:bg-red-400" />
+                    </span>
+                    <strong className="text-red-700 dark:text-red-400">{liveRaces.length}</strong> live now
+                  </span>
+                )}
+
+                <span className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[var(--text-secondary)]" aria-hidden="true" />
+                  <strong className="text-[var(--text-primary)] font-semibold">{doneRaces.length}</strong> completed
+                </span>
+              </div>
+            )}
           </div>
-        )}
+
+          {/* Right Runner Cutout Column: Docked flush to the bottom edge of the banner card */}
+          <div className="lg:col-span-5 flex items-end justify-center lg:justify-end px-4 sm:px-8 lg:px-0 lg:pr-6 pt-0 lg:pt-6 self-end">
+            <img
+              src="/assets/hero-runners.webp"
+              alt="Philippine road and trail runners in race singlets and numbered bibs"
+              width={888}
+              height={571}
+              fetchPriority="high"
+              decoding="async"
+              className="w-full max-w-[400px] sm:max-w-[480px] lg:max-w-none lg:w-[108%] lg:-ml-[8%] h-auto object-contain object-bottom block select-none pointer-events-none drop-shadow-[0_14px_24px_rgba(0,0,0,0.14)] dark:drop-shadow-[0_18px_36px_rgba(0,0,0,0.65)]"
+            />
+          </div>
+        </div>
       </section>
 
       {/* Live Timing Feed Spotlight (Conditional on active broadcast) */}
@@ -218,14 +602,22 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-700 dark:bg-red-400" />
             </span>
             <h2 id="live-heading" className="type-section text-[var(--text-primary)]">
-              Live now
+              Live checkpoint split board
             </h2>
           </div>
-          <PublicLiveRaceHub races={liveRaces} />
+          <Suspense
+            fallback={
+              <Card className="p-8 text-center">
+                <RefreshCw className="w-5 h-5 animate-spin text-[var(--text-secondary)] mx-auto" />
+              </Card>
+            }
+          >
+            <PublicLiveRaceHub races={liveRaces} />
+          </Suspense>
         </section>
       )}
 
-      {/* Events Catalog: Tab switcher, search, distance filter chips, and card grid */}
+      {/* Events Catalog: Tab switcher, full-width tablet-safe search, scrollable distance bib chips, and card grid */}
       <section id="events-catalog" className="space-y-6 scroll-mt-24" aria-labelledby="catalog-heading">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-[var(--border-default)] pb-4">
           <div className="space-y-1">
@@ -244,15 +636,16 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
             onValueChange={(val) => {
               setActiveTab(val as 'upcoming' | 'completed');
               setSelectedRaceId('');
+              syncRaceIdToUrl('');
             }}
             className="w-auto shrink-0"
           >
             <TabsList>
-              <TabsTrigger value="upcoming" className="gap-2">
+              <TabsTrigger value="upcoming" className="min-h-11 gap-2">
                 <span>Upcoming</span>
                 <span className="font-mono">{activeRaces.length}</span>
               </TabsTrigger>
-              <TabsTrigger value="completed" className="gap-2">
+              <TabsTrigger value="completed" className="min-h-11 gap-2">
                 <span>Completed</span>
                 <span className="font-mono">{doneRaces.length}</span>
               </TabsTrigger>
@@ -260,9 +653,9 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
           </Tabs>
         </div>
 
-        {/* Filter and Search Bar */}
-        <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center justify-between">
-          <div className="relative flex-1 max-w-md">
+        {/* Tablet-Safe Search Bar + Horizontally Scrollable Distance Filter Row (No 7-chip cap) */}
+        <div className="flex flex-col xl:flex-row gap-3 items-stretch xl:items-center justify-between">
+          <div className="relative w-full xl:max-w-md shrink-0">
             <Search
               className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] pointer-events-none"
               aria-hidden="true"
@@ -271,16 +664,16 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
               ref={searchInputRef}
               type="search"
               aria-label="Search races by name, date or distance"
-              placeholder="Search by name, date or distance"
+              placeholder="Search by race name, date or distance"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-12 pr-12 [&::-webkit-search-cancel-button]:hidden"
+              className="h-11 pl-12 pr-12 [&::-webkit-search-cancel-button]:hidden"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
-                className="absolute right-0 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                className="absolute right-0 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                 aria-label="Clear search"
               >
                 <X className="w-4 h-4" aria-hidden="true" />
@@ -289,7 +682,11 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
           </div>
 
           {availableDistances.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by distance">
+            <div
+              className="racepulse-horizontal-scroll flex items-center gap-2 overflow-x-auto py-1"
+              role="group"
+              aria-label="Filter by distance"
+            >
               <button
                 type="button"
                 aria-pressed={selectedDistanceFilter === 'all'}
@@ -298,7 +695,7 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
               >
                 All distances
               </button>
-              {availableDistances.slice(0, 7).map((dist) => (
+              {availableDistances.map((dist) => (
                 <button
                   key={dist}
                   type="button"
@@ -318,7 +715,9 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
           <Card className="p-12 text-center border-dashed space-y-4">
             <Flag className="w-8 h-8 mx-auto text-[var(--text-secondary)]" aria-hidden="true" />
             <h3 className="font-display text-lg font-semibold text-[var(--text-primary)]">
-              {searchQuery || selectedDistanceFilter !== 'all' ? 'No races match your filters' : 'No races in this list yet'}
+              {searchQuery || selectedDistanceFilter !== 'all'
+                ? 'No races match your filters'
+                : 'No races in this list yet'}
             </h3>
             <p className="type-lead text-[var(--text-secondary)] max-w-md mx-auto">
               {searchQuery
@@ -328,7 +727,7 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
                   : 'Race organizers have not published an event in this view yet.'}
             </p>
             {(searchQuery || selectedDistanceFilter !== 'all') && (
-              <Button variant="outline" size="sm" onClick={handleResetFilters}>
+              <Button variant="outline" size="default" className="h-11 px-5" onClick={handleResetFilters}>
                 Reset filters
               </Button>
             )}
@@ -340,6 +739,8 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
               const regOpen = isRaceRegistrationOpen(race, today);
               const isLive = !!race.liveBroadcastEnabled;
               const isCompleted = !!race.completedAt;
+              const scheduleNote = formatRaceScheduleNote(race, today);
+              const finisherCount = resultsByRaceId[race.id]?.officialResults?.length || 0;
 
               return (
                 <li key={race.id} className="flex">
@@ -352,7 +753,14 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
                       {/* Poster Art with Status Badges */}
                       <div className="relative aspect-[16/10] w-full overflow-hidden bg-[var(--surface-inset)] border-b border-[var(--border-default)]">
                         {race.posterImage ? (
-                          <img src={race.posterImage} alt="" className="w-full h-full object-cover" loading="lazy" />
+                          <img
+                            src={race.posterImage}
+                            alt=""
+                            width={640}
+                            height={400}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center p-6 text-center">
                             <Trophy className="w-8 h-8 text-[var(--text-secondary)]" aria-hidden="true" />
@@ -362,7 +770,9 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
                         <div className="absolute top-4 left-4 flex flex-wrap gap-2">
                           {isLive && <Badge variant="live">Live timing</Badge>}
                           {isCompleted ? (
-                            <Badge variant="secondary">Completed</Badge>
+                            <Badge variant="secondary">
+                              {finisherCount > 0 ? `Completed · ${finisherCount} finishers` : 'Completed'}
+                            </Badge>
                           ) : regOpen ? (
                             <Badge variant="success">Registration open</Badge>
                           ) : (
@@ -372,59 +782,76 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
                       </div>
 
                       <CardContent className="p-6 space-y-4">
-                        <div className="space-y-2">
+                        <div className="space-y-1.5">
                           <h3 className="font-display font-semibold text-lg sm:text-xl tracking-tight text-[var(--text-primary)] line-clamp-2">
                             {race.name}
                           </h3>
-                          <p className="type-caption text-[var(--text-secondary)] flex items-center gap-2 font-mono">
-                            <Calendar className="w-3.5 h-3.5 shrink-0 text-red-700 dark:text-red-400" aria-hidden="true" />
-                            <span>{race.date}</span>
-                          </p>
+                          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 type-caption text-[var(--text-secondary)] font-mono">
+                            <span className="flex items-center gap-1.5">
+                              <Calendar
+                                className="w-3.5 h-3.5 shrink-0 text-red-700 dark:text-red-400"
+                                aria-hidden="true"
+                              />
+                              <span>{formatReadableRaceDate(race.date)}</span>
+                            </span>
+                            {scheduleNote && (
+                              <span className={`font-semibold ${accentText}`}>&bull; {scheduleNote}</span>
+                            )}
+                          </div>
                         </div>
 
-                        {/* Distance Chips with Prices */}
+                        {/* Race Bib Distance Tags with Entry Fees */}
                         <div className="flex flex-wrap gap-2">
                           {(race.distances || []).length === 0 ? (
-                            <span className="type-caption text-[var(--text-secondary)]">Distances to be announced</span>
+                            <span className="type-caption text-[var(--text-secondary)]">
+                              Distances to be announced
+                            </span>
                           ) : (
-                            race.distances.slice(0, 4).map((d) => (
-                              <Badge key={d.id} variant="secondary" className="font-mono font-semibold">
-                                {d.label}
-                                {d.price > 0 && <span className={`${accentText} ml-1`}>₱{d.price.toFixed(0)}</span>}
-                              </Badge>
+                            race.distances.map((d) => (
+                              <span
+                                key={d.id}
+                                className="inline-flex items-center overflow-hidden rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] font-mono text-xs font-semibold"
+                              >
+                                <span className="px-2.5 py-1 bg-red-700/10 dark:bg-red-500/15 text-red-700 dark:text-red-400 border-r border-[var(--border-default)]">
+                                  {d.label}
+                                </span>
+                                <span className="px-2.5 py-1 text-[var(--text-primary)]">
+                                  {d.price > 0 ? `₱${d.price.toLocaleString('en-PH')}` : 'Free'}
+                                </span>
+                              </span>
                             ))
-                          )}
-                          {(race.distances || []).length > 4 && (
-                            <Badge variant="outline" className="font-mono font-semibold">
-                              +{(race.distances || []).length - 4} more
-                            </Badge>
                           )}
                         </div>
 
                         {/* Inclusions Microcopy */}
                         {(race.inclusions || []).length > 0 && (
                           <p className="type-caption text-[var(--text-secondary)] line-clamp-2">
-                            Includes: {race.inclusions.join(', ')}
+                            Kit includes: {race.inclusions.join(', ')}
                           </p>
                         )}
                       </CardContent>
                     </div>
 
-                    {/* Action Footer */}
+                    {/* Action Footer (>= 44px tap targets) */}
                     <div className="px-6 pb-6 flex gap-2">
                       <Button
                         type="button"
                         variant={isSelected ? 'default' : 'secondary'}
-                        size="sm"
+                        size="default"
                         aria-pressed={isSelected}
                         onClick={() => handleSelectRace(race.id)}
-                        className="flex-1 justify-between"
+                        className="h-11 flex-1 justify-between px-4"
                       >
                         <span>{isCompleted ? 'View results' : 'View details'}</span>
                         <ArrowRight className="w-4 h-4" aria-hidden="true" />
                       </Button>
                       {!isCompleted && regOpen && (
-                        <Button type="button" size="sm" onClick={() => onRegister(race.id)} className="shrink-0">
+                        <Button
+                          type="button"
+                          size="default"
+                          onClick={() => onRegister(race.id)}
+                          className="h-11 px-4 shrink-0"
+                        >
                           Register
                         </Button>
                       )}
@@ -437,103 +864,165 @@ export default function PublicRaceLanding({ onRegister, onLoadState }: PublicRac
         )}
       </section>
 
-      {/* Selected Race Results Inspector Section */}
+      {/* Selected Race Results Inspector Section (Synced with ?race=<id>) */}
       {selectedRace && (
         <section id="public-race-results" className="scroll-mt-24 space-y-4" aria-labelledby="selected-heading">
-          <div className="flex items-center justify-between gap-4 border-b border-[var(--border-default)] pb-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-default)] pb-4">
             <h2 id="selected-heading" className="type-section text-[var(--text-primary)]">
               {selectedRace.name}
             </h2>
-            <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedRaceId('')}>
-              <X className="w-4 h-4" aria-hidden="true" />
-              <span>Close</span>
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="default"
+                className="h-11 px-4"
+                onClick={() => handleCopyRaceLink(selectedRace.id)}
+              >
+                {copiedRaceId === selectedRace.id ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+                    <span>Link copied</span>
+                  </>
+                ) : (
+                  <>
+                    <Link2 className="w-4 h-4" aria-hidden="true" />
+                    <span>Share race link</span>
+                  </>
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="default"
+                className="h-11 px-4 border border-[var(--border-default)]"
+                onClick={handleCloseSelectedRace}
+              >
+                <X className="w-4 h-4" aria-hidden="true" />
+                <span>Close</span>
+              </Button>
+            </div>
           </div>
-          <PublicRaceResults race={selectedRace} onRegister={onRegister} />
+          <Suspense
+            fallback={
+              <Card className="p-8 text-center">
+                <RefreshCw className="w-5 h-5 animate-spin text-[var(--text-secondary)] mx-auto" />
+              </Card>
+            }
+          >
+            <PublicRaceResults race={selectedRace} onRegister={onRegister} />
+          </Suspense>
         </section>
       )}
 
-      {/* Operational Foundations: Grounded in real RacePulse capabilities */}
-      <section className="space-y-6 pt-4 border-t border-[var(--border-default)]" aria-labelledby="platform-heading">
-        <div className="space-y-1">
-          <h2 id="platform-heading" className="type-section text-[var(--text-primary)]">
-            Race timing engineered for Philippine organizers and runners
-          </h2>
-          <p className="type-lead text-[var(--text-secondary)]">
-            From remote mountain checkpoints to urban finish lines, RacePulse handles the entire race lifecycle.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          <Card className="p-6 space-y-3">
-            <div className="w-10 h-10 rounded-full border border-[var(--border-default)] bg-[var(--surface-inset)] flex items-center justify-center text-red-700 dark:text-red-400">
-              <Radio className="w-5 h-5" aria-hidden="true" />
+      {/* Official Finisher Bib Board: Driven by real published finishers instead of generic feature template cards */}
+      {featuredBibFinishers.length > 0 && (
+        <section
+          className="space-y-6 pt-4 border-t border-[var(--border-default)]"
+          aria-labelledby="bib-board-heading"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+            <div className="space-y-1">
+              <h2 id="bib-board-heading" className="type-section text-[var(--text-primary)]">
+                Recent official finisher bibs
+              </h2>
+              <p className="type-lead text-[var(--text-secondary)]">
+                Verified podium and official finisher records from published RacePulsePH events.
+              </p>
             </div>
-            <h3 className="font-display font-semibold text-base text-[var(--text-primary)]">
-              Checkpoint Split Tracking
-            </h3>
-            <p className="type-caption text-[var(--text-secondary)]">
-              Support crew and running clubs track progress across intermediate checkpoints, mountain summits, and finish lines.
-            </p>
-          </Card>
+            <Button
+              type="button"
+              variant="outline"
+              size="default"
+              className="h-11 px-5 self-start sm:self-auto shrink-0"
+              onClick={handleSwitchToCompletedAndSearch}
+            >
+              <span>Search all archives</span>
+              <ArrowRight className="w-4 h-4" aria-hidden="true" />
+            </Button>
+          </div>
 
-          <Card className="p-6 space-y-3">
-            <div className="w-10 h-10 rounded-full border border-[var(--border-default)] bg-[var(--surface-inset)] flex items-center justify-center text-red-700 dark:text-red-400">
-              <Timer className="w-5 h-5" aria-hidden="true" />
-            </div>
-            <h3 className="font-display font-semibold text-base text-[var(--text-primary)]">
-              Dual-Mode Offline Sync
-            </h3>
-            <p className="type-caption text-[var(--text-secondary)]">
-              Timing stations continue scanning without network signal. Checkpoint records synchronize automatically once connected.
-            </p>
-          </Card>
+          <ul className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {featuredBibFinishers.map(({ race, entry }) => {
+              const key = `featured_${race.id}_${entry.bibNumber}_${entry.distance}`;
+              const isDownloading = downloadingBibKey === `${race.id}_${entry.bibNumber}_${entry.distance}`;
+              const displayName = entry.isFreeSlot ? `Bib ${entry.bibNumber}` : entry.fullName;
 
-          <Card className="p-6 space-y-3">
-            <div className="w-10 h-10 rounded-full border border-[var(--border-default)] bg-[var(--surface-inset)] flex items-center justify-center text-red-700 dark:text-red-400">
-              <FileText className="w-5 h-5" aria-hidden="true" />
-            </div>
-            <h3 className="font-display font-semibold text-base text-[var(--text-primary)]">
-              Verified E-Certificates
-            </h3>
-            <p className="type-caption text-[var(--text-secondary)]">
-              Finisher certificates render with official gun time, net chip time, overall placement, and age division standings.
-            </p>
-          </Card>
+              return (
+                <li key={key} className="flex">
+                  <div className="w-full overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] shadow-sm flex flex-col justify-between">
+                    <div>
+                      {/* Authentic Race Bib Top Header */}
+                      <div className="bg-red-700 text-white px-4 py-2 flex items-center justify-between gap-2 font-mono text-xs font-semibold">
+                        <span className="flex items-center gap-2 min-w-0 truncate">
+                          <span className="w-2.5 h-2.5 rounded-full bg-black/35 border border-white/40 shrink-0" aria-hidden="true" />
+                          <span className="truncate">{race.name}</span>
+                        </span>
+                        <span className="flex items-center gap-2 shrink-0">
+                          <span>{entry.distance}</span>
+                          <span className="w-2.5 h-2.5 rounded-full bg-black/35 border border-white/40 shrink-0" aria-hidden="true" />
+                        </span>
+                      </div>
 
-          <Card className="p-6 space-y-3">
-            <div className="w-10 h-10 rounded-full border border-[var(--border-default)] bg-[var(--surface-inset)] flex items-center justify-center text-red-700 dark:text-red-400">
-              <ShieldCheck className="w-5 h-5" aria-hidden="true" />
-            </div>
-            <h3 className="font-display font-semibold text-base text-[var(--text-primary)]">
-              Direct Roster Registration
-            </h3>
-            <p className="type-caption text-[var(--text-secondary)]">
-              Runners register via PayMongo checkout or direct organizer GCash confirmation with instant bib number assignment.
-            </p>
-          </Card>
-        </div>
-      </section>
+                      {/* Race Bib Number & Runner Plate */}
+                      <div className="p-5 space-y-3">
+                        <div className="flex items-baseline justify-between gap-2 border-b border-dashed border-[var(--border-default)] pb-3">
+                          <span className="font-mono text-3xl sm:text-4xl font-semibold tracking-tight text-[var(--text-primary)]">
+                            {entry.bibNumber}
+                          </span>
+                          <span className="font-mono text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-600/25">
+                            {formatRaceTime(entry.finishTime)}
+                          </span>
+                        </div>
 
-      {/* Semantic Footer with Philippine athletic greeting */}
-      <footer className="pt-8 border-t border-[var(--border-default)] flex flex-col sm:flex-row items-center justify-between gap-4 type-caption text-[var(--text-secondary)]">
-        <div className="flex items-center gap-4">
-          <span>&copy; {new Date().getFullYear()} RacePulsePH</span>
-          <span>&bull;</span>
-          <p>Happy running ka Racepulse!</p>
-        </div>
+                        <div className="space-y-1">
+                          <h3 className="font-display font-semibold text-base text-[var(--text-primary)] truncate">
+                            {displayName}
+                          </h3>
+                          <p className="type-caption font-mono text-[var(--text-secondary)]">
+                            Rank #{entry.overallRank ?? entry.rank} Overall
+                            {entry.categoryRank ? ` · ${entry.categoryLabel || 'Category'} #${entry.categoryRank}` : ''}
+                            {' · '}
+                            {formatReadableRaceDate(race.date)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
 
-        <div className="flex items-center gap-4">
-          <button
-            type="button"
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="flex items-center gap-1 hover:text-[var(--text-primary)] transition-colors"
-          >
-            <span>Back to top</span>
-            <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" />
-          </button>
-        </div>
-      </footer>
+                    {/* Bib Bottom Tear-Off Stub Actions */}
+                    <div className="px-5 py-3 bg-[var(--surface-inset)] border-t border-dashed border-[var(--border-default)] flex items-center justify-between gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-11 px-3 text-xs"
+                        onClick={() => handleSelectRace(race.id)}
+                      >
+                        <span>Race results</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-11 px-3.5 text-xs"
+                        disabled={isDownloading}
+                        onClick={() => handleDownloadCertificate(race, entry)}
+                      >
+                        {isDownloading ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <FileDown className="w-3.5 h-3.5" aria-hidden="true" />
+                        )}
+                        <span>Certificate</span>
+                      </Button>
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
     </main>
   );
 }
