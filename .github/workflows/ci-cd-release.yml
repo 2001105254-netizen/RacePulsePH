@@ -54,6 +54,9 @@ jobs:
       - name: TypeScript typecheck
         run: npm run lint
 
+      - name: Build web app and LAN server
+        run: npm run build
+
       - name: Run unit tests
         run: |
           node --test \
@@ -64,9 +67,6 @@ jobs:
             tests/timing-sequence.test.cjs \
             tests/lan-http.test.cjs \
             tests/release-version.test.cjs
-
-      - name: Build web app and LAN server
-        run: npm run build
 
       - name: Upload web distribution artifact
         uses: actions/upload-artifact@v4
