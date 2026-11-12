@@ -56,11 +56,30 @@ function parseFrontmatter(text) {
   const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
   if (!match) return null;
   const data = {};
-  for (const line of match[1].split(/\r?\n/)) {
-    const kv = /^([A-Za-z][\w-]*):\s*(.*)$/.exec(line);
+  const lines = match[1].split(/\r?\n/);
+  for (let i = 0; i < lines.length; i += 1) {
+    const kv = /^([A-Za-z][\w-]*):\s*(.*)$/.exec(lines[i]);
     if (!kv) continue;
     let value = kv[2].trim();
-    if (/^".*"$/.test(value)) value = value.slice(1, -1);
+    if (value === '|' || value === '|-' || value === '>' || value === '>-') {
+      const fold = value.startsWith('>');
+      const block = [];
+      let indent = null;
+      while (i + 1 < lines.length && (/^\s+/.test(lines[i + 1]) || lines[i + 1] === '')) {
+        i += 1;
+        const raw = lines[i];
+        if (raw === '') {
+          block.push('');
+          continue;
+        }
+        if (indent === null) indent = /^(\s+)/.exec(raw)[1].length;
+        block.push(raw.slice(indent));
+      }
+      while (block.length && block[block.length - 1] === '') block.pop();
+      value = fold ? block.join(' ').trim() : block.join('\n');
+    } else if (/^".*"$/.test(value)) {
+      value = value.slice(1, -1);
+    }
     data[kv[1]] = value;
   }
   return data;
