@@ -36,7 +36,15 @@ service firebase.storage {
       allow read: if true;
       function assetAction() { return file.matches('payment-qr.*') ? 'payment.configure' : file.matches('bib-.*') ? 'race.bibs' : 'race.artwork'; }
       function writeAllowed() { return request.auth != null && request.auth.uid == ownerUid && can(assetAction()) && (firestore.exists(/databases/(default)/documents/races/$(raceId)) ? scope(raceId) : can('race.create')); }
-      allow create, update: if writeAllowed() && request.resource.contentType.matches('image/.*') && request.resource.size < 8 * 1024 * 1024;
+      function isRaceImage() { return request.resource.contentType.matches('image/.*'); }
+      function isRouteGpx() {
+        return file.matches('route-.*[.]gpx')
+          && (request.resource.contentType.matches('application/gpx[+]xml')
+            || request.resource.contentType.matches('application/xml')
+            || request.resource.contentType.matches('text/xml')
+            || request.resource.contentType == 'application/octet-stream');
+      }
+      allow create, update: if writeAllowed() && (isRaceImage() || isRouteGpx()) && request.resource.size < 8 * 1024 * 1024;
       allow delete: if writeAllowed();
     }
   }

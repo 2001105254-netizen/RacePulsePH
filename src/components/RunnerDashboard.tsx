@@ -29,6 +29,7 @@ import PublicRaceResults from './PublicRaceResults';
 import { useAndroidBackHandler } from '../lib/capacitorAndroid';
 import { claimRaceBib, claimableEntryLabel, parseRaceBibQr, previewRaceBibClaim, RaceBibClaimPreview } from '../lib/raceBibClaim';
 import { AnimatedTabView, ViewLoadingSkeleton, resolveTabDirection, type NavDirection } from './ui/MotionPrimitives';
+import RouteMap3D from './RouteMap3D';
 
 interface RunnerDashboardProps {
   profile: UserProfile;
@@ -650,6 +651,7 @@ function MyRacesView({ runnerProfiles, onBrowseEvents }: MyRacesViewProps) {
   }, []);
 
   if (viewingProfile) {
+    const viewedRace = races.find((race) => race.id === viewingProfile.raceId);
     return (
       <div className="space-y-4">
         <button
@@ -659,7 +661,8 @@ function MyRacesView({ runnerProfiles, onBrowseEvents }: MyRacesViewProps) {
         >
           <ArrowLeft className="w-3.5 h-3.5" /> Back to My Races
         </button>
-        {can('personal.results') ? <RunnerSplitsView runnerProfile={viewingProfile} /> : races.find(r => r.id === viewingProfile.raceId) && can('personal.bibs') ? <DigitalRaceBib race={races.find(r => r.id === viewingProfile.raceId)!} runnerProfile={viewingProfile} /> : <p>Results access is disabled for this account.</p>}
+        {viewedRace?.routeGpxUrl && <RouteMap3D gpxUrl={viewedRace.routeGpxUrl} fileName={viewedRace.routeGpxFileName} raceName={viewedRace.name} />}
+        {can('personal.results') ? <RunnerSplitsView runnerProfile={viewingProfile} /> : viewedRace && can('personal.bibs') ? <DigitalRaceBib race={viewedRace} runnerProfile={viewingProfile} /> : <p>Results access is disabled for this account.</p>}
       </div>
     );
   }

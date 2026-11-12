@@ -7,6 +7,7 @@ import { db } from '../firebase';
 import { downloadFinisherCertificate } from '../lib/finisherCertificate';
 import { isRaceRegistrationOpen } from '../lib/raceRegistration';
 import { PublicLeaderboardEntry, PublicLiveResults, Race, RunnerResult } from '../types';
+import RouteMap3D from './RouteMap3D';
 
 interface PublicRaceResultsProps {
   race: Race;
@@ -98,6 +99,7 @@ export default function PublicRaceResults({ race, onRegister }: PublicRaceResult
       </div>
 
       <div className="p-4 sm:p-6 space-y-4">
+        {race.routeGpxUrl && <RouteMap3D gpxUrl={race.routeGpxUrl} fileName={race.routeGpxFileName} raceName={race.name} />}
         {summary === undefined ? (
           <ResultsSkeletonList rows={5} />
         ) : summary === null || officialResults.length === 0 ? (

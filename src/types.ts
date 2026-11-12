@@ -207,6 +207,11 @@ export interface Race {
   liveBroadcastEnabled?: boolean;
   livestreamUrl?: string;
   routeMapUrl?: string;
+  // Organizer-uploaded GPX route. The file lives in Storage so long tracks
+  // never inflate the Firestore race document.
+  routeGpxUrl?: string;
+  routeGpxFileName?: string;
+  routeGpxUploadedAt?: string;
   posterImage?: string; // small base64 data URI, resized client-side before saving
   // Optional visual preview for a shirt, medal, kit, or another race inclusion.
   inclusionImage?: string;

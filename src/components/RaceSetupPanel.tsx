@@ -13,7 +13,7 @@ import { ensureRaceBibCustomFont, raceBibFontFamily } from '../lib/raceBibFont';
 import { useAndroidBackHandler } from '../lib/capacitorAndroid';
 import DialogSurface from './ui/DialogSurface';
 import { QRCodeSVG } from 'qrcode.react';
-import { Flag, Trash2, Plus, Save, Pencil, RefreshCw, Users2, FileDown, ImagePlus, X, QrCode, Copy, Download } from 'lucide-react';
+import { Flag, Trash2, Plus, Save, Pencil, RefreshCw, Users2, FileDown, ImagePlus, X, QrCode, Copy, Download, MapPinned, Upload } from 'lucide-react';
 
 interface CheckpointDraft {
   id: string;
@@ -149,6 +149,9 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
   const [inclusions, setInclusions] = useState<InclusionDraft[]>([]);
   const [posterImage, setPosterImage] = useState('');
   const [posterUploading, setPosterUploading] = useState(false);
+  const [routeGpxUrl, setRouteGpxUrl] = useState('');
+  const [routeGpxFileName, setRouteGpxFileName] = useState('');
+  const [routeGpxFile, setRouteGpxFile] = useState<File | null>(null);
   const [inclusionImage, setInclusionImage] = useState('');
   const [inclusionUploading, setInclusionUploading] = useState(false);
   const [raceBibTemplateImage, setRaceBibTemplateImage] = useState('');
@@ -196,6 +199,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
     if (!raceBibPdfBusyRaceId) setBibDownloadRace(null);
   });
   const posterInputRef = useRef<HTMLInputElement>(null);
+  const routeGpxInputRef = useRef<HTMLInputElement>(null);
   const inclusionInputRef = useRef<HTMLInputElement>(null);
   const raceBibInputRef = useRef<HTMLInputElement>(null);
   const raceBibFontInputRef = useRef<HTMLInputElement>(null);
@@ -242,6 +246,9 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
     setEntryCategories(['solo']);
     setInclusions([]);
     setPosterImage('');
+    setRouteGpxUrl('');
+    setRouteGpxFileName('');
+    setRouteGpxFile(null);
     setInclusionImage('');
     setRaceBibTemplateImage('');
     setRaceBibTemplatesByDistance({});
@@ -321,6 +328,9 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
     setEntryCategories(raceEntryCategories(race));
     setInclusions((race.inclusions || []).map((text, idx) => ({ id: `incl_${idx}_${Date.now()}`, text })));
     setPosterImage(race.posterImage || '');
+    setRouteGpxUrl(race.routeGpxUrl || '');
+    setRouteGpxFileName(race.routeGpxFileName || '');
+    setRouteGpxFile(null);
     setInclusionImage(race.inclusionImage || '');
     setRaceBibTemplateImage(race.raceBibTemplateImage || '');
     setRaceBibTemplatesByDistance(race.raceBibTemplatesByDistance || {});
@@ -386,6 +396,24 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
     } finally {
       setPosterUploading(false);
     }
+  };
+
+  const handleRouteGpxSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const isGpx = file.name.toLowerCase().endsWith('.gpx');
+    if (!isGpx) {
+      setError('Upload a GPX route file with a .gpx extension.');
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setError('Keep the GPX route file under 8 MB.');
+      return;
+    }
+    setError('');
+    setRouteGpxFile(file);
+    setRouteGpxFileName(file.name);
   };
 
   const handleInclusionImageSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -565,6 +593,17 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
     return getDownloadURL(fileRef);
   };
 
+  const storeRouteGpx = async (raceId: string): Promise<string> => {
+    if (!routeGpxFile) return routeGpxUrl;
+    if (editingId && !can('race.artwork')) return routeGpxUrl;
+    const fileRef = storageRef(storage, `race-assets/${actorUid}/${raceId}/route-${Date.now()}.gpx`);
+    await uploadBytes(fileRef, routeGpxFile, {
+      contentType: 'application/gpx+xml',
+      cacheControl: 'public,max-age=31536000,immutable',
+    });
+    return getDownloadURL(fileRef);
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingId && !can('race.create')) return setError('Race creation is disabled for your account.');
@@ -599,8 +638,9 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
         .filter((organizerId) => organizerId && organizerId !== primaryOrganizerId)
         .slice(0, 20);
       const savedDistances = [...distances].sort((a, b) => a.km - b.km).map(draftToDistance);
-      const [storedPosterImage, storedInclusionImage, storedManualPaymentQrImage, storedRaceBibTemplateImage] = await Promise.all([
+      const [storedPosterImage, storedRouteGpxUrl, storedInclusionImage, storedManualPaymentQrImage, storedRaceBibTemplateImage] = await Promise.all([
         storeRaceImage(posterImage, raceId, 'poster', existing?.posterImage),
+        storeRouteGpx(raceId),
         storeRaceImage(inclusionImage, raceId, 'inclusion', existing?.inclusionImage),
         storeRaceImage(manualPaymentQrImage, raceId, 'payment-qr', existing?.manualPaymentQrImage),
         storeRaceImage(raceBibTemplateImage, raceId, 'bib-default', existing?.raceBibTemplateImage),
@@ -665,6 +705,11 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
         ...(existing?.livestreamUrl ? { livestreamUrl: existing.livestreamUrl } : {}),
         ...(existing?.routeMapUrl ? { routeMapUrl: existing.routeMapUrl } : {}),
         ...(storedPosterImage ? { posterImage: storedPosterImage } : {}),
+        ...(storedRouteGpxUrl ? {
+          routeGpxUrl: storedRouteGpxUrl,
+          routeGpxFileName: routeGpxFileName || existing?.routeGpxFileName || 'race-route.gpx',
+          routeGpxUploadedAt: routeGpxFile ? new Date().toISOString() : existing?.routeGpxUploadedAt || new Date().toISOString(),
+        } : {}),
         ...(storedInclusionImage ? { inclusionImage: storedInclusionImage } : {}),
         ...(storedRaceBibTemplateImage ? { raceBibTemplateImage: storedRaceBibTemplateImage } : {}),
         ...(raceBibCustomFont ? { raceBibCustomFont } : {}),
@@ -966,6 +1011,35 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
               >
                 {posterUploading ? <RefreshCw className="w-6 h-6 animate-spin" /> : <ImagePlus className="w-6 h-6" />}
                 <span className="text-xs font-bold uppercase tracking-wide">{posterUploading ? 'Processing...' : 'Upload Poster Image'}</span>
+              </button>
+            )}
+          </div>
+
+          <div className="rounded-[16px] border border-[var(--border-default)] bg-[var(--surface-inset)]/40 p-4">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-red-500/10 text-red-500"><MapPinned className="h-5 w-5" /></span>
+              <div>
+                <h4 className="text-sm font-semibold text-[var(--text-primary)]">Runner route, GPX</h4>
+                <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">Upload the official GPX route. Runners can open it from the event page and view the route with its recorded elevation.</p>
+              </div>
+            </div>
+            <input disabled={(!!editingId && !can('race.artwork'))} ref={routeGpxInputRef} type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml" onChange={handleRouteGpxSelected} className="hidden" />
+            {routeGpxUrl || routeGpxFile ? (
+              <div className="mt-4 flex flex-col gap-3 rounded-[12px] border border-emerald-500/25 bg-emerald-500/5 p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-semibold text-[var(--text-primary)]">{routeGpxFileName || 'race-route.gpx'}</p>
+                  <p className="mt-1 text-[10px] text-[var(--text-secondary)]">{routeGpxFile ? 'Ready to upload when you save this race.' : 'Published for runners on the race page.'}</p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <button type="button" disabled={(!!editingId && !can('race.artwork'))} onClick={() => routeGpxInputRef.current?.click()} className="min-h-10 rounded-lg border border-[var(--border-default)] px-3 text-[10px] font-semibold text-[var(--text-primary)] hover:border-red-500/50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50">Replace</button>
+                  <button type="button" disabled={(!!editingId && !can('race.artwork'))} onClick={() => { setRouteGpxUrl(''); setRouteGpxFileName(''); setRouteGpxFile(null); }} className="min-h-10 rounded-lg border border-red-500/30 px-3 text-[10px] font-semibold text-red-600 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50">Remove</button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" onClick={() => routeGpxInputRef.current?.click()} disabled={(!!editingId && !can('race.artwork'))} className="mt-4 flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-[12px] border-2 border-dashed border-[var(--border-default)] px-4 text-center text-[var(--text-secondary)] transition hover:border-red-500/50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50">
+                <Upload className="h-5 w-5" />
+                <span className="text-xs font-semibold">Upload GPX route</span>
+                <span className="text-[10px] text-[var(--text-muted)]">GPX only, maximum 8 MB</span>
               </button>
             )}
           </div>

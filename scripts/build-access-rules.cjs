@@ -78,11 +78,12 @@ block('match /races/{raceId}',`match /races/{raceId} {
       allow create: if permission('race.create') && request.resource.data.createdBy == request.auth.uid && request.resource.data.id == raceId
         && !request.resource.data.keys().hasAny(['gunStartTime','waveStartTimes','completedAt'])
         && (!request.resource.data.keys().hasAny(['posterImage','inclusionImage']) || permission('race.artwork'))
+        && (!request.resource.data.keys().hasAny(['routeGpxUrl','routeGpxFileName','routeGpxUploadedAt']) || permission('race.artwork'))
         && (!request.resource.data.keys().hasAny(['raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','raceBibTemplatesByEntryCategory','raceBibShowRaffleNumber','raceBibShowQrCode']) || permission('race.bibs'))
         && (request.resource.data.get('organizerIds', []).size() == 0 || permission('race.team'))
         && (!(request.resource.data.get('onlinePaymentEnabled', false) || request.resource.data.get('manualPaymentEnabled', false)) || permission('payment.configure'));
       allow update: if raceScope(raceId) && request.resource.data.createdBy == resource.data.createdBy && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','date','inclusions','checkpoints','ageCategories','youngestRunnerAwardEnabled','oldestRunnerAwardEnabled','distances','entryCategories','registrationOpen','registrationCloseDate','onlinePaymentEnabled','paymentFeeMode','manualPaymentEnabled','manualPaymentInstructions','manualPaymentQrImage','posterImage','inclusionImage','raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','raceBibTemplatesByEntryCategory','raceBibShowRaffleNumber','raceBibShowQrCode','organizerIds','gunStartTime','waveStartTimes','completedAt','liveBroadcastEnabled','livestreamUrl','routeMapUrl','finishReviewWindowMs','disqualifiedBibs'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','date','inclusions','checkpoints','ageCategories','youngestRunnerAwardEnabled','oldestRunnerAwardEnabled','distances','entryCategories','registrationOpen','registrationCloseDate','onlinePaymentEnabled','paymentFeeMode','manualPaymentEnabled','manualPaymentInstructions','manualPaymentQrImage','posterImage','inclusionImage','routeGpxUrl','routeGpxFileName','routeGpxUploadedAt','raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','raceBibTemplatesByEntryCategory','raceBibShowRaffleNumber','raceBibShowQrCode','organizerIds','gunStartTime','waveStartTimes','completedAt','liveBroadcastEnabled','livestreamUrl','routeMapUrl','finishReviewWindowMs','disqualifiedBibs'])
         && (!changed(['finishReviewWindowMs']) || (permission('timing.correct') && request.resource.data.finishReviewWindowMs is number && request.resource.data.finishReviewWindowMs >= 0 && request.resource.data.finishReviewWindowMs <= 60000))
         && (!changed(['disqualifiedBibs']) || ((permission('timing.correct') || permission('timing.scan')) && request.resource.data.disqualifiedBibs is map && request.resource.data.disqualifiedBibs.size() <= 500))
         && (!changed(['name','date','inclusions']) || permission('race.edit'))
@@ -90,7 +91,7 @@ block('match /races/{raceId}',`match /races/{raceId} {
         && (!changed(['distances']) || (permission('race.categories') && permission('payment.configure')))
         && (!changed(['registrationOpen','registrationCloseDate']) || permission('race.registration') || (permission('timing.finish') && changed(['completedAt']) && request.resource.data.registrationOpen == false))
         && (!changed(['onlinePaymentEnabled','paymentFeeMode','manualPaymentEnabled','manualPaymentInstructions','manualPaymentQrImage']) || permission('payment.configure'))
-        && (!changed(['posterImage','inclusionImage']) || permission('race.artwork'))
+        && (!changed(['posterImage','inclusionImage','routeGpxUrl','routeGpxFileName','routeGpxUploadedAt']) || permission('race.artwork'))
         && (!changed(['raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','raceBibTemplatesByEntryCategory','raceBibShowRaffleNumber','raceBibShowQrCode']) || permission('race.bibs'))
         && (!changed(['organizerIds']) || (permission('race.team') && (resource.data.createdBy == request.auth.uid || isSuperAdmin())))
         && (!changed(['liveBroadcastEnabled']) || permission('hub.publish'))
