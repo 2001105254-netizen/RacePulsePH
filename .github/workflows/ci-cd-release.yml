@@ -198,13 +198,13 @@ jobs:
                 --target "${{ github.sha }}" \
                 --title "$TITLE" \
                 --prerelease \
-                --generate-release-notes
+                --generate-notes
             else
               gh release create "$TAG" "${ASSETS[@]}" \
                 --target "${{ github.sha }}" \
                 --title "$TITLE" \
                 --latest \
-                --generate-release-notes
+                --generate-notes
             fi
           fi
 
