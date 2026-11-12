@@ -23,7 +23,7 @@ Standard release engineering workflow for RacePulsePH versioning, Android packag
 
 ## 3. GitHub Actions CI/CD (`.github/workflows/ci-cd-release.yml`)
 
-Configure these repository secrets under GitHub Settings -> Secrets and variables -> Actions before triggering `android-release`:
+Configure these repository secrets under GitHub Settings -> Secrets and variables -> Actions (or run `scripts/configure-github-release-secrets.ps1 -Repo <owner/repo>`) before running `android-release`:
 
 | Secret | Value |
 | --- | --- |
