@@ -1,0 +1,401 @@
+{
+  "roles": [
+    "runner",
+    "organizer",
+    "admin",
+    "superadmin"
+  ],
+  "groups": {
+    "Events": [
+      "race.view",
+      "race.create",
+      "race.edit",
+      "race.categories",
+      "race.registration",
+      "race.artwork",
+      "race.bibs",
+      "race.team"
+    ],
+    "Roster": [
+      "roster.view",
+      "roster.add",
+      "roster.import",
+      "roster.edit",
+      "roster.chips",
+      "roster.bibs",
+      "roster.kits",
+      "roster.slots",
+      "roster.remove"
+    ],
+    "Payments": [
+      "revenue.view",
+      "payment.configure",
+      "payment.confirm"
+    ],
+    "Timing": [
+      "timing.view",
+      "timing.scan",
+      "timing.manual",
+      "timing.correct",
+      "timing.start",
+      "timing.reset",
+      "timing.finish",
+      "timing.reopen"
+    ],
+    "Results": [
+      "results.view",
+      "results.publish",
+      "results.export",
+      "hub.manage",
+      "hub.publish",
+      "roster.export",
+      "bibs.export"
+    ],
+    "Engraving": [
+      "engraving.view",
+      "engraving.create",
+      "engraving.status",
+      "engraving.export",
+      "engraving.backup"
+    ],
+    "Personal": [
+      "personal.register",
+      "personal.checkout",
+      "personal.results",
+      "personal.bibs",
+      "personal.certificates",
+      "personal.engraving",
+      "personal.friends",
+      "personal.invites"
+    ],
+    "Directories": [
+      "users.view"
+    ]
+  },
+  "dependencies": {
+    "race.edit": [
+      "race.view"
+    ],
+    "race.categories": [
+      "race.view"
+    ],
+    "race.registration": [
+      "race.view"
+    ],
+    "race.artwork": [
+      "race.view"
+    ],
+    "race.bibs": [
+      "race.view"
+    ],
+    "race.team": [
+      "race.view"
+    ],
+    "roster.add": [
+      "roster.view"
+    ],
+    "roster.import": [
+      "roster.view"
+    ],
+    "roster.edit": [
+      "roster.view"
+    ],
+    "roster.chips": [
+      "roster.view"
+    ],
+    "roster.bibs": [
+      "roster.view"
+    ],
+    "roster.kits": [
+      "roster.view"
+    ],
+    "roster.slots": [
+      "roster.view"
+    ],
+    "roster.remove": [
+      "roster.view"
+    ],
+    "payment.configure": [
+      "race.view"
+    ],
+    "payment.confirm": [
+      "roster.view"
+    ],
+    "timing.scan": [
+      "timing.view"
+    ],
+    "timing.manual": [
+      "timing.scan"
+    ],
+    "timing.correct": [
+      "race.view"
+    ],
+    "timing.start": [
+      "race.view"
+    ],
+    "timing.reset": [
+      "race.view"
+    ],
+    "timing.finish": [
+      "results.publish"
+    ],
+    "timing.reopen": [
+      "race.view"
+    ],
+    "results.publish": [
+      "results.view"
+    ],
+    "results.export": [
+      "race.view"
+    ],
+    "hub.manage": [
+      "race.view"
+    ],
+    "hub.publish": [
+      "race.view"
+    ],
+    "roster.export": [
+      "roster.view"
+    ],
+    "bibs.export": [
+      "race.view"
+    ],
+    "engraving.create": [
+      "engraving.view"
+    ],
+    "engraving.status": [
+      "engraving.view"
+    ],
+    "engraving.export": [
+      "engraving.view"
+    ],
+    "engraving.backup": [
+      "engraving.view"
+    ],
+    "timing.view": [
+      "roster.view",
+      "race.view"
+    ],
+    "results.view": [
+      "timing.view"
+    ],
+    "revenue.view": [
+      "roster.view"
+    ],
+    "personal.checkout": [
+      "personal.register"
+    ],
+    "personal.certificates": [
+      "personal.results"
+    ],
+    "personal.invites": [
+      "personal.friends"
+    ]
+  },
+  "presets": {
+    "runner": {
+      "race.view": false,
+      "race.create": false,
+      "race.edit": false,
+      "race.categories": false,
+      "race.registration": false,
+      "race.artwork": false,
+      "race.bibs": false,
+      "race.team": false,
+      "roster.view": false,
+      "roster.add": false,
+      "roster.import": false,
+      "roster.edit": false,
+      "roster.chips": false,
+      "roster.bibs": false,
+      "roster.kits": false,
+      "roster.slots": false,
+      "roster.remove": false,
+      "revenue.view": false,
+      "payment.configure": false,
+      "payment.confirm": false,
+      "timing.view": false,
+      "timing.scan": false,
+      "timing.manual": false,
+      "timing.correct": false,
+      "timing.start": false,
+      "timing.reset": false,
+      "timing.finish": false,
+      "timing.reopen": false,
+      "results.view": false,
+      "results.publish": false,
+      "results.export": false,
+      "hub.manage": false,
+      "hub.publish": false,
+      "roster.export": false,
+      "bibs.export": false,
+      "engraving.view": false,
+      "engraving.create": false,
+      "engraving.status": false,
+      "engraving.export": false,
+      "engraving.backup": false,
+      "personal.register": true,
+      "personal.checkout": true,
+      "personal.results": true,
+      "personal.bibs": true,
+      "personal.certificates": true,
+      "personal.engraving": true,
+      "personal.friends": true,
+      "personal.invites": true,
+      "users.view": false
+    },
+    "organizer": {
+      "race.view": true,
+      "race.create": true,
+      "race.edit": true,
+      "race.categories": true,
+      "race.registration": true,
+      "race.artwork": true,
+      "race.bibs": true,
+      "race.team": true,
+      "roster.view": true,
+      "roster.add": true,
+      "roster.import": true,
+      "roster.edit": true,
+      "roster.chips": true,
+      "roster.bibs": true,
+      "roster.kits": true,
+      "roster.slots": true,
+      "roster.remove": true,
+      "revenue.view": true,
+      "payment.configure": true,
+      "payment.confirm": true,
+      "timing.view": true,
+      "timing.scan": true,
+      "timing.manual": true,
+      "timing.correct": false,
+      "timing.start": true,
+      "timing.reset": true,
+      "timing.finish": true,
+      "timing.reopen": true,
+      "results.view": true,
+      "results.publish": true,
+      "results.export": true,
+      "hub.manage": true,
+      "hub.publish": true,
+      "roster.export": true,
+      "bibs.export": true,
+      "engraving.view": false,
+      "engraving.create": false,
+      "engraving.status": false,
+      "engraving.export": false,
+      "engraving.backup": false,
+      "personal.register": true,
+      "personal.checkout": true,
+      "personal.results": true,
+      "personal.bibs": true,
+      "personal.certificates": true,
+      "personal.engraving": true,
+      "personal.friends": true,
+      "personal.invites": true,
+      "users.view": false
+    },
+    "admin": {
+      "race.view": true,
+      "race.create": true,
+      "race.edit": true,
+      "race.categories": true,
+      "race.registration": true,
+      "race.artwork": true,
+      "race.bibs": true,
+      "race.team": true,
+      "roster.view": true,
+      "roster.add": true,
+      "roster.import": true,
+      "roster.edit": true,
+      "roster.chips": true,
+      "roster.bibs": true,
+      "roster.kits": true,
+      "roster.slots": true,
+      "roster.remove": true,
+      "revenue.view": true,
+      "payment.configure": true,
+      "payment.confirm": true,
+      "timing.view": true,
+      "timing.scan": true,
+      "timing.manual": true,
+      "timing.correct": true,
+      "timing.start": true,
+      "timing.reset": true,
+      "timing.finish": true,
+      "timing.reopen": true,
+      "results.view": true,
+      "results.publish": true,
+      "results.export": true,
+      "hub.manage": true,
+      "hub.publish": true,
+      "roster.export": true,
+      "bibs.export": true,
+      "engraving.view": true,
+      "engraving.create": true,
+      "engraving.status": true,
+      "engraving.export": true,
+      "engraving.backup": true,
+      "personal.register": false,
+      "personal.checkout": false,
+      "personal.results": false,
+      "personal.bibs": false,
+      "personal.certificates": false,
+      "personal.engraving": false,
+      "personal.friends": false,
+      "personal.invites": false,
+      "users.view": true
+    },
+    "superadmin": {
+      "race.view": true,
+      "race.create": true,
+      "race.edit": true,
+      "race.categories": true,
+      "race.registration": true,
+      "race.artwork": true,
+      "race.bibs": true,
+      "race.team": true,
+      "roster.view": true,
+      "roster.add": true,
+      "roster.import": true,
+      "roster.edit": true,
+      "roster.chips": true,
+      "roster.bibs": true,
+      "roster.kits": true,
+      "roster.slots": true,
+      "roster.remove": true,
+      "revenue.view": true,
+      "payment.configure": true,
+      "payment.confirm": true,
+      "timing.view": true,
+      "timing.scan": true,
+      "timing.manual": true,
+      "timing.correct": true,
+      "timing.start": true,
+      "timing.reset": true,
+      "timing.finish": true,
+      "timing.reopen": true,
+      "results.view": true,
+      "results.publish": true,
+      "results.export": true,
+      "hub.manage": true,
+      "hub.publish": true,
+      "roster.export": true,
+      "bibs.export": true,
+      "engraving.view": true,
+      "engraving.create": true,
+      "engraving.status": true,
+      "engraving.export": true,
+      "engraving.backup": true,
+      "personal.register": true,
+      "personal.checkout": true,
+      "personal.results": true,
+      "personal.bibs": true,
+      "personal.certificates": true,
+      "personal.engraving": true,
+      "personal.friends": true,
+      "personal.invites": true,
+      "users.view": true
+    }
+  }
+}

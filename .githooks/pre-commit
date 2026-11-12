@@ -1,0 +1,23 @@
+#!/usr/bin/env sh
+set -eu
+
+# Allow explicit opt-out (e.g. git commit --amend when keeping an existing version).
+if [ "${SKIP_VERSION_BUMP:-0}" = "1" ]; then
+  exit 0
+fi
+
+# Skip during merges, rebases, or cherry-picks.
+GIT_DIR_PATH="$(git rev-parse --git-dir 2>/dev/null || true)"
+if [ -n "$GIT_DIR_PATH" ]; then
+  if [ -f "$GIT_DIR_PATH/MERGE_HEAD" ] || [ -d "$GIT_DIR_PATH/rebase-merge" ] || [ -d "$GIT_DIR_PATH/rebase-apply" ] || [ -f "$GIT_DIR_PATH/CHERRY_PICK_HEAD" ] || [ -f "$GIT_DIR_PATH/REVERT_HEAD" ]; then
+    exit 0
+  fi
+fi
+
+# Skip empty commits cleanly so git reports "nothing to commit".
+if git diff --cached --quiet; then
+  exit 0
+fi
+
+node scripts/release-version.cjs --auto --stage
+

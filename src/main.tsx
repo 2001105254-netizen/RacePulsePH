@@ -1,6 +1,7 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
+import FeedbackProvider from './components/ui/FeedbackProvider';
 import './index.css';
 
 // Keep the offline shell out of the local Vite server. This prevents a
@@ -27,6 +28,6 @@ if ('serviceWorker' in navigator && !isLocalDevelopment) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <FeedbackProvider><App /></FeedbackProvider>
   </StrictMode>,
 );

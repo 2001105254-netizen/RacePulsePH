@@ -1,5 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+/* Fonts loaded non-blocking via <link> in index.html */
 @import "tailwindcss";
+@import './access-ui.css';
 
 /* Toggle-driven (not OS-preference-driven) dark mode: .dark class on <html> */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -43,48 +44,176 @@
   --color-granite-card: #121316;
   --color-granite-inner: #070809;
 
-  --animate-fadeIn: fadeIn 0.5s ease-out both;
+  --animate-fadeIn: fadeIn 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Mathematical Root Baseline & Relative Sizing */
+html {
+  font-size: 100%; /* Strictly 16px root baseline */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 /* Semantic surface/text tokens: light values are the default, .dark overrides them */
 :root {
-  --surface-page: #f5f5f7;
-  --surface-card: #ffffff;
-  --surface-inset: #f5f5f7;
-  --surface-hover: #e8e8ec;
-  --border-default: #e4e4e7;
-  --border-subtle: #edeef0;
+  /* Motion curves (exponential ease-out, lag-free GPU compositing) */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Mathematical Modular Scale (16px base, Perfect Fourth 1.333 / Golden Ratio display) */
+  --font-size-hero: clamp(2rem, 1.5rem + 2.1vw, 2.875rem);
+  --font-size-section: clamp(1.5rem, 1.2065rem + 1.3043vw, 2.25rem);
+  --font-size-lead: clamp(1rem, 0.9511rem + 0.2174vw, 1.125rem);
+  --font-size-body: 1rem;
+  --font-size-caption: clamp(0.75rem, 0.7255rem + 0.1087vw, 0.8125rem);
+
+  --leading-hero: 1.08;
+  --leading-section: 1.15;
+  --leading-body: 1.6;
+  --leading-caption: 1.4;
+
+  --tracking-hero: -0.035em;
+  --tracking-section: -0.025em;
+  --tracking-lead: -0.011em;
+  --tracking-caption: 0.02em;
+  --surface-page: oklch(96.5% 0.008 25);
+  --surface-card: oklch(100% 0 0);
+  --surface-inset: oklch(95% 0.012 25);
+  --surface-hover: oklch(92.5% 0.014 25);
+  --border-default: #27272a;
+  --border-subtle: rgba(39, 39, 42, 0.22);
+  --border-strong: #18181b;
+  --border-button: #27272a;
   --text-primary: #0a0a0a;
   --text-secondary: #52525b;
-  --text-muted: #86868b;
+  --text-muted: #63636e;
   color-scheme: light;
+
+  /* Calibrated red text contrast: clears 4.5:1 WCAG AA against light card, page, and inset surfaces */
+  --color-red-500: #c22419;
+  --color-amber-500: #c22419;
 
   /* Design-system constants: shared across every page for a consistent look */
   --radius-panel: 26px;
   --radius-control: 20px;
   --glass-blur: 28px;
+
+  /* Custom scrollbar tokens (OKLCH warm-neutral, >= 3:1 non-text contrast) */
+  --scrollbar-thumb: oklch(56% 0.012 25);
+  --scrollbar-thumb-hover: oklch(43% 0.014 25);
+  --scrollbar-thumb-active: oklch(34% 0.014 25);
+
+  /* Android 15/16+ / WebView edge-to-edge safe-area insets (unifies Chromium env() and Capacitor SystemBars variables) */
+  --rp-safe-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+  --rp-safe-right: max(env(safe-area-inset-right, 0px), var(--safe-area-inset-right, 0px));
+  --rp-safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+  --rp-safe-left: max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px));
 }
 
 .dark {
+  --color-red-500: #ff3b30;
+  --color-amber-500: #ff3b30;
   --surface-page: #0a0a0a;
   --surface-card: #141414;
   --surface-inset: #0a0a0b;
   --surface-hover: #27272a;
   --border-default: #27272a;
   --border-subtle: #1c1c1e;
-  --text-primary: #f5f5f7;
-  --text-secondary: #a1a1aa;
-  --text-muted: #86868b;
+  --border-strong: #3f3f46;
+  --border-button: #3f3f46;
+  --text-primary: #ffffff;
+  --text-secondary: #f4f4f5;
+  --text-muted: #a1a1aa;
+  --scrollbar-thumb: oklch(57% 0.01 25);
+  --scrollbar-thumb-hover: oklch(71% 0.008 25);
+  --scrollbar-thumb-active: oklch(85% 0.006 25);
   color-scheme: dark;
+}
+
+html,
+body {
+  overscroll-behavior-y: none;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
   font-family: var(--font-sans);
+  font-size: var(--font-size-body);
+  line-height: var(--leading-body);
   background-color: var(--surface-page);
   color: var(--text-primary);
   min-width: 0;
   overflow-x: clip;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+button,
+[role="button"],
+[role="tab"],
+[role="switch"],
+summary,
+.brand-nav {
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+input,
+textarea,
+select,
+[contenteditable="true"] {
+  user-select: text;
+}
+
+/* ============================================================
+   Mathematical Typographic Scale (Modular Scale & Fluid Clamp)
+   Calculated across 360px (mobile) to 1280px (desktop) viewports.
+   ============================================================ */
+.type-hero {
+  font-family: var(--font-display);
+  font-size: var(--font-size-hero);
+  line-height: var(--leading-hero);
+  letter-spacing: var(--tracking-hero);
+  font-weight: 600;
+}
+
+.type-section {
+  font-family: var(--font-display);
+  font-size: var(--font-size-section);
+  line-height: var(--leading-section);
+  letter-spacing: var(--tracking-section);
+  font-weight: 600;
+}
+
+.type-lead {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-lead);
+  line-height: 1.6;
+  letter-spacing: var(--tracking-lead);
+  font-weight: 400;
+}
+
+.type-caption {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-caption);
+  line-height: var(--leading-caption);
+  letter-spacing: var(--tracking-caption);
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 /* A single long team name, bib code, or toolbar must never make the whole
@@ -105,13 +234,17 @@ video {
 .racepulse-horizontal-scroll {
   max-width: 100%;
   overflow-x: auto;
+  overflow-y: hidden;
   overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
+  -ms-overflow-style: none;
   scrollbar-width: none;
 }
 
 .racepulse-horizontal-scroll::-webkit-scrollbar {
   display: none;
+  width: 0;
+  height: 0;
 }
 
 /* iOS Safari auto-zooms in on any <input>/<textarea>/<select> whose computed
@@ -140,32 +273,49 @@ video {
    nav, inputs - so the whole app reads as one visual system.
    ============================================================ */
 
+/* Charcoal brand header: defined in .impeccable.md as consistent across both themes.
+   Draws full-bleed behind the Android status bar while padding inner controls below safe-area insets. */
+.brand-nav,
+.glass-nav {
+  background: #141416;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3);
+  padding-top: var(--rp-safe-top);
+  padding-left: var(--rp-safe-left);
+  padding-right: var(--rp-safe-right);
+}
+
 .glass-panel {
-  background: color-mix(in srgb, var(--surface-card) 62%, transparent);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid color-mix(in srgb, var(--border-default) 70%, transparent);
+  background: var(--surface-card);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-panel);
-  box-shadow: 0 24px 60px -16px rgba(0, 0, 0, 0.16), 0 1px 0 0 rgba(255, 255, 255, 0.4) inset;
+  box-shadow: 0 1px 2px oklch(20% 0.02 25 / 0.06), 0 12px 32px -16px oklch(20% 0.02 25 / 0.18);
 }
 
 .dark .glass-panel {
-  box-shadow: 0 24px 70px -12px rgba(0, 0, 0, 0.65), 0 1px 0 0 rgba(255, 255, 255, 0.04) inset;
+  background: color-mix(in srgb, var(--surface-card) 94%, #000000);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid color-mix(in srgb, var(--border-default) 85%, transparent);
+  box-shadow: 0 18px 44px -16px rgba(0, 0, 0, 0.55), 0 1px 0 0 rgba(255, 255, 255, 0.04) inset;
 }
 
 .glass-inset {
-  background: color-mix(in srgb, var(--surface-inset) 72%, transparent);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: var(--surface-inset);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
 }
 
-.glass-nav {
-  background: color-mix(in srgb, var(--surface-card) 55%, transparent);
-  backdrop-filter: blur(24px) saturate(150%);
-  -webkit-backdrop-filter: blur(24px) saturate(150%);
-  border: 1px solid color-mix(in srgb, var(--border-default) 70%, transparent);
+.dark .glass-inset {
+  background: color-mix(in srgb, var(--surface-inset) 92%, #000000);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
 }
 
 /* Static "floating" heading treatment: elevation is implied through layered
@@ -173,15 +323,70 @@ video {
    completely still. Dark mode gets a brushed-metal embossed fill (light mode
    stays solid text - a silver gradient has no contrast on a white page). */
 .heading-float {
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5), 0 18px 34px rgba(0, 0, 0, 0.18);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
+  color: var(--text-primary);
 }
 
 .dark .heading-float {
-  background: linear-gradient(180deg, #ffffff 0%, #e4e4e7 45%, #98989f 100%);
+  background: linear-gradient(180deg, #ffffff 0%, #f4f4f5 55%, #e4e4e7 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35), 0 4px 16px rgba(0, 0, 0, 0.8), 0 22px 45px rgba(255, 59, 48, 0.3);
+}
+
+/* Athletic finish-line focal accent: calibrated >= 5.14:1 WCAG AA in both themes */
+.hero-finish-accent {
+  color: #c22e25;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.dark .hero-finish-accent {
+  color: #ff6259;
+  text-shadow: 0 8px 28px rgba(255, 59, 48, 0.32);
+}
+
+/* Finish-line timing tape underline beneath "FINISH LINE" */
+.hero-finish-tape {
+  height: 4px;
+  border-radius: 9999px;
+  background-image: linear-gradient(
+    90deg,
+    #c22e25 0%,
+    #e0362c 68%,
+    transparent 68%,
+    transparent 72%,
+    #c22e25 72%,
+    #c22e25 78%,
+    transparent 78%,
+    transparent 82%,
+    #c22e25 82%,
+    #c22e25 88%,
+    transparent 88%,
+    transparent 92%,
+    #c22e25 92%,
+    #c22e25 100%
+  );
+}
+
+.dark .hero-finish-tape {
+  background-image: linear-gradient(
+    90deg,
+    #ff3b30 0%,
+    #ff6259 68%,
+    transparent 68%,
+    transparent 72%,
+    #ff6259 72%,
+    #ff6259 78%,
+    transparent 78%,
+    transparent 82%,
+    #ff6259 82%,
+    #ff6259 88%,
+    transparent 88%,
+    transparent 92%,
+    #ff6259 92%,
+    #ff6259 100%
+  );
+  box-shadow: 0 0 16px rgba(255, 59, 48, 0.4);
 }
 
 .heading-float-chip {
@@ -198,8 +403,8 @@ video {
    page-wide glow). */
 .hero-glow {
   background-image:
-    radial-gradient(ellipse 60% 100% at 12% 0%, rgba(255, 59, 48, 0.16), transparent 60%),
-    linear-gradient(120deg, rgba(255, 59, 48, 0.10), transparent 55%);
+    radial-gradient(ellipse 65% 100% at 12% 0%, oklch(62% 0.22 25 / 0.22), transparent 65%),
+    linear-gradient(120deg, oklch(90% 0.08 25 / 0.35), transparent 55%);
 }
 
 .dark .hero-glow {
@@ -208,11 +413,36 @@ video {
     linear-gradient(120deg, rgba(255, 59, 48, 0.16), transparent 55%);
 }
 
-/* Full-page dark-mode backdrop: a single dramatic red light beam shining in
-   from the top-left corner, fading through deep red into black - replaces
-   the softer scattered-blob glow used in light mode. Built from layered
-   gradients (a bright corner hotspot, a conic "ray" fan, a broad soft
-   falloff) rather than a bitmap so it stays crisp at any size. */
+/* Hero banner gradient for public landing:
+   Light mode: luminous light red corner wash, subtle diagonal tint, and athletic runner backlight.
+   Dark mode: high-contrast red energy flare consistent with brand identity. */
+.hero-banner-glow {
+  background-color: var(--surface-card);
+  background-image:
+    radial-gradient(ellipse 70% 85% at 5% 0%, rgba(255, 59, 48, 0.16) 0%, rgba(255, 235, 233, 0.75) 45%, transparent 75%),
+    radial-gradient(ellipse 65% 85% at 85% 55%, rgba(255, 59, 48, 0.18) 0%, rgba(255, 225, 222, 0.7) 50%, transparent 80%),
+    linear-gradient(135deg, rgba(255, 241, 240, 0.85) 0%, #ffffff 45%, rgba(255, 241, 240, 0.6) 100%);
+}
+
+.dark .hero-banner-glow {
+  background-color: #111215;
+  background-image:
+    radial-gradient(ellipse 70% 85% at 5% 0%, rgba(255, 59, 48, 0.28) 0%, rgba(190, 20, 15, 0.12) 45%, transparent 75%),
+    radial-gradient(ellipse 65% 85% at 85% 55%, rgba(255, 59, 48, 0.32) 0%, rgba(190, 20, 15, 0.15) 50%, transparent 80%),
+    linear-gradient(135deg, rgba(255, 59, 48, 0.10) 0%, transparent 50%, rgba(255, 59, 48, 0.06) 100%);
+}
+
+/* Ambient glow backdrop:
+   Light mode: directional warm light beam from the top-left, matching the light source in dark mode.
+   Dark mode: dramatic red light beam and conic rays from the top-left corner into deep black. */
+.ambient-glow {
+  background-color: var(--surface-page);
+  background-image:
+    radial-gradient(ellipse 70% 55% at 0% 0%, oklch(93% 0.05 30 / 0.85), transparent 60%),
+    radial-gradient(ellipse 50% 40% at 100% 100%, oklch(95% 0.02 25 / 0.55), transparent 70%);
+  background-repeat: no-repeat;
+}
+
 .dark .ambient-glow {
   background-color: #000000;
   background-image:
@@ -260,69 +490,332 @@ video {
   }
 }
 
-/* Short branded opening moment. It runs before the app becomes interactive,
-   then gets out of the way quickly so race-day workflows stay fast. */
-@keyframes opening-logo-in {
-  0% {
-    opacity: 0;
-    transform: scale(0.68) rotate(-8deg);
-  }
-  65% {
-    opacity: 1;
-    transform: scale(1.06) rotate(0deg);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@keyframes opening-ring-out {
-  0% {
-    opacity: 0;
-    transform: scale(0.76);
-  }
-  30% {
-    opacity: 0.72;
-  }
-  100% {
-    opacity: 0;
-    transform: scale(1.55);
-  }
-}
-
-@keyframes opening-copy-in {
+/* ============================================================
+   Auth backdrop: moving gradient for sign-in screens
+   Concept: RacePulse = heartbeat + timing beam. Three layers:
+   - .auth-glow  a warm red light that drifts slowly across the screen
+   - .auth-beam  a conic beam that sweeps once every 48s, like a finish-line scanner
+   - .auth-pulse rings that expand from behind the logo, like a pulse
+   Every layer moves with transform and opacity only (GPU composited), uses the
+   existing system red (255, 59, 48), and stays at low alpha so text on the
+   glass panel keeps its measured contrast. Reduced-motion users get a still frame.
+   ============================================================ */
+@keyframes panelEnter {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translate3d(0, 10px, 0);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0);
   }
 }
 
-.app-opening-logo {
-  animation: opening-logo-in 620ms cubic-bezier(0.2, 0.85, 0.25, 1) both;
+@keyframes errorNudge {
+  0%, 100% {
+    transform: translate3d(0, 0, 0);
+  }
+  25% {
+    transform: translate3d(-4px, 0, 0);
+  }
+  60% {
+    transform: translate3d(4px, 0, 0);
+  }
+  85% {
+    transform: translate3d(-2px, 0, 0);
+  }
 }
 
-.app-opening-ring {
-  animation: opening-ring-out 1050ms cubic-bezier(0.2, 0.7, 0.25, 1) 190ms infinite;
+.animate-panel-enter {
+  animation: panelEnter 0.28s var(--ease-out-quint) both;
 }
 
-.app-opening-title {
-  animation: opening-copy-in 420ms ease-out 320ms both;
+.animate-error-nudge {
+  animation: errorNudge 0.24s var(--ease-out-quart) both;
 }
 
-.app-opening-tagline {
-  animation: opening-copy-in 420ms ease-out 430ms both;
+/* Athletic course split tick-mark rule (16px calibrated rhythm, zero background clutter) */
+.track-ticks-rule {
+  height: 6px;
+  color: oklch(72% 0.02 25 / 0.45);
+  background-image: repeating-linear-gradient(
+    to right,
+    currentColor 0 1px,
+    transparent 1px 16px
+  );
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+}
+
+.dark .track-ticks-rule {
+  color: oklch(86% 0.02 25 / 0.22);
+}
+
+/* Charcoal athletic brand panel for split auth stage (sharp contrast for racepulse-logo.png in both modes) */
+.auth-stage-panel {
+  background-color: #141416;
+  background-image:
+    radial-gradient(ellipse 85% 65% at 0% 0%, rgba(255, 59, 48, 0.24), transparent 62%),
+    radial-gradient(ellipse 70% 55% at 100% 100%, rgba(255, 59, 48, 0.12), transparent 65%),
+    linear-gradient(155deg, #1b1c20 0%, #141416 58%, #0f1012 100%);
+  color: #f5f5f7;
+}
+
+.auth-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.auth-backdrop > span {
+  position: absolute;
+}
+
+.auth-glow {
+  top: -12%;
+  left: -10%;
+  width: 72%;
+  height: 72%;
+  background: radial-gradient(closest-side, rgba(255, 59, 48, 0.14), rgba(255, 59, 48, 0.04) 58%, transparent 100%);
+  transform: translate3d(0, 0, 0);
+}
+
+.auth-beam {
+  bottom: -14%;
+  right: -10%;
+  width: 64%;
+  height: 64%;
+  background: radial-gradient(closest-side, rgba(255, 59, 48, 0.09), rgba(255, 98, 89, 0.02) 60%, transparent 100%);
+  transform: translate3d(0, 0, 0);
+}
+
+.auth-pulse {
+  top: 18%;
+  left: 50%;
+  width: 68vmin;
+  height: 68vmin;
+  margin-left: -34vmin;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 59, 48, 0.14);
+  opacity: 0;
+  animation: auth-pulse 8s var(--ease-out-quint) infinite;
+}
+
+.auth-pulse-late {
+  animation-delay: 4s;
+}
+
+.dark .auth-glow {
+  background: radial-gradient(closest-side, rgba(255, 59, 48, 0.24), rgba(190, 20, 15, 0.08) 58%, transparent 100%);
+}
+
+.dark .auth-beam {
+  background: radial-gradient(closest-side, rgba(255, 90, 70, 0.14), rgba(255, 59, 48, 0.04) 60%, transparent 100%);
+}
+
+.dark .auth-pulse {
+  border-color: rgba(255, 90, 70, 0.18);
+}
+
+@keyframes auth-pulse {
+  0% { transform: scale3d(0.55, 0.55, 1); opacity: 0; }
+  20% { opacity: 0.7; }
+  100% { transform: scale3d(1.35, 1.35, 1); opacity: 0; }
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translate3d(100%, 0, 0);
+  }
+}
+
+.rp-shimmer-sweep {
+  animation: shimmer 1.6s linear infinite;
+  will-change: transform;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .app-opening-logo,
-  .app-opening-ring,
-  .app-opening-title,
-  .app-opening-tagline {
+  .animate-fadeIn,
+  .pulse-ring,
+  .rp-shimmer-sweep,
+  .animate-panel-enter,
+  .animate-error-nudge,
+  .auth-glow,
+  .auth-beam,
+  .auth-pulse {
     animation: none;
+  }
+  .auth-pulse,
+  .rp-shimmer-sweep {
+    opacity: 0;
+  }
+}
+
+/* Tactile button definition: in light mode, interactive buttons have a distinct dark border */
+:root:not(.dark) button.border-\[var\(--border-default\)\] {
+  border-color: var(--border-button);
+}
+
+/* Pointer cursor base layer (R-39): Tailwind v4 preflight resets button cursor to default */
+a[href], button, summary, select, label[for],
+label:has(> input[type="checkbox"], > input[type="radio"]),
+[role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="option"], [role="switch"],
+input[type="checkbox"], input[type="radio"], input[type="file"],
+input[type="submit"], input[type="button"], input[type="reset"], input[type="range"], input[type="color"] {
+  cursor: pointer;
+}
+
+:disabled, [aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+@media (min-width: 1024px) {
+  .desktop-workspace-sidebar {
+    position: sticky;
+    top: calc(4rem + 1px + var(--rp-safe-top));
+    height: calc(100vh - 4rem - 1px - var(--rp-safe-top));
+    height: calc(100dvh - 4rem - 1px - var(--rp-safe-top));
+  }
+
+  /* Locked workspace panels clip inside an overflow-hidden row below .brand-nav,
+     so switch sidebar to static full-height flow instead of sticky top:65px offset. */
+  [data-desktop-locked="true"] > .desktop-workspace-sidebar {
+    position: static;
+    top: auto;
+    align-self: stretch;
+    height: 100%;
+  }
+}
+
+/* Targeted slim scrollbar styling on document root and overflow containers
+   (avoids universal wildcard selector matching on every DOM element). */
+:root::-webkit-scrollbar,
+html::-webkit-scrollbar,
+.overflow-y-auto::-webkit-scrollbar,
+.overflow-auto::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+:root::-webkit-scrollbar-button,
+html::-webkit-scrollbar-button,
+.overflow-y-auto::-webkit-scrollbar-button,
+.overflow-auto::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+:root::-webkit-scrollbar-track,
+:root::-webkit-scrollbar-track-piece,
+:root::-webkit-scrollbar-corner,
+html::-webkit-scrollbar-track,
+html::-webkit-scrollbar-track-piece,
+html::-webkit-scrollbar-corner {
+  background: var(--surface-page);
+}
+
+.overflow-y-auto::-webkit-scrollbar-track,
+.overflow-y-auto::-webkit-scrollbar-track-piece,
+.overflow-y-auto::-webkit-scrollbar-corner,
+.overflow-auto::-webkit-scrollbar-track,
+.overflow-auto::-webkit-scrollbar-track-piece,
+.overflow-auto::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+:root::-webkit-scrollbar-thumb,
+html::-webkit-scrollbar-thumb,
+.overflow-y-auto::-webkit-scrollbar-thumb,
+.overflow-auto::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  background-clip: content-box;
+  min-width: 28px;
+  min-height: 28px;
+}
+
+:root::-webkit-scrollbar-thumb:hover,
+html::-webkit-scrollbar-thumb:hover,
+.overflow-y-auto::-webkit-scrollbar-thumb:hover,
+.overflow-auto::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+:root::-webkit-scrollbar-thumb:active,
+html::-webkit-scrollbar-thumb:active,
+.overflow-y-auto::-webkit-scrollbar-thumb:active,
+.overflow-auto::-webkit-scrollbar-thumb:active {
+  background-color: var(--scrollbar-thumb-active);
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  html,
+  .overflow-y-auto,
+  .overflow-auto {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+
+  html {
+    scrollbar-color: var(--scrollbar-thumb) var(--surface-page);
+  }
+}
+
+@media (forced-colors: active) {
+  :root::-webkit-scrollbar-thumb,
+  html::-webkit-scrollbar-thumb,
+  .overflow-y-auto::-webkit-scrollbar-thumb,
+  .overflow-auto::-webkit-scrollbar-thumb {
+    background-color: ButtonText;
+  }
+
+  @supports not selector(::-webkit-scrollbar) {
+    html,
+    .overflow-y-auto,
+    .overflow-auto {
+      scrollbar-color: auto;
+    }
+  }
+}
+
+/* Accessibility: high-contrast skip link and universal keyboard focus-visible indicator */
+.skip-link {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+  z-index: 9999;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background-color: #141416;
+  color: #ffffff;
+  border: 2px solid #ffffff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  left: 16px;
+  top: 16px;
+  outline: 2px solid #ff6259;
+  outline-offset: 2px;
+}
+
+@layer base {
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  summary:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--color-red-500);
+    outline-offset: 2px;
   }
 }

@@ -1,127 +1,229 @@
-import { useMemo, useState } from 'react';
-import { EmailAuthProvider, GoogleAuthProvider, deleteUser, reauthenticateWithCredential, reauthenticateWithPopup } from 'firebase/auth';
-import { collection, doc, getDocs, query, where, writeBatch } from 'firebase/firestore';
-import { AlertTriangle, Loader2, Trash2, X } from 'lucide-react';
-import { auth, db } from '../firebase';
+import React, { useId, useRef, useState } from 'react';
+import {
+  EmailAuthProvider,
+  deleteUser,
+  reauthenticateWithCredential,
+  reauthenticateWithPopup,
+} from 'firebase/auth';
+import {
+  collection,
+  doc,
+  getDocs,
+  query,
+  where,
+  writeBatch,
+} from 'firebase/firestore';
+import { auth, db, googleProvider, signOutUser } from '../firebase';
+import { deleteMyAccountAndData } from '../lib/accountSecurity';
 import { UserProfile } from '../types';
+import { AlertTriangle, RefreshCw, ShieldAlert, X } from 'lucide-react';
+import DialogSurface from './ui/DialogSurface';
 
 interface DeleteAccountModalProps {
   profile: UserProfile;
   onClose: () => void;
 }
 
+/** Fallback client-side purge for local dev emulators when Cloud Functions endpoint is unreachable. */
+async function clientFallbackPurge(profile: UserProfile): Promise<void> {
+  const uid = profile.uid;
+  const user = auth.currentUser;
+  if (!user || user.uid !== uid) throw new Error('You are not signed in.');
+
+  const batch = writeBatch(db);
+  const runnersSnap = await getDocs(query(collection(db, 'runners'), where('uid', '==', uid)));
+  runnersSnap.forEach((docSnap) => batch.delete(docSnap.ref));
+
+  const claimsSnap = await getDocs(query(collection(db, 'runnerClaims'), where('uid', '==', uid)));
+  claimsSnap.forEach((docSnap) => batch.delete(docSnap.ref));
+
+  if (profile.username) {
+    batch.delete(doc(db, 'friendDirectory', profile.username));
+    batch.delete(doc(db, 'usernameIndex', profile.username));
+  }
+  batch.delete(doc(db, 'friendProfiles', uid));
+  batch.delete(doc(db, 'friendActivities', uid));
+  batch.delete(doc(db, 'users', uid));
+  await batch.commit();
+  await deleteUser(user);
+}
+
 /**
- * Apple requires an in-app path for a person to delete the account they made.
- * We re-authenticate first, remove the person's profile / race registrations /
- * username directory entry, then remove their Firebase Authentication login.
- * Event and timing records stay intact so an organizer deleting an account
- * cannot erase an event or another runner's published result.
+ * Self-serve account deletion and data purge/anonymization confirmation dialog.
  */
 export default function DeleteAccountModal({ profile, onClose }: DeleteAccountModalProps) {
-  const [confirmation, setConfirmation] = useState('');
+  const user = auth.currentUser;
+  const usesPassword = Boolean(user?.providerData.some((provider) => provider.providerId === 'password'));
+  const usesGoogle = Boolean(user?.providerData.some((provider) => provider.providerId === 'google.com'));
+  const dialogId = useId();
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
   const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState('');
-  const user = auth.currentUser;
-  const usesPassword = useMemo(() => user?.providerData.some((provider) => provider.providerId === 'password') ?? false, [user]);
 
-  const handleDelete = async () => {
-    if (!user || user.uid !== profile.uid) {
-      setError('Your session has expired. Please sign in again.');
-      return;
-    }
-    if (confirmation.trim().toUpperCase() !== 'DELETE') {
-      setError('Type DELETE to confirm this permanent action.');
+  const canConfirmText = confirmation.trim().toUpperCase() === 'DELETE';
+
+  const handleDelete = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!user) return;
+    if (!canConfirmText) {
+      setError('Type DELETE in the confirmation box to proceed.');
       return;
     }
     if (usesPassword && !password) {
-      setError('Enter your current password to continue.');
+      setError('Enter your current password to verify your identity.');
       return;
     }
 
-    setDeleting(true);
     setError('');
+    setDeleting(true);
     try {
-      // Firebase requires a recent sign-in for deleting an authentication account.
-      if (usesPassword) {
-        await reauthenticateWithCredential(user, EmailAuthProvider.credential(profile.email, password));
-      } else {
-        await reauthenticateWithPopup(user, new GoogleAuthProvider());
+      if (usesPassword && user.email) {
+        const credential = EmailAuthProvider.credential(user.email, password);
+        await reauthenticateWithCredential(user, credential);
+      } else if (usesGoogle) {
+        await reauthenticateWithPopup(user, googleProvider);
       }
 
-      const registrations = await getDocs(query(collection(db, 'runners'), where('uid', '==', profile.uid)));
-      const refs = registrations.docs.map((registration) => registration.ref);
-
-      // Delete registrations in small batches; an account can have more than
-      // Firestore's 500-write batch limit across many past races.
-      for (let index = 0; index < refs.length; index += 450) {
-        const batch = writeBatch(db);
-        refs.slice(index, index + 450).forEach((ref) => batch.delete(ref));
-        await batch.commit();
+      try {
+        await deleteMyAccountAndData();
+      } catch (apiError: any) {
+        if (apiError?.status === 401 || apiError?.status === 400) {
+          throw apiError;
+        }
+        await clientFallbackPurge(profile);
       }
 
-      // The username index is removed with the profile so the deleted handle
-      // becomes available again and cannot point at a non-existent account.
-      const finalBatch = writeBatch(db);
-      finalBatch.delete(doc(db, 'users', profile.uid));
-      if (profile.username) finalBatch.delete(doc(db, 'usernameIndex', profile.username));
-      await finalBatch.commit();
-
-      await deleteUser(user);
-      // deleteUser signs the person out; App's auth listener returns to the landing page.
+      try {
+        await signOutUser();
+      } catch {
+        // User record may already be deleted.
+      }
     } catch (err: any) {
       const code = err?.code || '';
-      if (code === 'auth/wrong-password') setError('Incorrect password. Please try again.');
-      else if (code === 'auth/requires-recent-login') setError('Please sign out, sign in again, then retry account deletion.');
-      else if (code === 'auth/popup-closed-by-user') setError('Google confirmation was closed. Your account was not deleted.');
-      else setError(err?.message || 'Could not delete this account. Please try again.');
-    } finally {
+      if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+        setError('That password is incorrect. Please check and try again.');
+      } else if (code === 'auth/requires-recent-login') {
+        setError('Please sign in again before deleting your account.');
+      } else if (code === 'auth/popup-closed-by-user') {
+        setError('Google verification was closed before confirming.');
+      } else {
+        setError(err?.message || 'Could not delete your account right now.');
+      }
       setDeleting(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn" role="dialog" aria-modal="true" aria-labelledby="delete-account-title">
-      <div className="glass-panel w-full max-w-md p-6 space-y-5 relative border border-red-500/35">
-        <button onClick={onClose} disabled={deleting} className="absolute right-4 top-4 glass-inset p-2 rounded-full text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-50" aria-label="Close delete account dialog">
-          <X className="w-4 h-4" />
-        </button>
-
-        <div className="pr-8">
-          <div className="w-10 h-10 rounded-full bg-red-500/15 text-red-500 flex items-center justify-center mb-3"><AlertTriangle className="w-5 h-5" /></div>
-          <h2 id="delete-account-title" className="font-display font-black text-xl uppercase text-[var(--text-primary)]">Delete account</h2>
-          <p className="text-sm text-[var(--text-secondary)] mt-2 leading-relaxed">This permanently deletes your RacePulse sign-in, profile, and race registrations. This cannot be undone.</p>
+    <DialogSurface
+      alert
+      titleId={`${dialogId}-title`}
+      descriptionId={`${dialogId}-desc`}
+      onRequestClose={() => {
+        if (!deleting) onClose();
+      }}
+      initialFocusRef={closeButtonRef}
+      className="fixed inset-0 m-auto h-fit w-[calc(100%-2rem)] max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border border-red-700/40 bg-[var(--surface-card)] p-6 text-[var(--text-primary)] shadow-2xl"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="w-11 h-11 rounded-full bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-400 flex items-center justify-center shrink-0">
+          <AlertTriangle className="w-5 h-5" aria-hidden="true" />
         </div>
+        <button
+          ref={closeButtonRef}
+          type="button"
+          onClick={onClose}
+          disabled={deleting}
+          aria-label="Close delete account dialog"
+          className="min-h-11 min-w-11 rounded-full border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] flex items-center justify-center disabled:opacity-50"
+        >
+          <X className="w-4 h-4" aria-hidden="true" />
+        </button>
+      </div>
 
-        {profile.role === 'organizer' && (
-          <div className="rounded-[var(--radius-control)] border border-amber-500/30 bg-amber-500/10 px-3.5 py-3 text-xs text-amber-200 leading-relaxed">
-            Published races and recorded timing results are retained so participants' official results stay available. You will no longer be able to manage them after deletion.
-          </div>
-        )}
+      <h2 id={`${dialogId}-title`} className="mt-4 font-display text-xl font-semibold text-[var(--text-primary)]">
+        Delete My Account &amp; Data
+      </h2>
+      <p id={`${dialogId}-desc`} className="mt-2 text-xs text-[var(--text-secondary)] leading-relaxed">
+        This permanently deletes your RacePulsePH login ({profile.email}), personal profile, active race registrations, username handle, and friend directory records. Historical payment accounting records are anonymized so no personal contact data remains.
+      </p>
 
-        {usesPassword ? (
+      {profile.role === 'organizer' && (
+        <div className="mt-4 rounded-xl border border-amber-700/40 bg-amber-50 dark:bg-amber-950/40 p-3 text-xs text-amber-950 dark:text-amber-200 flex items-start gap-2">
+          <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5 text-amber-800 dark:text-amber-300" aria-hidden="true" />
+          <span>
+            Deleting an organizer account removes your staff access and profile immediately while keeping published public race timing logs intact.
+          </span>
+        </div>
+      )}
+
+      <form onSubmit={handleDelete} className="mt-4 space-y-4">
+        {usesPassword && (
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Current password</label>
-            <input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} disabled={deleting} className="w-full glass-inset px-4 py-3 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
+            <label
+              htmlFor={`${dialogId}-password`}
+              className="block text-xs font-semibold text-[var(--text-secondary)] mb-1.5"
+            >
+              Confirm current password
+            </label>
+            <input
+              id={`${dialogId}-password`}
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              disabled={deleting}
+              className="w-full min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-4 py-2 text-sm text-[var(--text-primary)]"
+            />
           </div>
-        ) : (
-          <p className="text-xs text-[var(--text-secondary)] glass-inset px-3 py-2.5">You will confirm this with your Google account in the next step.</p>
         )}
 
         <div>
-          <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Type <span className="text-red-500">DELETE</span> to confirm</label>
-          <input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} disabled={deleting} autoCapitalize="characters" className="w-full glass-inset px-4 py-3 text-sm font-mono text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" placeholder="DELETE" />
+          <label
+            htmlFor={`${dialogId}-confirm`}
+            className="block text-xs font-semibold text-[var(--text-secondary)] mb-1.5"
+          >
+            Type <span className="font-mono text-red-700 dark:text-red-400">DELETE</span> to confirm permanent removal
+          </label>
+          <input
+            id={`${dialogId}-confirm`}
+            type="text"
+            value={confirmation}
+            onChange={(event) => setConfirmation(event.target.value)}
+            disabled={deleting}
+            autoCapitalize="characters"
+            placeholder="DELETE"
+            className="w-full min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-4 py-2 text-sm font-mono text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]"
+          />
         </div>
 
-        {error && <p className="text-xs font-semibold text-red-500">⚠️ {error}</p>}
+        {error && (
+          <p role="alert" className="text-xs font-semibold text-red-700 dark:text-red-400">
+            {error}
+          </p>
+        )}
 
-        <div className="flex flex-col-reverse sm:flex-row gap-2">
-          <button type="button" onClick={onClose} disabled={deleting} className="flex-1 py-3 rounded-[var(--radius-control)] border border-[var(--border-default)] text-xs font-black uppercase tracking-wider text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-50">Cancel</button>
-          <button type="button" onClick={() => void handleDelete()} disabled={deleting} className="flex-1 py-3 rounded-[var(--radius-control)] bg-red-600 hover:bg-red-500 text-white text-xs font-black uppercase tracking-wider flex justify-center items-center gap-2 disabled:opacity-60">
-            {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Delete permanently
+        <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={deleting}
+            className="min-h-11 px-4 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={deleting || !canConfirmText}
+            className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-800 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {deleting && <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />}
+            <span>{deleting ? 'Deleting account...' : 'Permanently Delete Account'}</span>
           </button>
         </div>
-      </div>
-    </div>
+      </form>
+    </DialogSurface>
   );
 }

@@ -1,4 +1,6 @@
-import { jsPDF } from 'jspdf';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server.browser';
+import { QRCodeSVG } from 'qrcode.react';
 import { Race, RunnerProfile } from '../types';
 import { raceBibNameLines, resolveRaceBibTemplate } from './raceBib';
 import { ensureRaceBibCustomFont, raceBibFontFamily } from './raceBibFont';
@@ -12,7 +14,32 @@ function safeFilename(value: string): string {
   return value.trim().replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_') || 'RacePulsePH';
 }
 
-async function loadImage(source: string): Promise<HTMLImageElement> {
+function raceBibQrImage(value: string, size: number): Promise<HTMLImageElement> {
+  // Reuse the same QR implementation used throughout the runner and staff
+  // dashboards. Rendering it to SVG first keeps the printed code sharp even
+  // when a bib is generated at high resolution for borderless A4 printing.
+  const svg = renderToStaticMarkup(React.createElement(QRCodeSVG, {
+    value,
+    size,
+    level: 'M',
+    includeMargin: true,
+    bgColor: '#FFFFFF',
+    fgColor: '#000000',
+  }));
+  // Some mobile browsers are strict with percent-encoded SVG data URLs when
+  // they are subsequently drawn to Canvas. Base64 keeps the QR image portable
+  // across Chrome, Safari, and the in-app WebView used by staff devices.
+  // renderToStaticMarkup omits the XML namespace because React normally
+  // inserts the SVG straight into the DOM. A standalone SVG image needs it,
+  // otherwise Safari/Chrome may reject it when Canvas tries to decode it.
+  const standaloneSvg = svg.replace(/^<svg\b/, '<svg xmlns="http://www.w3.org/2000/svg"');
+  const bytes = new TextEncoder().encode(standaloneSvg);
+  let binary = '';
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return loadImage(`data:image/svg+xml;base64,${btoa(binary)}`, 'race bib QR code');
+}
+
+async function loadImage(source: string, label = 'race bib template'): Promise<HTMLImageElement> {
   // A Storage download URL is cross-origin. Fetch it first and render the
   // resulting local blob URL instead, so Canvas can safely include it in the
   // printable PDF even when a browser is strict about cross-origin images.
@@ -33,7 +60,7 @@ async function loadImage(source: string): Promise<HTMLImageElement> {
     };
     image.onerror = () => {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
-      reject(new Error('Unable to load the race bib template.'));
+      reject(new Error(`Unable to load the ${label}.`));
     };
     image.src = imageSource;
   });
@@ -178,6 +205,7 @@ export async function generateRaceBibsPdf(race: Race, runners: RunnerProfile[], 
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas rendering is not supported by this browser.');
 
+  const { jsPDF } = await import('jspdf');
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
   // A4 portrait is 210 × 297 mm. Full-width, half-page bibs deliberately use
   // the whole page with no PDF footer or outer margin for Epson borderless
@@ -189,10 +217,11 @@ export async function generateRaceBibsPdf(race: Race, runners: RunnerProfile[], 
   const yPositions = [0, 148.5];
   const printableBibs = printableRaceBibs(runners);
   const loadedTemplates = new Map<string, HTMLImageElement>();
+  const loadedQrCodes = new Map<string, HTMLImageElement>();
 
   for (let index = 0; index < printableBibs.length; index += 1) {
     const { runner, runnerName } = printableBibs[index];
-    const bibTemplate = resolveRaceBibTemplate(race, runner.distance);
+    const bibTemplate = resolveRaceBibTemplate(race, runner.distance, runner.entryCategory || 'solo');
     if (!bibTemplate) {
       throw new Error(`No race bib template is configured for ${runner.distance}. Upload a template for that distance or add a default template.`);
     }
@@ -207,9 +236,28 @@ export async function generateRaceBibsPdf(race: Race, runners: RunnerProfile[], 
     ctx.drawImage(template, 0, 0, canvas.width, canvas.height);
     const { layout } = bibTemplate;
     drawFittedText(ctx, runner.bibNumber, canvas.width, canvas.height, layout.bibNumberX, layout.bibNumberY, layout.bibNumberSize ?? 12, layout.bibNumberColor ?? '#FFFFFF', layout.bibNumberStrokeColor ?? '#000000', layout.bibNumberStrokeWidth ?? 0, raceBibFontFamily(layout.bibNumberFont, race.raceBibCustomFont, true));
+    if (race.raceBibShowRaffleNumber) {
+      drawFittedText(ctx, runner.bibNumber, canvas.width, canvas.height, layout.raffleNumberX ?? 50, layout.raffleNumberY ?? 88, layout.raffleNumberSize ?? 7, layout.raffleNumberColor ?? '#FFFFFF', layout.raffleNumberStrokeColor ?? '#000000', layout.raffleNumberStrokeWidth ?? 0, raceBibFontFamily(layout.raffleNumberFont ?? 'mono', race.raceBibCustomFont, true));
+    }
     const nameLines = runner.isFreeSlot ? [] : runner.entryCategory === 'group' ? [runnerName] : raceBibNameLines(runner);
     if (nameLines.length > 0) {
       drawFittedTextLines(ctx, nameLines, canvas.width, canvas.height, layout.runnerNameX, layout.runnerNameY, layout.runnerNameSize ?? 5, layout.runnerNameColor ?? '#FFFFFF', layout.runnerNameStrokeColor ?? '#000000', layout.runnerNameStrokeWidth ?? 0, raceBibFontFamily(layout.runnerNameFont, race.raceBibCustomFont, true));
+    }
+    if (race.raceBibShowQrCode === true) {
+      const qrPayload = `RPCHIPv1|${race.id}|${runner.bibNumber}`;
+      let qr = loadedQrCodes.get(qrPayload);
+      if (!qr) {
+        qr = await raceBibQrImage(qrPayload, 240);
+        loadedQrCodes.set(qrPayload, qr);
+      }
+      const qrSize = Math.min(canvas.width * 0.3, Math.max(canvas.width * 0.06, canvas.width * ((layout.qrCodeSize ?? 14) / 100)));
+      const qrX = Math.min(canvas.width - qrSize / 2 - 6, Math.max(qrSize / 2 + 6, canvas.width * ((layout.qrCodeX ?? 90) / 100)));
+      const qrY = Math.min(canvas.height - qrSize / 2 - 6, Math.max(qrSize / 2 + 6, canvas.height * ((layout.qrCodeY ?? 84) / 100)));
+      // Use a white backing even when the source design is dark or busy;
+      // camera scanners need a quiet zone around every QR module.
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(qrX - qrSize / 2, qrY - qrSize / 2, qrSize, qrSize);
+      ctx.drawImage(qr, qrX - qrSize / 2, qrY - qrSize / 2, qrSize, qrSize);
     }
 
     const pageSlot = index % 2;

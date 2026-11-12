@@ -13,6 +13,11 @@ export interface PendingRegistrationPayload {
   shirtSize?: string;
   teamName?: string;
   teamMembers?: string[];
+  parentalConsentConfirmed?: boolean;
+  parentalGuardianName?: string;
+  parentalGuardianRelationship?: string;
+  termsAcceptedAt?: string;
+  marketingOptIn?: boolean;
 }
 
 export interface PaymentCheckoutResponse {
@@ -39,6 +44,7 @@ async function paymentRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await user.getIdToken();
   const response = await fetch(`${paymentsApiUrl}${path}`, {
     ...init,
+    signal: init?.signal ?? AbortSignal.timeout(15000),
     headers: {
       Authorization: `Bearer ${token}`,
       ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
@@ -50,11 +56,21 @@ async function paymentRequest<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-export function createPayMongoCheckout(registration: PendingRegistrationPayload): Promise<PaymentCheckoutResponse> {
-  return paymentRequest<PaymentCheckoutResponse>('/checkout', {
+export async function createPayMongoCheckout(registration: PendingRegistrationPayload): Promise<PaymentCheckoutResponse> {
+  const result = await paymentRequest<PaymentCheckoutResponse>('/checkout', {
     method: 'POST',
     body: JSON.stringify({ registration }),
   });
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(result.checkoutUrl);
+  } catch {
+    throw new Error('Received an invalid checkout redirect URL.');
+  }
+  if (parsedUrl.protocol !== 'https:') {
+    throw new Error('Checkout redirect must use HTTPS.');
+  }
+  return result;
 }
 
 export function getPaymentStatus(paymentId: string): Promise<PaymentStatusResponse> {

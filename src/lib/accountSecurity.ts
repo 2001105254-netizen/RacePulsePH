@@ -65,7 +65,46 @@ export const completePasswordReset = async (resetToken: string, password: string
   return result;
 };
 
-export interface SignupDraft { displayName: string; username: string; role: 'runner' | 'organizer' | 'superadmin' }
+export interface DeleteAccountResult {
+  deleted: boolean;
+  purgedDocs: number;
+  anonymizedDocs: number;
+}
+
+export const deleteMyAccountAndData = async () => {
+  const result = await request<DeleteAccountResult>('/account/delete', { confirmation: 'DELETE' }, true);
+  if (result.deleted !== true) throw new AccountRequestError(unavailableMessage);
+  return result;
+};
+
+export const updateMarketingPreference = async (marketingOptIn: boolean) => {
+  const result = await request<{ updated: boolean; marketingOptIn: boolean }>(
+    '/account/preferences',
+    { marketingOptIn },
+    true
+  );
+  if (result.updated !== true) throw new AccountRequestError(unavailableMessage);
+  return result;
+};
+
+export interface UnsubscribeResult {
+  unsubscribed: boolean;
+  email?: string;
+  marketingOptIn: boolean;
+}
+
+export const submitUnsubscribe = async (input: { token?: string; email?: string; marketingOptIn?: boolean }) => {
+  return request<UnsubscribeResult>('/unsubscribe', input, false);
+};
+
+export interface SignupDraft {
+  displayName: string;
+  username: string;
+  role: 'runner' | 'organizer' | 'superadmin';
+  over13Confirmed?: boolean;
+  termsAcceptedAt?: string;
+  marketingOptIn?: boolean;
+}
 const draftKey = (email: string) => `racepulse_signup:${email.trim().toLowerCase()}`;
 export function saveSignupDraft(email: string, draft: SignupDraft) {
   // Only profile details are retained; passwords and codes stay in memory.

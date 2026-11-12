@@ -1,4 +1,5 @@
-import { jsPDF } from 'jspdf';
+import { formatRaceTime } from './preciseTime';
+import type { jsPDF as JsPDFInstance } from 'jspdf';
 import { Race, RunnerProfile, RunnerResult } from '../types';
 
 // A public result contains only the fields printed on the certificate. Keeping
@@ -19,17 +20,17 @@ function loadCertificateLogo(): Promise<HTMLImageElement | null> {
     // Public assets work on both localhost and the installed PWA URL. The
     // logo is optional at runtime so a certificate can still download if an
     // older cached PWA cannot retrieve the current asset.
-    image.src = '/assets/racepulse-mark.png';
+    image.src = '/assets/racepulse-mark-192.png';
   });
 }
 
 // Creates the certificate on the runner's own device. No additional personal
 // data is stored: the certified details are the official result already shown
 // in the runner's private My Races view.
-export async function createFinisherCertificate(race: Race, runner: CertificateRunner, result: RunnerResult): Promise<jsPDF | null> {
+export async function createFinisherCertificate(race: Race, runner: CertificateRunner, result: RunnerResult): Promise<JsPDFInstance | null> {
   if (!result.finishTime) return null;
 
-  const logo = await loadCertificateLogo();
+  const [logo, { jsPDF }] = await Promise.all([loadCertificateLogo(), import('jspdf')]);
 
   const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const pageWidth = 297;
@@ -98,15 +99,15 @@ export async function createFinisherCertificate(race: Race, runner: CertificateR
   pdf.text('DISTANCE', 65, raceBottom + 22, { align: 'center' });
   pdf.text('GUN TIME', 93, raceBottom + 22, { align: 'center' });
   pdf.text('CHIP TIME', 121, raceBottom + 22, { align: 'center' });
-  pdf.text('OFFICIAL TIME', 150, raceBottom + 22, { align: 'center' });
+  pdf.text(result.finishReviewRequired ? 'PROVISIONAL TIME' : 'OFFICIAL TIME', 150, raceBottom + 22, { align: 'center' });
   pdf.text('OVERALL', 180, raceBottom + 22, { align: 'center' });
   pdf.text('CATEGORY', 208, raceBottom + 22, { align: 'center' });
   pdf.text('BIB', 232, raceBottom + 22, { align: 'center' });
   pdf.setTextColor(255, 230, 230);
-  pdf.setFontSize(9.2);
-  const chipTimeText = result.chipTime || 'NO START';
-  const gunTimeText = result.gunTime || '—';
-  const officialTimeText = result.finishTime;
+  pdf.setFontSize(7);
+  const chipTimeText = result.chipTime ? formatRaceTime(result.chipTime) : 'NO START';
+  const gunTimeText = formatRaceTime(result.gunTime);
+  const officialTimeText = formatRaceTime(result.finishTime);
   pdf.text(runner.distance, 65, raceBottom + 32, { align: 'center' });
   pdf.text(gunTimeText, 93, raceBottom + 32, { align: 'center' });
   pdf.text(chipTimeText, 121, raceBottom + 32, { align: 'center' });

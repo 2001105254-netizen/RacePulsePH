@@ -1,5 +1,7 @@
+import { formatRaceTime } from '../lib/preciseTime';
 import { useEffect, useMemo, useState } from 'react';
-import { collection, doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { subscribeSharedRaces } from '../lib/racesStore';
 import { Bell, BellRing, CalendarDays, CheckCircle2, PackageCheck, Trophy, X } from 'lucide-react';
 import { db } from '../firebase';
 import { PublicLiveResults, Race, RunnerProfile } from '../types';
@@ -50,12 +52,13 @@ export default function RunnerReminderCenter({ runnerProfiles }: { runnerProfile
   });
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'races'), (snapshot) => {
-      const records: Race[] = [];
-      snapshot.forEach((raceDoc) => records.push(raceDoc.data() as Race));
-      setRaces(records);
-    }, (error) => console.warn('Runner reminders race listener failed:', error.message));
-    return () => unsubscribe();
+    return subscribeSharedRaces((records, loaded, error) => {
+      if (error) {
+        console.warn('Runner reminders race listener failed:', error);
+        return;
+      }
+      if (loaded) setRaces(records);
+    });
   }, []);
 
   useEffect(() => {
@@ -84,7 +87,7 @@ export default function RunnerReminderCenter({ runnerProfiles }: { runnerProfile
         all.push({
           id: `result_${profile.raceId}_${profile.bibNumber}`,
           title: 'Official result ready',
-          detail: `${race.name} • ${officialEntry.distance} • Rank #${officialEntry.rank} • ${officialEntry.finishTime}`,
+          detail: `${race.name} • ${officialEntry.distance} • Rank #${officialEntry.rank} • ${formatRaceTime(officialEntry.finishTime)}`,
           kind: 'result',
         });
       }

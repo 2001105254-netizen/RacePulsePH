@@ -1,5 +1,7 @@
+import { formatClockTime, formatRaceTime } from '../lib/preciseTime';
+import { useAccess } from '../lib/access';
+import { subscribeSharedRaces } from '../lib/racesStore';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { collection, doc, getDoc, getDocs, onSnapshot, query, runTransaction, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db, signOutUser, updateAccountDisplayName } from '../firebase';
 import { PasswordResetFlow } from './AccountSecurity';
@@ -7,10 +9,13 @@ import { checkpointType, computeResults, getWaveStartTime } from '../lib/timing'
 import { downloadFinisherCertificate } from '../lib/finisherCertificate';
 import { resizeImageToDataUrl } from '../lib/image';
 import { ChipRead, FriendActivity, FriendProfile, Gender, PublicLeaderboardEntry, PublicLiveResults, Race, RaceEntryCategory, RunnerProfile, UserProfile } from '../types';
+import type { LegalDocKey } from '../lib/legalConfig';
+import DialogSurface from './ui/DialogSurface';
 import CustomerForm from './CustomerForm';
 import { QRCodeSVG } from 'qrcode.react';
-import { LogOut, User, Hash, MapPin, RefreshCw, Award, ClipboardList, Clock, ArrowLeft, ArrowRight, Flag, Calendar, CheckSquare, Coins, PackageCheck, Camera, Trophy, X, Pencil, CheckCircle2, Circle, Radio, Phone, HeartPulse, Mail, FileDown, Maximize2, Users2, UserPlus, UserCheck } from 'lucide-react';
-import BottomNav from './BottomNav';
+import { LogOut, User, Hash, MapPin, RefreshCw, Award, ClipboardList, Clock, ArrowLeft, ArrowRight, Flag, Calendar, CheckSquare, Coins, PackageCheck, Camera, Trophy, X, Pencil, CheckCircle2, Circle, Radio, Phone, HeartPulse, Mail, FileDown, Maximize2, Users2, UserPlus, UserCheck, AlertTriangle, ShieldCheck } from 'lucide-react';
+import WorkspaceShell from './WorkspaceShell';
+import type { WorkspaceSwitchProps } from './DesktopSidebar';
 import RaceList from './RaceList';
 import { isRaceRegistrationOpen } from '../lib/raceRegistration';
 import { entryCategoryLabels, entryMemberCount, raceEntryCategories, runnerDivisionLabel, runnerEntryCategory } from '../lib/raceEntry';
@@ -20,14 +25,23 @@ import RunnerReminderCenter from './RunnerReminderCenter';
 import { createPayMongoCheckout, getPaymentStatus, PaymentStatusResponse } from '../lib/payments';
 import DeleteAccountModal from './DeleteAccountModal';
 import QrScannerModal from './QrScannerModal';
+import PublicRaceResults from './PublicRaceResults';
+import { useAndroidBackHandler } from '../lib/capacitorAndroid';
+import { claimRaceBib, claimableEntryLabel, parseRaceBibQr, previewRaceBibClaim, RaceBibClaimPreview } from '../lib/raceBibClaim';
+import { AnimatedTabView, ViewLoadingSkeleton, resolveTabDirection, type NavDirection } from './ui/MotionPrimitives';
+import RouteMap3D from './RouteMap3D';
 
 interface RunnerDashboardProps {
   profile: UserProfile;
   initialRaceId?: string | null;
   onInitialRaceHandled?: () => void;
+  workspaceSwitch?: WorkspaceSwitchProps;
+  pendingApprovalNotice?: boolean;
 }
 
-type RunnerTab = 'events' | 'myraces' | 'friends' | 'engraving';
+type RunnerTab = 'events' | 'allraces' | 'myraces' | 'friends' | 'engraving';
+
+const RUNNER_TAB_ORDER: readonly RunnerTab[] = ['events', 'allraces', 'myraces', 'friends', 'engraving'];
 
 const standardShirtSizes = ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL', '6XL'];
 const usernamePattern = /^[a-z0-9][a-z0-9_.-]{2,23}$/;
@@ -37,6 +51,7 @@ function normalizedUsername(value: string): string {
 }
 
 function ShirtSizePicker({ value, onChange, emptyLabel }: { value: string; onChange: (value: string) => void; emptyLabel: string }) {
+  const { can, authority } = useAccess();
   const [customMode, setCustomMode] = useState(() => Boolean(value && !standardShirtSizes.includes(value)));
   const usesCustomSize = customMode || Boolean(value && !standardShirtSizes.includes(value));
   return (
@@ -190,19 +205,48 @@ function mostRecent(profiles: RunnerProfile[]): RunnerProfile | undefined {
   return [...profiles].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
 }
 
-export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceHandled }: RunnerDashboardProps) {
+export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceHandled, workspaceSwitch, pendingApprovalNotice }: RunnerDashboardProps) {
+  const { can, authority } = useAccess();
   const [runnerProfiles, setRunnerProfiles] = useState<RunnerProfile[] | undefined>(undefined); // undefined = loading
-  const [tab, setTab] = useState<RunnerTab>('events');
+  const homeTab: RunnerTab = can('personal.register') ? 'events' : can('personal.results') || can('personal.bibs') ? 'myraces' : can('personal.friends') ? 'friends' : 'engraving';
+  const [tab, setTab] = useState<RunnerTab>(homeTab);
+  const [tabDirection, setTabDirection] = useState<NavDirection>('forward');
   const [showProfile, setShowProfile] = useState(false);
   const [showEventQrScanner, setShowEventQrScanner] = useState(false);
   const [scannedRaceId, setScannedRaceId] = useState<string | null>(null);
   const [eventQrMessage, setEventQrMessage] = useState('');
   const [eventQrError, setEventQrError] = useState('');
+  const [pendingBibClaim, setPendingBibClaim] = useState<(RaceBibClaimPreview & { payload: { raceId: string; bibNumber: string } }) | null>(null);
+  const [claimingBib, setClaimingBib] = useState(false);
+  const [bibClaimError, setBibClaimError] = useState('');
+  const tabRef = useRef<RunnerTab>(tab);
+  tabRef.current = tab;
+  const homeTabRef = useRef<RunnerTab>(homeTab);
+  homeTabRef.current = homeTab;
+  const showProfileRef = useRef(showProfile);
+  showProfileRef.current = showProfile;
+
+  const selectTab = (nextTab: RunnerTab, explicitDirection?: NavDirection) => {
+    const currentTab = tabRef.current;
+    if (nextTab === currentTab) return;
+    setTabDirection(explicitDirection ?? resolveTabDirection(RUNNER_TAB_ORDER, currentTab, nextTab));
+    setTab(nextTab);
+  };
+
+  useAndroidBackHandler(showProfile, () => setShowProfile(false));
+  useAndroidBackHandler(Boolean(pendingBibClaim), () => {
+    if (!claimingBib) setPendingBibClaim(null);
+  });
 
   useEffect(() => {
-    const goHome = () => {
+    const goHome = (event: Event) => {
+      const hardware = event instanceof CustomEvent && Boolean(event.detail?.hardware);
+      if (hardware) {
+        if (event.defaultPrevented || (tabRef.current === homeTabRef.current && !showProfileRef.current)) return;
+        event.preventDefault();
+      }
       setShowProfile(false);
-      setTab('events');
+      selectTab(hardware ? homeTabRef.current : 'events', 'back');
     };
     window.addEventListener('racepulse:back', goHome);
     return () => window.removeEventListener('racepulse:back', goHome);
@@ -213,15 +257,37 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
   }, [initialRaceId, onInitialRaceHandled]);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(query(collection(db, 'runners'), where('uid', '==', profile.uid)), (snapshot) => {
-      const list: RunnerProfile[] = [];
-      snapshot.forEach((docSnap) => list.push(docSnap.data() as RunnerProfile));
-      setRunnerProfiles(list);
+    if (!['personal.register','personal.results','personal.bibs','personal.certificates'].some(can)) { setRunnerProfiles([]); return; }
+    let directProfiles: RunnerProfile[] = [];
+    let claimedProfiles: RunnerProfile[] = [];
+    const publish = () => {
+      // A normal in-app registration always wins over a QR claim for the
+      // same event. QR claims are for Google Form/imported rosters, where the
+      // registration was made before the runner had a RacePulse account.
+      const directRaceIds = new Set(directProfiles.map((item) => item.raceId));
+      setRunnerProfiles([...directProfiles, ...claimedProfiles.filter((item) => !directRaceIds.has(item.raceId))]);
+    };
+    const unsubscribeProfiles = onSnapshot(query(collection(db, 'runners'), where('uid', '==', profile.uid)), (snapshot) => {
+      directProfiles = snapshot.docs.map((docSnap) => docSnap.data() as RunnerProfile);
+      publish();
     }, (err) => {
       console.warn('Runner profiles listener failed:', err.message);
-      setRunnerProfiles([]);
+      directProfiles = [];
+      publish();
     });
-    return () => unsubscribe();
+    const unsubscribeClaims = onSnapshot(query(collection(db, 'runnerClaims'), where('uid', '==', profile.uid)), (snapshot) => {
+      claimedProfiles = snapshot.docs
+        .map((docSnap) => docSnap.data()?.runner as RunnerProfile | undefined)
+        .filter((runner): runner is RunnerProfile => Boolean(runner));
+      publish();
+    }, (err) => {
+      // Older deployments have no runnerClaims rule yet. The normal runner
+      // list still works while the rules/function deployment is completed.
+      console.warn('Runner bib claims listener failed:', err.message);
+      claimedProfiles = [];
+      publish();
+    });
+    return () => { unsubscribeProfiles(); unsubscribeClaims(); };
   }, [profile.uid]);
 
   // Legacy accounts get their safe friend card automatically once they open
@@ -277,6 +343,21 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
   const latestProfile = runnerProfiles ? mostRecent(runnerProfiles) : undefined;
 
   const scanEventQr = async (text: string): Promise<boolean> => {
+    const bibPayload = parseRaceBibQr(text);
+    if (bibPayload) {
+      try {
+        setEventQrError('');
+        setEventQrMessage('Checking your race bib…');
+        const preview = await previewRaceBibClaim(bibPayload);
+        setPendingBibClaim({ ...preview, payload: bibPayload });
+        setEventQrMessage(preview.alreadyLinked ? 'This race is already in My Races.' : 'Race bib found: review the details to add it.');
+        window.setTimeout(() => setShowEventQrScanner(false), 300);
+        return true;
+      } catch (error: any) {
+        setEventQrError(error.message || 'We could not find a runner for this race bib QR code.');
+        return false;
+      }
+    }
     try {
       const url = new URL(text.trim());
       const allowedHosts = new Set(['racepulseph.com', 'www.racepulseph.com', 'racepulseph.web.app', 'racepulseph.firebaseapp.com', 'localhost']);
@@ -286,9 +367,9 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
         return false;
       }
       setEventQrError('');
-      setEventQrMessage('Event found — opening its registration form…');
+      setEventQrMessage('Event found: opening its registration form…');
       setScannedRaceId(raceId);
-      setTab('events');
+      selectTab('events');
       window.setTimeout(() => setShowEventQrScanner(false), 450);
       return true;
     } catch {
@@ -297,37 +378,77 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
     }
   };
 
+  const confirmBibClaim = async () => {
+    if (!pendingBibClaim || pendingBibClaim.alreadyLinked) {
+      setPendingBibClaim(null);
+      selectTab('myraces');
+      return;
+    }
+    setClaimingBib(true);
+    setBibClaimError('');
+    try {
+      await claimRaceBib(pendingBibClaim.payload);
+      setPendingBibClaim(null);
+      selectTab('myraces');
+    } catch (error: any) {
+      setBibClaimError(error.message || 'Unable to add this race to your account.');
+    } finally {
+      setClaimingBib(false);
+    }
+  };
+
+  const navItems = [
+    { key: 'events', icon: <Flag className="w-4 h-4" />, label: 'Events', active: tab === 'events', onClick: () => selectTab('events') },
+    { key: 'allraces', icon: <Trophy className="w-4 h-4" />, label: 'All Races', active: tab === 'allraces', onClick: () => selectTab('allraces') },
+    { key: 'myraces', icon: <ClipboardList className="w-4 h-4" />, label: 'My Races', active: tab === 'myraces', onClick: () => selectTab('myraces') },
+    { key: 'friends', icon: <Users2 className="w-4 h-4" />, label: 'Friends', active: tab === 'friends', onClick: () => selectTab('friends') },
+    { key: 'engraving', icon: <Award className="w-4 h-4" />, label: 'Engraving', active: tab === 'engraving', onClick: () => selectTab('engraving') },
+  ].filter(item => item.key === 'myraces' || can(({ events: 'personal.register', friends: 'personal.friends', engraving: 'personal.engraving' })[item.key]));
+
   return (
-    <div className="w-full max-w-7xl mx-auto px-4 py-4 pb-28 space-y-6">
+    <WorkspaceShell
+      spaceTitle="Runner Portal"
+      navLabel="Runner navigation"
+      items={navItems}
+      profile={profile}
+      workspaceSwitch={workspaceSwitch}
+      pendingApprovalNotice={pendingApprovalNotice}
+      maxWidthClass="max-w-7xl"
+      onOpenProfile={() => setShowProfile(true)}
+    >
       <div className="flex flex-col md:flex-row md:items-center justify-between glass-panel hero-glow px-4 sm:px-6 py-5 gap-4 animate-fadeIn">
         <div>
           <span className="text-[10px] tracking-widest font-extrabold text-red-500 font-display bg-red-500/10 px-2.5 py-1 rounded-full uppercase border border-red-500/20">Runner Portal</span>
           <h1 className="heading-float text-2xl font-black tracking-tight font-display text-[var(--text-primary)] mt-1.5 uppercase">Welcome, {profile.displayName}</h1>
           <p className="text-xs text-[var(--text-secondary)] mt-1">Register for races, track your splits, and personalize your finisher medal.</p>
         </div>
-        <div className="flex items-center gap-2 self-start">
+        <div className="flex flex-wrap items-center gap-2 self-start">
           <button
-            onClick={() => { setEventQrError(''); setEventQrMessage(''); setShowEventQrScanner(true); }}
-            className="text-xs text-violet-500 border border-violet-500/30 hover:bg-violet-500/10 font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
+            type="button"
+            onClick={() => { setEventQrError(''); setEventQrMessage(''); setBibClaimError(''); setShowEventQrScanner(true); }}
+            className="min-h-11 text-xs text-violet-500 border border-violet-500/30 hover:bg-violet-500/10 font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
           >
-            <Camera className="w-3.5 h-3.5" /> Scan event QR
+            <Camera className="w-3.5 h-3.5" aria-hidden="true" /> Scan Race / Bib QR
           </button>
           <button
+            type="button"
             onClick={() => setShowProfile(true)}
             title="My Profile"
-            className="w-10 h-10 rounded-full overflow-hidden glass-inset flex items-center justify-center text-red-500 font-black text-sm hover:border-red-500/40 transition shrink-0"
+            aria-label="Open my profile"
+            className="w-11 h-11 rounded-full overflow-hidden glass-inset flex items-center justify-center text-red-500 font-black text-sm hover:border-red-500/40 transition shrink-0"
           >
             {profile.photoURL ? (
-              <img src={profile.photoURL} alt="" className="w-full h-full object-cover" />
+              <img src={profile.photoURL} alt="" width={44} height={44} className="w-full h-full object-cover" />
             ) : (
               (profile.nickname || profile.displayName || '?').charAt(0).toUpperCase()
             )}
           </button>
           <button
+            type="button"
             onClick={() => signOutUser()}
-            className="text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)]/75 backdrop-blur-md hover:text-[var(--text-primary)] font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
+            className="lg:hidden min-h-11 text-xs text-[var(--text-secondary)] border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-card)] hover:text-[var(--text-primary)] font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
           >
-            <LogOut className="w-3.5 h-3.5" /> Sign Out
+            <LogOut className="w-3.5 h-3.5" aria-hidden="true" /> Sign Out
           </button>
         </div>
       </div>
@@ -336,69 +457,171 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
         <ProfileModal profile={profile} runnerProfiles={runnerProfiles || []} onClose={() => setShowProfile(false)} />
       )}
 
-      {runnerProfiles === undefined && (
-        <div className="glass-panel p-8 text-center">
-          <RefreshCw className="w-6 h-6 text-[var(--text-muted)] animate-spin mx-auto" />
-        </div>
+      {pendingBibClaim && (
+        <DialogSurface
+          titleId="pending-bib-claim-title"
+          onRequestClose={() => {
+            if (!claimingBib) setPendingBibClaim(null);
+          }}
+          className="w-full max-w-md glass-panel p-6 space-y-5 shadow-2xl"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-700 dark:text-violet-400">Race bib QR found</p>
+              <h2 id="pending-bib-claim-title" className="heading-float text-xl font-black font-display uppercase text-[var(--text-primary)] mt-1">
+                {pendingBibClaim.alreadyLinked ? 'Already in My Races' : 'Add this race?'}
+              </h2>
+              <p className="text-xs text-[var(--text-secondary)] mt-1.5">{pendingBibClaim.race.name} • {pendingBibClaim.race.date}</p>
+            </div>
+            <button
+              type="button"
+              aria-label="Close bib confirmation dialog"
+              onClick={() => setPendingBibClaim(null)}
+              disabled={claimingBib}
+              className="min-h-11 min-w-11 flex items-center justify-center rounded-full glass-inset text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400"
+            >
+              <X className="w-5 h-5" aria-hidden="true" />
+            </button>
+          </div>
+          <div className="glass-inset p-4 grid grid-cols-2 gap-x-4 gap-y-3 text-left">
+            <span className="col-span-2"><span className="block text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Runner / team</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5">{pendingBibClaim.runner.fullName}</span></span>
+            <span><span className="block text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Bib number</span><span className="block text-lg font-mono font-black text-red-700 dark:text-red-400 mt-0.5">#{pendingBibClaim.runner.bibNumber}</span></span>
+            <span><span className="block text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Distance</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5">{pendingBibClaim.runner.distance}</span></span>
+            <span><span className="block text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Category</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5">{claimableEntryLabel(pendingBibClaim.runner.entryCategory)}</span></span>
+            <span><span className="block text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Gender</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5 capitalize">{pendingBibClaim.runner.gender}</span></span>
+          </div>
+          {pendingBibClaim.runner.teamMembers && pendingBibClaim.runner.teamMembers.length > 1 && <p className="text-xs text-[var(--text-secondary)]"><span className="font-semibold uppercase tracking-wide text-[var(--text-muted)]">Members: </span>{pendingBibClaim.runner.teamMembers.join(' • ')}</p>}
+          {bibClaimError && <p role="alert" className="text-xs font-bold text-red-700 dark:text-red-400">{bibClaimError}</p>}
+          <p className="text-xs text-[var(--text-secondary)]">Only confirm if this is your official race bib. Your event, live splits, and published result will appear under My Races.</p>
+          <div className="grid grid-cols-2 gap-3">
+            <button type="button" onClick={() => setPendingBibClaim(null)} disabled={claimingBib} className="min-h-11 py-3 rounded-[var(--radius-control)] glass-inset text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Cancel</button>
+            <button type="button" onClick={confirmBibClaim} disabled={claimingBib} className="min-h-11 py-3 rounded-[var(--radius-control)] bg-gradient-to-r from-red-600 to-red-700 text-white text-xs font-semibold uppercase tracking-widest shadow-lg shadow-red-900/30 disabled:opacity-60">{claimingBib ? 'Adding...' : pendingBibClaim.alreadyLinked ? 'Open My Races' : 'Confirm & Add Race'}</button>
+          </div>
+        </DialogSurface>
       )}
 
-      {runnerProfiles !== undefined && tab === 'events' && (
-        <>
-          <RunnerReminderCenter runnerProfiles={runnerProfiles} />
-          <RaceRegistrationForm
-            uid={profile.uid}
-            friendIdentity={{ username: profile.username, displayName: profile.nickname || profile.displayName }}
-            runnerProfiles={runnerProfiles}
-            initialShirtSize={profile.shirtSize}
-            initialRaceId={initialRaceId}
-            requestedRaceId={scannedRaceId}
-            onRequestedRaceHandled={() => setScannedRaceId(null)}
-            onSaved={() => setTab('myraces')}
-          />
-        </>
+      {runnerProfiles === undefined ? (
+        <ViewLoadingSkeleton label="Loading runner portal" />
+      ) : (
+        <AnimatedTabView tabKey={tab} direction={tabDirection} className="space-y-6">
+          {tab === 'events' && can('personal.register') && (
+            <>
+              <RunnerReminderCenter runnerProfiles={runnerProfiles} />
+              <RaceRegistrationForm
+                uid={profile.uid}
+                friendIdentity={{ username: profile.username, displayName: profile.nickname || profile.displayName }}
+                runnerProfiles={runnerProfiles}
+                initialShirtSize={profile.shirtSize}
+                initialRaceId={initialRaceId}
+                requestedRaceId={scannedRaceId}
+                onRequestedRaceHandled={() => setScannedRaceId(null)}
+                onSaved={() => selectTab('myraces')}
+              />
+            </>
+          )}
+
+          {tab === 'myraces' && (
+            <>
+              <RunnerReminderCenter runnerProfiles={runnerProfiles} />
+              <MyRacesView uid={profile.uid} runnerProfiles={runnerProfiles} onBrowseEvents={() => selectTab('events')} />
+            </>
+          )}
+
+          {tab === 'allraces' && (
+            <AllRacesView onRegister={(raceId) => {
+              setScannedRaceId(raceId);
+              selectTab('events');
+            }} />
+          )}
+
+          {tab === 'friends' && can('personal.friends') && (
+            <FriendsView profile={profile} onOpenRace={(raceId) => { setScannedRaceId(raceId); selectTab('events'); }} />
+          )}
+
+          {tab === 'engraving' && can('personal.engraving') && (
+            <CustomerForm
+              onBackToRoleSelection={() => selectTab('myraces')}
+              backLabel="← Back to My Races"
+              ownerUid={profile.uid}
+              initialRunnerName={latestProfile?.fullName || ''}
+              initialBibNumber={latestProfile?.bibNumber || ''}
+            />
+          )}
+        </AnimatedTabView>
       )}
 
-      {runnerProfiles !== undefined && tab === 'myraces' && (
-        <>
-          <RunnerReminderCenter runnerProfiles={runnerProfiles} />
-          <MyRacesView uid={profile.uid} runnerProfiles={runnerProfiles} onBrowseEvents={() => setTab('events')} />
-        </>
-      )}
-
-      {runnerProfiles !== undefined && tab === 'friends' && (
-        <FriendsView profile={profile} onOpenRace={(raceId) => { setScannedRaceId(raceId); setTab('events'); }} />
-      )}
-
-      {runnerProfiles !== undefined && tab === 'engraving' && (
-        <CustomerForm
-          onBackToRoleSelection={() => setTab('myraces')}
-          backLabel="← Back to My Races"
-          ownerUid={profile.uid}
-          initialRunnerName={latestProfile?.fullName || ''}
-          initialBibNumber={latestProfile?.bibNumber || ''}
-        />
-      )}
-
-      {runnerProfiles !== undefined && (
-        <BottomNav
-          items={[
-            { key: 'events', icon: <Flag className="w-4 h-4" />, label: 'Events', active: tab === 'events', onClick: () => setTab('events') },
-            { key: 'myraces', icon: <ClipboardList className="w-4 h-4" />, label: 'My Races', active: tab === 'myraces', onClick: () => setTab('myraces') },
-            { key: 'friends', icon: <Users2 className="w-4 h-4" />, label: 'Friends', active: tab === 'friends', onClick: () => setTab('friends') },
-            { key: 'engraving', icon: <Award className="w-4 h-4" />, label: 'Engraving', active: tab === 'engraving', onClick: () => setTab('engraving') },
-          ]}
-        />
-      )}
       {showEventQrScanner && (
         <QrScannerModal
           onClose={() => setShowEventQrScanner(false)}
           onScanSuccess={scanEventQr}
           successMessage={eventQrMessage}
           errorMessage={eventQrError}
-          title="Scan Event QR"
-          subtitle="OPEN A RACE REGISTRATION"
-          instructions="Scan the RacePulse event QR from the organizer. We will open that specific race registration form for you."
+          title="Scan Race or Bib QR"
+          subtitle="OPEN EVENT OR ADD MY RACE"
+          instructions="Scan an organizer event QR to open registration, or scan the QR printed on your race bib to add that event and its result to My Races."
         />
+      )}
+    </WorkspaceShell>
+  );
+}
+
+// ========== ALL PUBLIC RACES ==========
+
+// This is deliberately separate from My Races: a runner can browse every
+// public event and its published standings without adding that event to their
+// personal registration list.
+function AllRacesView({ onRegister }: { onRegister: (raceId: string) => void }) {
+  const [races, setRaces] = useState<Race[]>([]);
+  const [selectedRaceId, setSelectedRaceId] = useState('');
+
+  useEffect(() => {
+    return subscribeSharedRaces((rawList, loaded, err) => {
+      if (err) {
+        console.warn('All races listener failed:', err);
+        return;
+      }
+      if (!loaded) return;
+      const list = [...rawList].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      setRaces(list);
+    });
+  }, []);
+
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const activeRaces = races.filter((race) => !race.completedAt && race.date >= today);
+  const doneRaces = races.filter((race) => !!race.completedAt || race.date < today);
+  const selectedRace = races.find((race) => race.id === selectedRaceId);
+  const selectRace = (raceId: string) => {
+    setSelectedRaceId(raceId);
+    requestAnimationFrame(() => document.getElementById('runner-public-race-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
+
+  return (
+    <div className="space-y-8 pb-8">
+      <RaceList
+        races={activeRaces}
+        onSelectRace={selectRace}
+        selectedRaceId={selectedRaceId}
+        title="Active & Upcoming Races"
+        subtitle="Browse every published RacePulsePH event. Registration is optional."
+        actionLabel="View Race"
+        emptyTitle="No active or upcoming races"
+        emptyDescription="Check back soon for the next event."
+      />
+      <RaceList
+        races={doneRaces}
+        onSelectRace={selectRace}
+        selectedRaceId={selectedRaceId}
+        title="Done & Past Races"
+        subtitle="View official rankings, finish times, and digital certificates."
+        actionLabel="View Official Results"
+        emptyTitle="No completed races yet"
+        emptyDescription="Completed events will be archived here."
+      />
+      {selectedRace && (
+        <div id="runner-public-race-results" className="scroll-mt-6">
+          <PublicRaceResults race={selectedRace} onRegister={onRegister} />
+        </div>
       )}
     </div>
   );
@@ -413,19 +636,22 @@ interface MyRacesViewProps {
 }
 
 function MyRacesView({ runnerProfiles, onBrowseEvents }: MyRacesViewProps) {
+  const { can, authority } = useAccess();
   const [races, setRaces] = useState<Race[]>([]);
   const [viewingProfile, setViewingProfile] = useState<RunnerProfile | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'races'), (snapshot) => {
-      const list: Race[] = [];
-      snapshot.forEach((docSnap) => list.push(docSnap.data() as Race));
-      setRaces(list);
-    }, (err) => console.warn('Races listener failed:', err.message));
-    return () => unsubscribe();
+    return subscribeSharedRaces((rawList, loaded, err) => {
+      if (err) {
+        console.warn('Races listener failed:', err);
+        return;
+      }
+      if (loaded) setRaces(rawList);
+    });
   }, []);
 
   if (viewingProfile) {
+    const viewedRace = races.find((race) => race.id === viewingProfile.raceId);
     return (
       <div className="space-y-4">
         <button
@@ -435,15 +661,23 @@ function MyRacesView({ runnerProfiles, onBrowseEvents }: MyRacesViewProps) {
         >
           <ArrowLeft className="w-3.5 h-3.5" /> Back to My Races
         </button>
-        <RunnerSplitsView runnerProfile={viewingProfile} />
+        {viewedRace?.routeGpxUrl && <RouteMap3D gpxUrl={viewedRace.routeGpxUrl} fileName={viewedRace.routeGpxFileName} raceName={viewedRace.name} />}
+        {can('personal.results') ? <RunnerSplitsView runnerProfile={viewingProfile} /> : viewedRace && can('personal.bibs') ? <DigitalRaceBib race={viewedRace} runnerProfile={viewingProfile} /> : <p>Results access is disabled for this account.</p>}
       </div>
     );
   }
 
   const raceById = new Map(races.map((r) => [r.id, r]));
   const todayStr = new Date().toISOString().slice(0, 10);
-  const upcoming = runnerProfiles.filter((rp) => (raceById.get(rp.raceId)?.date || '9999') >= todayStr);
-  const past = runnerProfiles.filter((rp) => (raceById.get(rp.raceId)?.date || '9999') < todayStr);
+  // The organizer can close a race before its scheduled date (or correct a
+  // date later). Treat completedAt as the source of truth so an official Done
+  // Race always remains visible in the runner's own race archive.
+  const isDoneRace = (profile: RunnerProfile) => {
+    const race = raceById.get(profile.raceId);
+    return !!race?.completedAt || (race?.date || '9999') < todayStr;
+  };
+  const upcoming = runnerProfiles.filter((rp) => !isDoneRace(rp));
+  const past = runnerProfiles.filter(isDoneRace);
 
   return (
     <div className="space-y-6">
@@ -464,7 +698,7 @@ function MyRacesView({ runnerProfiles, onBrowseEvents }: MyRacesViewProps) {
       ) : (
         <>
           <RaceProfileSection title="Upcoming Races" profiles={upcoming} raceById={raceById} onSelect={setViewingProfile} emptyText="No upcoming races." />
-          <RaceProfileSection title="Past Races" profiles={past} raceById={raceById} onSelect={setViewingProfile} emptyText="No past races yet." />
+          <RaceProfileSection title="Done & Past Races" profiles={past} raceById={raceById} onSelect={setViewingProfile} emptyText="No done or past races yet." />
         </>
       )}
     </div>
@@ -502,6 +736,7 @@ interface RaceInviteRecord {
 }
 
 function FriendsView({ profile, onOpenRace }: { profile: UserProfile; onOpenRace: (raceId: string) => void }) {
+  const { can, authority } = useAccess();
   const [searchUsername, setSearchUsername] = useState('');
   const [searchResult, setSearchResult] = useState<FriendProfile | null>(null);
   const [friends, setFriends] = useState<FriendProfile[]>([]);
@@ -665,6 +900,7 @@ function FriendsView({ profile, onOpenRace }: { profile: UserProfile; onOpenRace
 }
 
 function InviteFriendsToRace({ uid, senderName, race }: { uid: string; senderName: string; race: Race }) {
+  const { can, authority } = useAccess();
   const [open, setOpen] = useState(false);
   const [friends, setFriends] = useState<FriendProfile[]>([]);
   const [sendingTo, setSendingTo] = useState<string | null>(null);
@@ -733,6 +969,7 @@ function RaceProfileSection({
   onSelect: (p: RunnerProfile) => void;
   emptyText: string;
 }) {
+  const { can, authority } = useAccess();
   return (
     <div className="glass-panel p-5">
       <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] mb-3">{title}</h3>
@@ -758,14 +995,14 @@ function RaceProfileSection({
               >
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-[var(--text-primary)] truncate">{race?.name || 'Unknown Race'}</p>
-                  <p className="text-[10px] text-[var(--text-secondary)] flex items-center gap-1.5 mt-0.5">
-                    <Calendar className="w-3 h-3 text-red-500" /> {race?.date || '—'} &bull; {p.distance} &bull; #{p.bibNumber}
+                  <p className="text-[11px] text-[var(--text-secondary)] flex items-center gap-1.5 mt-0.5">
+                    <Calendar className="w-3 h-3 text-red-700 dark:text-red-400" aria-hidden="true" /> {race?.date || '--'} &bull; {p.distance} &bull; #{p.bibNumber}
                   </p>
-                  <span className={`inline-flex mt-2 text-[9px] font-black uppercase tracking-wide px-2 py-1 rounded-full border ${
+                  <span className={`inline-flex mt-2 text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full border ${
                     raceStatus === 'Race completed'
-                      ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'
+                      ? 'text-emerald-800 dark:text-emerald-300 bg-emerald-500/10 border-emerald-500/25'
                       : raceStatus === 'Race day'
-                        ? 'text-red-500 bg-red-500/10 border-red-500/20'
+                        ? 'text-red-700 dark:text-red-400 bg-red-500/10 border-red-500/25'
                         : 'text-[var(--text-secondary)] bg-[var(--surface-hover)] border-[var(--border-default)]'
                   }`}>{raceStatus}</span>
                 </div>
@@ -804,7 +1041,7 @@ async function generateBibNumber(raceId: string, distanceLabel: string, km: numb
   const sequence = await runTransaction(db, async (tx) => {
     const snap = await tx.get(counterRef);
     const next = (snap.exists() ? (snap.data().count as number) : 0) + 1;
-    tx.set(counterRef, { count: next });
+    tx.set(counterRef, { count: next, raceId });
     return next;
   });
   const basePrefix = km !== null ? String(km) : 'CUSTOM';
@@ -814,6 +1051,7 @@ async function generateBibNumber(raceId: string, distanceLabel: string, km: numb
 }
 
 function RegistrationProgress({ currentStep }: { currentStep: 1 | 2 | 3 }) {
+  const { can, authority } = useAccess();
   const steps = ['Choose race', 'Runner details', 'Confirmed'];
   return (
     <ol className="grid grid-cols-3 gap-1.5 max-w-xl mx-auto" aria-label="Registration progress">
@@ -841,6 +1079,7 @@ function RegistrationConfirmation({ race, registration, updated, onViewMyRace, o
   onViewMyRace: () => void;
   onRegisterAnother: () => void;
 }) {
+  const { can, authority } = useAccess();
   return (
     <div className="max-w-xl mx-auto space-y-5 animate-fadeIn">
       <RegistrationProgress currentStep={3} />
@@ -880,6 +1119,7 @@ function RegistrationConfirmation({ race, registration, updated, onViewMyRace, o
 }
 
 function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShirtSize, initialRaceId, requestedRaceId, onRequestedRaceHandled, onSaved, onCancel }: RaceRegistrationFormProps) {
+  const { can, authority } = useAccess();
   const latest = mostRecent(runnerProfiles);
   const [races, setRaces] = useState<Race[]>([]);
   const [raceId, setRaceId] = useState(initialRaceId || '');
@@ -898,6 +1138,11 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
   const [emergencyContactPhone, setEmergencyContactPhone] = useState(latest?.emergencyContactPhone || '');
   const [shirtSize, setShirtSize] = useState(initialShirtSize || latest?.shirtSize || '');
   const [paymentReference, setPaymentReference] = useState('');
+  const [parentalConsentConfirmed, setParentalConsentConfirmed] = useState(Boolean(latest?.parentalConsentConfirmed));
+  const [parentGuardianName, setParentGuardianName] = useState(latest?.parentalGuardianName || '');
+  const [parentGuardianRelationship, setParentGuardianRelationship] = useState(latest?.parentalGuardianRelationship || '');
+  const [acceptedRegistrationTerms, setAcceptedRegistrationTerms] = useState(false);
+  const [marketingOptIn, setMarketingOptIn] = useState(false);
   const [showInclusionImage, setShowInclusionImage] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -905,14 +1150,22 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
   const [paymentReturn, setPaymentReturn] = useState<PaymentStatusResponse | null>(null);
   const [checkingPayment, setCheckingPayment] = useState(false);
 
+  useAndroidBackHandler(showInclusionImage, () => setShowInclusionImage(false));
+  useAndroidBackHandler(showForm && !initialRaceId && !saving, () => {
+    setConfirmation(null);
+    setShowForm(false);
+  });
+
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'races'), (snapshot) => {
-      const list: Race[] = [];
-      snapshot.forEach((docSnap) => list.push(docSnap.data() as Race));
-      list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return subscribeSharedRaces((rawList, loaded, err) => {
+      if (err) {
+        console.warn('Races listener failed:', err);
+        return;
+      }
+      if (!loaded) return;
+      const list = [...rawList].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setRaces(list);
-    }, (err) => console.warn('Races listener failed:', err.message));
-    return () => unsubscribe();
+    });
   }, []);
 
   // The payment-provider return URL is never treated as proof of payment.
@@ -974,6 +1227,9 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
       setEntryCategory(runnerEntryCategory(existingForRace));
       setTeamName(existingForRace.teamName || '');
       setTeamMembers(existingForRace.teamMembers || [existingForRace.fullName, '']);
+      setParentalConsentConfirmed(Boolean(existingForRace.parentalConsentConfirmed));
+      setParentGuardianName(existingForRace.parentalGuardianName || '');
+      setParentGuardianRelationship(existingForRace.parentalGuardianRelationship || '');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raceId]);
@@ -994,16 +1250,30 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
     if (!availableEntryCategories.includes(entryCategory)) setEntryCategory(availableEntryCategories[0] || 'solo');
   }, [availableEntryCategories, entryCategory]);
 
+  const openLegalDoc = (legalDoc: LegalDocKey) => {
+    window.dispatchEvent(new CustomEvent('racepulse:open-legal', { detail: legalDoc }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!can('personal.register')) return setError('Registration is disabled for your account.');
     setError('');
     if (!fullName.trim()) return setError('Please enter your full name.');
     if (!raceId) return setError('Please select which race you are registering for.');
     const parsedAge = parseInt(age, 10);
     if (!age || isNaN(parsedAge) || parsedAge < 1 || parsedAge > 120) return setError('Please enter a valid age.');
+    if (parsedAge < 13) {
+      if (!parentGuardianName.trim()) return setError('Enter the parent or legal guardian full name for participants under 13.');
+      if (!parentGuardianRelationship.trim()) return setError('Specify the guardian relationship (e.g., Mother, Father, Legal Guardian).');
+      if (!parentalConsentConfirmed) return setError('Verifiable parental or legal guardian consent is required for participants under 13.');
+    }
     if (!emergencyContactName.trim()) return setError('Please enter an emergency contact person.');
     if (emergencyContactPhone.trim().length < 4) return setError('Please enter a valid emergency contact number.');
+    if (!acceptedRegistrationTerms) {
+      return setError('Please accept the Terms of Service, Privacy Policy, and Refund Policy before submitting.');
+    }
 
+    const termsAcceptedAt = existingForRace?.termsAcceptedAt || new Date().toISOString();
     setSaving(true);
     try {
       const finalDistance = distance === 'Custom' ? (customDistance || 'Custom Run') : distance;
@@ -1029,6 +1299,13 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
           age: parsedAge,
           emergencyContactName: emergencyContactName.trim().toUpperCase(),
           emergencyContactPhone: emergencyContactPhone.trim(),
+          ...(parsedAge < 13 ? {
+            parentalConsentConfirmed: true,
+            parentGuardianName: parentGuardianName.trim().toUpperCase(),
+            parentGuardianRelationship: parentGuardianRelationship.trim().toUpperCase(),
+          } : {}),
+          termsAcceptedAt,
+          marketingOptIn,
           ...(shirtSize ? { shirtSize } : {}),
           ...(entryCategory !== 'solo' ? { teamName: teamName.trim().toUpperCase(), teamMembers: normalizedMembers.map((member) => member.toUpperCase()) } : {}),
         });
@@ -1049,6 +1326,13 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
         emergencyContactName: emergencyContactName.trim().toUpperCase(),
         emergencyContactPhone: emergencyContactPhone.trim(),
         createdAt: existingForRace?.createdAt || new Date().toISOString(),
+        termsAcceptedAt,
+        marketingOptIn,
+        ...(parsedAge < 13 ? {
+          parentalConsentConfirmed: true,
+          parentalGuardianName: parentGuardianName.trim().toUpperCase(),
+          parentalGuardianRelationship: parentGuardianRelationship.trim().toUpperCase(),
+        } : {}),
         // A runner may correct their profile before race day, but that must
         // never erase operational records already set by the kit desk.
         ...(existingForRace?.chipId ? { chipId: existingForRace.chipId } : {}),
@@ -1156,7 +1440,7 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
             <div className="flex flex-wrap gap-2">
               {selectedRace!.distances.map((d) => (
                 <span key={d.id} className="text-xs font-bold px-3 py-1.5 rounded-full bg-red-500/10 border border-red-500/20 text-red-500">
-                  {d.label}{d.price > 0 && ` — ₱${d.price.toFixed(0)}`}
+                  {d.label}{d.price > 0 && `: ₱${d.price.toFixed(0)}`}
                 </span>
               ))}
             </div>
@@ -1192,7 +1476,7 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
         </div>
 
         {existingForRace && (
-          <p className="text-[10.5px] text-amber-500 glass-inset px-3 py-2">You're already registered for this race under bib #{existingForRace.bibNumber}. Continuing will let you update your details.</p>
+          <p className="text-xs text-amber-900 dark:text-amber-300 glass-inset px-3 py-2">You're already registered for this race under bib #{existingForRace.bibNumber}. Continuing will let you update your details.</p>
         )}
 
         {friendIdentity?.username && <InviteFriendsToRace uid={uid} senderName={friendIdentity.displayName} race={selectedRace} />}
@@ -1200,19 +1484,36 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
         <button
           type="button"
           onClick={() => setShowForm(true)}
-          className="w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-black uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-red-900/30"
+          className="min-h-11 w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-semibold uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-red-900/30"
         >
-          <ArrowRight className="w-4 h-4" /> {existingForRace ? 'Continue to Update Details' : 'Continue to Runner Details'}
+          <ArrowRight className="w-4 h-4" aria-hidden="true" /> {existingForRace ? 'Continue to Update Details' : 'Continue to Runner Details'}
         </button>
 
-        {showInclusionImage && selectedRace?.inclusionImage && createPortal(
-          <div className="fixed inset-0 z-[1000] bg-black/90 backdrop-blur-sm p-4 sm:p-8 flex items-center justify-center animate-fadeIn" role="dialog" aria-modal="true" aria-label="Shirt or kit design preview" onClick={() => setShowInclusionImage(false)}>
-            <div className="relative max-w-6xl max-h-full" onClick={(e) => e.stopPropagation()}>
-              <img src={selectedRace.inclusionImage} alt={`${selectedRace.name} shirt or kit design`} className="block max-w-full max-h-[calc(100vh-4rem)] object-contain rounded-xl shadow-2xl" />
-              <button type="button" onClick={() => setShowInclusionImage(false)} className="absolute -top-3 -right-3 w-10 h-10 rounded-full bg-white text-zinc-950 hover:bg-red-500 hover:text-white shadow-xl flex items-center justify-center transition" aria-label="Close full-screen image"><X className="w-5 h-5" /></button>
+        {showInclusionImage && selectedRace?.inclusionImage && (
+          <DialogSurface
+            titleId="kit-design-preview-title"
+            onRequestClose={() => setShowInclusionImage(false)}
+            className="w-full max-w-4xl glass-panel p-4 sm:p-5 space-y-3"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <h3 id="kit-design-preview-title" className="text-sm font-semibold text-[var(--text-primary)] truncate">
+                {selectedRace.name} Shirt / Kit Design
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowInclusionImage(false)}
+                className="min-h-11 min-w-11 rounded-full glass-inset text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400 flex items-center justify-center transition"
+                aria-label="Close full-screen image"
+              >
+                <X className="w-5 h-5" aria-hidden="true" />
+              </button>
             </div>
-          </div>,
-          document.body,
+            <img
+              src={selectedRace.inclusionImage}
+              alt={`${selectedRace.name} shirt or kit design`}
+              className="block w-full max-h-[calc(100dvh-10rem)] object-contain rounded-xl bg-[var(--surface-inset)]"
+            />
+          </DialogSurface>
         )}
       </div>
     );
@@ -1236,7 +1537,7 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
         <p className="text-xs text-[var(--text-secondary)] mt-1">This links your account to your bib so organizers can record your checkpoint times.</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4"><fieldset className="contents" disabled={!can('personal.register')} >
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Full Name</label>
             <div className="relative">
@@ -1305,80 +1606,214 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Gender</label>
-              <select value={gender} onChange={(e) => setGender(e.target.value as Gender)}
+              <label htmlFor="reg-gender" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Gender</label>
+              <select id="reg-gender" value={gender} onChange={(e) => setGender(e.target.value as Gender)}
                 className="w-full appearance-none glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50">
                 <option value="male">Male</option>
                 <option value="female">Female</option>
               </select>
             </div>
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Age</label>
-              <input type="number" required min={1} max={120} value={age} onChange={(e) => setAge(e.target.value)}
+              <label htmlFor="reg-age" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Age</label>
+              <input id="reg-age" type="number" required min={1} max={120} value={age} onChange={(e) => setAge(e.target.value)}
                 className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" placeholder="EX: 27" />
             </div>
           </div>
-          <p className="text-[10.5px] text-[var(--text-muted)] -mt-2 pl-1">Used to place you in the correct age category on race reports.</p>
+          <p className="text-xs text-[var(--text-muted)] -mt-2 pl-1">Used to place the athlete in the correct age category on race reports.</p>
+
+          {age !== '' && !Number.isNaN(Number(age)) && Number(age) < 13 && (
+            <div className="rounded-[var(--radius-control)] border border-amber-600/40 bg-amber-500/10 p-4 space-y-3">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-900 dark:text-amber-300">
+                <ShieldCheck className="w-4 h-4 shrink-0" aria-hidden="true" /> Verifiable Parental Consent (Under 13 / COPPA &amp; GDPR-K)
+              </div>
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                This participant is under 13 years old. A parent or legal guardian aged 18 or older must authorize this race entry and the publication of event timing records.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="reg-guardian-name" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+                    Parent / Legal Guardian Name <span className="text-red-700 dark:text-red-400">required</span>
+                  </label>
+                  <input
+                    id="reg-guardian-name"
+                    type="text"
+                    required
+                    maxLength={100}
+                    value={parentGuardianName}
+                    onChange={(e) => setParentGuardianName(e.target.value)}
+                    placeholder="EX: MARIA DELA CRUZ"
+                    className="w-full glass-inset px-3.5 py-2.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="reg-guardian-rel" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+                    Relationship <span className="text-red-700 dark:text-red-400">required</span>
+                  </label>
+                  <input
+                    id="reg-guardian-rel"
+                    type="text"
+                    required
+                    maxLength={40}
+                    value={parentGuardianRelationship}
+                    onChange={(e) => setParentGuardianRelationship(e.target.value)}
+                    placeholder="Mother, Father, Guardian"
+                    className="w-full glass-inset px-3.5 py-2.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                  />
+                </div>
+              </div>
+              <label htmlFor="reg-parental-consent" className="flex items-start gap-2.5 cursor-pointer pt-1">
+                <input
+                  id="reg-parental-consent"
+                  type="checkbox"
+                  checked={parentalConsentConfirmed}
+                  onChange={(e) => setParentalConsentConfirmed(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--border-default)] accent-[var(--color-red-500)]"
+                />
+                <span className="text-xs text-[var(--text-primary)] leading-relaxed">
+                  I certify that I am the parent or legal guardian (aged 18+) of this minor participant and grant verifiable parental consent for race participation, emergency contact use, and event timing under the Privacy Policy.
+                </span>
+              </label>
+            </div>
+          )}
+
           <div className="glass-inset p-4 space-y-3">
-            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-[var(--text-secondary)]"><HeartPulse className="w-4 h-4 text-red-500" /> Emergency Contact</div>
-            <p className="text-[10.5px] text-[var(--text-muted)] -mt-1">Used only by the race organizer in case of an emergency.</p>
+            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-[var(--text-secondary)]"><HeartPulse className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> Emergency Contact</div>
+            <p className="text-xs text-[var(--text-muted)] -mt-1">Collected strictly for race-day medical emergency response by authorized organizers.</p>
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Contact Person</label>
-              <input type="text" required value={emergencyContactName} onChange={(e) => setEmergencyContactName(e.target.value.toUpperCase())} maxLength={100} className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" placeholder="EX: MARIA DELA CRUZ (MOTHER)" />
+              <label htmlFor="reg-emergency-name" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Contact Person</label>
+              <input id="reg-emergency-name" type="text" required value={emergencyContactName} onChange={(e) => setEmergencyContactName(e.target.value.toUpperCase())} maxLength={100} className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" placeholder="EX: MARIA DELA CRUZ (MOTHER)" />
             </div>
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Contact Number</label>
-              <div className="relative"><Phone className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" /><input type="tel" required value={emergencyContactPhone} onChange={(e) => setEmergencyContactPhone(e.target.value)} maxLength={30} className="w-full glass-inset pl-10 pr-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" placeholder="EX: 0917 123 4567" /></div>
+              <label htmlFor="reg-emergency-phone" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Contact Number</label>
+              <div className="relative"><Phone className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" aria-hidden="true" /><input id="reg-emergency-phone" type="tel" required value={emergencyContactPhone} onChange={(e) => setEmergencyContactPhone(e.target.value)} maxLength={30} className="w-full glass-inset pl-10 pr-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" placeholder="EX: 0917 123 4567" /></div>
             </div>
           </div>
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Shirt Size <span className="normal-case font-normal text-[var(--text-muted)]">(for this race)</span></label>
+            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Shirt Size <span className="normal-case font-normal text-[var(--text-muted)]">(optional unless included with race kit)</span></label>
             <ShirtSizePicker key={`${raceId}_${existingForRace?.shirtSize || initialShirtSize || ''}`} value={shirtSize} onChange={setShirtSize} emptyLabel="Select shirt size" />
-            <p className="text-[10.5px] text-[var(--text-muted)] mt-1.5 pl-1">The kit desk will see this size when you claim your race kit.</p>
+            <p className="text-xs text-[var(--text-muted)] mt-1.5 pl-1">Shared only with the kit desk for size allocation.</p>
           </div>
 
-          <p className="text-[10.5px] text-[var(--text-secondary)] glass-inset px-3 py-2 flex items-center gap-1.5">
-            <Hash className="w-3 h-3 text-red-500 shrink-0" />
+          <p className="text-xs text-[var(--text-secondary)] glass-inset px-3 py-2 flex items-center gap-1.5">
+            <Hash className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
             {existingForRace
               ? `Your bib number stays #${existingForRace.bibNumber}.`
               : 'Your bib number is assigned automatically based on your distance (e.g. first 5K registrant gets "5-001").'}
           </p>
 
+          {!existingForRace && (raceDistances.find((item) => item.label === distance)?.price || 0) > 0 && (() => {
+            const entryFee = raceDistances.find((item) => item.label === distance)?.price || 0;
+            const passedOnFee = selectedRace.onlinePaymentEnabled && selectedRace.paymentFeeMode === 'passed_on';
+            return (
+              <div className="glass-inset p-4 space-y-2.5 border border-[var(--border-default)]">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] flex items-center gap-1.5">
+                  <Coins className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" /> Upfront Cost, Tax, and Cancellation Summary
+                </h3>
+                <dl className="space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="text-[var(--text-secondary)]">Entry fee ({distance})</dt>
+                    <dd className="font-mono font-semibold text-[var(--text-primary)]">PHP {entryFee.toFixed(2)}</dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="text-[var(--text-secondary)]">RacePulsePH platform surcharge</dt>
+                    <dd className="font-semibold text-[var(--text-primary)]">PHP 0.00 (No hidden fees)</dd>
+                  </div>
+                  <div className="flex items-start justify-between gap-4">
+                    <dt className="text-[var(--text-secondary)] shrink-0">Gateway processing &amp; taxes</dt>
+                    <dd className="text-right text-[var(--text-secondary)]">
+                      {selectedRace.onlinePaymentEnabled
+                        ? passedOnFee
+                          ? 'Applicable taxes included; PayMongo gateway fee itemized on checkout screen before final confirmation.'
+                          : 'Applicable taxes and PayMongo gateway fee absorbed by organizer (PHP 0.00 surcharge).'
+                        : 'No online gateway fee added (direct transfer per organizer instructions).'}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="text-[var(--text-secondary)]">Billing schedule</dt>
+                    <dd className="font-semibold text-[var(--text-primary)]">One-time charge (no subscription or auto-renewal)</dd>
+                  </div>
+                </dl>
+                <p className="text-xs text-[var(--text-secondary)] leading-relaxed pt-1 border-t border-[var(--border-subtle)]">
+                  Cancellation &amp; refunds: Full refund if organizer cancels. Runner cancellations follow our{' '}
+                  <button
+                    type="button"
+                    onClick={() => openLegalDoc('refund')}
+                    className="font-semibold text-red-700 dark:text-red-400 underline underline-offset-2"
+                  >
+                    Refund Policy
+                  </button>
+                  {' '}(100% at 14+ days before race day unless organizer terms state otherwise).
+                </p>
+              </div>
+            );
+          })()}
+
           {!existingForRace && selectedRace.onlinePaymentEnabled && (raceDistances.find((item) => item.label === distance)?.price || 0) > 0 && (
-            <p className="text-[10.5px] text-emerald-500 border border-emerald-500/25 bg-emerald-500/5 rounded-xl px-3 py-2 flex items-center gap-1.5"><Coins className="w-3.5 h-3.5 shrink-0" /> Secure checkout: GCash, Maya, QRPh, or card. Your registration is confirmed only after payment verification.</p>
+            <p className="text-xs text-emerald-800 dark:text-emerald-300 border border-emerald-500/30 bg-emerald-500/10 rounded-xl px-3 py-2 flex items-center gap-1.5"><Coins className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> Secure checkout: GCash, Maya, QRPh, or card. Your registration is confirmed only after payment verification.</p>
           )}
           {!existingForRace && selectedRace.manualPaymentEnabled && (raceDistances.find((item) => item.label === distance)?.price || 0) > 0 && (
-            <div className="text-[10.5px] text-amber-500 border border-amber-500/25 bg-amber-500/5 rounded-xl px-3 py-2.5">
-              <p className="font-bold">Manual payment • ₱{(raceDistances.find((item) => item.label === distance)?.price || 0).toFixed(2)}</p>
-              <p className="text-[var(--text-secondary)] whitespace-pre-line mt-1">{selectedRace.manualPaymentInstructions || 'Submit your registration, then follow the organizer’s payment instructions. Your bib will be reserved pending verification.'}</p>
+            <div className="text-xs text-amber-900 dark:text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-xl px-3 py-2.5">
+              <p className="font-bold">Manual payment &bull; PHP {(raceDistances.find((item) => item.label === distance)?.price || 0).toFixed(2)}</p>
+              <p className="text-[var(--text-secondary)] whitespace-pre-line mt-1">{selectedRace.manualPaymentInstructions || 'Submit your registration, then follow the organizer payment instructions. Your bib will be reserved pending verification.'}</p>
               {selectedRace.manualPaymentQrImage && (
                 <div className="mt-3 text-center">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-amber-500 mb-1.5">Scan to pay</p>
+                  <p className="text-xs font-semibold uppercase tracking-widest text-amber-900 dark:text-amber-300 mb-1.5">Scan to pay</p>
                   <img src={selectedRace.manualPaymentQrImage} alt="GCash or QRPh payment code" className="mx-auto w-48 max-w-full rounded-xl bg-white p-2 shadow-sm" />
                 </div>
               )}
               <div className="mt-3">
-                <label className="block text-[10px] font-black uppercase tracking-widest text-amber-500 mb-1.5">Payment reference number <span className="text-red-500">required</span></label>
-                <input type="text" required value={paymentReference} onChange={(event) => setPaymentReference(event.target.value.toUpperCase())} maxLength={100} autoCapitalize="characters" autoCorrect="off" placeholder="GCash / bank transaction reference" className="w-full glass-inset px-3 py-2.5 text-sm font-mono font-bold tracking-wide text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
-                <p className="mt-1.5 text-[10px] text-[var(--text-secondary)]">We use this to match your payment. A screenshot is not required.</p>
+                <label htmlFor="reg-payment-ref" className="block text-xs font-semibold uppercase tracking-widest text-amber-900 dark:text-amber-300 mb-1.5">Payment reference number <span className="text-red-700 dark:text-red-400">required</span></label>
+                <input id="reg-payment-ref" type="text" required value={paymentReference} onChange={(event) => setPaymentReference(event.target.value.toUpperCase())} maxLength={100} autoCapitalize="characters" autoCorrect="off" placeholder="GCash / bank transaction reference" className="w-full glass-inset px-3 py-2.5 text-sm font-mono font-bold tracking-wide text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                <p className="mt-1.5 text-xs text-[var(--text-secondary)]">Used solely to reconcile your transfer. A screenshot is not required.</p>
               </div>
             </div>
           )}
 
           {(checkingPayment || paymentReturn?.status === 'pending' || paymentReturn?.status === 'creating') && (
-            <p className="text-[10.5px] text-amber-500 border border-amber-500/25 bg-amber-500/5 rounded-xl px-3 py-2 flex items-center gap-1.5"><RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" /> Verifying your PayMongo payment securely…</p>
+            <p className="text-xs text-amber-900 dark:text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-xl px-3 py-2 flex items-center gap-1.5"><RefreshCw className="w-3.5 h-3.5 motion-safe:animate-spin shrink-0" aria-hidden="true" /> Verifying your PayMongo payment securely...</p>
           )}
           {(paymentReturn?.status === 'failed' || paymentReturn?.status === 'expired') && (
-            <p className="text-[10.5px] text-red-500 border border-red-500/25 bg-red-500/5 rounded-xl px-3 py-2">Your checkout was not completed. No registration was created; you may try payment again.</p>
+            <p role="alert" className="text-xs text-red-700 dark:text-red-400 border border-red-500/30 bg-red-500/10 rounded-xl px-3 py-2">Your checkout was not completed. No registration or charge was created; you may retry payment anytime.</p>
           )}
 
-          {error && <p className="text-xs text-red-500 font-semibold">⚠️ {error}</p>}
+          <div className="glass-inset p-4 space-y-3 rounded-[var(--radius-control)]">
+            <label htmlFor="reg-terms-consent" className="flex items-start gap-2.5 cursor-pointer">
+              <input
+                id="reg-terms-consent"
+                type="checkbox"
+                checked={acceptedRegistrationTerms}
+                onChange={(e) => setAcceptedRegistrationTerms(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--border-default)] accent-[var(--color-red-500)]"
+              />
+              <span className="text-xs text-[var(--text-primary)] leading-relaxed">
+                I accept the{' '}
+                <button type="button" onClick={() => openLegalDoc('terms')} className="font-semibold underline underline-offset-2 text-red-700 dark:text-red-400">Terms of Service</button>,{' '}
+                <button type="button" onClick={() => openLegalDoc('privacy')} className="font-semibold underline underline-offset-2 text-red-700 dark:text-red-400">Privacy Policy</button>, and{' '}
+                <button type="button" onClick={() => openLegalDoc('refund')} className="font-semibold underline underline-offset-2 text-red-700 dark:text-red-400">Refund Policy</button>{' '}
+                for this event registration, including official timing and public leaderboard publication.
+              </span>
+            </label>
+            <label htmlFor="reg-marketing-optin" className="flex items-start gap-2.5 cursor-pointer">
+              <input
+                id="reg-marketing-optin"
+                type="checkbox"
+                checked={marketingOptIn}
+                onChange={(e) => setMarketingOptIn(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--border-default)] accent-[var(--color-red-500)]"
+              />
+              <span className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                Send me optional announcements about future runs and post-race certificates (optional, unsubscribe anytime).
+              </span>
+            </label>
+          </div>
+
+          {error && <p role="alert" className="text-xs text-red-700 dark:text-red-400 font-semibold flex items-start gap-1.5"><AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" /> <span>{error}</span></p>}
 
           <button type="submit" disabled={saving}
-            className="w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-black uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-red-900/30 disabled:opacity-60">
-            {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ClipboardList className="w-4 h-4" />} {existingForRace ? 'Update Registration' : selectedRace.onlinePaymentEnabled && (raceDistances.find((item) => item.label === distance)?.price || 0) > 0 ? `Continue to payment • ₱${(raceDistances.find((item) => item.label === distance)?.price || 0).toFixed(2)}` : selectedRace.manualPaymentEnabled && (raceDistances.find((item) => item.label === distance)?.price || 0) > 0 ? `Reserve slot • Manual payment ₱${(raceDistances.find((item) => item.label === distance)?.price || 0).toFixed(2)}` : 'Save Race Profile'}
+            className="min-h-11 w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-semibold uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-red-900/30 disabled:opacity-60">
+            {saving ? <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <ClipboardList className="w-4 h-4" aria-hidden="true" />} {existingForRace ? 'Update Registration' : selectedRace.onlinePaymentEnabled && (raceDistances.find((item) => item.label === distance)?.price || 0) > 0 ? `Continue to checkout (PHP ${(raceDistances.find((item) => item.label === distance)?.price || 0).toFixed(2)})` : selectedRace.manualPaymentEnabled && (raceDistances.find((item) => item.label === distance)?.price || 0) > 0 ? `Reserve slot (PHP ${(raceDistances.find((item) => item.label === distance)?.price || 0).toFixed(2)})` : 'Save Race Profile'}
           </button>
-      </form>
+      </fieldset></form>
     </div>
   );
 }
@@ -1394,7 +1829,7 @@ interface RaceProgressStep {
 }
 
 function formatScanTime(timestamp?: string): string | undefined {
-  return timestamp ? new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined;
+  return timestamp ? formatClockTime(timestamp) : undefined;
 }
 
 function RunnerRacePass({ race, runnerProfile, result, orderedCheckpoints }: {
@@ -1403,6 +1838,7 @@ function RunnerRacePass({ race, runnerProfile, result, orderedCheckpoints }: {
   result: ReturnType<typeof computeResults>[number] | undefined;
   orderedCheckpoints: Race['checkpoints'];
 }) {
+  const { can, authority } = useAccess();
   const splitFor = (checkpointId?: string) => result?.splits.find((split) => split.checkpointId === checkpointId);
   const checkin = orderedCheckpoints.find((checkpoint, index) => checkpointType(checkpoint, index, orderedCheckpoints.length) === 'checkin');
   const start = orderedCheckpoints.find((checkpoint, index) => checkpointType(checkpoint, index, orderedCheckpoints.length) === 'start');
@@ -1423,18 +1859,18 @@ function RunnerRacePass({ race, runnerProfile, result, orderedCheckpoints }: {
       timestamp: result?.sequenceStartTime || startSplit?.timestamp || (result?.timingMethod === 'gun' ? getWaveStartTime(race, runnerProfile.distance, runnerEntryCategory(runnerProfile)) : undefined),
     }] : []),
     ...(finish ? [{ id: 'finish', label: 'Finished', detail: finish.label, completed: !!finishSplit, timestamp: finishSplit?.timestamp }] : []),
-    { id: 'result', label: 'Official result', detail: hasOfficialResult ? `Rank #${result!.rank} • ${result!.finishTime}` : 'Available after your finish is recorded', completed: hasOfficialResult, timestamp: hasOfficialResult ? finishSplit?.timestamp : undefined },
+    { id: 'result', label: 'Official result', detail: hasOfficialResult ? `Rank #${result!.rank} • ${formatRaceTime(result!.finishTime)}` : 'Available after your finish is recorded', completed: hasOfficialResult, timestamp: hasOfficialResult ? finishSplit?.timestamp : undefined },
   ];
   const currentStep = [...steps].reverse().find((step) => step.completed)?.label || 'Registered';
 
   return (
     <div className="lg:col-span-12 glass-panel overflow-hidden animate-fadeIn">
       <div className="relative p-5 sm:p-6 overflow-hidden">
-        {race.posterImage && <img src={race.posterImage} alt="" className="absolute inset-0 w-full h-full object-cover opacity-[0.12]" />}
-        <div className="absolute inset-0 bg-gradient-to-r from-red-950/60 via-[var(--surface-panel)]/90 to-[var(--surface-panel)]" />
+        {race.posterImage && <img src={race.posterImage} alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover opacity-[0.12]" />}
+        <div className="absolute inset-0 bg-gradient-to-r from-red-950/60 via-[var(--surface-card)]/90 to-[var(--surface-card)]" />
         <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-5">
           <div className="min-w-0">
-            <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-red-400 bg-red-500/10 border border-red-500/25 rounded-full px-2.5 py-1"><Radio className="w-3 h-3" /> My Race Pass</span>
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-red-700 dark:text-red-300 bg-red-500/10 border border-red-500/25 rounded-full px-2.5 py-1"><Radio className="w-3 h-3" aria-hidden="true" /> My Race Pass</span>
             <h2 className="heading-float text-xl sm:text-2xl font-black font-display uppercase tracking-tight text-[var(--text-primary)] mt-3 truncate">{race.name}</h2>
             <p className="text-xs text-[var(--text-secondary)] mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1"><span className="inline-flex items-center gap-1"><Calendar className="w-3.5 h-3.5 text-red-500 mr-1.5" />{race.date}</span><span className="inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-red-500 mr-1.5" />{runnerProfile.distance}</span></p>
           </div>
@@ -1443,7 +1879,7 @@ function RunnerRacePass({ race, runnerProfile, result, orderedCheckpoints }: {
               <span className="block text-[9px] font-bold uppercase tracking-widest text-[var(--text-secondary)]">Bib number</span>
               <span className="block text-xl font-mono font-black tracking-wider text-red-500 mt-0.5">#{runnerProfile.bibNumber}</span>
             </div>
-            <div className="bg-white p-2 rounded-xl shadow-xl border border-zinc-200" title="Show this QR code at a race checkpoint">
+            <div className="bg-white p-2 rounded-xl shadow-xl border border-[var(--border-default)]" title="Show this QR code at a race checkpoint">
               <QRCodeSVG value={`RPCHIPv1|${runnerProfile.raceId}|${runnerProfile.bibNumber}`} size={66} level="M" />
             </div>
           </div>
@@ -1456,7 +1892,7 @@ function RunnerRacePass({ race, runnerProfile, result, orderedCheckpoints }: {
             <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)]">Race status</h3>
             <p className="text-xs text-[var(--text-primary)] font-bold mt-1">Current: <span className="text-red-500">{currentStep}</span></p>
           </div>
-          {result?.finishTime && <span className="text-xs font-mono font-black text-emerald-400 border border-emerald-500/25 bg-emerald-500/10 rounded-full px-3 py-1.5">Official time {result.finishTime}</span>}
+          {result?.finishTime && <span className="text-xs font-mono font-black text-emerald-400 border border-emerald-500/25 bg-emerald-500/10 rounded-full px-3 py-1.5">Official time {formatRaceTime(result.finishTime)}</span>}
         </div>
         <ol className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-2">
           {steps.map((step, index) => (
@@ -1472,10 +1908,11 @@ function RunnerRacePass({ race, runnerProfile, result, orderedCheckpoints }: {
 }
 
 function DigitalRaceBib({ race, runnerProfile }: { race: Race; runnerProfile: RunnerProfile }) {
+  const { can, authority } = useAccess();
   const bibRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState('');
-  const bibTemplate = resolveRaceBibTemplate(race, runnerProfile.distance);
+  const bibTemplate = resolveRaceBibTemplate(race, runnerProfile.distance, runnerProfile.entryCategory || 'solo');
   const layout = bibTemplate?.layout;
   const nameLines = raceBibNameLines(runnerProfile);
   const previewNameSize = Math.min(layout?.runnerNameSize ?? 5, 11 / Math.max(1, nameLines.length));
@@ -1503,6 +1940,13 @@ function DigitalRaceBib({ race, runnerProfile }: { race: Race; runnerProfile: Ru
         layout.bibNumberX, layout.bibNumberY, layout.bibNumberSize ?? 12,
         layout.bibNumberColor ?? '#FFFFFF', layout.bibNumberStrokeColor ?? '#000000', layout.bibNumberStrokeWidth ?? 0, raceBibFontFamily(layout.bibNumberFont, race.raceBibCustomFont, true),
       );
+      if (race.raceBibShowRaffleNumber) {
+        drawFittedRaceBibText(
+          ctx, runnerProfile.bibNumber, canvas.width, canvas.height,
+          layout.raffleNumberX ?? 50, layout.raffleNumberY ?? 88, layout.raffleNumberSize ?? 7,
+          layout.raffleNumberColor ?? '#FFFFFF', layout.raffleNumberStrokeColor ?? '#000000', layout.raffleNumberStrokeWidth ?? 0, raceBibFontFamily(layout.raffleNumberFont ?? 'mono', race.raceBibCustomFont, true),
+        );
+      }
       drawFittedRaceBibTextLines(
         ctx, nameLines, canvas.width, canvas.height,
         layout.runnerNameX, layout.runnerNameY, layout.runnerNameSize ?? 5,
@@ -1534,9 +1978,10 @@ function DigitalRaceBib({ race, runnerProfile }: { race: Race; runnerProfile: Ru
       <div ref={bibRef} className="relative w-full aspect-[3/2] overflow-hidden rounded-xl bg-[var(--surface-inset)] select-none" style={{ containerType: 'inline-size' }}>
         <img src={bibTemplate.image} alt={`${race.name} personalized race bib`} className="absolute inset-0 w-full h-full object-cover" />
         <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${layout.bibNumberX}%`, top: `${layout.bibNumberY}%`, fontSize: `${layout.bibNumberSize ?? 12}cqw`, color: layout.bibNumberColor ?? '#FFFFFF', fontFamily: raceBibFontFamily(layout.bibNumberFont, race.raceBibCustomFont), WebkitTextStroke: `${layout.bibNumberStrokeWidth ?? 0}cqw ${layout.bibNumberStrokeColor ?? '#000000'}`, paintOrder: 'stroke fill' }}>{runnerProfile.bibNumber}</span>
+        {race.raceBibShowRaffleNumber && <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${layout.raffleNumberX ?? 50}%`, top: `${layout.raffleNumberY ?? 88}%`, fontSize: `${layout.raffleNumberSize ?? 7}cqw`, color: layout.raffleNumberColor ?? '#FFFFFF', fontFamily: raceBibFontFamily(layout.raffleNumberFont ?? 'mono', race.raceBibCustomFont), WebkitTextStroke: `${layout.raffleNumberStrokeWidth ?? 0}cqw ${layout.raffleNumberStrokeColor ?? '#000000'}`, paintOrder: 'stroke fill' }}>{runnerProfile.bibNumber}</span>}
         <div className="absolute -translate-x-1/2 -translate-y-1/2 w-[90%] text-center leading-[1.16] font-black tracking-wide drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)]" style={{ left: `${layout.runnerNameX}%`, top: `${layout.runnerNameY}%`, fontSize: `${previewNameSize}cqw`, color: layout.runnerNameColor ?? '#FFFFFF', fontFamily: raceBibFontFamily(layout.runnerNameFont, race.raceBibCustomFont), WebkitTextStroke: `${layout.runnerNameStrokeWidth ?? 0}cqw ${layout.runnerNameStrokeColor ?? '#000000'}`, paintOrder: 'stroke fill' }}>{nameLines.map((name, index) => <span key={`${name}-${index}`} className="block">{name}</span>)}</div>
       </div>
-      <button type="button" onClick={handleDownload} disabled={downloading} className="w-full py-2.5 px-4 rounded-[var(--radius-control)] font-display font-black uppercase text-[10px] tracking-widest text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 transition disabled:opacity-60 flex items-center justify-center gap-2">
+      <button hidden={!can('personal.bibs')} type="button" onClick={handleDownload} disabled={downloading} className="w-full py-2.5 px-4 rounded-[var(--radius-control)] font-display font-black uppercase text-[10px] tracking-widest text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 transition disabled:opacity-60 flex items-center justify-center gap-2">
         {downloading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />} {downloading ? 'Preparing Bib...' : 'Download Race Bib'}
       </button>
       {downloadError && <p className="text-[10.5px] text-red-500 text-center">{downloadError}</p>}
@@ -1545,6 +1990,7 @@ function DigitalRaceBib({ race, runnerProfile }: { race: Race; runnerProfile: Ru
 }
 
 function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
+  const { can, authority } = useAccess();
   const [race, setRace] = useState<Race | null | undefined>(undefined);
   const [chipReads, setChipReads] = useState<ChipRead[]>([]);
   const [officialEntry, setOfficialEntry] = useState<PublicLeaderboardEntry | null>(null);
@@ -1600,9 +2046,10 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
     if (!localResult || !officialEntry || !resultsArePublic) return localResult;
     return {
       ...localResult,
-      finishTime: officialEntry.finishTime,
-      chipTime: officialEntry.chipTime,
-      gunTime: officialEntry.gunTime,
+      finishTime: formatRaceTime(officialEntry.finishTime),
+      finishReviewRequired: officialEntry.finishReviewRequired,
+      chipTime: officialEntry.chipTime ? formatRaceTime(officialEntry.chipTime) : undefined,
+      gunTime: officialEntry.gunTime ? formatRaceTime(officialEntry.gunTime) : undefined,
       sequenceStartTime: officialEntry.sequenceStartTime,
       rank: officialEntry.overallRank ?? officialEntry.rank,
       overallRank: officialEntry.overallRank ?? officialEntry.rank,
@@ -1641,11 +2088,11 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
                   <span className="min-w-0">
                     <span className="block text-sm font-bold text-[var(--text-primary)]">{cp.label}</span>
                     <span className="block text-[9px] font-bold uppercase tracking-wide text-[var(--text-muted)] mt-0.5">
-                      {phase === 'checkin' ? 'Check-In' : phase === 'start' ? 'Official Start' : phase === 'finish' ? 'Finish' : cutoffDeadline ? `Cutoff ${cutoffDeadline.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Split'}
+                      {phase === 'checkin' ? 'Check-In' : phase === 'start' ? 'Official Start' : phase === 'finish' ? 'Finish' : cutoffDeadline ? `Cutoff ${formatClockTime(cutoffDeadline)}` : 'Split'}
                     </span>
                   </span>
                   <span className={`font-mono text-sm font-black shrink-0 text-right ${afterCutoff ? 'text-amber-500' : usesSequenceStart ? 'text-emerald-500' : split ? 'text-red-500' : usesGunFallback ? 'text-emerald-500' : 'text-[var(--text-muted)]'}`}>
-                    {usesSequenceStart ? new Date(result!.sequenceStartTime!).toLocaleTimeString() : split ? new Date(split.timestamp).toLocaleTimeString() : usesGunFallback ? `Gun ${new Date(waveStartTime!).toLocaleTimeString()}` : 'Pending'}
+                    {usesSequenceStart ? formatClockTime(result!.sequenceStartTime!) : split ? formatClockTime(split.timestamp) : usesGunFallback ? `Gun ${formatClockTime(waveStartTime!)}` : 'Pending'}
                     {usesSequenceStart && <span className="block text-[9px] font-sans uppercase tracking-wide">Previous entry finish</span>}
                     {afterCutoff && <span className="block text-[9px] font-sans uppercase tracking-wide">After cutoff</span>}
                     {usesGunFallback && <span className="block text-[9px] font-sans uppercase tracking-wide">Official fallback</span>}
@@ -1658,12 +2105,12 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
           {result?.finishTime && (
             <div className="mt-4 bg-emerald-950/20 border border-emerald-800/40 p-4 rounded-2xl text-center">
               <p className="text-[10px] uppercase font-bold tracking-widest text-emerald-500">Finish Time</p>
-              <p className="text-2xl font-mono font-black text-emerald-400 mt-1">{result.finishTime}</p>
+              <p className="text-2xl font-mono font-black text-emerald-400 mt-1">{formatRaceTime(result.finishTime)}</p>{result.finishReviewRequired && <p className="text-amber-500 text-xs">Provisional place · Needs finish review</p>}
               {result.overallRank && <p className="text-xs text-emerald-500 mt-1">Overall #{result.overallRank} in {runnerDivisionLabel(runnerProfile)}{result.categoryRank ? ` · ${result.categoryLabel || 'Category'} #${result.categoryRank}` : ''}</p>}
               {race && (
                 <button
                   type="button"
-                  onClick={() => downloadFinisherCertificate(race, runnerProfile, result)}
+                  hidden={!can('personal.certificates')} onClick={() => downloadFinisherCertificate(race, runnerProfile, result)}
                   className="mt-4 w-full sm:w-auto px-4 py-2.5 rounded-[var(--radius-control)] font-display font-black uppercase text-[10px] tracking-widest text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 transition inline-flex items-center justify-center gap-2"
                 >
                   <FileDown className="w-4 h-4" /> Download E-Certificate
@@ -1678,7 +2125,7 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
         <div className="glass-panel p-5 text-center space-y-4">
           <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)]">Your Checkpoint Bib QR</h3>
           <p className="text-[11px] text-[var(--text-secondary)]">Show this to organizers at each checkpoint to scan-and-record your time.</p>
-          <div className="bg-white p-4 rounded-2xl inline-block shadow-xl border border-zinc-200">
+          <div className="bg-white p-4 rounded-2xl inline-block shadow-xl border border-[var(--border-default)]">
             <QRCodeSVG value={`RPCHIPv1|${runnerProfile.raceId}|${runnerProfile.bibNumber}`} size={180} level="M" />
           </div>
           <div className="glass-inset p-3">
@@ -1701,6 +2148,7 @@ interface ProfileModalProps {
 }
 
 function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
+  const { can, authority } = useAccess();
   const [races, setRaces] = useState<Race[]>([]);
   const [displayName, setDisplayName] = useState(profile.displayName);
   const [username, setUsername] = useState(profile.username || '');
@@ -1710,6 +2158,7 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
   const [emergencyContactPhone, setEmergencyContactPhone] = useState(profile.emergencyContactPhone || '');
   const [shirtSize, setShirtSize] = useState(profile.shirtSize || '');
   const [medicalNotes, setMedicalNotes] = useState(profile.medicalNotes || '');
+  const [marketingOptIn, setMarketingOptIn] = useState(Boolean(profile.marketingOptIn));
   const [saving, setSaving] = useState(false);
   const [resettingPassword, setResettingPassword] = useState(false);
   const [error, setError] = useState('');
@@ -1717,13 +2166,16 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useAndroidBackHandler(resettingPassword, () => setResettingPassword(false));
+
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'races'), (snapshot) => {
-      const list: Race[] = [];
-      snapshot.forEach((docSnap) => list.push(docSnap.data() as Race));
-      setRaces(list);
-    }, (err) => console.warn('Races listener failed:', err.message));
-    return () => unsubscribe();
+    return subscribeSharedRaces((rawList, loaded, err) => {
+      if (err) {
+        console.warn('Races listener failed:', err);
+        return;
+      }
+      if (loaded) setRaces(rawList);
+    });
   }, []);
 
   const raceById = useMemo(() => new Map(races.map((r) => [r.id, r])), [races]);
@@ -1800,6 +2252,8 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
         emergencyContactPhone: emergencyContactPhone.trim(),
         shirtSize,
         medicalNotes: medicalNotes.trim(),
+        marketingOptIn,
+        marketingUpdatedAt: new Date().toISOString(),
         ...(photoPreview ? { photoURL: photoPreview } : {}),
       };
 
@@ -1854,49 +2308,65 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
   const recentRace = mostRecentPast ? raceById.get(mostRecentPast.raceId) : undefined;
 
   if (resettingPassword) return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn">
-      <div className="w-full max-w-md max-h-[calc(100vh-2rem)] overflow-y-auto">
-        <PasswordResetFlow initialEmail={profile.email} backLabel="Back to profile" onBack={() => setResettingPassword(false)} onDone={() => void signOutUser()} />
-      </div>
-    </div>
+    <DialogSurface
+      titleId="profile-reset-password-title"
+      onRequestClose={() => setResettingPassword(false)}
+      className="w-full max-w-md bg-transparent border-0 p-0 shadow-none"
+    >
+      <h2 id="profile-reset-password-title" className="sr-only">Reset account password</h2>
+      <PasswordResetFlow initialEmail={profile.email} backLabel="Back to profile" onBack={() => setResettingPassword(false)} onDone={() => void signOutUser()} />
+    </DialogSurface>
   );
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn">
-      <div className="glass-panel w-full max-w-lg max-h-[calc(100vh-2rem)] overflow-y-auto p-6 space-y-5 relative">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-[var(--text-secondary)] hover:text-[var(--text-primary)] glass-inset p-2 rounded-full transition"
-        >
-          <X className="w-4 h-4" />
-        </button>
+    <DialogSurface
+      titleId="profile-modal-title"
+      onRequestClose={onClose}
+      className="glass-panel w-full max-w-lg p-6 space-y-5 relative"
+    >
+      <div className="space-y-5 relative">
+        <div className="flex items-center justify-between gap-3">
+          <h2 id="profile-modal-title" className="heading-float text-lg font-display font-semibold uppercase tracking-tight text-[var(--text-primary)]">
+            Profile &amp; Account Settings
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close profile settings"
+            className="min-h-11 min-w-11 flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)] glass-inset rounded-full transition"
+          >
+            <X className="w-4 h-4" aria-hidden="true" />
+          </button>
+        </div>
 
-        <div className="flex flex-col items-center gap-3 pt-2">
+        <div className="flex flex-col items-center gap-3">
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="relative w-24 h-24 rounded-full overflow-hidden glass-inset flex items-center justify-center text-red-500 font-black text-3xl group"
+            className="relative w-24 h-24 rounded-full overflow-hidden glass-inset flex items-center justify-center text-red-700 dark:text-red-400 font-black text-3xl group"
+            aria-label="Change profile photo"
             title="Change profile picture"
           >
             {photoPreview ? (
-              <img src={photoPreview} alt="" className="w-full h-full object-cover" />
+              <img src={photoPreview} alt="" aria-hidden="true" className="w-full h-full object-cover" />
             ) : (
               (nickname || profile.displayName || '?').charAt(0).toUpperCase()
             )}
             <span className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
-              <Camera className="w-6 h-6 text-white" />
+              <Camera className="w-6 h-6 text-white" aria-hidden="true" />
             </span>
           </button>
-          <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
-          <button type="button" onClick={() => fileInputRef.current?.click()} className="text-[10.5px] font-bold text-red-500 hover:text-red-400 flex items-center gap-1 uppercase tracking-wide">
-            <Pencil className="w-3 h-3" /> Change Photo
+          <input ref={fileInputRef} type="file" accept="image/*" aria-label="Upload profile photo" onChange={handleFileChange} className="hidden" />
+          <button type="button" onClick={() => fileInputRef.current?.click()} className="min-h-11 px-3 text-xs font-semibold text-red-700 dark:text-red-400 hover:underline flex items-center gap-1.5 uppercase tracking-wide">
+            <Pencil className="w-3.5 h-3.5" aria-hidden="true" /> Change Photo
           </button>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="sm:col-span-2">
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Full Name</label>
+            <label htmlFor="profile-fullname" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Full Name</label>
             <input
+              id="profile-fullname"
               type="text"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
@@ -1905,8 +2375,9 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
             />
           </div>
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Nickname</label>
+            <label htmlFor="profile-nickname" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Nickname</label>
             <input
+              id="profile-nickname"
               type="text"
               value={nickname}
               onChange={(e) => setNickname(e.target.value)}
@@ -1916,24 +2387,24 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
             />
           </div>
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Account Email</label>
-            <div className="glass-inset px-4 py-3 text-sm text-[var(--text-secondary)] flex items-center gap-2"><Mail className="w-4 h-4 text-red-500" />{profile.email}</div>
+            <span className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Account Email</span>
+            <div className="glass-inset px-4 py-3 text-sm text-[var(--text-secondary)] flex items-center gap-2"><Mail className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />{profile.email}</div>
           </div>
           <div className="sm:col-span-2">
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Sign-in Username</label>
+            <label htmlFor="profile-username" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Sign-in Username</label>
             {profile.username ? (
-              <div className="glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2"><User className="w-4 h-4 text-red-500" />{profile.username}</div>
+              <div className="glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2"><User className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />{profile.username}</div>
             ) : (
               <>
-                <input type="text" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} autoCapitalize="none" autoCorrect="off" maxLength={24} placeholder="e.g. juan.runner" className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
-                <p className="mt-1.5 text-[10px] text-[var(--text-muted)]">Optional for existing accounts. Once saved, you can sign in using this username and it cannot be changed.</p>
+                <input id="profile-username" type="text" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} autoCapitalize="none" autoCorrect="off" maxLength={24} placeholder="e.g. juan.runner" className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
+                <p className="mt-1.5 text-xs text-[var(--text-muted)]">Optional for existing accounts. Once saved, you can sign in using this username and it cannot be changed.</p>
               </>
             )}
           </div>
         </div>
 
         <div className="space-y-3">
-          <h3 className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-1.5"><PackageCheck className="w-3.5 h-3.5 text-red-500" /> Race preferences</h3>
+          <h3 className="text-xs font-bold uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-1.5"><PackageCheck className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" /> Race preferences</h3>
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Shirt Size</label>
             <ShirtSizePicker value={shirtSize} onChange={setShirtSize} emptyLabel="Not selected" />
@@ -1941,72 +2412,91 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
         </div>
 
         <div className="space-y-3">
-          <h3 className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-1.5"><HeartPulse className="w-3.5 h-3.5 text-red-500" /> Emergency &amp; medical</h3>
+          <h3 className="text-xs font-bold uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-1.5"><HeartPulse className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" /> Emergency &amp; medical</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Emergency Contact</label>
-              <input type="text" value={emergencyContactName} onChange={(e) => setEmergencyContactName(e.target.value)} maxLength={100} placeholder="Full name" className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
+              <label htmlFor="profile-emergency-name" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Emergency Contact</label>
+              <input id="profile-emergency-name" type="text" value={emergencyContactName} onChange={(e) => setEmergencyContactName(e.target.value)} maxLength={100} placeholder="Full name" className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
             </div>
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Contact Number</label>
-              <div className="relative"><Phone className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" /><input type="tel" value={emergencyContactPhone} onChange={(e) => setEmergencyContactPhone(e.target.value)} maxLength={30} placeholder="09XX XXX XXXX" className="w-full glass-inset pl-10 pr-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" /></div>
+              <label htmlFor="profile-emergency-phone" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Contact Number</label>
+              <div className="relative"><Phone className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" aria-hidden="true" /><input id="profile-emergency-phone" type="tel" value={emergencyContactPhone} onChange={(e) => setEmergencyContactPhone(e.target.value)} maxLength={30} placeholder="09XX XXX XXXX" className="w-full glass-inset pl-10 pr-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" /></div>
             </div>
           </div>
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Medical Note <span className="normal-case font-normal text-[var(--text-muted)]">(optional)</span></label>
-            <textarea value={medicalNotes} onChange={(e) => setMedicalNotes(e.target.value)} maxLength={600} rows={3} placeholder="Example: allergy, asthma, or other information for race-day emergencies." className="w-full resize-y glass-inset px-4 py-3 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
-            <p className="text-[10px] text-[var(--text-muted)] mt-1">Keep this brief. It is visible only to you and authorized RacePulse staff.</p>
+            <label htmlFor="profile-medical-notes" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Medical Note <span className="normal-case font-normal text-[var(--text-muted)]">(optional)</span></label>
+            <textarea id="profile-medical-notes" value={medicalNotes} onChange={(e) => setMedicalNotes(e.target.value)} maxLength={600} rows={3} placeholder="Example: allergy, asthma, or other information for race-day emergencies." className="w-full resize-y glass-inset px-4 py-3 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
+            <p className="text-xs text-[var(--text-muted)] mt-1">Keep this brief. It is visible only to you and authorized RacePulse staff.</p>
           </div>
         </div>
 
+        <div className="space-y-3">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" /> Email Preferences
+          </h3>
+          <label htmlFor="profile-marketing-optin" className="glass-inset p-4 flex items-start gap-3 cursor-pointer">
+            <input
+              id="profile-marketing-optin"
+              type="checkbox"
+              checked={marketingOptIn}
+              onChange={(e) => setMarketingOptIn(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--border-default)] accent-[var(--color-red-500)]"
+            />
+            <span className="text-xs text-[var(--text-primary)] leading-relaxed">
+              Send me optional race announcements and post-event update emails. Transactional account security and registration receipts are always delivered.
+            </span>
+          </label>
+        </div>
+
         <div className="glass-inset p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div><p className="text-xs font-black text-[var(--text-primary)]">Password</p><p className="text-[10px] text-[var(--text-secondary)] mt-0.5">We’ll send a secure reset link to your email.</p></div>
-          <button type="button" onClick={() => setResettingPassword(true)} className="text-[10px] font-black uppercase tracking-wide px-3 py-2.5 rounded-[14px] bg-red-500/10 text-red-500 border border-red-500/25 hover:bg-red-500 hover:text-white transition">Reset password</button>
+          <div><p className="text-xs font-bold text-[var(--text-primary)]">Password</p><p className="text-xs text-[var(--text-secondary)] mt-0.5">We will send a reset code to your verified email.</p></div>
+          <button type="button" onClick={() => setResettingPassword(true)} className="min-h-11 text-xs font-semibold uppercase tracking-wide px-3.5 py-2.5 rounded-[14px] bg-red-500/10 text-red-700 dark:text-red-400 border border-red-500/30 hover:bg-red-700 hover:text-white transition">Reset password</button>
         </div>
 
         <div>
-          <h3 className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] mb-2 flex items-center gap-1.5">
-            <Trophy className="w-3.5 h-3.5 text-red-500" /> Most Recent Race
+          <h3 className="text-xs font-bold uppercase tracking-widest text-[var(--text-secondary)] mb-2 flex items-center gap-1.5">
+            <Trophy className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" /> Most Recent Race
           </h3>
           {!mostRecentPast || !recentRace ? (
             <p className="text-xs text-[var(--text-secondary)] glass-inset px-3 py-2.5">No completed races yet.</p>
           ) : recentResult === undefined ? (
-            <p className="text-xs text-[var(--text-secondary)] glass-inset px-3 py-2.5 flex items-center gap-1.5"><RefreshCw className="w-3 h-3 animate-spin" /> Loading...</p>
+            <p className="text-xs text-[var(--text-secondary)] glass-inset px-3 py-2.5 flex items-center gap-1.5"><RefreshCw className="w-3 h-3 motion-safe:animate-spin" aria-hidden="true" /> Loading...</p>
           ) : (
             <div className="glass-inset px-4 py-3 space-y-1.5">
               <p className="text-sm font-bold text-[var(--text-primary)]">{recentRace.name}</p>
-              <p className="text-[10px] text-[var(--text-secondary)]">{recentRace.date} &bull; {mostRecentPast.distance} &bull; #{mostRecentPast.bibNumber}</p>
+              <p className="text-xs text-[var(--text-secondary)]">{recentRace.date} &bull; {mostRecentPast.distance} &bull; #{mostRecentPast.bibNumber}</p>
               <div className="flex items-center gap-4 pt-1">
                 <div>
-                  <span className="block text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Rank</span>
-                  <span className="text-lg font-mono font-black text-red-500">{recentResult?.rank ? `#${recentResult.rank}` : '—'}</span>
+                  <span className="block text-[10px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Rank</span>
+                  <span className="text-lg font-mono font-black text-red-700 dark:text-red-400">{recentResult?.rank ? `#${recentResult.rank}` : '--'}</span>
                 </div>
                 <div>
-                  <span className="block text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Finish Time</span>
-                  <span className="text-lg font-mono font-black text-red-500">{recentResult?.finishTime || '—'}</span>
+                  <span className="block text-[10px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Finish Time</span>
+                  <span className="text-lg font-mono font-black text-red-700 dark:text-red-400">{formatRaceTime(recentResult?.finishTime)}</span>
                 </div>
               </div>
             </div>
           )}
         </div>
 
-        {error && <p className="text-xs text-red-500 font-semibold">⚠️ {error}</p>}
-        {notice && <p className="text-xs text-emerald-500 font-semibold">✓ {notice}</p>}
+        {error && <p role="alert" className="text-xs text-red-700 dark:text-red-400 font-semibold flex items-start gap-1.5"><AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" /> <span>{error}</span></p>}
+        {notice && <p role="status" className="text-xs text-emerald-800 dark:text-emerald-300 font-semibold flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" /> <span>{notice}</span></p>}
 
         <button
+          type="button"
           onClick={handleSave}
           disabled={saving}
-          className="w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-black uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-red-900/30 disabled:opacity-60"
+          className="min-h-11 w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-semibold uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-red-900/30 disabled:opacity-60"
         >
-          {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <User className="w-4 h-4" />} Save Settings
+          {saving ? <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <User className="w-4 h-4" aria-hidden="true" />} Save Settings
         </button>
-        <div className="rounded-[var(--radius-control)] border border-red-500/25 bg-red-500/5 p-4 space-y-2">
-          <p className="text-xs font-black uppercase tracking-wider text-red-400">Danger zone</p>
-          <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">Permanently remove your account, profile, and race registrations.</p>
-          <button type="button" onClick={() => setShowDeleteAccount(true)} className="text-[10px] font-black uppercase tracking-wide px-3 py-2.5 rounded-[14px] border border-red-500/35 text-red-500 hover:bg-red-500 hover:text-white transition">Delete my account</button>
+        <div className="rounded-[var(--radius-control)] border border-red-500/30 bg-red-500/5 p-4 space-y-2">
+          <p className="text-xs font-bold uppercase tracking-wider text-red-700 dark:text-red-400">Delete Account &amp; Data</p>
+          <p className="text-xs text-[var(--text-secondary)] leading-relaxed">Permanently delete or anonymize your profile, race registrations, friends, and personal records.</p>
+          <button type="button" onClick={() => setShowDeleteAccount(true)} className="min-h-11 text-xs font-semibold uppercase tracking-wide px-3.5 py-2.5 rounded-[14px] border border-red-500/35 text-red-700 dark:text-red-400 hover:bg-red-700 hover:text-white transition">Delete My Account &amp; Data</button>
         </div>
       </div>
       {showDeleteAccount && <DeleteAccountModal profile={profile} onClose={() => setShowDeleteAccount(false)} />}
-    </div>
+    </DialogSurface>
   );
 }

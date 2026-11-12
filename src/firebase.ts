@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, getDocFromServer, enableIndexedDbPersistence } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import {
   getAuth,
@@ -8,11 +8,16 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithCredential,
+  reauthenticateWithPopup,
+  reauthenticateWithCredential,
   GoogleAuthProvider,
   signOut as firebaseSignOut,
   updateProfile,
   type User,
 } from 'firebase/auth';
+import { Capacitor } from '@capacitor/core';
+import { SocialLogin } from '@capgo/capacitor-social-login';
 
 // Configuration for the racepulseph Firebase project
 const firebaseConfig = {
@@ -26,21 +31,14 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firestore on the default database
-export const db = getFirestore(app);
+// Initialize Firestore on the default database with multi-tab persistent cache
+export const db = typeof window !== 'undefined'
+  ? initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+    })
+  : initializeFirestore(app, {});
 export const storage = getStorage(app);
 export const auth = getAuth(app);
-
-// Enable offline database persistence for resilient offline capabilities
-if (typeof window !== 'undefined') {
-  enableIndexedDbPersistence(db).catch((err) => {
-    if (err.code === 'failed-precondition') {
-      console.warn("Firestore offline persistence failed: Multiple tabs open.");
-    } else if (err.code === 'unimplemented') {
-      console.warn("Firestore offline persistence failed: Browser lacks support.");
-    }
-  });
-}
 
 // Auth setup - individual accounts for Admin / Organizer / Runner roles
 if (typeof window !== 'undefined') {
@@ -65,15 +63,78 @@ export async function updateAccountDisplayName(displayName: string): Promise<voi
   await updateProfile(auth.currentUser, { displayName: displayName.trim() });
 }
 
-const googleProvider = new GoogleAuthProvider();
+const GOOGLE_WEB_CLIENT_ID = '720035436658-3e4k16l8op866qja6updrf2dlptg89t9.apps.googleusercontent.com';
+export const googleProvider = new GoogleAuthProvider();
+let socialLoginInitPromise: Promise<void> | null = null;
+
+async function ensureNativeGoogleLogin(): Promise<void> {
+  if (!socialLoginInitPromise) {
+    socialLoginInitPromise = SocialLogin.initialize({
+      google: {
+        webClientId: GOOGLE_WEB_CLIENT_ID,
+        mode: 'online',
+        skipAuthOnlyAuthorizationAfterSignIn: true,
+      },
+    }).catch((err) => {
+      socialLoginInitPromise = null;
+      throw err;
+    });
+  }
+  await socialLoginInitPromise;
+}
+
+/**
+ * Obtains a Google OAuth ID token inside the app via Android Credential Manager
+ * so Capacitor builds never hand authentication off to an external browser tab.
+ */
+async function getNativeGoogleAuthCredential() {
+  await ensureNativeGoogleLogin();
+  try {
+    const response = await SocialLogin.login({
+      provider: 'google',
+      options: {
+        style: 'standard',
+      },
+    });
+    if (response.provider !== 'google' || response.result.responseType !== 'online' || !response.result.idToken) {
+      throw new Error('Google sign-in did not return an ID token.');
+    }
+    return GoogleAuthProvider.credential(response.result.idToken);
+  } catch (err: unknown) {
+    const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code?: unknown }).code ?? '') : '';
+    if (code === 'USER_CANCELLED') {
+      const cancelErr = new Error('Google sign-in was cancelled.') as Error & { code: string };
+      cancelErr.code = 'auth/popup-closed-by-user';
+      throw cancelErr;
+    }
+    throw err;
+  }
+}
 
 export async function signInWithGoogle(): Promise<User> {
+  if (Capacitor.isNativePlatform()) {
+    const credential = await getNativeGoogleAuthCredential();
+    const userCredential = await signInWithCredential(auth, credential);
+    return userCredential.user;
+  }
   const credential = await signInWithPopup(auth, googleProvider);
   return credential.user;
 }
 
+export async function reauthenticateWithGoogle(user: User): Promise<void> {
+  if (Capacitor.isNativePlatform()) {
+    const credential = await getNativeGoogleAuthCredential();
+    await reauthenticateWithCredential(user, credential);
+    return;
+  }
+  await reauthenticateWithPopup(user, new GoogleAuthProvider());
+}
+
 export async function signOutUser(): Promise<void> {
   await firebaseSignOut(auth);
+  if (Capacitor.isNativePlatform()) {
+    await SocialLogin.logout({ provider: 'google' }).catch(() => {});
+  }
 }
 
 // Error Handling Utilities required by firebase-integration skill
@@ -120,18 +181,3 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }
-
-// Validate connection
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-    console.log("Firebase Firestore connected successfully.");
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn("Please check your Firebase configuration. Client is offline.");
-    } else {
-      console.log("Firebase connection complete.");
-    }
-  }
-}
-testConnection();

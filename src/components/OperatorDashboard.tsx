@@ -1,36 +1,179 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { collection, query, onSnapshot, doc, updateDoc, deleteDoc, writeBatch, getDocs } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { EngravingOrder, EngravingStatus, EngravingStats } from '../types';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
-  Copy, Check, Search, TrendingUp, Clock, AlertTriangle, Play, CheckSquare,
-  Trash2, Filter, Sparkles, Volume2, VolumeX, BarChart2, BadgeMinus,
-  RefreshCw, Layers, FileDown, HelpCircle, Cpu, QrCode, DownloadCloud, Wifi, WifiOff,
-  Coins, DollarSign, FileText, Printer
+  AlertTriangle,
+  BarChart2,
+  Bell,
+  Calendar,
+  Check,
+  CheckCircle2,
+  CheckSquare,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Coins,
+  Copy,
+  Cpu,
+  DownloadCloud,
+  FileDown,
+  FileText,
+  Flag,
+  HelpCircle,
+  ListOrdered,
+  Play,
+  Printer,
+  QrCode,
+  RefreshCw,
+  Search,
+  SlidersHorizontal,
+  Trash2,
+  Users,
+  Volume2,
+  VolumeX,
+  Wifi,
+  WifiOff,
+  X,
 } from 'lucide-react';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  onSnapshot,
+  query,
+  setDoc,
+  updateDoc,
+  where,
+  writeBatch,
+} from 'firebase/firestore';
+import { db } from '../firebase';
+import { authenticatedFetch, useAccess, useScopedRaces } from '../lib/access';
+import { startLanJsonPoller } from '../lib/lanBridge';
+import { formatDateTime, formatRaceTime } from '../lib/preciseTime';
+import { useWorkspaceHeader } from '../lib/workspaceHeader';
+import { EngravingOrder, EngravingStats, EngravingStatus, RunnerProfile } from '../types';
 import QrScannerModal from './QrScannerModal';
+import DialogSurface from './ui/DialogSurface';
+import { useFeedback } from './ui/FeedbackProvider';
+import { AnimatedMetricValue, ValueSkeleton } from './ui/MotionPrimitives';
 
-export default function OperatorDashboard() {
+type MasterView = 'queue' | 'roster';
+
+const DESKTOP_QUERY = '(min-width: 1024px)';
+
+function useIsDesktop(): boolean {
+  const [isDesktop, setIsDesktop] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.matchMedia(DESKTOP_QUERY).matches : true,
+  );
+
+  useEffect(() => {
+    const media = window.matchMedia(DESKTOP_QUERY);
+    const update = () => setIsDesktop(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+
+  return isDesktop;
+}
+
+const STATUS_META: Record<
+  EngravingStatus,
+  { label: string; shortLabel: string; badgeClass: string; rowAccent: string }
+> = {
+  queued: {
+    label: 'Queued',
+    shortLabel: 'Queued',
+    badgeClass:
+      'bg-yellow-100 text-yellow-900 border-yellow-400 dark:bg-yellow-950/60 dark:text-yellow-300 dark:border-yellow-700',
+    rowAccent: 'border-l-yellow-600 dark:border-l-yellow-500',
+  },
+  inprogress: {
+    label: 'Engraving',
+    shortLabel: 'Engraving',
+    badgeClass:
+      'bg-red-100 text-red-800 border-red-400 dark:bg-red-950/60 dark:text-red-300 dark:border-red-700',
+    rowAccent: 'border-l-red-600 dark:border-l-red-500',
+  },
+  ready: {
+    label: 'Ready',
+    shortLabel: 'Ready',
+    badgeClass:
+      'bg-blue-100 text-blue-900 border-blue-400 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-700',
+    rowAccent: 'border-l-blue-600 dark:border-l-blue-500',
+  },
+  completed: {
+    label: 'Completed',
+    shortLabel: 'Done',
+    badgeClass:
+      'bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700',
+    rowAccent: 'border-l-emerald-600 dark:border-l-emerald-500',
+  },
+};
+
+function StatusIcon({ status }: { status: EngravingStatus }) {
+  switch (status) {
+    case 'queued':
+      return <Clock className="w-3 h-3 shrink-0" aria-hidden="true" />;
+    case 'inprogress':
+      return <Play className="w-3 h-3 shrink-0" aria-hidden="true" />;
+    case 'ready':
+      return <CheckCircle2 className="w-3 h-3 shrink-0" aria-hidden="true" />;
+    case 'completed':
+      return <CheckSquare className="w-3 h-3 shrink-0" aria-hidden="true" />;
+  }
+}
+
+export interface EngravingLaunchRequest {
+  raceId: string;
+  nonce: number;
+}
+
+interface OperatorDashboardProps {
+  launchRequest?: EngravingLaunchRequest | null;
+}
+
+export default function OperatorDashboard({ launchRequest }: OperatorDashboardProps = {}) {
+  const { can, authority } = useAccess();
+  const races = useScopedRaces();
+  const { confirm, notify } = useFeedback();
+  const headerCtx = useWorkspaceHeader();
+  const isDesktop = useIsDesktop();
+
   const [orders, setOrders] = useState<EngravingOrder[]>([]);
   const [loading, setLoading] = useState(true);
-  
+  const [ordersError, setOrdersError] = useState<string | null>(null);
+  const [selectedRaceId, setSelectedRaceId] = useState(
+    () => launchRequest?.raceId || localStorage.getItem('racepulse_engraving_race') || '',
+  );
+  useEffect(() => {
+    if (!launchRequest?.raceId) return;
+    localStorage.setItem('racepulse_engraving_race', launchRequest.raceId);
+    setSelectedRaceId(launchRequest.raceId);
+    setRunnerSearch('');
+  }, [launchRequest?.nonce, launchRequest?.raceId]);
+  const [eventRunners, setEventRunners] = useState<RunnerProfile[]>([]);
+  const [eventRunnersLoading, setEventRunnersLoading] = useState(false);
+  const [eventRunnersError, setEventRunnersError] = useState<string | null>(null);
+  const [runnerSearch, setRunnerSearch] = useState('');
+  const [masterView, setMasterView] = useState<MasterView>('queue');
+
   // Filtering and Searching State
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | EngravingStatus>('all');
-  
-  // Double-Check helper input
+
+  // Double-Check helper input & active detail selection
   const [doubleCheckCode, setDoubleCheckCode] = useState('');
-  
-  // State for showing copy triggers check mark feedback per-field (e.g. { 'orderId_field': true })
+
+  // State for showing copy check mark feedback per-field
   const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
-  
-  // Sound Notification Toggle
+
+  // Sound & Header Config Popover
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [newOrderAlert, setNewOrderAlert] = useState<string | null>(null);
+  const [showConfigPopover, setShowConfigPopover] = useState(false);
   const [showLightBurnModal, setShowLightBurnModal] = useState(false);
-  
+
   // Offline & QR Sync States
   const [showQrScanModal, setShowQrScanModal] = useState(false);
   const [qrScanSuccessMessage, setQrScanSuccessMessage] = useState('');
@@ -43,18 +186,25 @@ export default function OperatorDashboard() {
   // PDF Report Generation Modal States
   const [showPdfModal, setShowPdfModal] = useState(false);
   const [pdfRaceName, setPdfRaceName] = useState('ANNUAL MARATHON CHAMPIONSHIP');
-  const [pdfReportFilter, setPdfReportFilter] = useState<'all' | 'completed' | 'queued' | 'inprogress' | 'ready'>('all');
+  const [pdfReportFilter, setPdfReportFilter] = useState<
+    'all' | 'completed' | 'queued' | 'inprogress' | 'ready'
+  >('all');
 
-  // Dual Offline LAN + Firestore sync managers
+  // Dual Offline LAN + Firestore sync state
   const [lanConnected, setLanConnected] = useState<boolean | null>(null);
+  const [isOnline, setIsOnline] = useState<boolean>(
+    typeof navigator !== 'undefined' ? navigator.onLine : true,
+  );
   const [pricePerMedal, setPricePerMedal] = useState<number>(() => {
     const saved = localStorage.getItem('price_per_medal');
-    return saved ? parseFloat(saved) : 150; // Default price per medal
+    const parsed = saved ? parseFloat(saved) : 150;
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 150;
   });
 
   const handlePriceChange = (val: number) => {
-    setPricePerMedal(val);
-    localStorage.setItem('price_per_medal', val.toString());
+    const safe = Number.isFinite(val) && val >= 0 ? val : 0;
+    setPricePerMedal(safe);
+    localStorage.setItem('price_per_medal', safe.toString());
   };
 
   const [deleteConfirmOrder, setDeleteConfirmOrder] = useState<EngravingOrder | null>(null);
@@ -62,13 +212,75 @@ export default function OperatorDashboard() {
 
   const firestoreOrdersRef = useRef<EngravingOrder[]>([]);
   const localOrdersRef = useRef<EngravingOrder[]>([]);
-  
-  // Track previous count to sound alert on new arrivals
   const prevCountRef = useRef<number>(0);
   const ordersRef = useRef<EngravingOrder[]>([]);
   ordersRef.current = orders;
   const soundEnabledRef = useRef<boolean>(soundEnabled);
   soundEnabledRef.current = soundEnabled;
+
+  const queueSearchRef = useRef<HTMLInputElement>(null);
+  const doubleCheckInputRef = useRef<HTMLInputElement>(null);
+  const configPopoverRef = useRef<HTMLDivElement>(null);
+
+  // Coordinate desktop viewport lock with App shell & WorkspaceShell
+  const setDesktopLocked = headerCtx?.setDesktopLocked;
+  useEffect(() => {
+    if (!setDesktopLocked) return;
+    setDesktopLocked(isDesktop);
+    return () => setDesktopLocked(false);
+  }, [isDesktop, setDesktopLocked]);
+
+  // Network online/offline reactivity
+  useEffect(() => {
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
+
+  // Close pricing/station config popover on Escape or outside click
+  useEffect(() => {
+    if (!showConfigPopover) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (configPopoverRef.current && !configPopoverRef.current.contains(event.target as Node)) {
+        setShowConfigPopover(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowConfigPopover(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [showConfigPopover]);
+
+  const triggerBeepSound = () => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+
+      oscillator.type = 'sine';
+      oscillator.frequency.value = 880;
+      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+
+      oscillator.start();
+      oscillator.stop(audioCtx.currentTime + 0.3);
+    } catch {
+      // Browser autoplay policy may block audio before user gesture.
+    }
+  };
 
   // Unified data blending merger with timestamp-based conflict resolving
   const mergeAndPublish = () => {
@@ -87,39 +299,32 @@ export default function OperatorDashboard() {
       }
     };
 
-    // Populate both sources
     firestoreOrdersRef.current.forEach(insertOrResolve);
     localOrdersRef.current.forEach(insertOrResolve);
 
     const mergedList = Array.from(combinedMap.values());
 
-    // Clean sort: completed at bottom, ready above it, inprogress, newest queued at very top
+    // Sort active laser work first, then queued, then ready, then completed
     mergedList.sort((a, b) => {
-      const orderWeight = {
+      const orderWeight: Record<EngravingStatus, number> = {
         inprogress: 1,
         queued: 2,
         ready: 3,
-        completed: 4
+        completed: 4,
       };
       const weightA = orderWeight[a.status] || 99;
       const weightB = orderWeight[b.status] || 99;
-      
-      if (weightA !== weightB) {
-        return weightA - weightB;
-      }
+
+      if (weightA !== weightB) return weightA - weightB;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
 
-    // Sound notification on actual new additions to merged listings
     if (mergedList.length > prevCountRef.current && prevCountRef.current > 0) {
-      const newlyAdded = mergedList.filter(o => !ordersRef.current.some(exist => exist.id === o.id))[0];
+      const newlyAdded = mergedList.find((o) => !ordersRef.current.some((exist) => exist.id === o.id));
       if (newlyAdded) {
-        setNewOrderAlert(`New Order Loaded: ${newlyAdded.runnerName} [Code: ${newlyAdded.id}]`);
-        setTimeout(() => setNewOrderAlert(null), 5000);
-        
-        if (soundEnabledRef.current) {
-          triggerBeepSound();
-        }
+        setNewOrderAlert(`New order queued: ${newlyAdded.runnerName} (Code ${newlyAdded.id})`);
+        window.setTimeout(() => setNewOrderAlert(null), 5000);
+        if (soundEnabledRef.current) triggerBeepSound();
       }
     }
 
@@ -131,281 +336,303 @@ export default function OperatorDashboard() {
   // 1. Firestore Cloud Database Listener
   useEffect(() => {
     const q = query(collection(db, 'orders'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const ordersList: EngravingOrder[] = [];
-      snapshot.forEach((docSnap) => {
-        ordersList.push(docSnap.data() as EngravingOrder);
-      });
-      
-      firestoreOrdersRef.current = ordersList;
-      mergeAndPublish();
-    }, (error) => {
-      console.warn("Cloud Firestore stream offline or restricted: ", error.message);
-      // We do not freeze UI since offline LAN sync runs in parallel
-    });
-
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const ordersList: EngravingOrder[] = [];
+        snapshot.forEach((docSnap) => {
+          ordersList.push(docSnap.data() as EngravingOrder);
+        });
+        firestoreOrdersRef.current = ordersList;
+        setOrdersError(null);
+        mergeAndPublish();
+      },
+      (error) => {
+        console.warn('Cloud Firestore stream offline or restricted:', error.message);
+        if (localOrdersRef.current.length === 0) {
+          setOrdersError('Cloud sync unavailable. Waiting for local LAN queue or reconnect.');
+        }
+        setLoading(false);
+      },
+    );
     return () => unsubscribe();
   }, []);
 
-  // 2. Offsite LAN Local Express Syner
+  // Event-scoped registration roster listener
   useEffect(() => {
-    const pollLocalServer = async () => {
-      try {
-        const res = await fetch('/api/orders');
-        if (!res.ok) {
-          setLanConnected(false);
-          return;
-        }
-        const data = await res.json();
+    localStorage.setItem('racepulse_engraving_race', selectedRaceId);
+    if (!selectedRaceId) {
+      setEventRunners([]);
+      setEventRunnersLoading(false);
+      setEventRunnersError(null);
+      return;
+    }
+    setEventRunnersLoading(true);
+    setEventRunnersError(null);
+    const unsubscribe = onSnapshot(
+      query(collection(db, 'runners'), where('raceId', '==', selectedRaceId)),
+      (snapshot) => {
+        const runners = snapshot.docs
+          .map((runnerDoc) => runnerDoc.data() as RunnerProfile)
+          .sort((a, b) => a.bibNumber.localeCompare(b.bibNumber, undefined, { numeric: true }));
+        setEventRunners(runners);
+        setEventRunnersLoading(false);
+      },
+      (error) => {
+        console.warn('Engraving event roster listener failed:', error.message);
+        setEventRunners([]);
+        setEventRunnersLoading(false);
+        setEventRunnersError('Could not load event roster. Check network connection or permissions.');
+      },
+    );
+    return () => unsubscribe();
+  }, [selectedRaceId]);
+
+  // 2. Local Express LAN Server Sync
+  useEffect(() => {
+    return startLanJsonPoller({
+      endpoint: '/api/orders',
+      fetcher: authenticatedFetch,
+      activeIntervalMs: 2000,
+      onData: (payload) => {
+        const record = (payload && typeof payload === 'object') ? (payload as { orders?: EngravingOrder[] }) : {};
         setLanConnected(true);
-        localOrdersRef.current = data.orders || [];
+        setOrdersError(null);
+        localOrdersRef.current = record.orders || [];
         mergeAndPublish();
-      } catch (err) {
-        setLanConnected(false);
-      }
-    };
-
-    pollLocalServer();
-    const interval = setInterval(pollLocalServer, 2000); // 2-second fast response polling for operator responsive queue
-
-    return () => clearInterval(interval);
+      },
+      onDisconnected: () => setLanConnected(false),
+    });
   }, []);
 
-  // Synthetic standard beep generator for web compatibility
-  const triggerBeepSound = () => {
-    try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const oscillator = audioCtx.createOscillator();
-      const gainNode = audioCtx.createGain();
-      
-      oscillator.type = 'sine';
-      oscillator.frequency.value = 880; // High frequency beep
-      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
-      
-      oscillator.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-      
-      oscillator.start();
-      oscillator.stop(audioCtx.currentTime + 0.3);
-    } catch (e) {
-      console.log('Audios not allowed or failed to configure: ', e);
-    }
-  };
-
   // Stats calculation
-  const stats: EngravingStats = orders.reduce((acc, order) => {
-    acc.total += 1;
-    acc[order.status] += 1;
-    
-    const dist = order.distance || 'Other';
-    acc.byDistance[dist] = (acc.byDistance[dist] || 0) + 1;
-    
-    return acc;
-  }, {
-    total: 0,
-    queued: 0,
-    inprogress: 0,
-    ready: 0,
-    completed: 0,
-    byDistance: {} as Record<string, number>
-  });
+  const stats: EngravingStats = useMemo(
+    () =>
+      orders.reduce(
+        (acc, order) => {
+          acc.total += 1;
+          acc[order.status] += 1;
+          const dist = order.distance || 'Other';
+          acc.byDistance[dist] = (acc.byDistance[dist] || 0) + 1;
+          return acc;
+        },
+        {
+          total: 0,
+          queued: 0,
+          inprogress: 0,
+          ready: 0,
+          completed: 0,
+          byDistance: {} as Record<string, number>,
+        },
+      ),
+    [orders],
+  );
 
   // Action: Update Order Status
   const handleUpdateStatus = async (orderId: string, nextStatus: EngravingStatus) => {
-    const docPath = `orders/${orderId}`;
     const timestamp = new Date().toISOString();
-    
-    // 1. Cloud write (ignore error if offline)
+
     try {
-      const docRef = doc(db, 'orders', orderId);
-      await updateDoc(docRef, {
+      await updateDoc(doc(db, 'orders', orderId), {
         status: nextStatus,
-        updatedAt: timestamp
+        updatedAt: timestamp,
       });
     } catch (e) {
-      console.warn("Cloud Firestore update deferred or offline (LAN sync operates in parallel):", e);
+      console.warn('Cloud Firestore update deferred or offline:', e);
     }
 
-    // 2. Local LAN server write (for instant offline sync between laptops)
     try {
-      const existingOrder = orders.find(o => o.id === orderId);
+      const existingOrder = orders.find((o) => o.id === orderId);
       if (existingOrder) {
-        const updatedOrder = {
-          ...existingOrder,
-          status: nextStatus,
-          updatedAt: timestamp
-        };
-        await fetch('/api/orders', {
+        await authenticatedFetch('/api/orders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updatedOrder)
+          body: JSON.stringify({ ...existingOrder, status: nextStatus, updatedAt: timestamp }),
         });
-        console.log("LAN Server sync: Updated order status successfully to " + nextStatus);
       }
     } catch (laneErr) {
-      console.warn("LAN status sync skipped (no active local Express backend detected):", laneErr);
+      console.warn('LAN status sync skipped:', laneErr);
     }
   };
 
-  // Action: Trigger Custom Confirmation Deletion
+  // Action: Trigger Confirmation Deletion
   const handleDeleteOrder = (orderId: string, runner: string) => {
-    const found = orders.find(o => o.id === orderId);
+    const found = orders.find((o) => o.id === orderId);
     if (found) {
       setDeleteConfirmOrder(found);
     } else {
+      const now = new Date().toISOString();
       setDeleteConfirmOrder({
         id: orderId,
         runnerName: runner,
         bibNumber: 'N/A',
         distance: 'Unknown',
-        finishingTime: '00:00:00',
+        finishingTime: '00:00:0000000',
         status: 'queued',
-        createdAt: new String(new Date().toISOString()).toString(),
-        updatedAt: new String(new Date().toISOString()).toString()
-      } as EngravingOrder);
+        createdAt: now,
+        updatedAt: now,
+      });
     }
   };
 
-  // Action: Perform Actual Single Order Deletion
+  // Action: Perform Single Order Deletion
   const handleExecuteDeleteOrder = async () => {
     if (!deleteConfirmOrder) return;
     const { id: orderId } = deleteConfirmOrder;
     setDeleteConfirmOrder(null);
+    if (doubleCheckCode.toUpperCase() === orderId.toUpperCase()) {
+      setDoubleCheckCode('');
+    }
 
-    // 1. Cloud delete
     try {
       await deleteDoc(doc(db, 'orders', orderId));
     } catch (e) {
-      console.warn("Cloud Firestore delete offline or deferred:", e);
+      console.warn('Cloud Firestore delete offline or deferred:', e);
     }
 
-    // 2. Local LAN delete
     try {
-      await fetch(`/api/orders/${orderId}`, {
-        method: 'DELETE'
-      });
-      console.log("LAN Server sync: Deleted order offline successfully.");
+      await authenticatedFetch(`/api/orders/${orderId}`, { method: 'DELETE' });
     } catch (laneErr) {
-      console.warn("LAN delete sync skipped:", laneErr);
+      console.warn('LAN delete sync skipped:', laneErr);
     }
   };
 
-  // Action: Trigger Custom Confirmation Purge (Fresh start on new race)
   const handlePurgeDatabase = () => {
+    setShowConfigPopover(false);
     setShowPurgeConfirm(true);
   };
 
-  // Action: Perform Actual Reset/Purge for Fresh Start
   const handleExecutePurgeDatabase = async () => {
     setShowPurgeConfirm(false);
+    setDoubleCheckCode('');
     try {
       setLoading(true);
-      
-      // 1. Cloud purge
-      const q = query(collection(db, 'orders'));
-      const snapshot = await getDocs(q);
+      const snapshot = await getDocs(query(collection(db, 'orders')));
       const batch = writeBatch(db);
-      
-      snapshot.forEach((docSnap) => {
-        batch.delete(docSnap.ref);
-      });
-      
+      snapshot.forEach((docSnap) => batch.delete(docSnap.ref));
       await batch.commit();
     } catch (e) {
-      console.warn("Cloud database purge skipped/offline:", e);
+      console.warn('Cloud database purge skipped/offline:', e);
     }
 
-    // 2. Local LAN express server purge
     try {
-      await fetch('/api/orders/reset', {
-        method: 'POST'
-      });
+      await authenticatedFetch('/api/orders/reset', { method: 'POST' });
     } catch (laneErr) {
-      console.warn("LAN purge sync skipped:", laneErr);
+      console.warn('LAN purge sync skipped:', laneErr);
     } finally {
       setLoading(false);
     }
   };
 
-  // Download orders as CSV perfectly mapped for LightBurn's Variable Text feature
   const handleDownloadCSV = () => {
     if (orders.length === 0) {
-      alert("No active orders to export!");
+      notify({
+        tone: 'info',
+        title: 'No active orders to export',
+        message: 'Scan a runner ticket or wait for queue submissions before exporting a LightBurn CSV.',
+      });
       return;
     }
 
-    // Sort orders: queued first (ready to engrave), then inprogress, then ready, then completed
-    const orderPriority = { queued: 0, inprogress: 1, ready: 2, completed: 3 };
-    const sortedOrders = [...orders].sort((a, b) => orderPriority[a.status] - orderPriority[b.status]);
+    const orderPriority: Record<EngravingStatus, number> = {
+      queued: 0,
+      inprogress: 1,
+      ready: 2,
+      completed: 3,
+    };
+    const sortedOrders = [...orders].sort(
+      (a, b) => orderPriority[a.status] - orderPriority[b.status],
+    );
 
-    // CSV headers to easy bind in LightBurn: RefCode, Name, Bib, Time, Distance, Rank, Inscription, Status
-    const headers = ["Index", "RefCode", "RunnerName", "BibNumber", "FinishingTime", "Distance", "Rank", "CustomInscription", "Status"];
-    
+    const headers = [
+      'Index',
+      'RefCode',
+      'RunnerName',
+      'BibNumber',
+      'FinishingTime',
+      'Distance',
+      'Rank',
+      'CustomInscription',
+      'Status',
+    ];
+
     const rows = sortedOrders.map((order, idx) => [
       idx + 1,
       order.id,
       `"${order.runnerName.replace(/"/g, '""')}"`,
       `"${order.bibNumber.replace(/"/g, '""')}"`,
-      `"${order.finishingTime.replace(/"/g, '""')}"`,
+      `"${formatRaceTime(order.finishingTime).replace(/"/g, '""')}"`,
       `"${order.distance.replace(/"/g, '""')}"`,
       `"${(order.rank || '').replace(/"/g, '""')}"`,
       `"${(order.customInscription || '').replace(/"/g, '""')}"`,
-      order.status
+      order.status,
     ]);
 
-    const csvContent = [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
-    
+    const csvContent = [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `racepulse_lightburn_sync.csv`);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'racepulse_lightburn_sync.csv');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    notify({
+      tone: 'success',
+      title: 'CSV exported',
+      message: `Saved ${sortedOrders.length} orders to racepulse_lightburn_sync.csv.`,
+    });
   };
 
-  // Generate branded PDF report with custom race name
-  const handleGeneratePdfReport = () => {
-    const ordersToExport = pdfReportFilter === 'all' 
-      ? orders 
-      : orders.filter(o => o.status === pdfReportFilter);
+  const handleGeneratePdfReport = async () => {
+    const ordersToExport =
+      pdfReportFilter === 'all' ? orders : orders.filter((o) => o.status === pdfReportFilter);
 
     if (ordersToExport.length === 0) {
-      alert("No orders match the selected filter!");
+      notify({
+        tone: 'info',
+        title: 'No matching orders',
+        message: 'Choose a different status filter or wait for orders before generating a PDF.',
+      });
       return;
     }
 
-    const doc = new jsPDF({ orientation: 'landscape' });
-    
-    // Add Header Banner
-    doc.setFillColor(20, 20, 20);
-    doc.rect(0, 0, 297, 30, 'F');
-    
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(18);
-    doc.setFont('helvetica', 'bold');
-    doc.text(pdfRaceName.toUpperCase() || 'RACE MEDAL ENGRAVING REPORT', 14, 15);
-    
-    doc.setFontSize(10);
-    doc.setTextColor(245, 158, 11); // Amber
-    const dateStr = new Date().toLocaleString();
-    doc.text(`Generated: ${dateStr}   |   Total Athletes: ${ordersToExport.length}   |   Status Filter: ${pdfReportFilter.toUpperCase()}`, 14, 24);
+    const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+      import('jspdf'),
+      import('jspdf-autotable'),
+    ]);
+    const pdfDoc = new jsPDF({ orientation: 'landscape' });
 
-    // Prepare table rows
+    pdfDoc.setFillColor(20, 20, 22);
+    pdfDoc.rect(0, 0, 297, 30, 'F');
+
+    pdfDoc.setTextColor(255, 255, 255);
+    pdfDoc.setFontSize(18);
+    pdfDoc.setFont('helvetica', 'bold');
+    pdfDoc.text(pdfRaceName.toUpperCase() || 'RACE MEDAL ENGRAVING REPORT', 14, 15);
+
+    pdfDoc.setFontSize(10);
+    pdfDoc.setTextColor(255, 98, 89);
+    const dateStr = formatDateTime(new Date());
+    pdfDoc.text(
+      `Generated: ${dateStr}   |   Total Athletes: ${ordersToExport.length}   |   Status Filter: ${pdfReportFilter.toUpperCase()}`,
+      14,
+      24,
+    );
+
     const tableRows = ordersToExport.map((o, index) => [
       index + 1,
       o.bibNumber,
       o.runnerName,
       o.distance,
-      o.finishingTime,
+      formatRaceTime(o.finishingTime),
       o.rank || '-',
       o.customInscription || '-',
-      o.status.toUpperCase()
+      o.status.toUpperCase(),
     ]);
 
-    autoTable(doc, {
+    autoTable(pdfDoc, {
       startY: 36,
       head: [['#', 'Bib', 'Athlete Name', 'Distance', 'Time', 'Rank', 'Inscription', 'Status']],
       body: tableRows,
@@ -420,7 +647,7 @@ export default function OperatorDashboard() {
         4: { cellWidth: 25 },
         5: { cellWidth: 20 },
         6: { cellWidth: 85 },
-        7: { cellWidth: 30 }
+        7: { cellWidth: 30 },
       },
       didParseCell: (data) => {
         if (data.section === 'body' && data.column.index === 7) {
@@ -429,71 +656,86 @@ export default function OperatorDashboard() {
             data.cell.styles.textColor = [16, 185, 129];
             data.cell.styles.fontStyle = 'bold';
           } else if (val === 'INPROGRESS') {
-            data.cell.styles.textColor = [245, 158, 11];
+            data.cell.styles.textColor = [224, 54, 44];
             data.cell.styles.fontStyle = 'bold';
           } else if (val === 'QUEUED') {
-            data.cell.styles.textColor = [99, 102, 241];
+            data.cell.styles.textColor = [180, 83, 9];
           }
         }
-      }
+      },
     });
 
     const sanitizedFileName = (pdfRaceName.trim() || 'Race_Report').replace(/[^a-zA-Z0-9_-]/g, '_');
-    doc.save(`${sanitizedFileName}_Medals_Report.pdf`);
+    pdfDoc.save(`${sanitizedFileName}_Medals_Report.pdf`);
     setShowPdfModal(false);
+    notify({
+      tone: 'success',
+      title: 'PDF report downloaded',
+      message: `Exported ${ordersToExport.length} athlete records.`,
+    });
   };
 
-  // Clipboard Copier Trigger helper
   const handleCopyText = (key: string, value: string) => {
     navigator.clipboard.writeText(value);
-    setCopiedStates(prev => ({ ...prev, [key]: true }));
-    setTimeout(() => {
-      setCopiedStates(prev => ({ ...prev, [key]: false }));
+    setCopiedStates((prev) => ({ ...prev, [key]: true }));
+    window.setTimeout(() => {
+      setCopiedStates((prev) => ({ ...prev, [key]: false }));
     }, 1500);
   };
 
-  // Register a scanned offline QR ticket
+  const handleCopyTSVRow = (order: EngravingOrder) => {
+    const row = [
+      order.runnerName,
+      order.bibNumber,
+      order.distance,
+      formatRaceTime(order.finishingTime),
+      order.rank || '',
+      order.customInscription || '',
+    ].join('\t');
+    handleCopyText(`${order.id}_tsv_all`, row);
+  };
+
   const handleRegisterScannedOrder = async (qrDataText: string) => {
     setQrScanError('');
     setQrScanSuccessMessage('');
     try {
       let parsedOrder: Partial<EngravingOrder> = {};
 
-      if (qrDataText.startsWith("RXPv2|") || qrDataText.includes("|")) {
-        const parts = qrDataText.split("|");
+      if (qrDataText.startsWith('RXPv2|') || qrDataText.includes('|')) {
+        const parts = qrDataText.split('|');
         if (parts.length >= 4) {
           parsedOrder = {
             id: parts[1],
             runnerName: parts[2],
             bibNumber: parts[3],
             distance: parts[4] || 'Marathon',
-            finishingTime: parts[5] || '00:00:00',
+            finishingTime: formatRaceTime(parts[5] || '00:00:0000000'),
             rank: parts[6] || '',
             customInscription: parts[7] || '',
-            status: 'queued'
+            status: 'queued',
           };
         } else {
-          throw new Error("Invalid or abbreviated pipe QR Sync format.");
+          throw new Error('Invalid or abbreviated pipe QR Sync format.');
         }
       } else {
         const data = JSON.parse(qrDataText);
         if (!data.id || !data.rn || !data.bn) {
-          throw new Error("Invalid or incompatible QR Sync Ticket format.");
+          throw new Error('Invalid or incompatible QR Sync Ticket format.');
         }
         parsedOrder = {
           id: data.id,
           runnerName: data.rn,
           bibNumber: data.bn,
           distance: data.ds || 'Marathon',
-          finishingTime: data.ft || '00:00:00',
+          finishingTime: formatRaceTime(data.ft || '00:00:0000000'),
           rank: data.rk || '',
           customInscription: data.ci || '',
-          status: data.st || 'queued'
+          status: data.st || 'queued',
         };
       }
 
       if (!parsedOrder.id || !parsedOrder.runnerName || !parsedOrder.bibNumber) {
-        throw new Error("Missing critical runner details in QR code.");
+        throw new Error('Missing critical runner details in QR code.');
       }
 
       const timestamp = new Date().toISOString();
@@ -502,7 +744,7 @@ export default function OperatorDashboard() {
         runnerName: parsedOrder.runnerName,
         bibNumber: parsedOrder.bibNumber,
         distance: parsedOrder.distance || 'Marathon',
-        finishingTime: parsedOrder.finishingTime || '00:00:00',
+        finishingTime: formatRaceTime(parsedOrder.finishingTime || '00:00:0000000'),
         rank: parsedOrder.rank || '',
         customInscription: parsedOrder.customInscription || '',
         status: parsedOrder.status || 'queued',
@@ -510,33 +752,33 @@ export default function OperatorDashboard() {
         updatedAt: timestamp,
       };
 
-      // Check if order already exists in current lists to prevent silent overwrite
-      const exists = orders.some(o => o.id === scannedOrder.id);
+      const exists = orders.some((o) => o.id === scannedOrder.id);
       let targetId = scannedOrder.id;
       if (exists) {
-        const confirmOverwrite = window.confirm(`Order code "${targetId}" ("${scannedOrder.runnerName}") is already in the queue. Do you want to overwrite it with this scanned sync data? OK to overwrite, Cancel to add as a new entry with dynamic suffix.`);
+        const confirmOverwrite = await confirm({
+          title: `Duplicate code ${targetId}`,
+          message: `Order "${targetId}" (${scannedOrder.runnerName}) is already in the queue. Overwrite the existing record, or add it as a separate suffixed entry?`,
+          confirmLabel: 'Overwrite existing',
+          cancelLabel: 'Add separate entry',
+        });
         if (!confirmOverwrite) {
           targetId = `${scannedOrder.id}-${Math.floor(100 + Math.random() * 900)}`;
           scannedOrder.id = targetId;
         }
       }
 
-      // Save using setDoc so it writes to local IndexDB cache first (works 100% offline!)
-      const { setDoc, doc } = await import('firebase/firestore');
       await setDoc(doc(db, 'orders', targetId), scannedOrder);
-
-      // Trigger standard incoming beep alert manually
       triggerBeepSound();
-
-      setQrScanSuccessMessage(`Successfully loaded ticket #${targetId} for "${scannedOrder.runnerName}" into queue!`);
+      setDoubleCheckCode(targetId);
+      setQrScanSuccessMessage(`Loaded ticket #${targetId} for "${scannedOrder.runnerName}" into queue.`);
       return true;
-    } catch (err: any) {
-      setQrScanError(err.message || "Failed to parse coupon details.");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to parse coupon details.';
+      setQrScanError(msg);
       return false;
     }
   };
 
-  // Bulk Export orders to JSON
   const handleExportOfflineBackup = () => {
     setBackupSuccessMessage('');
     setBackupErrorMessage('');
@@ -552,13 +794,12 @@ export default function OperatorDashboard() {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      setBackupSuccessMessage('Backup exported successfully to downloads!');
-    } catch (err: any) {
-      setBackupErrorMessage(err.message || 'Error occurred during export.');
+      setBackupSuccessMessage('Backup exported to downloads.');
+    } catch (err: unknown) {
+      setBackupErrorMessage(err instanceof Error ? err.message : 'Error occurred during export.');
     }
   };
 
-  // Bulk Import orders from JSON
   const handleImportOfflineBackup = async (file: File) => {
     setBackupSuccessMessage('');
     setBackupErrorMessage('');
@@ -566,918 +807,1767 @@ export default function OperatorDashboard() {
       const text = await file.text();
       const imported = JSON.parse(text);
       if (!Array.isArray(imported)) {
-        throw new Error("Invalid file content. Expected an array of engraving orders.");
+        throw new Error('Invalid file content. Expected an array of engraving orders.');
       }
 
       let count = 0;
-      const { setDoc } = await import('firebase/firestore');
-      
       for (const item of imported) {
-        if (!item.id || !item.runnerName || !item.bibNumber) {
-          continue; // skip corrupt items
-        }
-        
-        // Save using setDoc so it merges into indexDB and Firestore seamlessly
+        if (!item.id || !item.runnerName || !item.bibNumber) continue;
         await setDoc(doc(db, 'orders', item.id), {
           ...item,
           status: item.status || 'queued',
           createdAt: item.createdAt || new Date().toISOString(),
-          updatedAt: item.updatedAt || new Date().toISOString()
+          updatedAt: item.updatedAt || new Date().toISOString(),
         });
         count++;
       }
 
       triggerBeepSound();
-      setBackupSuccessMessage(`Successfully imported and synchronized ${count} orders from JSON file!`);
-    } catch (err: any) {
-      setBackupErrorMessage(err.message || "Failed to load backup file.");
+      setBackupSuccessMessage(`Imported and synchronized ${count} orders from JSON.`);
+    } catch (err: unknown) {
+      setBackupErrorMessage(err instanceof Error ? err.message : 'Failed to load backup file.');
     }
   };
 
-  // Copy Complete TSV row format (Runner Name, Bib, Distance, Time, Rank, Inscription)
-  const handleCopyTSVRow = (order: EngravingOrder) => {
-    const row = [
-      order.runnerName,
-      order.bibNumber,
-      order.distance,
-      order.finishingTime,
-      order.rank || '',
-      order.customInscription || ''
-    ].join('\t'); // Tab separated is optimal for Excel paste!
-    
-    handleCopyText(`${order.id}_tsv_all`, row);
-  };
+  const filteredOrders = useMemo(
+    () =>
+      orders.filter((o) => {
+        const needle = searchTerm.toLowerCase();
+        const matchSearch =
+          o.id.toLowerCase().includes(needle) ||
+          o.runnerName.toLowerCase().includes(needle) ||
+          o.bibNumber.toLowerCase().includes(needle);
+        const matchStatus = statusFilter === 'all' ? true : o.status === statusFilter;
+        return matchSearch && matchStatus;
+      }),
+    [orders, searchTerm, statusFilter],
+  );
 
-  // Filters application
-  const filteredOrders = orders.filter(o => {
-    // Search match
-    const matchSearch = 
-      o.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      o.runnerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      o.bibNumber.includes(searchTerm);
-      
-    // Status match
-    const matchStatus = statusFilter === 'all' ? true : o.status === statusFilter;
-    
-    return matchSearch && matchStatus;
-  });
+  const selectedRace = races.find((race) => race.id === selectedRaceId);
+  const filteredEventRunners = useMemo(
+    () =>
+      eventRunners.filter((runner) => {
+        const needle = runnerSearch.trim().toLowerCase();
+        if (!needle) return true;
+        return (
+          runner.fullName.toLowerCase().includes(needle) ||
+          runner.bibNumber.toLowerCase().includes(needle) ||
+          runner.distance.toLowerCase().includes(needle)
+        );
+      }),
+    [eventRunners, runnerSearch],
+  );
 
-  // Isolated matched record for double check input
-  const foundDoubleCheckOrder = doubleCheckCode.trim() 
-    ? orders.find(o => o.id.toUpperCase() === doubleCheckCode.trim().toUpperCase())
+  const sortedRaces = useMemo(
+    () => [...races].sort((a, b) => b.date.localeCompare(a.date)),
+    [races],
+  );
+
+  const foundDoubleCheckOrder = doubleCheckCode.trim()
+    ? orders.find((o) => o.id.toUpperCase() === doubleCheckCode.trim().toUpperCase())
     : null;
 
-  return (
-    <div id="operator_flow_main" className="w-full max-w-7xl mx-auto px-4 py-4 space-y-6">
-      
-      {/* Alert bar for live arrivals */}
-      {newOrderAlert && (
-        <div className="bg-gradient-to-r from-amber-600 to-amber-500 text-black px-5 py-3 rounded-[20px] font-black font-display shadow-2xl border border-amber-400 flex items-center justify-between text-xs tracking-wider uppercase animate-bounce">
-          <div className="flex items-center gap-2">
-            <span className="p-1.5 bg-black text-amber-500 rounded-lg">🔔</span>
-            <span>{newOrderAlert}</span>
-          </div>
-          <button onClick={() => setNewOrderAlert(null)} className="text-black hover:text-white font-black text-sm ml-4">✕</button>
-        </div>
-      )}
+  const activeOrderIndex = foundDoubleCheckOrder
+    ? filteredOrders.findIndex((o) => o.id === foundDoubleCheckOrder.id)
+    : -1;
 
-      {/* Header Operator Info */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between glass-panel hero-glow px-4 sm:px-6 py-5 gap-4 animate-fadeIn">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] tracking-widest font-extrabold text-amber-500 font-display bg-amber-500/10 px-2.5 py-1 rounded-full uppercase border border-amber-500/20">Engraver Control</span>
-            <span className="h-4 w-px bg-[var(--surface-hover)]"></span>
-            <div className="flex items-center gap-2">
-              <span className={`w-2 h-2 rounded-full ${typeof navigator !== 'undefined' && navigator.onLine ? 'bg-green-500 animate-pulse' : 'bg-rose-500 animate-ping'}`}></span>
-              <span className="text-xs text-[var(--text-secondary)] font-bold uppercase tracking-wider font-mono flex items-center gap-1.5">
-                {typeof navigator !== 'undefined' && navigator.onLine ? (
-                  <>
-                    <Wifi className="w-3.5 h-3.5 text-green-550" />
-                    ONLINE CO-PROCESSING
-                  </>
-                ) : (
-                  <>
-                    <WifiOff className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
-                    OFFLINE SYNC MODE
-                  </>
-                )}
-              </span>
-            </div>
-          </div>
-          <h1 className="heading-float text-2xl font-black tracking-tight font-display text-[var(--text-primary)] mt-1.5 uppercase">Medal Engraving Command Center</h1>
-          <p className="text-xs text-[var(--text-secondary)] mt-1">Copy-paste data directly to laser machine and handle runner statuses with zero miskey errors.</p>
-        </div>
+  const stepActiveOrder = (delta: -1 | 1) => {
+    if (filteredOrders.length === 0) return;
+    if (activeOrderIndex === -1) {
+      setDoubleCheckCode(filteredOrders[0].id);
+      return;
+    }
+    const nextIdx = (activeOrderIndex + delta + filteredOrders.length) % filteredOrders.length;
+    setDoubleCheckCode(filteredOrders[nextIdx].id);
+  };
 
-        {/* Action Controls right */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* LightBurn Guide Button */}
+  const openQrModal = () => {
+    setQrScanError('');
+    setQrScanSuccessMessage('');
+    setShowQrScanModal(true);
+  };
+
+  const openPdfModal = () => {
+    if (selectedRace?.name) {
+      setPdfRaceName(selectedRace.name);
+    }
+    setShowPdfModal(true);
+  };
+
+  const openBackupModal = () => {
+    setBackupSuccessMessage('');
+    setBackupErrorMessage('');
+    setShowBackupModal(true);
+  };
+
+  const toggleBuzzer = () => {
+    setSoundEnabled((prev) => !prev);
+    triggerBeepSound();
+  };
+
+  // Single-key desktop command shortcuts (active only when not typing in a field or modal)
+  useEffect(() => {
+    const anyModalOpen =
+      showQrScanModal ||
+      showPdfModal ||
+      showBackupModal ||
+      showLightBurnModal ||
+      Boolean(deleteConfirmOrder) ||
+      showPurgeConfirm;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (anyModalOpen || event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      if (key === 'q') {
+        event.preventDefault();
+        openQrModal();
+      } else if (key === 'e' && can('engraving.export')) {
+        event.preventDefault();
+        handleDownloadCSV();
+      } else if (key === 'p' && can('engraving.export')) {
+        event.preventDefault();
+        openPdfModal();
+      } else if (key === 'b') {
+        event.preventDefault();
+        toggleBuzzer();
+      } else if (key === 'o' && can('engraving.backup')) {
+        event.preventDefault();
+        openBackupModal();
+      } else if (key === '/') {
+        event.preventDefault();
+        queueSearchRef.current?.focus();
+      } else if (key === 'd') {
+        event.preventDefault();
+        doubleCheckInputRef.current?.focus();
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
+
+  // Desktop Header Left Context Switcher (Portaled next to RACEPULSEPH logo in App.tsx)
+  const headerLeftMarkup = (
+    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+      <span className="h-5 w-px bg-white/15 shrink-0" aria-hidden="true" />
+      <div className="flex items-center gap-2 min-w-0">
+        <Calendar className="w-3.5 h-3.5 text-red-400 shrink-0" aria-hidden="true" />
+        <label htmlFor="header_event_select" className="sr-only">
+          Active race event for engraving
+        </label>
+        <select
+          id="header_event_select"
+          value={selectedRaceId}
+          onChange={(event) => {
+            setSelectedRaceId(event.target.value);
+            setRunnerSearch('');
+          }}
+          className="h-9 min-w-[160px] max-w-[210px] xl:max-w-[300px] rounded-lg border border-white/15 bg-white/10 px-2.5 text-xs font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 truncate"
+        >
+          <option value="" className="bg-[#141416] text-white">
+            All Events (Global Queue)
+          </option>
+          {sortedRaces.map((race) => (
+            <option key={race.id} value={race.id} className="bg-[#141416] text-white">
+              {race.name} ({race.date})
+            </option>
+          ))}
+        </select>
+        {selectedRaceId && (
           <button
-            onClick={() => setShowLightBurnModal(true)}
-            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-[20px] bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-default)] text-[var(--text-primary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)] transition duration-150 uppercase tracking-wider"
-            title="Open interactive manual for LightBurn Variable Text integration"
-          >
-            <HelpCircle className="w-4 h-4 text-amber-500" /> Guide
-          </button>
-
-          {/* Export CSV for LightBurn */}
-          <button
-            onClick={handleDownloadCSV}
-            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-[20px] bg-[var(--surface-card)]/72 backdrop-blur-2xl hover:bg-[var(--surface-inset)]/75 backdrop-blur-md text-amber-500 border border-[var(--border-default)] hover:border-[var(--border-default)] font-extrabold transition duration-150 uppercase tracking-wider active:scale-95"
-            title="Download formatted CSV file to sync with LightBurn's Variable Text pane"
-          >
-            <FileDown className="w-4 h-4" /> Export CSV
-          </button>
-
-          {/* Generate PDF Report Button */}
-          <button
-            onClick={() => setShowPdfModal(true)}
-            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-[20px] bg-[var(--surface-card)]/72 backdrop-blur-2xl hover:bg-[var(--surface-inset)]/75 backdrop-blur-md text-red-400 border border-[var(--border-default)] hover:border-[var(--border-default)] font-extrabold transition duration-150 uppercase tracking-wider active:scale-95"
-            title="Generate and download a printable PDF report of registered athletes and medal status"
-          >
-            <FileText className="w-4 h-4 text-red-400" /> PDF Report
-          </button>
-
-          {/* Scan Offline QR Ticket Button */}
-          <button
-            onClick={() => {
-              setQrScanError('');
-              setQrScanSuccessMessage('');
-              setShowQrScanModal(true);
-            }}
-            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-[20px] bg-violet-600 hover:bg-violet-500 text-white border border-violet-700 font-extrabold transition duration-150 uppercase tracking-wider active:scale-95"
-            title="Activate laptop webcam to scan an offline runner's QR Sync Ticket"
-          >
-            <QrCode className="w-4 h-4 text-violet-200" /> Scan QR
-          </button>
-
-          {/* Offline Sync Backup Buttons */}
-          <button
-            onClick={() => {
-              setBackupSuccessMessage('');
-              setBackupErrorMessage('');
-              setShowBackupModal(true);
-            }}
-            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-[20px] bg-[var(--surface-card)]/72 backdrop-blur-2xl hover:bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-default)] hover:border-[var(--border-default)] text-green-500 font-extrabold transition duration-150 uppercase tracking-wider active:scale-95"
-            title="Backup, export or import the entire queue for dual-laptop completely offline operations"
-          >
-            <DownloadCloud className="w-4 h-4 text-green-550" /> Offline Backup
-          </button>
-
-          {/* Beep toggle */}
-          <button
-            onClick={() => {
-              setSoundEnabled(!soundEnabled);
-              triggerBeepSound();
-            }}
-            className={`flex items-center gap-2 text-xs font-bold px-3 py-2 rounded-[20px] border transition duration-150 uppercase tracking-wider ${
-              soundEnabled 
-                ? 'bg-amber-500/10 border-amber-500/30 text-amber-500' 
-                : 'bg-[var(--surface-inset)]/75 backdrop-blur-md border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
+            type="button"
+            onClick={() => setMasterView((prev) => (prev === 'roster' ? 'queue' : 'roster'))}
+            aria-pressed={masterView === 'roster'}
+            title={masterView === 'roster' ? 'Return to engraving queue' : 'View selected race roster'}
+            className={`hidden xl:inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-semibold transition-colors whitespace-nowrap ${
+              masterView === 'roster'
+                ? 'bg-red-700 text-white border-red-500/40'
+                : 'bg-white/10 text-zinc-200 border-white/15 hover:bg-white/15 hover:text-white'
             }`}
-            title="Toggle buzzer sound when new customer submits engraving request"
           >
-            {soundEnabled ? <Volume2 className="w-4 h-4 text-amber-500" /> : <VolumeX className="w-4 h-4 text-[var(--text-secondary)]" />}
-            {soundEnabled ? "Buzzer On" : "Buzzer Off"}
+            <Users className="w-3.5 h-3.5" aria-hidden="true" />
+            <span>Roster: {eventRunners.length}</span>
           </button>
-
-          {/* Purge / Clear DB */}
-          <button
-            onClick={handlePurgeDatabase}
-            className="text-xs text-[var(--text-secondary)] hover:text-red-400 hover:bg-red-950/20 border border-[var(--border-default)] hover:border-red-900 font-bold px-3.5 py-2 rounded-[20px] transition duration-150 flex items-center gap-1.5 uppercase tracking-wider"
-            title="Deletes all database documents for a completely fresh queue."
-          >
-            <Trash2 className="w-3.5 h-3.5" /> Purge DB
-          </button>
-
-        </div>
+        )}
       </div>
 
-      {/* Tally and Metrics section */}
-      <div id="operator_stats_grid" className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-4">
-        
-        {/* Total Avails */}
-        <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-subtle)] rounded-[20px] p-4 shadow-sm flex items-center gap-3">
-          <div className="p-3 bg-amber-500/10 text-amber-500 rounded-lg">
-            <TrendingUp className="w-5 h-5" />
-          </div>
-          <div>
-            <span className="block text-[9px] uppercase font-extrabold text-[var(--text-secondary)] tracking-wider">Total Availed</span>
-            <span className="text-xl font-black font-mono text-[var(--text-primary)] leading-none">{stats.total}</span>
-            <span className="text-[9px] block text-[var(--text-secondary)] mt-0.5 font-medium">Recorded Submissions</span>
-          </div>
-        </div>
-
-        {/* Queued */}
-        <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-subtle)] rounded-[20px] p-4 shadow-sm flex items-center gap-3">
-          <div className="p-3 bg-amber-500/10 text-amber-500 rounded-lg">
-            <Clock className="w-5 h-5 animate-pulse" />
-          </div>
-          <div>
-            <span className="block text-[9px] uppercase font-extrabold text-[var(--text-secondary)] tracking-wider">Queue Backlog</span>
-            <span className="text-xl font-black font-mono text-amber-500 leading-none">{stats.queued}</span>
-            <span className="text-[9px] block text-[var(--text-secondary)] mt-0.5 font-medium">Awaiting Laser Cut</span>
-          </div>
-        </div>
-
-        {/* In Progress */}
-        <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-subtle)] rounded-[20px] p-4 shadow-sm flex items-center gap-3">
-          <div className="p-3 bg-orange-500/10 text-orange-500 rounded-lg animate-pulse">
-            <Play className="w-5 h-5 fill-orange-500" />
-          </div>
-          <div>
-            <span className="block text-[9px] uppercase font-extrabold text-[var(--text-secondary)] tracking-wider">Laser Active</span>
-            <span className="text-xl font-black font-mono text-orange-500 leading-none">{stats.inprogress}</span>
-            <span className="text-[9px] block text-[var(--text-secondary)] mt-0.5 font-medium">Engraving Ingress</span>
-          </div>
-        </div>
-
-        {/* Ready */}
-        <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-subtle)] rounded-[20px] p-4 shadow-sm flex items-center gap-3">
-          <div className="p-3 bg-blue-500/10 text-blue-400 rounded-lg">
-            <Sparkles className="w-5 h-5 text-blue-400" />
-          </div>
-          <div>
-            <span className="block text-[9px] uppercase font-extrabold text-[var(--text-secondary)] tracking-wider">Ready for P/U</span>
-            <span className="text-xl font-black font-mono text-blue-400 leading-none">{stats.ready}</span>
-            <span className="text-[9px] block text-[var(--text-secondary)] mt-0.5 font-medium">Standing by Cabin</span>
-          </div>
-        </div>
-
-        {/* Completed */}
-        <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-subtle)] rounded-[20px] p-4 shadow-sm flex items-center gap-3">
-          <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-lg">
-            <CheckSquare className="w-5 h-5" />
-          </div>
-          <div>
-            <span className="block text-[9px] uppercase font-extrabold text-[var(--text-secondary)] tracking-wider">Handed Over</span>
-            <span className="text-xl font-black font-mono text-emerald-400 leading-none">{stats.completed}</span>
-            <span className="text-[9px] block text-[var(--text-secondary)] mt-0.5 font-medium">Complete / Closed</span>
-          </div>
-        </div>
-
-        {/* Price Per Medal Input */}
-        <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-subtle)] rounded-[20px] p-4 shadow-sm flex items-center gap-3">
-          <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-lg">
-            <Coins className="w-5 h-5 text-indigo-400" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <span className="block text-[9px] uppercase font-extrabold text-[var(--text-secondary)] tracking-wider">Price per Medal</span>
-            <div className="flex items-center gap-1 mt-0.5">
-              <span className="text-sm font-black font-mono text-amber-500">₱</span>
-              <input
-                type="number"
-                min="0"
-                value={pricePerMedal === 0 ? '' : pricePerMedal}
-                onChange={(e) => {
-                  const val = parseFloat(e.target.value);
-                  handlePriceChange(isNaN(val) ? 0 : val);
-                }}
-                className="w-full bg-[var(--surface-inset)]/75 backdrop-blur-md text-[var(--text-primary)] border border-[var(--border-default)] rounded px-1.5 py-0.5 text-sm font-black font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
-                placeholder="0"
-              />
-            </div>
-            <span className="text-[9px] block text-[var(--text-secondary)] mt-1 font-medium leading-none">Setup pricing</span>
-          </div>
-        </div>
-
-        {/* Total Earnings */}
-        <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-subtle)] rounded-[20px] p-4 shadow-sm flex items-center gap-3 col-span-2 sm:col-span-1">
-          <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-lg">
-            <DollarSign className="w-5 h-5 text-emerald-400" />
-          </div>
-          <div>
-            <span className="block text-[9px] uppercase font-extrabold text-indigo-400 tracking-wider">Total Earnings</span>
-            <span className="text-lg font-black font-mono text-emerald-400 leading-none block mt-0.5">
-              ₱{(stats.completed * pricePerMedal).toLocaleString()}
-            </span>
-            <span className="text-[9px] block text-[var(--text-secondary)] mt-1 font-mono leading-none">
-              Potential: ₱{(stats.total * pricePerMedal).toLocaleString()}
-            </span>
-          </div>
-        </div>
-
+      {/* Static telemetry link status (no pulsing loops) */}
+      <div
+        className="hidden xl:flex items-center gap-2 px-2.5 h-8 rounded-lg border border-white/10 bg-white/5 text-[11px] font-mono text-zinc-200 shrink-0"
+        title={
+          isOnline
+            ? lanConnected
+              ? 'Cloud Firestore and local LAN co-processing active'
+              : 'Cloud Firestore active'
+            : 'Offline local sync mode'
+        }
+      >
+        {isOnline ? (
+          <Wifi className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
+        ) : (
+          <WifiOff className="w-3.5 h-3.5 text-red-400" aria-hidden="true" />
+        )}
+        <span>{isOnline ? 'ONLINE' : 'OFFLINE'}</span>
+        {lanConnected && (
+          <span className="border-l border-white/15 pl-2 text-emerald-300">LAN</span>
+        )}
       </div>
+    </div>
+  );
 
-      {/* Double-Check Code Lookup isolated verification */}
-      <div id="double_check_terminal" className="bg-[var(--surface-card)]/72 backdrop-blur-2xl text-[var(--text-primary)] rounded-[26px] p-5 shadow-2xl border border-[var(--border-subtle)]">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-[var(--border-subtle)] pb-4 mb-4">
-          <div>
-            <h2 className="text-sm font-bold font-display text-amber-500 flex items-center gap-2 uppercase tracking-wide">
-              <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
-              Double-Check isolated Terminal
-            </h2>
-            <p className="text-xs text-[var(--text-secondary)] mt-0.5">Type or search any short ref code. Displays values in grand fonts to double check spelling.</p>
-          </div>
-          <div className="relative w-full md:w-56">
-            <input
-              type="text"
-              placeholder="ENTER CODE (E.G. A29B)"
-              maxLength={4}
-              value={doubleCheckCode}
-              onChange={(e) => setDoubleCheckCode(e.target.value.toUpperCase())}
-              className="w-full bg-[var(--surface-inset)]/75 backdrop-blur-md text-[var(--text-primary)] border border-[var(--border-default)] rounded-[20px] px-3.5 py-2.5 text-xs font-bold font-mono tracking-widest placeholder-[var(--text-muted)] focus:outline-none focus:ring-1 focus:ring-amber-500"
-            />
-            {doubleCheckCode && (
-              <button 
-                onClick={() => setDoubleCheckCode('')}
-                className="absolute right-3.5 top-3 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-        </div>
+  // Desktop Header Right Action Cluster (Portaled beside Theme Toggle in App.tsx)
+  const headerRightMarkup = (
+    <div className="flex items-center gap-1.5" role="toolbar" aria-label="Engraving command actions">
+      <button
+        type="button"
+        onClick={openQrModal}
+        title="Scan runner QR ticket (Shortcut: Q)"
+        className="h-9 px-2.5 xl:px-3 rounded-lg bg-red-700 hover:bg-red-600 text-white border border-red-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
+      >
+        <QrCode className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+        <span>Scan QR</span>
+        <kbd className="hidden xl:inline-flex items-center justify-center px-1.5 h-4 text-[10px] font-mono bg-black/30 rounded border border-white/20 text-white/90">
+          Q
+        </kbd>
+      </button>
 
-        {/* Found Result Panel */}
-        {foundDoubleCheckOrder ? (
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center bg-[var(--surface-inset)]/75 backdrop-blur-md border border-amber-500/20 rounded-[20px] p-4 animate-fadeIn">
-            
-            {/* Short Code badge */}
-            <div className="md:col-span-2 text-center md:border-r border-[var(--border-subtle)] pr-2">
-              <span className="text-[9px] text-[var(--text-secondary)] font-bold block uppercase tracking-wider">Matched Ref</span>
-              <span className="text-4xl font-mono font-black text-amber-500 block my-1">{foundDoubleCheckOrder.id}</span>
-              <span className="text-[10px] py-1 px-2.5 bg-amber-500 text-black rounded-lg inline-block font-black uppercase">
-                {foundDoubleCheckOrder.status}
+      <button
+        type="button"
+        hidden={!can('engraving.export')}
+        onClick={handleDownloadCSV}
+        title="Export LightBurn Variable-Text CSV (Shortcut: E)"
+        className="h-9 px-2.5 rounded-lg border border-white/15 bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
+      >
+        <FileDown className="w-3.5 h-3.5 text-zinc-200 shrink-0" aria-hidden="true" />
+        <span>CSV</span>
+        <kbd className="hidden xl:inline-flex items-center justify-center px-1.5 h-4 text-[10px] font-mono bg-black/30 rounded border border-white/15 text-zinc-200">
+          E
+        </kbd>
+      </button>
+
+      <button
+        type="button"
+        hidden={!can('engraving.export')}
+        onClick={openPdfModal}
+        title="Generate PDF report (Shortcut: P)"
+        className="h-9 px-2.5 rounded-lg border border-white/15 bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
+      >
+        <FileText className="w-3.5 h-3.5 text-red-400 shrink-0" aria-hidden="true" />
+        <span>PDF</span>
+        <kbd className="hidden xl:inline-flex items-center justify-center px-1.5 h-4 text-[10px] font-mono bg-black/30 rounded border border-white/15 text-zinc-200">
+          P
+        </kbd>
+      </button>
+
+      <button
+        type="button"
+        onClick={toggleBuzzer}
+        aria-pressed={soundEnabled}
+        title="Toggle new-order buzzer sound (Shortcut: B)"
+        className={`h-9 px-2.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap ${
+          soundEnabled
+            ? 'bg-emerald-700/80 border-emerald-500/40 text-white'
+            : 'bg-white/10 border-white/15 text-zinc-200 hover:bg-white/15 hover:text-white'
+        }`}
+      >
+        {soundEnabled ? (
+          <Volume2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+        ) : (
+          <VolumeX className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+        )}
+        <span className="hidden xl:inline">{soundEnabled ? 'Buzzer On' : 'Buzzer'}</span>
+        <kbd className="hidden xl:inline-flex items-center justify-center px-1.5 h-4 text-[10px] font-mono bg-black/30 rounded border border-white/15 text-zinc-200">
+          B
+        </kbd>
+      </button>
+
+      <button
+        type="button"
+        hidden={!can('engraving.backup')}
+        onClick={openBackupModal}
+        title="Offline JSON backup & dual-laptop sync (Shortcut: O)"
+        className="h-9 px-2.5 rounded-lg border border-white/15 bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
+      >
+        <DownloadCloud className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />
+        <span className="hidden xl:inline">Offline</span>
+        <kbd className="hidden xl:inline-flex items-center justify-center px-1.5 h-4 text-[10px] font-mono bg-black/30 rounded border border-white/15 text-zinc-200">
+          O
+        </kbd>
+      </button>
+
+      {/* Setup Pricing & Station Settings Config Popover (ISO 11064-5: separates editable config from read-only telemetry) */}
+      <div ref={configPopoverRef} className="relative">
+        <button
+          type="button"
+          onClick={() => setShowConfigPopover((prev) => !prev)}
+          aria-expanded={showConfigPopover}
+          aria-haspopup="dialog"
+          title="Station configuration and medal pricing"
+          className={`h-9 px-2.5 rounded-lg border text-xs font-semibold font-mono flex items-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap ${
+            showConfigPopover
+              ? 'bg-white/20 border-white/30 text-white'
+              : 'bg-white/10 border-white/15 text-zinc-100 hover:bg-white/15'
+          }`}
+        >
+          <Coins className="w-3.5 h-3.5 text-red-400 shrink-0" aria-hidden="true" />
+          <span>₱{pricePerMedal}</span>
+          <SlidersHorizontal className="w-3 h-3 text-zinc-300 shrink-0" aria-hidden="true" />
+        </button>
+
+        {showConfigPopover && (
+          <div
+            role="dialog"
+            aria-label="Engraving station configuration"
+            className="absolute right-0 top-full mt-2 z-50 w-72 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] p-4 shadow-2xl space-y-4"
+          >
+            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+                Station Config
               </span>
+              <button
+                type="button"
+                onClick={() => setShowConfigPopover(false)}
+                aria-label="Close station config"
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
+              >
+                <X className="w-4 h-4" aria-hidden="true" />
+              </button>
             </div>
 
-            {/* Huge copier display fields */}
-            <div className="md:col-span-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              
-              {/* Runner name */}
-              <div className="bg-[var(--surface-card)]/60 border border-[var(--border-subtle)] rounded-[20px] p-3 relative group">
-                <span className="block text-[9px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">1. Runner Full Name</span>
-                <span className="block text-xl font-black text-[var(--text-primary)] truncate pr-7 font-display mt-0.5">{foundDoubleCheckOrder.runnerName}</span>
-                <button
-                  onClick={() => handleCopyText('lookup_name', foundDoubleCheckOrder.runnerName)}
-                  className="absolute right-2.5 bottom-2.5 text-[var(--text-secondary)] hover:text-amber-500 p-1.5 bg-[var(--surface-inset)]/75 backdrop-blur-md hover:bg-[var(--surface-hover)] rounded transition"
-                  title="Copy Name"
-                >
-                  {copiedStates['lookup_name'] ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                </button>
+            <div>
+              <label
+                htmlFor="pricing_per_medal_input"
+                className="block text-xs font-semibold text-[var(--text-primary)] mb-1.5"
+              >
+                Setup Pricing (PHP per medal)
+              </label>
+              <div className="flex items-center gap-2 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 h-10 focus-within:ring-2 focus-within:ring-red-600 dark:focus-within:ring-red-400">
+                <span className="text-sm font-mono font-semibold text-red-700 dark:text-red-400">₱</span>
+                <input
+                  id="pricing_per_medal_input"
+                  type="number"
+                  min="0"
+                  value={pricePerMedal === 0 ? '' : pricePerMedal}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    handlePriceChange(Number.isNaN(val) ? 0 : val);
+                  }}
+                  placeholder="150"
+                  className="w-full bg-transparent text-sm font-mono font-semibold text-[var(--text-primary)] focus:outline-none"
+                />
               </div>
+              <p className="text-xs text-[var(--text-secondary)] mt-1">
+                Used to compute completed and potential earnings in the telemetry strip.
+              </p>
+            </div>
 
-              {/* Finishing Time */}
-              <div className="bg-[var(--surface-card)]/60 border border-[var(--border-subtle)] rounded-[20px] p-3 relative group">
-                <span className="block text-[9px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">2. Finishing Time</span>
-                <span className="block text-xl font-mono font-black text-amber-500 pr-7 mt-0.5">{foundDoubleCheckOrder.finishingTime}</span>
-                <button
-                  onClick={() => handleCopyText('lookup_time', foundDoubleCheckOrder.finishingTime)}
-                  className="absolute right-2.5 bottom-2.5 text-[var(--text-secondary)] hover:text-amber-500 p-1.5 bg-[var(--surface-inset)]/75 backdrop-blur-md hover:bg-[var(--surface-hover)] rounded transition"
-                  title="Copy Time"
-                >
-                  {copiedStates['lookup_time'] ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                </button>
-              </div>
-
-              {/* Bib / Distance */}
-              <div className="bg-[var(--surface-card)]/60 border border-[var(--border-subtle)] rounded-[20px] p-3 relative group">
-                <span className="block text-[9px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">3. Distance & Bib</span>
-                <span className="block text-sm font-extrabold text-[var(--text-primary)] pr-6 truncate mt-1.5">
-                  #{foundDoubleCheckOrder.bibNumber} &bull; <strong className="text-amber-400 font-bold">{foundDoubleCheckOrder.distance}</strong>
+            {Object.keys(stats.byDistance).length > 0 && (
+              <div className="border-t border-[var(--border-subtle)] pt-3 space-y-1.5">
+                <span className="block text-xs font-semibold text-[var(--text-secondary)]">
+                  Distance Breakdown
                 </span>
-                <div className="absolute right-2.5 bottom-2.5 flex gap-1">
-                  <button
-                    onClick={() => handleCopyText('lookup_bib', foundDoubleCheckOrder.bibNumber)}
-                    className="text-[9px] font-black py-0.5 px-2 bg-[var(--surface-inset)]/75 backdrop-blur-md text-[var(--text-primary)] hover:text-amber-500 rounded border border-[var(--border-default)] transition"
-                    title="Copy Bib"
-                  >
-                    Bib
-                  </button>
-                  <button
-                    onClick={() => handleCopyText('lookup_dist', foundDoubleCheckOrder.distance)}
-                    className="text-[9px] font-black py-0.5 px-2 bg-[var(--surface-inset)]/75 backdrop-blur-md text-[var(--text-primary)] hover:text-amber-500 rounded border border-[var(--border-default)] transition"
-                    title="Copy Dist"
-                  >
-                    Dist
-                  </button>
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(stats.byDistance).map(([distName, distCount]) => (
+                    <span
+                      key={distName}
+                      className="inline-flex items-center gap-1 rounded-md border border-[var(--border-default)] bg-[var(--surface-inset)] px-2 py-0.5 text-xs font-mono text-[var(--text-primary)]"
+                    >
+                      <span>{distName}</span>
+                      <span className="font-semibold text-red-700 dark:text-red-400">{distCount}</span>
+                    </span>
+                  ))}
                 </div>
               </div>
+            )}
 
-              {/* Rank (Optional) */}
-              <div className="bg-[var(--surface-card)]/60 border border-[var(--border-subtle)] rounded-[20px] p-3 relative group col-span-1 sm:col-span-2 md:col-span-1">
-                <span className="block text-[9px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">4. Official Rank</span>
-                <span className="block text-sm font-black text-amber-200 truncate mt-1">
-                  {foundDoubleCheckOrder.rank || 'N/A (-)'}
-                </span>
-                {foundDoubleCheckOrder.rank && (
-                  <button
-                    onClick={() => handleCopyText('lookup_rank', foundDoubleCheckOrder.rank!)}
-                    className="absolute right-2.5 bottom-2.5 text-[var(--text-secondary)] hover:text-amber-500 p-1.5 bg-[var(--surface-inset)]/75 backdrop-blur-md hover:bg-[var(--surface-hover)] rounded transition"
-                    title="Copy Rank"
-                  >
-                    {copiedStates['lookup_rank'] ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                  </button>
-                )}
-              </div>
-
-              {/* Custom inscription */}
-              <div className="bg-[var(--surface-card)]/60 border border-[var(--border-subtle)] rounded-[20px] p-3 relative group col-span-1 sm:col-span-2">
-                <span className="block text-[9px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">5. Custom Inscription Text</span>
-                <span className="block text-xs italic text-[var(--text-primary)] mt-1.5 max-w-[90%] truncate">
-                  {foundDoubleCheckOrder.customInscription ? `"${foundDoubleCheckOrder.customInscription}"` : 'No custom inscription text (-)'}
-                </span>
-                {foundDoubleCheckOrder.customInscription && (
-                  <button
-                    onClick={() => handleCopyText('lookup_inscription', foundDoubleCheckOrder.customInscription!)}
-                    className="absolute right-2.5 bottom-2.5 text-[var(--text-secondary)] hover:text-amber-500 p-1.5 bg-[var(--surface-inset)]/75 backdrop-blur-md hover:bg-[var(--surface-hover)] rounded transition"
-                    title="Copy Inscription"
-                  >
-                    {copiedStates['lookup_inscription'] ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                  </button>
-                )}
-              </div>
-
-            </div>
-
-            {/* Instant excel copy row */}
-            <div className="md:col-span-2 flex flex-col gap-2 mt-4 md:mt-0">
+            <div className="border-t border-[var(--border-subtle)] pt-3 flex flex-col gap-2">
               <button
-                onClick={() => handleCopyTSVRow(foundDoubleCheckOrder)}
-                className="w-full text-xs font-black font-display uppercase tracking-widest py-3 bg-amber-500 hover:bg-amber-400 text-black rounded-[20px] transition flex items-center justify-center gap-1 border-b-2 border-amber-700 active:scale-95"
-                title="Copies all fields as tab-separated values to paste row into software"
+                type="button"
+                hidden={!can('engraving.export')}
+                onClick={() => {
+                  setShowConfigPopover(false);
+                  setShowLightBurnModal(true);
+                }}
+                className="w-full min-h-10 px-3 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] flex items-center justify-between"
               >
-                {copiedStates[`${foundDoubleCheckOrder.id}_tsv_all`] ? (
-                  <>
-                    <Check className="w-4 h-4 text-black" /> Copied Row!
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-4 h-4 text-black" /> Copy Row (TSV)
-                  </>
-                )}
+                <span className="flex items-center gap-2">
+                  <HelpCircle className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" />
+                  LightBurn CSV Guide
+                </span>
+                <ChevronRight className="w-3.5 h-3.5 text-[var(--text-secondary)]" aria-hidden="true" />
               </button>
-              
-              <div className="flex gap-1.5">
-                {foundDoubleCheckOrder.status === 'queued' && (
-                  <button
-                    onClick={() => handleUpdateStatus(foundDoubleCheckOrder.id, 'inprogress')}
-                    className="flex-1 text-[9px] font-bold py-2 bg-orange-600 hover:bg-orange-500 rounded-lg transition text-white uppercase text-center"
-                  >
-                    Engrave
-                  </button>
-                )}
-                {foundDoubleCheckOrder.status === 'inprogress' && (
-                  <button
-                    onClick={() => handleUpdateStatus(foundDoubleCheckOrder.id, 'ready')}
-                    className="flex-1 text-[9px] font-bold py-2 bg-blue-600 hover:bg-blue-500 rounded-lg transition text-white uppercase text-center"
-                  >
-                    Mark Ready
-                  </button>
-                )}
-                {foundDoubleCheckOrder.status === 'ready' && (
-                  <button
-                    onClick={() => handleUpdateStatus(foundDoubleCheckOrder.id, 'completed')}
-                    className="flex-1 text-[9px] font-bold py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg transition text-white uppercase text-center"
-                  >
-                    Complete
-                  </button>
-                )}
-              </div>
-            </div>
 
-          </div>
-        ) : (
-          <div className="bg-[var(--surface-inset)]/75 backdrop-blur-md p-4 rounded-[20px] text-center text-xs text-[var(--text-secondary)] font-sans border border-[var(--border-subtle)] leading-normal">
-            {doubleCheckCode.trim() 
-              ? `No active order found matched code: "${doubleCheckCode.toUpperCase()}"` 
-              : "READY FOR DUAL SCREEN VERIFICATION. ENTER OR SCAN RUNNER'S PASSCODE TO ALIGN EXACT NAME AND PREVENTS MISTAKES."
-            }
+              <button
+                type="button"
+                hidden={!authority}
+                onClick={handlePurgeDatabase}
+                className="w-full min-h-10 px-3 rounded-lg border border-red-600/30 bg-red-600/10 hover:bg-red-700 hover:text-white text-xs font-semibold text-red-700 dark:text-red-400 flex items-center gap-2 transition-colors"
+              >
+                <Trash2 className="w-4 h-4 shrink-0" aria-hidden="true" />
+                <span>Purge Queue Database...</span>
+              </button>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Orders Filter & Search bar */}
-      <div className="flex flex-col md:flex-row items-center justify-between border border-[var(--border-subtle)] bg-[var(--surface-card)]/72 backdrop-blur-2xl rounded-[20px] p-4 shadow-xl gap-4">
-        
-        {/* Search Input Left */}
-        <div className="relative w-full md:w-80">
-          <Search className="w-4 h-4 text-[var(--text-secondary)] absolute left-3.5 top-3.5" />
-          <input
-            type="text"
-            placeholder="Search Name, Bib, or Code..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-default)] rounded-[20px] pl-10 pr-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-1 focus:ring-amber-500 transition"
-          />
-        </div>
+      <button
+        type="button"
+        hidden={!can('engraving.export')}
+        onClick={() => setShowLightBurnModal(true)}
+        aria-label="Open LightBurn Variable-Text guide"
+        title="LightBurn Variable-Text integration guide"
+        className="h-9 w-9 rounded-lg border border-white/15 bg-white/10 hover:bg-white/15 text-zinc-200 hover:text-white flex items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 shrink-0"
+      >
+        <HelpCircle className="w-4 h-4" aria-hidden="true" />
+      </button>
+    </div>
+  );
 
-        {/* Tab Filters right */}
-        <div className="flex items-center gap-1 w-full md:w-auto overflow-x-auto py-1">
-          <span className="text-[var(--text-secondary)] text-xs font-bold mr-2.5 whitespace-nowrap"><Filter className="w-3.5 h-3.5 inline mr-1 text-amber-500" /> STATUS:</span>
-          
-          {(['all', 'queued', 'inprogress', 'ready', 'completed'] as const).map((filterOpt) => (
-            <button
-              key={filterOpt}
-              onClick={() => setStatusFilter(filterOpt)}
-              className={`text-xs font-bold px-3 py-1.5 rounded-lg border uppercase whitespace-nowrap transition-all ${
-                statusFilter === filterOpt
-                  ? filterOpt === 'queued' ? 'bg-amber-500/10 border-amber-500/30 text-amber-500 font-bold'
-                    : filterOpt === 'inprogress' ? 'bg-orange-500/10 border-orange-500/30 text-orange-400 font-bold animate-pulse'
-                    : filterOpt === 'ready' ? 'bg-blue-500/10 border-blue-500/30 text-blue-400 font-bold'
-                    : filterOpt === 'completed' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-bold'
-                    : 'bg-amber-500 border-amber-500 text-black font-extrabold'
-                  : 'bg-[var(--surface-inset)]/75 backdrop-blur-md border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--surface-inset)]/75 backdrop-blur-md hover:text-[var(--text-primary)]'
-              }`}
-            >
-              {filterOpt === 'all' ? 'All Orders' : filterOpt}
-              <span className="ml-1.5 px-1.5 py-[1px] bg-[var(--surface-inset)]/75 backdrop-blur-md rounded font-mono text-[9px] text-[var(--text-secondary)]">
-                {filterOpt === 'all' ? stats.total 
-                  : filterOpt === 'queued' ? stats.queued 
-                  : filterOpt === 'inprogress' ? stats.inprogress 
-                  : filterOpt === 'ready' ? stats.ready 
-                  : stats.completed
-                }
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
+  // Action transition helper for active order
+  const renderPrimaryStatusButton = (order: EngravingOrder, compact = false) => {
+    if (!can('engraving.status')) return null;
+    const baseClass = compact
+      ? 'h-8 px-2.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-colors whitespace-nowrap'
+      : 'flex-1 min-h-11 px-4 rounded-xl text-xs font-semibold uppercase tracking-wider inline-flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap';
 
-      {/* Orders List Container */}
-      {loading ? (
-        <div className="flex flex-col items-center justify-center py-20 bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-subtle)] rounded-[26px] space-y-3">
-          <RefreshCw className="w-10 h-10 text-amber-500 animate-spin" />
-          <p className="text-xs font-bold text-[var(--text-secondary)] font-display uppercase tracking-widest">Loading Live Registry...</p>
-        </div>
-      ) : filteredOrders.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-subtle)] rounded-[26px] text-center px-4">
-          <BadgeMinus className="w-12 h-12 text-[var(--text-muted)] mb-2" />
-          <h3 className="text-sm font-bold text-[var(--text-primary)] font-display uppercase tracking-wider">No Engravings Found</h3>
-          <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-sm">
-            Try adjusting your search criteria, selecting another filter, or wait for runners to submit.
-          </p>
-        </div>
-      ) : (
-        <div id="orders_cards_list" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredOrders.map((order) => {
-            const isTsvCopied = copiedStates[`${order.id}_tsv_all`];
-            
-            // Status-specific card accent colors
-            const accents = {
-              queued: 'border-l-4 border-l-amber-500 bg-amber-550/5',
-              inprogress: 'border-l-4 border-l-orange-500 bg-orange-550/10 shadow-[0_0_15px_rgba(249,115,22,0.05)]',
-              ready: 'border-l-4 border-l-blue-500 bg-blue-550/5',
-              completed: 'border-l-4 border-l-[var(--border-default)] bg-[var(--surface-card)]/10 opacity-60 hover:opacity-100 transition duration-150'
-            };
+    if (order.status === 'queued') {
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            void handleUpdateStatus(order.id, 'inprogress');
+          }}
+          className={`${baseClass} bg-red-700 hover:bg-red-600 text-white`}
+        >
+          <Play className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+          <span>Start Laser</span>
+        </button>
+      );
+    }
+    if (order.status === 'inprogress') {
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            void handleUpdateStatus(order.id, 'ready');
+          }}
+          className={`${baseClass} bg-blue-700 hover:bg-blue-600 text-white`}
+        >
+          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+          <span>Mark Ready</span>
+        </button>
+      );
+    }
+    if (order.status === 'ready') {
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            void handleUpdateStatus(order.id, 'completed');
+          }}
+          className={`${baseClass} bg-emerald-700 hover:bg-emerald-600 text-white`}
+        >
+          <CheckSquare className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+          <span>Picked Up</span>
+        </button>
+      );
+    }
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          void handleUpdateStatus(order.id, 'queued');
+        }}
+        className={`${baseClass} border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)]`}
+      >
+        <RefreshCw className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+        <span>Requeue</span>
+      </button>
+    );
+  };
 
-            const statusBadges = {
-              queued: 'bg-amber-500/10 text-amber-505 border-amber-500/20',
-              inprogress: 'bg-orange-500/10 text-orange-400 border-orange-500/20 animate-pulse',
-              ready: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-              completed: 'bg-[var(--surface-hover)] text-[var(--text-secondary)] border-[var(--border-default)]'
-            };
+  // Telemetry Strip (6 read-only status & revenue KPIs in 48px horizontal ribbon)
+  const telemetryItems: {
+    key: 'all' | EngravingStatus;
+    label: string;
+    value: number;
+    accentClass: string;
+  }[] = [
+    { key: 'all', label: 'Recorded', value: stats.total, accentClass: 'text-[var(--text-primary)]' },
+    {
+      key: 'queued',
+      label: 'Awaiting Cut',
+      value: stats.queued,
+      accentClass: 'text-yellow-700 dark:text-yellow-400',
+    },
+    {
+      key: 'inprogress',
+      label: 'Laser Active',
+      value: stats.inprogress,
+      accentClass: 'text-red-700 dark:text-red-400',
+    },
+    {
+      key: 'ready',
+      label: 'Ready for P/U',
+      value: stats.ready,
+      accentClass: 'text-blue-700 dark:text-blue-400',
+    },
+    {
+      key: 'completed',
+      label: 'Handed Over',
+      value: stats.completed,
+      accentClass: 'text-emerald-700 dark:text-emerald-400',
+    },
+  ];
 
-            return (
-              <div 
-                key={order.id} 
-                className={`bg-[var(--surface-card)]/90 rounded-[20px] border border-[var(--border-subtle)] p-5 flex flex-col justify-between shadow-xl relative overflow-hidden transition-all duration-200 hover:border-[var(--border-default)] ${accents[order.status]}`}
+  const distanceEntries = Object.entries(stats.byDistance);
+
+  return (
+    <div
+      id="operator_flow_main"
+      className="w-full flex flex-col lg:flex-1 lg:min-h-0 lg:overflow-hidden"
+    >
+      {/* Semantic H1 for screen readers without consuming vertical space above the fold */}
+      <h1 className="sr-only">Medal Engraving Command Center</h1>
+
+      {/* Portaled Desktop Global Header Controls */}
+      {isDesktop && headerCtx?.leftSlotEl && createPortal(headerLeftMarkup, headerCtx.leftSlotEl)}
+      {isDesktop && headerCtx?.rightSlotEl && createPortal(headerRightMarkup, headerCtx.rightSlotEl)}
+
+      {/* Mobile / Tablet Responsive Action & Event Bar (< 1024px) */}
+      {!isDesktop && (
+        <div className="space-y-2 mb-2">
+          <div className="glass-panel p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-lg font-display font-semibold text-[var(--text-primary)]">
+                  Medal Engraving Command
+                </h2>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  {isOnline ? 'Online sync active' : 'Offline sync mode'}
+                  {lanConnected ? ' · LAN connected' : ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={openQrModal}
+                className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5"
               >
-                
-                {/* Upper row: ID and Status badges */}
-                <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3 mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[9px] font-bold text-[var(--text-secondary)] font-mono">CODE</span>
-                    <span 
-                      onClick={() => setDoubleCheckCode(order.id)}
-                      className="text-lg font-black font-mono text-amber-500 hover:bg-amber-500/10 px-2 py-0.5 rounded cursor-pointer transition border border-dashed border-amber-500/25"
-                      title="Click to double check this record in deep isolated panel"
+                <QrCode className="w-4 h-4" aria-hidden="true" /> Scan QR
+              </button>
+            </div>
+
+            <div>
+              <label
+                htmlFor="mobile_event_select"
+                className="block text-xs font-semibold text-[var(--text-secondary)] mb-1"
+              >
+                Race event
+              </label>
+              <select
+                id="mobile_event_select"
+                value={selectedRaceId}
+                onChange={(event) => {
+                  setSelectedRaceId(event.target.value);
+                  setRunnerSearch('');
+                }}
+                className="w-full min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-sm font-semibold text-[var(--text-primary)]"
+              >
+                <option value="">All Events (Global Queue)</option>
+                {sortedRaces.map((race) => (
+                  <option key={race.id} value={race.id}>
+                    {race.name} ({race.date})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                hidden={!can('engraving.export')}
+                onClick={handleDownloadCSV}
+                className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)] flex items-center gap-1.5"
+              >
+                <FileDown className="w-3.5 h-3.5" aria-hidden="true" /> Export CSV
+              </button>
+              <button
+                type="button"
+                hidden={!can('engraving.export')}
+                onClick={openPdfModal}
+                className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)] flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" /> PDF
+              </button>
+              <button
+                type="button"
+                onClick={toggleBuzzer}
+                aria-pressed={soundEnabled}
+                className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)] flex items-center gap-1.5"
+              >
+                {soundEnabled ? <Volume2 className="w-3.5 h-3.5" aria-hidden="true" /> : <VolumeX className="w-3.5 h-3.5" aria-hidden="true" />}
+                {soundEnabled ? 'Buzzer On' : 'Buzzer Off'}
+              </button>
+              <button
+                type="button"
+                hidden={!can('engraving.backup')}
+                onClick={openBackupModal}
+                className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)] flex items-center gap-1.5"
+              >
+                <DownloadCloud className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" aria-hidden="true" /> Offline
+              </button>
+              <div className="flex items-center gap-1.5 ml-auto">
+                <label htmlFor="mobile_price_input" className="text-xs font-semibold text-[var(--text-secondary)]">
+                  ₱
+                </label>
+                <input
+                  id="mobile_price_input"
+                  type="number"
+                  min="0"
+                  aria-label="Price per medal in PHP"
+                  value={pricePerMedal === 0 ? '' : pricePerMedal}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    handlePriceChange(Number.isNaN(val) ? 0 : val);
+                  }}
+                  className="w-20 min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 text-sm font-mono font-semibold text-[var(--text-primary)]"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Arrival Inline Toast Banner (non-bouncing) */}
+      {newOrderAlert && (
+        <div
+          role="status"
+          className="shrink-0 bg-red-700 text-white px-4 py-2 border-b border-red-800 flex items-center justify-between text-xs font-semibold"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <Bell className="w-4 h-4 shrink-0" aria-hidden="true" />
+            <span className="truncate">{newOrderAlert}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setNewOrderAlert(null)}
+            aria-label="Dismiss new order alert"
+            className="p-1 rounded hover:bg-black/20"
+          >
+            <X className="w-3.5 h-3.5" aria-hidden="true" />
+          </button>
+        </div>
+      )}
+
+      {/* Compact 48px Telemetry Strip directly beneath Top Header (ISO 11064-5: read-only telemetry) */}
+      <section
+        id="operator_stats_grid"
+        aria-label="Engraving queue telemetry"
+        className="shrink-0 border border-[var(--border-default)] lg:border-x-0 lg:border-t-0 rounded-2xl lg:rounded-none bg-[var(--surface-card)] mb-2 lg:mb-0 lg:h-12 px-3 sm:px-4 py-2 lg:py-0 flex flex-wrap lg:flex-nowrap items-center justify-between gap-2 lg:gap-4 lg:overflow-x-auto"
+      >
+        <div className="flex flex-wrap lg:flex-nowrap items-center gap-1.5 sm:gap-2 min-w-0">
+          {telemetryItems.map((item) => {
+            const active = masterView === 'queue' && statusFilter === item.key;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => {
+                  setMasterView('queue');
+                  setStatusFilter(item.key);
+                }}
+                aria-pressed={active}
+                className={`h-8 px-2.5 rounded-lg border text-xs font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+                  active
+                    ? 'border-red-600 bg-red-50 dark:bg-red-950/40 text-[var(--text-primary)]'
+                    : 'border-transparent hover:border-[var(--border-subtle)] hover:bg-[var(--surface-hover)] text-[var(--text-secondary)]'
+                }`}
+              >
+                <span className="font-normal">{item.label}</span>
+                <span className={`font-mono font-semibold tabular-nums ${item.accentClass}`}>
+                  <AnimatedMetricValue
+                    value={item.value}
+                    loading={loading}
+                    skeletonWidthClass="w-6"
+                    skeletonHeightClass="h-3.5"
+                  />
+                </span>
+              </button>
+            );
+          })}
+
+          <span className="hidden lg:block h-4 w-px bg-[var(--border-subtle)] mx-1 shrink-0" aria-hidden="true" />
+
+          {/* Read-only Revenue Summary */}
+          <div className="h-8 px-2.5 rounded-lg bg-[var(--surface-inset)] border border-[var(--border-subtle)] inline-flex items-center gap-2 text-xs whitespace-nowrap">
+            <span className="text-[var(--text-secondary)]">Earned</span>
+            <span className="font-mono font-semibold text-emerald-700 dark:text-emerald-400">
+              <AnimatedMetricValue
+                value={stats.completed * pricePerMedal}
+                loading={loading}
+                format={(v) => `₱${v.toLocaleString()}`}
+                skeletonWidthClass="w-14"
+                skeletonHeightClass="h-3.5"
+              />
+            </span>
+            <span className="text-[var(--text-secondary)] hidden sm:inline font-mono">
+              / <AnimatedMetricValue
+                value={stats.total * pricePerMedal}
+                loading={loading}
+                format={(v) => `₱${v.toLocaleString()} pot.`}
+                skeletonWidthClass="w-16"
+                skeletonHeightClass="h-3.5"
+              />
+            </span>
+          </div>
+        </div>
+
+        {/* Inline Distance Tallies (desktop xl+) */}
+        {distanceEntries.length > 0 && (
+          <div
+            aria-label="Orders by race distance"
+            className="hidden xl:flex items-center gap-1.5 shrink-0 text-xs font-mono text-[var(--text-secondary)]"
+          >
+            <BarChart2 className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+            {distanceEntries.slice(0, 4).map(([distName, distCount]) => (
+              <span
+                key={distName}
+                className="px-2 py-0.5 rounded border border-[var(--border-subtle)] bg-[var(--surface-inset)] text-[var(--text-primary)]"
+              >
+                {distName} {distCount}
+              </span>
+            ))}
+            {distanceEntries.length > 4 && (
+              <button
+                type="button"
+                onClick={() => setShowConfigPopover(true)}
+                className="px-1.5 py-0.5 rounded hover:bg-[var(--surface-hover)] text-xs font-semibold text-red-700 dark:text-red-400"
+              >
+                +{distanceEntries.length - 4}
+              </button>
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* Master-Detail Split-Screen Workspace (65% Queue Table Left / 35% Double-Check Detail Dock Right) */}
+      <div className="flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-[minmax(0,65fr)_minmax(0,35fr)] gap-4 lg:gap-0">
+        {/* LEFT MASTER PANE (65% Width): Search, Status Filters & Full-Height Scrollable Queue Table */}
+        <section
+          aria-label="Order queue and event roster"
+          className="flex flex-col min-h-0 lg:h-full bg-[var(--surface-page)] rounded-2xl lg:rounded-none border border-[var(--border-default)] lg:border-y-0 lg:border-l-0 lg:border-r overflow-hidden"
+        >
+          {/* Compact Queue Toolbar */}
+          <div className="shrink-0 px-3 sm:px-4 py-2.5 border-b border-[var(--border-default)] bg-[var(--surface-card)] flex flex-col xl:flex-row xl:items-center xl:justify-between gap-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 min-w-0 xl:flex-1">
+              {/* View Switcher: Order Queue vs Event Roster */}
+              <div
+                role="tablist"
+                aria-label="Master list view"
+                className="inline-flex self-start rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] p-0.5 shrink-0"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={masterView === 'queue'}
+                  onClick={() => setMasterView('queue')}
+                  className={`min-h-11 sm:min-h-9 lg:h-8 px-3 sm:px-2.5 rounded-md text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${
+                    masterView === 'queue'
+                      ? 'bg-red-700 text-white'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  <ListOrdered className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>Queue ({orders.length})</span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={masterView === 'roster'}
+                  onClick={() => setMasterView('roster')}
+                  className={`min-h-11 sm:min-h-9 lg:h-8 px-3 sm:px-2.5 rounded-md text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${
+                    masterView === 'roster'
+                      ? 'bg-red-700 text-white'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>Roster ({selectedRaceId ? eventRunners.length : 0})</span>
+                </button>
+              </div>
+
+              {/* Search Input */}
+              <div className="relative w-full sm:flex-1 sm:min-w-[180px] xl:max-w-sm">
+                <Search
+                  className="w-3.5 h-3.5 text-[var(--text-secondary)] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                  aria-hidden="true"
+                />
+                <label htmlFor="queue_master_search" className="sr-only">
+                  {masterView === 'queue' ? 'Search engraving queue' : 'Search event roster'}
+                </label>
+                <input
+                  ref={queueSearchRef}
+                  id="queue_master_search"
+                  type="text"
+                  placeholder={
+                    masterView === 'queue'
+                      ? 'Search name, bib, or code... (/)'
+                      : 'Find runner, bib, or distance...'
+                  }
+                  value={masterView === 'queue' ? searchTerm : runnerSearch}
+                  onChange={(e) =>
+                    masterView === 'queue'
+                      ? setSearchTerm(e.target.value)
+                      : setRunnerSearch(e.target.value)
+                  }
+                  className="w-full h-11 sm:h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] pl-8 pr-8 text-xs font-semibold text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400"
+                />
+                {(masterView === 'queue' ? searchTerm : runnerSearch) && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      masterView === 'queue' ? setSearchTerm('') : setRunnerSearch('')
+                    }
+                    aria-label="Clear search"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                  >
+                    <X className="w-3.5 h-3.5" aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Status Filter Pills (Queue Mode) */}
+            {masterView === 'queue' && (
+              <div className="flex items-center gap-1.5 overflow-x-auto racepulse-horizontal-scroll touch-pan-x max-w-full shrink-0 py-0.5" role="group" aria-label="Filter queue by status">
+                {(['all', 'queued', 'inprogress', 'ready', 'completed'] as const).map((filterOpt) => {
+                  const active = statusFilter === filterOpt;
+                  const count =
+                    filterOpt === 'all'
+                      ? stats.total
+                      : filterOpt === 'queued'
+                        ? stats.queued
+                        : filterOpt === 'inprogress'
+                          ? stats.inprogress
+                          : filterOpt === 'ready'
+                            ? stats.ready
+                            : stats.completed;
+                  const label =
+                    filterOpt === 'all' ? 'All' : STATUS_META[filterOpt].shortLabel;
+
+                  return (
+                    <button
+                      key={filterOpt}
+                      type="button"
+                      onClick={() => setStatusFilter(filterOpt)}
+                      aria-pressed={active}
+                      className={`min-h-11 sm:min-h-9 lg:h-8 px-3 sm:px-2.5 rounded-lg border text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
+                        active
+                          ? 'bg-red-700 border-red-700 text-white'
+                          : 'bg-[var(--surface-inset)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
+                      }`}
                     >
-                      {order.id}
+                      <span>{label}</span>
+                      <span
+                        className={`font-mono text-[11px] ${
+                          active ? 'text-white/90' : 'text-[var(--text-primary)]'
+                        }`}
+                      >
+                        <AnimatedMetricValue
+                          value={count}
+                          loading={loading}
+                          skeletonWidthClass="w-5"
+                          skeletonHeightClass="h-3"
+                        />
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Scrollable Queue or Roster Content */}
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            {masterView === 'roster' ? (
+              !selectedRaceId ? (
+                <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+                  <Flag className="w-8 h-8 text-red-700 dark:text-red-400 mb-2" aria-hidden="true" />
+                  <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+                    No race event selected
+                  </h2>
+                  <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-sm">
+                    Select a race event in the top header bar to inspect its registered runner roster.
+                  </p>
+                </div>
+              ) : eventRunnersLoading ? (
+                <div role="status" aria-label="Loading event roster" className="p-4 space-y-2.5">
+                  {[0, 1, 2, 3].map((idx) => (
+                    <div key={idx} className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-2.5">
+                      <ValueSkeleton widthClass="w-40" heightClass="h-4" />
+                      <ValueSkeleton widthClass="w-16" heightClass="h-4" />
+                    </div>
+                  ))}
+                </div>
+              ) : eventRunnersError ? (
+                <div role="alert" className="flex flex-col items-center justify-center py-16 px-4 text-center">
+                  <AlertTriangle className="w-8 h-8 text-red-700 dark:text-red-400 mb-2" aria-hidden="true" />
+                  <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+                    Roster unavailable
+                  </h2>
+                  <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-sm">{eventRunnersError}</p>
+                </div>
+              ) : filteredEventRunners.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+                  <Users className="w-8 h-8 text-[var(--text-secondary)] mb-2" aria-hidden="true" />
+                  <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+                    {eventRunners.length ? 'No matching runners' : 'No registered runners yet'}
+                  </h2>
+                  <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-sm">
+                    {eventRunners.length
+                      ? `No runners in ${selectedRace?.name || 'this event'} match "${runnerSearch}".`
+                      : 'Runners registered for this race will appear here automatically.'}
+                  </p>
+                  {runnerSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setRunnerSearch('')}
+                      className="mt-3 h-9 px-3 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]"
+                    >
+                      Clear search
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse">
+                  <thead className="sticky top-0 z-10 bg-[var(--surface-inset)] border-b border-[var(--border-default)] text-xs font-semibold text-[var(--text-secondary)]">
+                    <tr>
+                      <th className="py-2.5 px-4">Bib #</th>
+                      <th className="py-2.5 px-4">Runner Name</th>
+                      <th className="py-2.5 px-4">Distance</th>
+                      <th className="py-2.5 px-4">Category</th>
+                      <th className="py-2.5 px-4 text-right">Copy</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--border-subtle)] text-sm">
+                    {filteredEventRunners.map((runner) => {
+                      const isCopied = copiedStates[`runner_${runner.uid}`];
+                      return (
+                        <tr key={runner.uid} className="hover:bg-[var(--surface-hover)]/60">
+                          <td className="py-2.5 px-4 font-mono font-semibold text-red-700 dark:text-red-400 whitespace-nowrap">
+                            #{runner.bibNumber}
+                          </td>
+                          <td className="py-2.5 px-4 font-semibold text-[var(--text-primary)]">
+                            {runner.fullName || 'Free runner slot'}
+                          </td>
+                          <td className="py-2.5 px-4 text-xs font-semibold text-[var(--text-secondary)] whitespace-nowrap">
+                            {runner.distance}
+                          </td>
+                          <td className="py-2.5 px-4 text-xs text-[var(--text-secondary)] uppercase">
+                            {runner.entryCategory || 'solo'}
+                          </td>
+                          <td className="py-2.5 px-4 text-right">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleCopyText(
+                                  `runner_${runner.uid}`,
+                                  `${runner.fullName}\t${runner.bibNumber}\t${runner.distance}`,
+                                )
+                              }
+                              aria-label={`Copy ${runner.fullName} details`}
+                              className="h-8 px-2.5 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-1"
+                            >
+                              {isCopied ? (
+                                <>
+                                  <Check className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
+                                  <span>Copied</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+                                  <span>Copy</span>
+                                </>
+                              )}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )
+            ) : loading ? (
+              <div role="status" className="flex flex-col items-center justify-center py-20 gap-2 text-xs font-semibold text-[var(--text-secondary)]">
+                <RefreshCw className="w-6 h-6 text-red-700 dark:text-red-400 animate-spin" aria-hidden="true" />
+                <span>Loading live engraving queue...</span>
+              </div>
+            ) : ordersError && filteredOrders.length === 0 ? (
+              <div role="alert" className="flex flex-col items-center justify-center py-16 px-4 text-center">
+                <AlertTriangle className="w-8 h-8 text-red-700 dark:text-red-400 mb-2" aria-hidden="true" />
+                <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+                  Queue connection interrupted
+                </h2>
+                <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-sm">{ordersError}</p>
+                <button
+                  type="button"
+                  onClick={openQrModal}
+                  className="mt-3 h-9 px-3 rounded-lg bg-red-700 text-white text-xs font-semibold"
+                >
+                  Scan offline QR ticket
+                </button>
+              </div>
+            ) : filteredOrders.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+                <ListOrdered className="w-8 h-8 text-[var(--text-secondary)] mb-2" aria-hidden="true" />
+                <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+                  {orders.length === 0 ? 'Engraving queue is empty' : 'No matching orders'}
+                </h2>
+                <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-sm">
+                  {orders.length === 0
+                    ? 'Scan a runner QR ticket using Scan QR (Q) or wait for incoming booth submissions.'
+                    : 'No orders match the current search term or status filter.'}
+                </p>
+                {(searchTerm || statusFilter !== 'all') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchTerm('');
+                      setStatusFilter('all');
+                    }}
+                    className="mt-3 h-9 px-3 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]"
+                  >
+                    Reset filters
+                  </button>
+                )}
+              </div>
+            ) : !isDesktop ? (
+              /* Mobile / Tablet Compact Card List (< 1024px) */
+              <div id="orders_cards_list" className="p-3 space-y-3">
+                {filteredOrders.map((order) => {
+                  const meta = STATUS_META[order.status];
+                  const isSelected = foundDoubleCheckOrder?.id === order.id;
+                  const isTsvCopied = copiedStates[`${order.id}_tsv_all`];
+
+                  return (
+                    <div
+                      key={order.id}
+                      onClick={() => setDoubleCheckCode(order.id)}
+                      className={`rounded-2xl border border-[var(--border-default)] border-l-4 ${meta.rowAccent} bg-[var(--surface-card)] p-4 space-y-3 transition-colors ${
+                        isSelected ? 'ring-2 ring-red-600' : ''
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDoubleCheckCode(order.id);
+                          }}
+                          className="font-mono text-sm font-semibold px-2.5 py-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] text-red-700 dark:text-red-400"
+                        >
+                          {order.id}
+                        </button>
+                        <span
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-xs font-semibold ${meta.badgeClass}`}
+                        >
+                          <StatusIcon status={order.status} />
+                          <span>{meta.label}</span>
+                        </span>
+                      </div>
+
+                      <div>
+                        <p className="text-base font-display font-semibold text-[var(--text-primary)]">
+                          {order.runnerName}
+                        </p>
+                        <p className="text-xs text-[var(--text-secondary)] mt-0.5 font-mono">
+                          Bib #{order.bibNumber} · {order.distance} · {formatRaceTime(order.finishingTime)}
+                        </p>
+                        {order.customInscription && (
+                          <p className="text-xs text-[var(--text-secondary)] mt-1 italic">
+                            "{order.customInscription}"
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[var(--border-subtle)]">
+                        {renderPrimaryStatusButton(order)}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCopyTSVRow(order);
+                          }}
+                          className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-1"
+                        >
+                          {isTsvCopied ? <Check className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{isTsvCopied ? 'Copied' : 'TSV'}</span>
+                        </button>
+                        {authority && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteOrder(order.id, order.runnerName);
+                            }}
+                            aria-label={`Delete order ${order.id}`}
+                            className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] text-red-700 dark:text-red-400"
+                          >
+                            <Trash2 className="w-4 h-4" aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              /* Desktop Full-Height Scrollable Data Table with Sticky Column Headers */
+              <table id="orders_cards_list" className="w-full text-left border-collapse">
+                <thead className="sticky top-0 z-10 bg-[var(--surface-inset)] border-b border-[var(--border-default)] text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+                  <tr>
+                    <th className="py-2.5 pl-4 pr-2 w-24">Code</th>
+                    <th className="py-2.5 px-3">Runner &amp; Inscription</th>
+                    <th className="py-2.5 px-3 w-36">Bib / Dist</th>
+                    <th className="py-2.5 px-3 w-40">Finish Time</th>
+                    <th className="py-2.5 px-3 w-32">Status</th>
+                    <th className="py-2.5 pl-3 pr-4 text-right w-56">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border-subtle)] text-sm">
+                  {filteredOrders.map((order) => {
+                    const meta = STATUS_META[order.status];
+                    const isSelected = foundDoubleCheckOrder?.id === order.id;
+                    const isTsvCopied = copiedStates[`${order.id}_tsv_all`];
+                    const isTimeCopied = copiedStates[`${order.id}_time`];
+
+                    return (
+                      <tr
+                        key={order.id}
+                        onClick={() => setDoubleCheckCode(order.id)}
+                        className={`cursor-pointer border-l-4 transition-colors ${
+                          isSelected
+                            ? 'border-l-red-600 bg-red-500/[0.08]'
+                            : `${meta.rowAccent} hover:bg-[var(--surface-hover)]/65 ${
+                                order.status === 'completed' ? 'opacity-75 hover:opacity-100' : ''
+                              }`
+                        }`}
+                      >
+                        <td className="py-2.5 pl-3 pr-2 align-middle">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDoubleCheckCode(order.id);
+                            }}
+                            aria-label={`Inspect order ${order.id} for ${order.runnerName}`}
+                            className={`px-2 py-1 rounded-md font-mono text-xs font-semibold border transition-colors ${
+                              isSelected
+                                ? 'bg-red-700 text-white border-red-700'
+                                : 'bg-[var(--surface-card)] text-red-700 dark:text-red-400 border-[var(--border-default)] hover:border-red-600'
+                            }`}
+                          >
+                            {order.id}
+                          </button>
+                        </td>
+
+                        <td className="py-2.5 px-3 align-middle max-w-[260px]">
+                          <div className="font-display font-semibold text-[var(--text-primary)] truncate">
+                            {order.runnerName}
+                          </div>
+                          {(order.customInscription || order.rank) && (
+                            <div className="text-xs text-[var(--text-secondary)] truncate mt-0.5">
+                              {order.rank ? `${order.rank}` : ''}
+                              {order.rank && order.customInscription ? ' · ' : ''}
+                              {order.customInscription ? `"${order.customInscription}"` : ''}
+                            </div>
+                          )}
+                        </td>
+
+                        <td className="py-2.5 px-3 align-middle whitespace-nowrap">
+                          <span className="font-mono font-semibold text-[var(--text-primary)]">
+                            #{order.bibNumber}
+                          </span>
+                          <span className="text-xs text-[var(--text-secondary)] ml-1.5">
+                            {order.distance}
+                          </span>
+                        </td>
+
+                        <td className="py-2.5 px-3 align-middle whitespace-nowrap">
+                          <div className="inline-flex items-center gap-1.5">
+                            <span className="font-mono text-xs font-semibold text-[var(--text-primary)]">
+                              {formatRaceTime(order.finishingTime)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCopyText(`${order.id}_time`, formatRaceTime(order.finishingTime));
+                              }}
+                              aria-label={`Copy finish time for ${order.runnerName}`}
+                              title="Copy finish time"
+                              className="p-1 rounded border border-transparent hover:border-[var(--border-default)] hover:bg-[var(--surface-card)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                            >
+                              {isTimeCopied ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+                              )}
+                            </button>
+                          </div>
+                        </td>
+
+                        <td className="py-2.5 px-3 align-middle whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-semibold ${meta.badgeClass}`}
+                          >
+                            <StatusIcon status={order.status} />
+                            <span>{meta.label}</span>
+                          </span>
+                        </td>
+
+                        <td className="py-2.5 pl-3 pr-4 align-middle text-right whitespace-nowrap">
+                          <div className="inline-flex items-center justify-end gap-1.5">
+                            {renderPrimaryStatusButton(order, true)}
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCopyTSVRow(order);
+                              }}
+                              title="Copy complete TSV row for LightBurn / Excel"
+                              aria-label={`Copy TSV row for ${order.runnerName}`}
+                              className={`h-8 px-2 rounded-lg border text-xs font-semibold inline-flex items-center gap-1 transition-colors ${
+                                isTsvCopied
+                                  ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400'
+                                  : 'border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)]'
+                              }`}
+                            >
+                              {isTsvCopied ? (
+                                <Check className="w-3.5 h-3.5" aria-hidden="true" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+                              )}
+                              <span>TSV</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              hidden={!authority}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteOrder(order.id, order.runnerName);
+                              }}
+                              title="Delete order"
+                              aria-label={`Delete order ${order.id}`}
+                              className="h-8 w-8 rounded-lg border border-transparent hover:border-red-600/40 hover:bg-red-600/10 text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 inline-flex items-center justify-center transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </section>
+
+        {/* RIGHT DETAIL DOCK (35% Width): Persistent Double-Check Verification & Laser Control Panel */}
+        <aside
+          id="double_check_terminal"
+          aria-label="Double-Check verification and laser controls"
+          className="flex flex-col min-h-0 lg:h-full bg-[var(--surface-card)] rounded-2xl lg:rounded-none border lg:border-0 border-[var(--border-default)] overflow-hidden"
+        >
+          {/* Dock Header + Ref Code Lookup */}
+          <div className="shrink-0 px-4 py-3 border-b border-[var(--border-default)] bg-[var(--surface-inset)]/60 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-display font-semibold uppercase tracking-wide text-[var(--text-primary)]">
+                  Double-Check Terminal
+                </h2>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  Click any queue row or enter ref code (D)
+                </p>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => stepActiveOrder(-1)}
+                  disabled={filteredOrders.length === 0}
+                  aria-label="Previous queue order"
+                  title="Previous order in queue"
+                  className="w-8 h-8 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center disabled:opacity-40"
+                >
+                  <ChevronLeft className="w-4 h-4" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => stepActiveOrder(1)}
+                  disabled={filteredOrders.length === 0}
+                  aria-label="Next queue order"
+                  title="Next order in queue"
+                  className="w-8 h-8 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center disabled:opacity-40"
+                >
+                  <ChevronRight className="w-4 h-4" aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+
+            <div className="relative">
+              <label htmlFor="double_check_code_input" className="sr-only">
+                Ref code verification input
+              </label>
+              <input
+                ref={doubleCheckInputRef}
+                id="double_check_code_input"
+                type="text"
+                placeholder="ENTER REF CODE (E.G. A29B)"
+                maxLength={16}
+                value={doubleCheckCode}
+                onChange={(e) => setDoubleCheckCode(e.target.value.toUpperCase())}
+                className="w-full h-10 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3.5 pr-9 text-sm font-mono font-semibold tracking-widest text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400"
+              />
+              {doubleCheckCode && (
+                <button
+                  type="button"
+                  onClick={() => setDoubleCheckCode('')}
+                  aria-label="Clear verification code"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                >
+                  <X className="w-4 h-4" aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Dock Body */}
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+            {foundDoubleCheckOrder ? (
+              <>
+                {/* Matched Code + Status Banner */}
+                <div className="rounded-xl border border-red-600/30 bg-red-500/[0.06] px-4 py-3 flex items-center justify-between gap-3">
+                  <div>
+                    <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+                      Matched Ref Code
+                    </span>
+                    <span className="text-3xl font-mono font-semibold text-red-700 dark:text-red-400 leading-tight">
+                      {foundDoubleCheckOrder.id}
                     </span>
                   </div>
-
-                  <span className={`text-[9px] font-extrabold uppercase tracking-widest py-0.5 px-2 rounded-lg border ${statusBadges[order.status]}`}>
-                    {order.status === 'inprogress' ? 'Engraving' : order.status}
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold ${
+                      STATUS_META[foundDoubleCheckOrder.status].badgeClass
+                    }`}
+                  >
+                    <StatusIcon status={foundDoubleCheckOrder.status} />
+                    <span>{STATUS_META[foundDoubleCheckOrder.status].label}</span>
                   </span>
                 </div>
 
-                {/* Core Field Contents */}
-                <div className="space-y-3 flex-grow">
-                  
-                  {/* Runner Name Block */}
-                  <div className="relative group/copy pr-6">
-                    <span className="block text-[8px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">Runner Name</span>
-                    <strong className="text-base font-extrabold text-[var(--text-primary)] truncate block font-display">
-                      {order.runnerName}
-                    </strong>
-                    <button
-                      onClick={() => handleCopyText(`${order.id}_name`, order.runnerName)}
-                      className="absolute right-0 top-1 text-[var(--text-secondary)] hover:text-amber-500 p-1 rounded hover:bg-[var(--surface-inset)]/75 backdrop-blur-md transition"
-                      title="Copy Name"
-                    >
-                      {copiedStates[`${order.id}_name`] ? <Check className="w-3 text-emerald-500" /> : <Copy className="w-3" />}
-                    </button>
-                  </div>
-
-                  {/* Bib & Distance Block */}
-                  <div className="grid grid-cols-2 gap-2 border-t border-[var(--border-subtle)] pt-2 pb-1 text-xs text-[var(--text-primary)]">
-                    <div>
-                      <span className="block text-[8px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">Bib Number</span>
-                      <strong className="font-mono text-[var(--text-primary)] font-bold">{order.bibNumber}</strong>
-                    </div>
-                    <div>
-                      <span className="block text-[8px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">Distance</span>
-                      <span className="text-[var(--text-primary)] font-bold truncate block">{order.distance}</span>
-                    </div>
-                  </div>
-
-                  {/* Finishing Time Block with massive COPY BUTTON */}
-                  <div className="bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-subtle)] px-3 py-2 rounded-lg flex items-center justify-between relative group/copy">
-                    <div>
-                      <span className="block text-[8px] uppercase font-bold text-[var(--text-secondary)] tracking-wider leading-none">Finishing Time</span>
-                      <span className="text-base font-black font-mono text-[var(--text-primary)] mt-1 block">
-                        {order.finishingTime}
+                {/* Grand-Font Verification Fields */}
+                <div className="space-y-2.5">
+                  {/* 1. Runner Full Name (untruncated for spelling verification) */}
+                  <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3 flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+                        1. Runner Full Name
                       </span>
+                      <p className="text-xl xl:text-2xl font-display font-semibold text-[var(--text-primary)] break-words leading-snug mt-1">
+                        {foundDoubleCheckOrder.runnerName}
+                      </p>
                     </div>
                     <button
-                      onClick={() => handleCopyText(`${order.id}_time`, order.finishingTime)}
-                      className="text-[10px] font-bold text-[var(--text-primary)] bg-[var(--surface-inset)]/75 backdrop-blur-md hover:bg-[var(--surface-hover)] border border-[var(--border-default)] rounded-lg py-1 px-2.5 flex items-center gap-1 transition"
-                      title="Copy Time Only"
+                      type="button"
+                      onClick={() => handleCopyText('lookup_name', foundDoubleCheckOrder.runnerName)}
+                      aria-label="Copy runner full name"
+                      title="Copy Name"
+                      className="shrink-0 w-10 h-10 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center"
                     >
-                      {copiedStates[`${order.id}_time`] ? (
-                        <>
-                          <Check className="w-3 text-emerald-500" /> Copied
-                        </>
+                      {copiedStates['lookup_name'] ? (
+                        <Check className="w-4 h-4 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
                       ) : (
-                        <>
-                          <Copy className="w-3 text-[var(--text-secondary)]" /> Copy
-                        </>
+                        <Copy className="w-4 h-4" aria-hidden="true" />
                       )}
                     </button>
                   </div>
 
-                  {/* Rank Block (Only if exists) */}
-                  {order.rank && (
-                    <div className="relative group/copy pr-6">
-                      <span className="block text-[8px] uppercase font-bold text-[var(--text-secondary)] tracking-wider leading-none">Rank / Group</span>
-                      <span className="text-xs font-semibold text-amber-200 block mt-0.5 truncate">{order.rank}</span>
-                      <button
-                        onClick={() => handleCopyText(`${order.id}_rank`, order.rank!)}
-                        className="absolute right-0 top-0 text-[var(--text-secondary)] hover:text-amber-500 p-0.5 rounded transition"
-                        title="Copy Rank"
-                      >
-                        {copiedStates[`${order.id}_rank`] ? <Check className="w-2.5 text-emerald-500" /> : <Copy className="w-2.5" />}
-                      </button>
+                  {/* 2. Finishing Time */}
+                  <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+                        2. Finishing Time
+                      </span>
+                      <p className="text-xl xl:text-2xl font-mono font-semibold text-red-700 dark:text-red-400 mt-0.5 tabular-nums">
+                        {formatRaceTime(foundDoubleCheckOrder.finishingTime)}
+                      </p>
                     </div>
-                  )}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleCopyText(
+                          'lookup_time',
+                          formatRaceTime(foundDoubleCheckOrder.finishingTime),
+                        )
+                      }
+                      aria-label="Copy finishing time"
+                      title="Copy Time"
+                      className="shrink-0 w-10 h-10 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center"
+                    >
+                      {copiedStates['lookup_time'] ? (
+                        <Check className="w-4 h-4 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
+                      ) : (
+                        <Copy className="w-4 h-4" aria-hidden="true" />
+                      )}
+                    </button>
+                  </div>
 
-                  {/* Custom Inscription Block (Only if exists) */}
-                  {order.customInscription && (
-                    <div className="relative group/copy pr-6 bg-amber-500/5 p-2.5 rounded-lg border border-amber-500/10">
-                      <span className="block text-[8px] uppercase font-bold text-[var(--text-secondary)] tracking-wider leading-none">Custom Text</span>
-                      <span className="text-xs italic text-[var(--text-primary)] block mt-1.5 truncate">"{order.customInscription}"</span>
-                      <button
-                        onClick={() => handleCopyText(`${order.id}_inscription`, order.customInscription!)}
-                        className="absolute right-1 top-1.5 text-[var(--text-secondary)] hover:text-amber-500 p-0.5 rounded transition"
-                        title="Copy Inscription Only"
-                      >
-                        {copiedStates[`${order.id}_inscription`] ? <Check className="w-2.5 text-emerald-500" /> : <Copy className="w-2.5" />}
-                      </button>
-                    </div>
-                  )}
-
-                </div>
-
-                {/* Lower Action Workflow Controllers */}
-                <div className="border-t border-[var(--border-subtle)] pt-3 mt-4 space-y-2">
-                  <div className="flex gap-1.5">
-                    
-                    {/* Workflow status progressor */}
-                    {order.status === 'queued' && (
-                      <button
-                        onClick={() => handleUpdateStatus(order.id, 'inprogress')}
-                        className="flex-1 text-xs font-bold font-display uppercase tracking-widest py-2 bg-gradient-to-r from-orange-600 to-orange-500 hover:brightness-110 text-white rounded-[20px] shadow-sm transition flex items-center justify-center gap-1 active:scale-95"
-                      >
-                        <Play className="w-3.5 h-3.5 fill-white" /> Start Laser
-                      </button>
-                    )}
-
-                    {order.status === 'inprogress' && (
-                      <button
-                        onClick={() => handleUpdateStatus(order.id, 'ready')}
-                        className="flex-1 text-xs font-bold font-display uppercase tracking-widest py-2 bg-gradient-to-r from-blue-600 to-blue-550 hover:brightness-110 text-white rounded-[20px] shadow-sm transition flex items-center justify-center gap-1 active:scale-95"
-                      >
-                        <CheckSquare className="w-3.5 h-3.5" /> Mark Ready
-                      </button>
-                    )}
-
-                    {order.status === 'ready' && (
-                      <button
-                        onClick={() => handleUpdateStatus(order.id, 'completed')}
-                        className="flex-1 text-xs font-bold font-display uppercase tracking-widest py-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:brightness-110 text-white rounded-[20px] shadow-sm transition flex items-center justify-center gap-1 active:scale-95"
-                      >
-                        ✓ Picked Up
-                      </button>
-                    )}
-
-                    {order.status === 'completed' && (
-                      <div className="flex-grow flex justify-between items-center bg-[var(--surface-inset)]/75 backdrop-blur-md rounded-lg px-3 py-1.5 border border-[var(--border-subtle)] text-[var(--text-secondary)] text-[11px] font-semibold">
-                        <span className="uppercase text-[9px] tracking-wider text-emerald-500">Done &bull; Safe Handed over</span>
-                        <button 
-                          onClick={() => handleUpdateStatus(order.id, 'queued')}
-                          className="text-xs text-[var(--text-secondary)] hover:text-amber-500 transition font-bold"
-                          title="Put back in queue"
-                        >
-                          Requeue
-                        </button>
+                  {/* 3. Bib Number & Distance */}
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+                          3. Bib
+                        </span>
+                        <p className="text-lg font-mono font-semibold text-[var(--text-primary)] truncate mt-0.5">
+                          #{foundDoubleCheckOrder.bibNumber}
+                        </p>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyText('lookup_bib', foundDoubleCheckOrder.bibNumber)}
+                        aria-label="Copy bib number"
+                        title="Copy Bib"
+                        className="shrink-0 w-9 h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center"
+                      >
+                        {copiedStates['lookup_bib'] ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+                          Distance
+                        </span>
+                        <p className="text-lg font-display font-semibold text-[var(--text-primary)] truncate mt-0.5">
+                          {foundDoubleCheckOrder.distance}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyText('lookup_dist', foundDoubleCheckOrder.distance)}
+                        aria-label="Copy distance"
+                        title="Copy Distance"
+                        className="shrink-0 w-9 h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center"
+                      >
+                        {copiedStates['lookup_dist'] ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 4. Official Rank */}
+                  <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+                        4. Official Rank
+                      </span>
+                      <p className="text-base font-semibold text-[var(--text-primary)] mt-0.5">
+                        {foundDoubleCheckOrder.rank || 'Not ranked'}
+                      </p>
+                    </div>
+                    {foundDoubleCheckOrder.rank && (
+                      <button
+                        type="button"
+                        onClick={() => handleCopyText('lookup_rank', foundDoubleCheckOrder.rank!)}
+                        aria-label="Copy official rank"
+                        title="Copy Rank"
+                        className="shrink-0 w-10 h-10 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center"
+                      >
+                        {copiedStates['lookup_rank'] ? (
+                          <Check className="w-4 h-4 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
+                        ) : (
+                          <Copy className="w-4 h-4" aria-hidden="true" />
+                        )}
+                      </button>
                     )}
                   </div>
 
-                  {/* Full Row (TSV Excel) copier option */}
-                  <div className="flex justify-between items-center gap-2 pt-1">
-                    <button
-                      onClick={() => handleCopyTSVRow(order)}
-                      className={`text-[9px] font-bold text-[var(--text-secondary)] hover:text-[var(--text-primary)] flex items-center gap-1 rounded-lg border border-[var(--border-subtle)] py-1 px-2 hover:bg-[var(--surface-inset)]/75 backdrop-blur-md shadow-3xs transition-all ${
-                        isTsvCopied ? 'border-emerald-800 text-emerald-400 bg-emerald-950/20' : 'bg-transparent'
-                      }`}
-                      title="Copy complete row values tab-separated to insert in Excel sheets"
-                    >
-                      {isTsvCopied ? <Check className="w-2.5 text-emerald-500" /> : <Copy className="w-2.5" />}
-                      {isTsvCopied ? 'Row Copied!' : 'Copy Row (TSV)'}
-                    </button>
-                    
-                    <button
-                      onClick={() => handleDeleteOrder(order.id, order.runnerName)}
-                      className="text-[9px] font-bold text-[var(--text-secondary)] hover:text-red-400 p-1 flex items-center gap-0.5 hover:bg-red-950/10 rounded transition"
-                      title="Delete / cancel order"
-                    >
-                      <Trash2 className="w-2.5 h-2.5" /> Delete
-                    </button>
+                  {/* 5. Custom Inscription */}
+                  <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3 flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+                        5. Custom Inscription
+                      </span>
+                      <p className="text-base font-semibold text-[var(--text-primary)] break-words mt-0.5">
+                        {foundDoubleCheckOrder.customInscription
+                          ? `"${foundDoubleCheckOrder.customInscription}"`
+                          : 'No custom inscription'}
+                      </p>
+                    </div>
+                    {foundDoubleCheckOrder.customInscription && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleCopyText(
+                            'lookup_inscription',
+                            foundDoubleCheckOrder.customInscription!,
+                          )
+                        }
+                        aria-label="Copy custom inscription"
+                        title="Copy Inscription"
+                        className="shrink-0 w-10 h-10 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center"
+                      >
+                        {copiedStates['lookup_inscription'] ? (
+                          <Check className="w-4 h-4 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
+                        ) : (
+                          <Copy className="w-4 h-4" aria-hidden="true" />
+                        )}
+                      </button>
+                    )}
                   </div>
                 </div>
-
+              </>
+            ) : doubleCheckCode.trim() ? (
+              <div className="rounded-xl border border-red-600/30 bg-red-500/[0.06] p-5 text-center space-y-3">
+                <AlertTriangle className="w-7 h-7 text-red-700 dark:text-red-400 mx-auto" aria-hidden="true" />
+                <div>
+                  <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                    No active order matches "{doubleCheckCode.toUpperCase()}"
+                  </h3>
+                  <p className="text-xs text-[var(--text-secondary)] mt-1">
+                    Check the 4-character ticket code or click a runner row in the queue.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDoubleCheckCode('')}
+                  className="h-9 px-3 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]"
+                >
+                  Clear lookup
+                </button>
               </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Footer stats Breakdown by race distance */}
-      {!loading && orders.length > 0 && (
-        <div id="distance_aggregate_summary" className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-subtle)] rounded-[20px] p-5 shadow-2xl space-y-4">
-          <h3 className="text-xs font-bold font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-1.5 mb-2 border-b border-[var(--border-subtle)] pb-2.5">
-            <BarChart2 className="w-4 h-4 text-amber-500" />
-            Engraving Tally Breakdown by Distance Category
-          </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
-            {Object.entries(stats.byDistance).map(([distName, distCount]) => (
-              <div key={distName} className="bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-subtle)] rounded-[20px] p-3 text-center">
-                <span className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] truncate" title={distName}>
-                  {distName}
-                </span>
-                <span className="text-lg font-black text-[var(--text-primary)] font-mono block mt-1">
-                  {distCount}
-                </span>
-                <span className="text-[9px] text-[var(--text-muted)] block mt-0.5 font-medium">
-                  ({Math.round((distCount / stats.total) * 100)}% of total)
-                </span>
+            ) : (
+              <div className="rounded-xl border border-dashed border-[var(--border-default)] bg-[var(--surface-inset)] p-5 text-center space-y-3">
+                <Printer className="w-7 h-7 text-red-700 dark:text-red-400 mx-auto" aria-hidden="true" />
+                <div>
+                  <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                    Ready for Laser Verification
+                  </h3>
+                  <p className="text-xs text-[var(--text-secondary)] mt-1 leading-relaxed">
+                    Select any runner from the queue on the left or enter their passcode above to
+                    inspect spelling and copy fields into LightBurn.
+                  </p>
+                </div>
+                {filteredOrders.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setDoubleCheckCode(filteredOrders[0].id)}
+                    className="min-h-10 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold uppercase tracking-wider transition-colors"
+                  >
+                    Load Next Order ({filteredOrders[0].id})
+                  </button>
+                )}
               </div>
-            ))}
+            )}
           </div>
-        </div>
-      )}
+
+          {/* Dock Pinned Laser Action Footer (when an order is loaded) */}
+          {foundDoubleCheckOrder && (
+            <div className="shrink-0 p-4 border-t border-[var(--border-default)] bg-[var(--surface-inset)]/70 space-y-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleCopyTSVRow(foundDoubleCheckOrder)}
+                  className="flex-1 min-h-11 px-4 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  {copiedStates[`${foundDoubleCheckOrder.id}_tsv_all`] ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
+                      <span>Copied Row (TSV)</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" aria-hidden="true" />
+                      <span>Copy Row (TSV)</span>
+                    </>
+                  )}
+                </button>
+
+                {renderPrimaryStatusButton(foundDoubleCheckOrder)}
+              </div>
+
+              {authority && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleDeleteOrder(foundDoubleCheckOrder.id, foundDoubleCheckOrder.runnerName)
+                  }
+                  className="w-full h-9 rounded-lg border border-red-600/25 hover:bg-red-600/10 text-xs font-semibold text-red-700 dark:text-red-400 inline-flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>Delete Order</span>
+                </button>
+              )}
+            </div>
+          )}
+        </aside>
+      </div>
 
       {/* LightBurn Integration Guide Modal */}
       {showLightBurnModal && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn transition-all">
-          <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-default)] rounded-[26px] w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
-            {/* Modal Header */}
-            <div className="p-5 border-b border-[var(--border-subtle)] flex items-center justify-between bg-[var(--surface-inset)]/75 backdrop-blur-md">
-              <div className="flex items-center gap-2">
-                <Cpu className="w-5 h-5 text-amber-500 animate-pulse" />
-                <div>
-                  <h2 className="heading-float text-md font-black tracking-tight font-display text-[var(--text-primary)] uppercase">LightBurn Variable-Text Integration</h2>
-                  <p className="text-[10px] text-[var(--text-secondary)] font-mono">AUTOMATED medal ENGRAVING PIPELINE</p>
-                </div>
+        <DialogSurface
+          titleId="lightburn_guide_title"
+          onRequestClose={() => setShowLightBurnModal(false)}
+          className="fixed inset-0 m-auto h-fit rounded-2xl w-[calc(100%-2rem)] max-w-2xl max-h-[90dvh] flex flex-col overflow-hidden shadow-2xl"
+        >
+          <div className="p-5 border-b border-[var(--border-default)] flex items-center justify-between bg-[var(--surface-inset)]">
+            <div className="flex items-center gap-2.5">
+              <Cpu className="w-5 h-5 text-red-700 dark:text-red-400" aria-hidden="true" />
+              <div>
+                <h2
+                  id="lightburn_guide_title"
+                  className="text-base font-display font-semibold uppercase tracking-tight text-[var(--text-primary)]"
+                >
+                  LightBurn Variable-Text Integration
+                </h2>
+                <p className="text-xs text-[var(--text-secondary)] font-mono">
+                  Automated medal engraving pipeline
+                </p>
               </div>
-              <button 
-                onClick={() => setShowLightBurnModal(false)}
-                className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-default)] hover:border-[var(--border-default)] p-2 rounded-[20px] text-xs font-bold uppercase tracking-wider px-3"
-              >
-                ✕ Close
-              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowLightBurnModal(false)}
+              className="min-h-10 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] flex items-center gap-1"
+            >
+              <X className="w-3.5 h-3.5" aria-hidden="true" /> Close
+            </button>
+          </div>
+
+          <div className="p-6 overflow-y-auto space-y-5 text-sm leading-relaxed">
+            <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-red-700 dark:text-red-400 mb-1">
+                Variable Text CSV Sync
+              </h3>
+              <p className="text-xs text-[var(--text-secondary)]">
+                Link LightBurn Variable Text directly to the exported CSV spreadsheet so runner names
+                and times load without manual retyping.
+              </p>
             </div>
 
-            {/* Modal Body */}
-            <div className="p-6 overflow-y-auto space-y-5 text-[var(--text-primary)] text-sm leading-relaxed scrollbar-thin">
-              <div className="bg-amber-500/5 border border-amber-500/20 rounded-[20px] p-4 flex items-start gap-3">
-                <div className="p-2 bg-amber-500/10 text-amber-500 rounded-lg shrink-0">
-                  <Sparkles className="w-4 h-4" />
-                </div>
+            <div className="space-y-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] border-b border-[var(--border-subtle)] pb-2">
+                Connection Steps
+              </h3>
+
+              <div className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-[var(--surface-inset)] border border-[var(--border-default)] text-xs font-mono font-semibold text-red-700 dark:text-red-400 flex items-center justify-center shrink-0">
+                  1
+                </span>
                 <div>
-                  <h4 className="text-xs font-extrabold text-amber-400 uppercase tracking-wider mb-1">Ditch Copy & Paste entirely!</h4>
-                  <p className="text-xs text-[var(--text-secondary)]">
-                    By combining this web app with LightBurn's native <strong>Variable Text</strong> functionality, your laser machine can read registered athlete data directly from a local CSV spreadsheet file. No typing, no spelling mistakes!
+                  <h4 className="text-xs font-semibold uppercase text-[var(--text-primary)]">
+                    Export the Data Feed
+                  </h4>
+                  <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                    Click <strong className="text-[var(--text-primary)]">CSV (E)</strong> in the top
+                    header and save <code className="font-mono">racepulse_lightburn_sync.csv</code> on
+                    your laser workstation.
                   </p>
                 </div>
               </div>
 
-              {/* Step-by-step instructions */}
-              <div className="space-y-4">
-                <h3 className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-widest border-b border-[var(--border-subtle)] pb-2">Step-by-step Connection process</h3>
-                
-                {/* Step 1 */}
-                <div className="flex gap-3">
-                  <div className="text-xs font-mono font-bold w-5 h-5 bg-[var(--surface-hover)] text-amber-500 rounded-full flex items-center justify-center shrink-0 border border-[var(--border-default)]">1</div>
-                  <div>
-                    <h5 className="text-xs font-bold text-[var(--text-primary)] uppercase">Export the Data Feed</h5>
-                    <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-                      Click the <span className="text-amber-500 font-bold font-mono">Export CSV</span> button on the top right of this command panel. Save the <code className="text-[11px] text-[var(--text-primary)] font-mono bg-[var(--surface-inset)]/75 backdrop-blur-md px-1 py-0.5 rounded">racepulse_lightburn_sync.csv</code> on your laser station computer.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Step 2 */}
-                <div className="flex gap-3">
-                  <div className="text-xs font-mono font-bold w-5 h-5 bg-[var(--surface-hover)] text-amber-500 rounded-full flex items-center justify-center shrink-0 border border-[var(--border-default)]">2</div>
-                  <div>
-                    <h5 className="text-xs font-bold text-[var(--text-primary)] uppercase">Prepare your Laser Inscriptions in LightBurn</h5>
-                    <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-                      Create standard text objects in your medal border template. Set their source format to <strong>"Variable Text"</strong> instead of "Normal" in the top-bar dropdown. Use the respective %-index codes below:
-                    </p>
-                    <div className="grid grid-cols-2 gap-2 mt-2 font-mono text-[10px]">
-                      <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl p-2 rounded border border-[var(--border-subtle)]">
-                        <span className="text-amber-500 font-extrabold">%2</span> &rarr; Runner Name
-                      </div>
-                      <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl p-2 rounded border border-[var(--border-subtle)]">
-                        <span className="text-amber-500 font-extrabold">%3</span> &rarr; Bib Number
-                      </div>
-                      <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl p-2 rounded border border-[var(--border-subtle)]">
-                        <span className="text-amber-500 font-extrabold">%4</span> &rarr; Finishing Time
-                      </div>
-                      <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl p-2 rounded border border-[var(--border-subtle)]">
-                        <span className="text-amber-500 font-extrabold">%5</span> &rarr; Race Distance
-                      </div>
-                      <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl p-2 rounded border border-[var(--border-subtle)]">
-                        <span className="text-amber-500 font-extrabold">%6</span> &rarr; Rank / Category
-                      </div>
-                      <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl p-2 rounded border border-[var(--border-subtle)]">
-                        <span className="text-amber-500 font-extrabold">%7</span> &rarr; Custom Inscription
-                      </div>
+              <div className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-[var(--surface-inset)] border border-[var(--border-default)] text-xs font-mono font-semibold text-red-700 dark:text-red-400 flex items-center justify-center shrink-0">
+                  2
+                </span>
+                <div>
+                  <h4 className="text-xs font-semibold uppercase text-[var(--text-primary)]">
+                    Bind %-Index Fields in LightBurn
+                  </h4>
+                  <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                    Set text objects on your medal template to Merge/CSV Variable Text using these
+                    column offsets:
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 mt-2 font-mono text-xs">
+                    <div className="bg-[var(--surface-inset)] p-2 rounded border border-[var(--border-subtle)]">
+                      <span className="text-red-700 dark:text-red-400 font-semibold">%2</span> Runner Name
+                    </div>
+                    <div className="bg-[var(--surface-inset)] p-2 rounded border border-[var(--border-subtle)]">
+                      <span className="text-red-700 dark:text-red-400 font-semibold">%3</span> Bib Number
+                    </div>
+                    <div className="bg-[var(--surface-inset)] p-2 rounded border border-[var(--border-subtle)]">
+                      <span className="text-red-700 dark:text-red-400 font-semibold">%4</span> Finishing Time
+                    </div>
+                    <div className="bg-[var(--surface-inset)] p-2 rounded border border-[var(--border-subtle)]">
+                      <span className="text-red-700 dark:text-red-400 font-semibold">%5</span> Race Distance
+                    </div>
+                    <div className="bg-[var(--surface-inset)] p-2 rounded border border-[var(--border-subtle)]">
+                      <span className="text-red-700 dark:text-red-400 font-semibold">%6</span> Official Rank
+                    </div>
+                    <div className="bg-[var(--surface-inset)] p-2 rounded border border-[var(--border-subtle)]">
+                      <span className="text-red-700 dark:text-red-400 font-semibold">%7</span> Custom Inscription
                     </div>
                   </div>
                 </div>
+              </div>
 
-                {/* Step 3 */}
-                <div className="flex gap-3">
-                  <div className="text-xs font-mono font-bold w-5 h-5 bg-[var(--surface-hover)] text-amber-500 rounded-full flex items-center justify-center shrink-0 border border-[var(--border-default)]">3</div>
-                  <div>
-                    <h5 className="text-xs font-bold text-[var(--text-primary)] uppercase">Enable Variable Text Toolbar</h5>
-                    <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-                      Go to the top menu bar in LightBurn: <span className="font-mono text-[var(--text-primary)] text-xs bg-[var(--surface-inset)]/75 backdrop-blur-md px-1 py-0.5 rounded">Window &rarr; Variable Text</span> to display the controls.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Step 4 */}
-                <div className="flex gap-3">
-                  <div className="text-xs font-mono font-bold w-5 h-5 bg-[var(--surface-hover)] text-amber-500 rounded-full flex items-center justify-center shrink-0 border border-[var(--border-default)]">4</div>
-                  <div>
-                    <h5 className="text-xs font-bold text-[var(--text-primary)] uppercase">Link the CSV Document</h5>
-                    <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-                      In the newly opened <strong>Variable Text</strong> panel, click <strong>"Browse"</strong> and select your downloaded CSV file. Look at your canvas; the %-codes will automatically compile into active runner data!
-                    </p>
-                  </div>
-                </div>
-
-                {/* Step 5 */}
-                <div className="flex gap-3">
-                  <div className="text-xs font-mono font-bold w-5 h-5 bg-[var(--surface-hover)] text-amber-500 rounded-full flex items-center justify-center shrink-0 border border-[var(--border-default)]">5</div>
-                  <div>
-                    <h5 className="text-xs font-bold text-[var(--text-primary)] uppercase">Rapid Laser Output Selection</h5>
-                    <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-                      Toggle the row indices using the <strong>Previous ( &larr; )</strong> and <strong>Next ( &rarr; )</strong> arrow control keys in Lightburn to cycle from athlete to athlete. Lighturn updates the artwork instantly!
-                    </p>
-                  </div>
-                </div>
-
-                {/* Step 6 */}
-                <div className="flex gap-3">
-                  <div className="text-xs font-mono font-bold w-5 h-5 bg-[var(--surface-hover)] text-amber-500 rounded-full flex items-center justify-center shrink-0 border border-[var(--border-default)]">6</div>
-                  <div>
-                    <h5 className="text-xs font-bold text-[var(--text-primary)] uppercase">Live Synchronization Workflow</h5>
-                    <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-                      As more runners register inside their terminal booth, simply open this browser, click <span className="text-amber-500 font-bold font-mono">Export CSV</span> again, overwrite your previous file in the same folder, and press <span className="text-[var(--text-primary)] font-bold font-mono bg-[var(--surface-inset)]/75 backdrop-blur-md px-1 py-0.5 rounded">Reload</span> inside LightBurn's Variable Text pane. The list updates instantly!
-                    </p>
-                  </div>
+              <div className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-[var(--surface-inset)] border border-[var(--border-default)] text-xs font-mono font-semibold text-red-700 dark:text-red-400 flex items-center justify-center shrink-0">
+                  3
+                </span>
+                <div>
+                  <h4 className="text-xs font-semibold uppercase text-[var(--text-primary)]">
+                    Open Variable Text &amp; Link CSV
+                  </h4>
+                  <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                    Open <code className="font-mono">Window &rarr; Variable Text</code> in LightBurn,
+                    browse to the exported CSV, and step rows with Previous/Next or reload after new
+                    queue submissions.
+                  </p>
                 </div>
               </div>
             </div>
-
-            {/* Modal Footer actions */}
-            <div className="p-4 bg-[var(--surface-inset)]/75 backdrop-blur-md border-t border-[var(--border-subtle)] flex justify-between items-center">
-              <span className="text-[10px] text-[var(--text-secondary)] font-mono tracking-wider">LOUD & CLEAR CUSTOM ENGRAVING APPARATUS</span>
-              <button 
-                onClick={handleDownloadCSV}
-                className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold uppercase text-[10px] py-1.5 px-4 rounded-[20px] tracking-wider transition-all flex items-center gap-1"
-              >
-                <FileDown className="w-3.5 h-3.5" /> Download Active CSV
-              </button>
-            </div>
           </div>
-        </div>
+
+          <div className="p-4 border-t border-[var(--border-default)] bg-[var(--surface-inset)] flex justify-end gap-2">
+            <button
+              type="button"
+              hidden={!can('engraving.export')}
+              onClick={handleDownloadCSV}
+              className="min-h-10 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold uppercase tracking-wider inline-flex items-center gap-1.5"
+            >
+              <FileDown className="w-4 h-4" aria-hidden="true" /> Download Active CSV
+            </button>
+          </div>
+        </DialogSurface>
       )}
 
       {/* QR SCANNER MODAL */}
@@ -1492,317 +2582,292 @@ export default function OperatorDashboard() {
 
       {/* PDF REPORT GENERATOR MODAL */}
       {showPdfModal && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn transition-all">
-          <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-default)] rounded-[26px] w-full max-w-md overflow-hidden shadow-2xl flex flex-col">
-            {/* Modal Header */}
-            <div className="p-5 border-b border-[var(--border-subtle)] flex items-center justify-between bg-[var(--surface-inset)]/75 backdrop-blur-md">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-red-500/15 border border-red-500/30 rounded-[20px] text-red-400">
-                  <FileText className="w-5 h-5" />
-                </div>
-                <div>
-                  <h2 className="heading-float text-md font-black tracking-tight font-display text-[var(--text-primary)] uppercase">Generate PDF Report</h2>
-                  <p className="text-[11px] text-[var(--text-secondary)]">Export race finisher records and laser status</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setShowPdfModal(false)}
-                className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] p-1.5 rounded-lg hover:bg-[var(--surface-inset)]/75 backdrop-blur-md transition"
-              >
-                <BadgeMinus className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-6 space-y-5">
+        <DialogSurface
+          titleId="pdf_modal_title"
+          onRequestClose={() => setShowPdfModal(false)}
+          className="fixed inset-0 m-auto h-fit rounded-2xl w-[calc(100%-2rem)] max-w-md max-h-[90dvh] overflow-hidden shadow-2xl flex flex-col"
+        >
+          <div className="p-5 border-b border-[var(--border-default)] flex items-center justify-between bg-[var(--surface-inset)]">
+            <div className="flex items-center gap-2.5">
+              <FileText className="w-5 h-5 text-red-700 dark:text-red-400" aria-hidden="true" />
               <div>
-                <label className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-primary)] mb-2">
-                  Race / Event Name
-                </label>
-                <input
-                  type="text"
-                  value={pdfRaceName}
-                  onChange={(e) => setPdfRaceName(e.target.value)}
-                  placeholder="e.g. Bukidnon 42K Ultra Run"
-                  className="w-full bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-default)] rounded-[20px] px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-red-400 focus:border-red-400 transition"
-                />
-                <p className="text-[10px] text-[var(--text-secondary)] mt-1.5">This title will be printed boldly at the top banner of the PDF document.</p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold font-display uppercase tracking-wider text-[var(--text-primary)] mb-2">
-                  Filter Records to Include
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { id: 'all', label: 'All Orders', count: orders.length },
-                    { id: 'completed', label: 'Completed Only', count: orders.filter(o => o.status === 'completed').length },
-                    { id: 'queued', label: 'Queued (Pending)', count: orders.filter(o => o.status === 'queued').length },
-                    { id: 'inprogress', label: 'In Progress', count: orders.filter(o => o.status === 'inprogress').length }
-                  ].map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => setPdfReportFilter(item.id as any)}
-                      className={`py-2.5 px-3 rounded-[20px] border text-left flex items-center justify-between transition ${
-                        pdfReportFilter === item.id
-                          ? 'bg-red-500/15 border-red-500 text-[var(--text-primary)] font-bold'
-                          : 'bg-[var(--surface-inset)]/75 backdrop-blur-md border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-default)]'
-                      }`}
-                    >
-                      <span className="text-xs">{item.label}</span>
-                      <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
-                        pdfReportFilter === item.id ? 'bg-red-500 text-black font-extrabold' : 'bg-[var(--surface-inset)]/75 backdrop-blur-md text-[var(--text-secondary)]'
-                      }`}>
-                        {item.count}
-                      </span>
-                    </button>
-                  ))}
-                </div>
+                <h2
+                  id="pdf_modal_title"
+                  className="text-base font-display font-semibold uppercase tracking-tight text-[var(--text-primary)]"
+                >
+                  Generate PDF Report
+                </h2>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  Export race finisher records and laser status
+                </p>
               </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setShowPdfModal(false)}
+              aria-label="Close PDF dialog"
+              className="w-9 h-9 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] flex items-center justify-center"
+            >
+              <X className="w-4 h-4" aria-hidden="true" />
+            </button>
+          </div>
 
-            {/* Modal Footer */}
-            <div className="p-5 border-t border-[var(--border-subtle)] bg-[var(--surface-inset)]/75 backdrop-blur-md flex items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setShowPdfModal(false)}
-                className="px-4 py-2.5 rounded-[20px] text-xs font-bold text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-inset)]/75 backdrop-blur-md transition"
+          <div className="p-5 space-y-4">
+            <div>
+              <label
+                htmlFor="pdf_race_name_input"
+                className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] mb-1.5"
               >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleGeneratePdfReport}
-                className="px-5 py-2.5 rounded-[20px] text-xs font-extrabold bg-red-500 hover:bg-red-400 text-black uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-red-500/20 transition active:scale-95"
-              >
-                <FileDown className="w-4 h-4" /> Download PDF
-              </button>
+                Race / Event Name
+              </label>
+              <input
+                id="pdf_race_name_input"
+                type="text"
+                value={pdfRaceName}
+                onChange={(e) => setPdfRaceName(e.target.value)}
+                placeholder="e.g. Bukidnon 42K Ultra Run"
+                className="w-full min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400"
+              />
+            </div>
+
+            <div>
+              <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] mb-1.5">
+                Filter Records to Include
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { id: 'all', label: 'All Orders', count: orders.length },
+                  {
+                    id: 'completed',
+                    label: 'Completed Only',
+                    count: orders.filter((o) => o.status === 'completed').length,
+                  },
+                  {
+                    id: 'queued',
+                    label: 'Queued',
+                    count: orders.filter((o) => o.status === 'queued').length,
+                  },
+                  {
+                    id: 'inprogress',
+                    label: 'Engraving',
+                    count: orders.filter((o) => o.status === 'inprogress').length,
+                  },
+                ].map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() =>
+                      setPdfReportFilter(item.id as 'all' | 'completed' | 'queued' | 'inprogress')
+                    }
+                    className={`min-h-11 px-3 rounded-xl border text-left flex items-center justify-between text-xs font-semibold transition-colors ${
+                      pdfReportFilter === item.id
+                        ? 'bg-red-50 dark:bg-red-950/40 border-red-600 text-[var(--text-primary)]'
+                        : 'bg-[var(--surface-inset)] border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]'
+                    }`}
+                  >
+                    <span>{item.label}</span>
+                    <span className="font-mono text-xs">{item.count}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
+
+          <div className="p-4 border-t border-[var(--border-default)] bg-[var(--surface-inset)] flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setShowPdfModal(false)}
+              className="min-h-10 px-4 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] text-xs font-semibold text-[var(--text-primary)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              hidden={!can('engraving.export')}
+              onClick={handleGeneratePdfReport}
+              className="min-h-10 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold uppercase tracking-wider inline-flex items-center gap-1.5"
+            >
+              <FileDown className="w-4 h-4" aria-hidden="true" /> Download PDF
+            </button>
+          </div>
+        </DialogSurface>
       )}
 
       {/* OFFLINE BACKUP & SYNC MODAL */}
       {showBackupModal && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn transition-all">
-          <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-[var(--border-default)] rounded-[26px] w-full max-w-md overflow-hidden shadow-2xl flex flex-col">
-            {/* Modal Header */}
-            <div className="p-5 border-b border-[var(--border-subtle)] flex items-center justify-between bg-[var(--surface-inset)]/75 backdrop-blur-md">
-              <div className="flex items-center gap-2">
-                <DownloadCloud className="w-5 h-5 text-green-500" />
-                <div>
-                  <h2 className="heading-float text-md font-black tracking-tight font-display text-[var(--text-primary)] uppercase">Offline DB Sync</h2>
-                  <p className="text-[10px] text-[var(--text-secondary)] font-mono">DUAL-LAPTOP OFFLINE OVER BRIDGE</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setShowBackupModal(false)}
-                className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-default)] hover:border-[var(--border-default)] p-2 rounded-[20px] text-xs font-bold uppercase tracking-wider px-3"
-              >
-                ✕ Close
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-6 space-y-6">
-              <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl p-3.5 rounded-[20px] border border-[var(--border-subtle)] text-xs text-[var(--text-secondary)] leading-relaxed font-sans">
-                <span className="text-green-500 font-extrabold uppercase block mb-1">Dual-Laptop Site Integration</span>
-                When running completely offline on-site:
-                <ol className="list-decimal pl-4 mt-1.5 space-y-1 text-[var(--text-secondary)]">
-                  <li>Run the registration form on Laptop A.</li>
-                  <li>At intervals, export the database from Laptop A or copy back-ups.</li>
-                  <li>Transfer the `.json` backup file via a <strong>USB Flash Drive</strong> to Laptop B (Engraver Station).</li>
-                  <li>Import the backup below to instantly synchronize.</li>
-                </ol>
-              </div>
-
-              {/* Action 1: Export Current Queue */}
-              <div className="space-y-2 p-4 bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-subtle)] rounded-[20px]">
-                <h4 className="text-[10px] font-extrabold text-[var(--text-primary)] uppercase tracking-widest font-mono">1. Export Active Queue</h4>
-                <p className="text-[10px] text-[var(--text-secondary)]">Download all registered active engraving orders as a backup JSON file.</p>
-                <button
-                  type="button"
-                  onClick={handleExportOfflineBackup}
-                  className="w-full flex items-center justify-center gap-1.5 text-xs text-black bg-green-500 hover:bg-green-400 font-black py-2.5 rounded-[20px] transition uppercase tracking-wider shadow"
+        <DialogSurface
+          titleId="backup_modal_title"
+          onRequestClose={() => setShowBackupModal(false)}
+          className="fixed inset-0 m-auto h-fit rounded-2xl w-[calc(100%-2rem)] max-w-md max-h-[90dvh] overflow-hidden shadow-2xl flex flex-col"
+        >
+          <div className="p-5 border-b border-[var(--border-default)] flex items-center justify-between bg-[var(--surface-inset)]">
+            <div className="flex items-center gap-2.5">
+              <DownloadCloud className="w-5 h-5 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
+              <div>
+                <h2
+                  id="backup_modal_title"
+                  className="text-base font-display font-semibold uppercase tracking-tight text-[var(--text-primary)]"
                 >
-                  <DownloadCloud className="w-4 h-4" /> Export Queue Backup
-                </button>
+                  Offline DB Sync
+                </h2>
+                <p className="text-xs text-[var(--text-secondary)] font-mono">
+                  Dual-laptop JSON transfer
+                </p>
               </div>
-
-              {/* Action 2: Import Backup JSON */}
-              <div className="space-y-2.5 p-4 bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-subtle)] rounded-[20px]">
-                <h4 className="text-[10px] font-extrabold text-[var(--text-primary)] uppercase tracking-widest font-mono">2. Import / Restore Queue</h4>
-                <p className="text-[10px] text-[var(--text-secondary)]">Upload a `.json` backup file to merge offline entries into this laptop's local queue.</p>
-                
-                <input
-                  type="file"
-                  accept=".json"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleImportOfflineBackup(file);
-                  }}
-                  className="w-full text-xs text-[var(--text-secondary)] font-mono file:mr-3 file:py-2 file:px-4 file:rounded-[20px] file:border-0 file:text-[11px] file:font-bold file:bg-[var(--surface-inset)]/75 backdrop-blur-md file:text-[var(--text-primary)] hover:file:bg-[var(--surface-hover)]"
-                />
-              </div>
-
-              {backupErrorMessage && (
-                <div className="text-xs text-red-500 font-semibold p-2.5 bg-red-950/15 border border-red-900/30 rounded-[20px] text-center">
-                  ⚠️ {backupErrorMessage}
-                </div>
-              )}
-
-              {backupSuccessMessage && (
-                <div className="text-xs text-green-500 font-semibold p-2.5 bg-green-950/15 border border-green-900/30 rounded-[20px] text-center animate-pulse">
-                  ✅ {backupSuccessMessage}
-                </div>
-              )}
             </div>
+            <button
+              type="button"
+              onClick={() => setShowBackupModal(false)}
+              className="min-h-10 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] text-xs font-semibold text-[var(--text-primary)] flex items-center gap-1"
+            >
+              <X className="w-3.5 h-3.5" aria-hidden="true" /> Close
+            </button>
           </div>
-        </div>
+
+          <div className="p-5 space-y-4">
+            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-3.5 text-xs text-[var(--text-secondary)] space-y-1.5">
+              <span className="font-semibold uppercase text-emerald-700 dark:text-emerald-400 block">
+                Dual-Laptop Integration
+              </span>
+              <ol className="list-decimal pl-4 space-y-1">
+                <li>Export the active queue JSON from the registration station.</li>
+                <li>Transfer the `.json` file via USB flash drive to this engraving station.</li>
+                <li>Import the file below to merge entries into the local queue.</li>
+              </ol>
+            </div>
+
+            <div className="p-4 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] space-y-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)]">
+                1. Export Active Queue
+              </h3>
+              <button
+                type="button"
+                hidden={!can('engraving.backup')}
+                onClick={handleExportOfflineBackup}
+                className="w-full min-h-11 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold uppercase tracking-wider flex items-center justify-center gap-1.5"
+              >
+                <DownloadCloud className="w-4 h-4" aria-hidden="true" /> Export Queue Backup
+              </button>
+            </div>
+
+            <div className="p-4 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] space-y-2">
+              <label
+                htmlFor="offline_json_import"
+                className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)]"
+              >
+                2. Import / Restore Queue (.json)
+              </label>
+              <input
+                id="offline_json_import"
+                type="file"
+                accept=".json"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void handleImportOfflineBackup(file);
+                }}
+                className="w-full text-xs text-[var(--text-secondary)] font-mono file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border file:border-[var(--border-default)] file:text-xs file:font-semibold file:bg-[var(--surface-card)] file:text-[var(--text-primary)]"
+              />
+            </div>
+
+            {backupErrorMessage && (
+              <div
+                role="alert"
+                className="text-xs text-red-700 dark:text-red-400 font-semibold p-3 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-2"
+              >
+                <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
+                <span>{backupErrorMessage}</span>
+              </div>
+            )}
+
+            {backupSuccessMessage && (
+              <div
+                role="status"
+                className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" />
+                <span>{backupSuccessMessage}</span>
+              </div>
+            )}
+          </div>
+        </DialogSurface>
       )}
 
-      {/* CUSTOM CONFIRM REGISTRATION DELETION MODAL */}
+      {/* DELETE SINGLE ORDER CONFIRMATION DIALOG */}
       {deleteConfirmOrder && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-red-500/20 rounded-[26px] p-6 sm:p-8 max-w-md w-full text-center space-y-6 shadow-2xl relative animate-slideUp overflow-hidden">
-            
-            {/* Top red warning border gradient decoration */}
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-650 via-red-500 to-amber-500" />
-            
-            <div className="mx-auto w-14 h-14 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center shadow-lg shadow-red-500/5 animate-pulse">
-              <Trash2 className="w-6 h-6 text-red-500" />
-            </div>
-            
-            <div className="space-y-1">
-              <h3 className="heading-float text-lg font-black font-display text-[var(--text-primary)] uppercase tracking-widest">Delete Registration?</h3>
-              <p className="text-[11px] text-[var(--text-secondary)] font-medium">
-                You are about to irreversibly remove this runner's engraving request.
-              </p>
-            </div>
-
-            {/* Premium Interactive Ticket Mockup Summary */}
-            <div className="bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-subtle)] rounded-[20px] p-4 text-left relative overflow-hidden shadow-inner space-y-3">
-              <div className="absolute top-0 right-0 bottom-0 w-1 bg-red-500/40" />
-              
-              <div className="flex justify-between items-center text-[10px] font-mono font-bold">
-                <span className="bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-default)] text-[var(--text-secondary)] px-2 py-0.5 rounded uppercase">
-                  BIB #{deleteConfirmOrder.bibNumber || 'N/A'}
-                </span>
-                <span className="text-amber-500 font-black bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded tracking-wider uppercase">
-                  REF: {deleteConfirmOrder.id}
-                </span>
-              </div>
-
-              <div className="space-y-1 pt-1">
-                <span className="block text-[8px] uppercase font-extrabold text-[var(--text-secondary)] tracking-wider">Runner Name</span>
-                <span className="text-sm font-bold text-[var(--text-primary)] tracking-tight block">
-                  {deleteConfirmOrder.runnerName}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 border-t border-[var(--border-subtle)] pt-2.5">
-                <div>
-                  <span className="block text-[8px] uppercase font-extrabold text-[var(--text-secondary)] tracking-wider">Distance</span>
-                  <span className="text-xs font-semibold text-[var(--text-primary)] block mt-0.5">
-                    🎽 {deleteConfirmOrder.distance}
-                  </span>
-                </div>
-                <div>
-                  <span className="block text-[8px] uppercase font-extrabold text-[var(--text-secondary)] tracking-wider">Finish Time</span>
-                  <span className="text-xs font-mono font-bold text-[var(--text-primary)] block mt-0.5">
-                    ⏱️ {deleteConfirmOrder.finishingTime}
-                  </span>
-                </div>
-              </div>
-
-              {deleteConfirmOrder.customInscription && (
-                <div className="border-t border-[var(--border-subtle)] pt-2">
-                  <span className="block text-[8px] uppercase font-extrabold text-[var(--text-secondary)] tracking-wider">Engraving Inscription</span>
-                  <span className="text-xs italic text-[var(--text-secondary)] block mt-1 bg-[var(--surface-inset)]/75 backdrop-blur-md border border-[var(--border-subtle)]/40 rounded px-2 py-1 truncate">
-                    "{deleteConfirmOrder.customInscription}"
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <p className="text-[10px] text-red-500/90 font-bold bg-red-950/10 border border-red-950/40 rounded-lg p-2.5 leading-relaxed">
-              ⚠️ Warning: Live tracker screen for this runner will immediately expire and be dismantled.
-            </p>
-
-            {/* Beautiful, responsive buttons with visual cues */}
-            <div className="grid grid-cols-2 gap-3.5 pt-2">
-              <button 
-                onClick={() => setDeleteConfirmOrder(null)}
-                className="w-full bg-[var(--surface-inset)]/75 backdrop-blur-md hover:bg-[var(--surface-hover)] text-[var(--text-primary)] font-extrabold py-3 px-4 rounded-[20px] text-[10px] uppercase tracking-widest border border-[var(--border-default)] transition duration-150 active:scale-95"
-              >
-                Abort & Keep
-              </button>
-              <button 
-                onClick={handleExecuteDeleteOrder}
-                className="w-full bg-gradient-to-r from-red-650 to-red-600 hover:brightness-110 text-white font-extrabold py-3 px-4 rounded-[20px] text-[10px] uppercase tracking-widest transition duration-150 active:scale-95 shadow-md shadow-red-950/20 flex items-center justify-center gap-1.5"
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Confirm Delete
-              </button>
-            </div>
+        <DialogSurface
+          titleId="delete_order_title"
+          descriptionId="delete_order_desc"
+          onRequestClose={() => setDeleteConfirmOrder(null)}
+          alert
+          className="rp-confirm"
+        >
+          <div className="rp-confirm-symbol is-destructive">
+            <Trash2 size={24} aria-hidden="true" />
           </div>
-        </div>
+          <h2 id="delete_order_title">Delete engraving order?</h2>
+          <p id="delete_order_desc">
+            Removing order <strong>{deleteConfirmOrder.id}</strong> for{' '}
+            <strong>{deleteConfirmOrder.runnerName}</strong> (Bib #{deleteConfirmOrder.bibNumber},{' '}
+            {deleteConfirmOrder.distance}, {formatRaceTime(deleteConfirmOrder.finishingTime)})
+            cannot be undone.
+          </p>
+          <div className="rp-confirm-actions">
+            <button
+              type="button"
+              className="rp-button rp-button-secondary"
+              onClick={() => setDeleteConfirmOrder(null)}
+            >
+              Keep order
+            </button>
+            <button
+              type="button"
+              hidden={!authority}
+              className="rp-button rp-button-danger"
+              onClick={handleExecuteDeleteOrder}
+            >
+              Confirm delete
+            </button>
+          </div>
+        </DialogSurface>
       )}
 
-      {/* CUSTOM PURGE DATABASE MODAL FOR FRESH START */}
+      {/* PURGE QUEUE DATABASE CONFIRMATION DIALOG */}
       {showPurgeConfirm && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-[var(--surface-card)]/72 backdrop-blur-2xl border border-red-500/30 rounded-[26px] p-6 sm:p-8 max-w-md w-full text-center space-y-6 shadow-2xl relative animate-slideUp">
-            <div className="mx-auto w-14 h-14 bg-red-500/15 text-red-500 rounded-full flex items-center justify-center animate-pulse">
-              <AlertTriangle className="w-7 h-7 text-red-500" />
-            </div>
-
-            <div className="space-y-2">
-              <h3 className="heading-float text-xl font-black text-[var(--text-primary)] uppercase tracking-tight font-display">Start Fresh Race?</h3>
-              <p className="text-xs text-[var(--text-secondary)] leading-normal">
-                This will instantly wipe out <strong className="text-[var(--text-primary)]">ALL {stats.total} engraving requests</strong> from both the cloud database and any local nodes. Use this to prepare a clean slate for the new race event!
-              </p>
-            </div>
-
-            {/* Current Summary Statistics block */}
-            <div className="bg-[var(--surface-inset)]/75 backdrop-blur-md rounded-[20px] p-4 border border-[var(--border-subtle)] text-left space-y-2 font-mono text-[11px] text-[var(--text-secondary)]">
-              <span className="text-[9px] font-extrabold uppercase text-[var(--text-secondary)] block mb-1 tracking-widest font-sans">Data Purge Estimates:</span>
-              <div className="flex justify-between border-b border-[var(--border-subtle)] pb-1.5">
-                <span>Total Active Entries:</span>
-                <span className="font-extrabold text-[var(--text-primary)]">{stats.total}</span>
-              </div>
-              <div className="flex justify-between border-b border-[var(--border-subtle)] pb-1.5">
-                <span>Completed / Handover:</span>
-                <span className="font-extrabold text-emerald-400">{stats.completed}</span>
-              </div>
-              <div className="flex justify-between text-[var(--text-secondary)]">
-                <span>Discarded Pending Queue:</span>
-                <span className="font-extrabold text-amber-500">{stats.queued + stats.inprogress + stats.ready}</span>
-              </div>
-            </div>
-
-            <p className="text-[10px] text-red-500/80 font-bold border border-red-950/50 bg-red-950/10 p-2.5 rounded-lg text-center leading-relaxed">
-              ⚠️ Warning: This action cannot be undone. Always ensure checking standard backups first!
-            </p>
-
-            <div className="grid grid-cols-2 gap-3.5 pt-2">
-              <button 
-                onClick={() => setShowPurgeConfirm(false)}
-                className="w-full bg-[var(--surface-inset)]/75 backdrop-blur-md hover:bg-[var(--surface-hover)] text-[var(--text-primary)] font-bold py-3 px-4 rounded-[20px] text-xs uppercase tracking-wider border border-[var(--border-default)] transition active:scale-95"
-              >
-                Cancel, Keep DB
-              </button>
-              <button 
-                onClick={handleExecutePurgeDatabase}
-                className="w-full bg-gradient-to-r from-red-600 to-red-500 hover:brightness-110 text-white font-bold py-3 px-4 rounded-[20px] text-xs uppercase tracking-wider transition active:scale-95 shadow-md shadow-red-900/10"
-              >
-                Yes, Purge and Reset All
-              </button>
-            </div>
+        <DialogSurface
+          titleId="purge_db_title"
+          descriptionId="purge_db_desc"
+          onRequestClose={() => setShowPurgeConfirm(false)}
+          alert
+          className="rp-confirm"
+        >
+          <div className="rp-confirm-symbol is-destructive">
+            <AlertTriangle size={24} aria-hidden="true" />
           </div>
-        </div>
+          <h2 id="purge_db_title">Purge all {stats.total} engraving orders?</h2>
+          <p id="purge_db_desc">
+            This clears all active, queued ({stats.queued + stats.inprogress + stats.ready}), and
+            completed ({stats.completed}) orders from both Firestore and the local LAN server.
+            Export an offline backup first if you need a record.
+          </p>
+          <div className="rp-confirm-actions">
+            <button
+              type="button"
+              className="rp-button rp-button-secondary"
+              onClick={() => setShowPurgeConfirm(false)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              hidden={!authority}
+              className="rp-button rp-button-danger"
+              onClick={handleExecutePurgeDatabase}
+            >
+              Purge all orders
+            </button>
+          </div>
+        </DialogSurface>
       )}
-
     </div>
   );
 }

@@ -1,5 +1,4 @@
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import type { jsPDF as JsPDFInstance } from 'jspdf';
 import { Race, RunnerResult } from '../types';
 import { runnerDivisionLabel, runnerEntryCategory } from './raceEntry';
 import { orderFemaleOverallResults } from './timing';
@@ -8,7 +7,7 @@ function runnerName(result: RunnerResult): string {
   return result.runnerProfile?.isFreeSlot ? 'FREE SLOT' : (result.runnerProfile?.fullName || `Bib ${result.bibNumber}`);
 }
 
-function appendFooter(pdf: jsPDF): void {
+function appendFooter(pdf: JsPDFInstance): void {
   const pages = pdf.getNumberOfPages();
   for (let page = 1; page <= pages; page += 1) {
     pdf.setPage(page);
@@ -23,11 +22,15 @@ function appendFooter(pdf: jsPDF): void {
 // every configured age-category standing. It uses the same result/rank values
 // already visible in the timing console, so the report cannot diverge from
 // the live leaderboard.
-export function generateRankingsReportPdf(race: Race, results: RunnerResult[], distanceFilter?: string): boolean {
+export async function generateRankingsReportPdf(race: Race, results: RunnerResult[], distanceFilter?: string): Promise<boolean> {
   const finishers = results.filter((result) => (result.overallRank !== undefined || result.rank !== undefined)
     && (!distanceFilter || result.runnerProfile.distance === distanceFilter));
   if (finishers.length === 0) return false;
 
+  const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+  ]);
   const pdf = new jsPDF();
   const generatedAt = new Date().toLocaleString('en-PH');
   const sanitizedName = race.name.trim().replace(/[^a-zA-Z0-9_-]/g, '_') || 'Race';
@@ -132,6 +135,46 @@ export function generateRankingsReportPdf(race: Race, results: RunnerResult[], d
           headStyles: { fillColor: [146, 64, 14], textColor: [255, 255, 255], fontStyle: 'bold' },
           alternateRowStyles: { fillColor: [255, 251, 235] },
           columnStyles: { 0: { halign: 'center', cellWidth: 28 }, 1: { halign: 'center', cellWidth: 19 }, 2: { halign: 'center', cellWidth: 28 }, 4: { halign: 'center', cellWidth: 28 } },
+          margin: { left: 14, right: 14 },
+        });
+        cursorY = (pdf as any).lastAutoTable.finalY + 10;
+      });
+  }
+
+  const specialAgeAwardGroups = new Map<string, RunnerResult[]>();
+  for (const result of finishers) {
+    for (const award of result.specialAgeAwards || []) {
+      const key = `${runnerDivisionLabel(result.runnerProfile)}|||${award}`;
+      const group = specialAgeAwardGroups.get(key) || [];
+      group.push(result);
+      specialAgeAwardGroups.set(key, group);
+    }
+  }
+  if (specialAgeAwardGroups.size > 0) {
+    pdf.addPage();
+    header('SPECIAL AGE AWARDS', reportScope);
+    cursorY = 34;
+    Array.from(specialAgeAwardGroups.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .forEach(([key, group]) => {
+        const [division, award] = key.split('|||');
+        if (cursorY > 250) {
+          pdf.addPage();
+          header('SPECIAL AGE AWARDS', reportScope);
+          cursorY = 34;
+        }
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(10.5);
+        pdf.setTextColor(13, 148, 136);
+        pdf.text(`${division.toUpperCase()} • ${award.toUpperCase()}`, 14, cursorY);
+        autoTable(pdf, {
+          startY: cursorY + 4,
+          head: [['Award', 'Age', 'Bib', 'Runner', 'Finish Time']],
+          body: group.map((result) => [award, String(result.runnerProfile?.age ?? '—'), result.bibNumber, runnerName(result), result.finishTime || '—']),
+          styles: { fontSize: 8, cellPadding: 2.5, textColor: [40, 40, 40] },
+          headStyles: { fillColor: [15, 118, 110], textColor: [255, 255, 255], fontStyle: 'bold' },
+          alternateRowStyles: { fillColor: [240, 253, 250] },
+          columnStyles: { 0: { cellWidth: 40 }, 1: { halign: 'center', cellWidth: 18 }, 2: { halign: 'center', cellWidth: 28 }, 4: { halign: 'center', cellWidth: 28 } },
           margin: { left: 14, right: 14 },
         });
         cursorY = (pdf as any).lastAutoTable.finalY + 10;

@@ -1,3 +1,5 @@
+import { authenticatedFetch, useAccess } from './access';
+import { startLanJsonPoller } from './lanBridge';
 import { useEffect, useRef, useState } from 'react';
 import { onSnapshot, Query } from 'firebase/firestore';
 
@@ -8,6 +10,7 @@ interface DualSyncOptions<T> {
   getId: (item: T) => string;
   getUpdatedAt: (item: T) => string; // timestamp field used for merge conflict resolution
   pollIntervalMs?: number;
+  enabled?: boolean;
 }
 
 interface DualSyncResult<T> {
@@ -27,7 +30,9 @@ export function useDualSync<T>({
   getId,
   getUpdatedAt,
   pollIntervalMs = 2000,
+  enabled = true,
 }: DualSyncOptions<T>): DualSyncResult<T> {
+  const { version } = useAccess();
   const [items, setItems] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
   const [lanConnected, setLanConnected] = useState<boolean | null>(null);
@@ -61,6 +66,8 @@ export function useDualSync<T>({
 
   // 1. Firestore Cloud Database Listener
   useEffect(() => {
+    if (!enabled) { setItems([]); setLoading(false); return; }
+    firestoreItemsRef.current = []; lanItemsRef.current = []; setItems([]);
     const unsubscribe = onSnapshot(firestoreQuery, (snapshot) => {
       const list: T[] = [];
       snapshot.forEach((docSnap) => list.push(docSnap.data() as T));
@@ -71,36 +78,25 @@ export function useDualSync<T>({
     });
     return () => unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [version, lanEndpoint, enabled]);
 
   // 2. Onsite LAN Local Express Server Poller
   useEffect(() => {
-    let active = true;
-    const pollLocalServer = async () => {
-      try {
-        const res = await fetch(lanEndpoint);
-        if (!res.ok) {
-          if (active) setLanConnected(false);
-          return;
-        }
-        const data = await res.json();
-        if (active) setLanConnected(true);
-        lanItemsRef.current = data[lanResponseKey] || [];
+    if (!enabled) return;
+    return startLanJsonPoller({
+      endpoint: lanEndpoint,
+      fetcher: authenticatedFetch,
+      activeIntervalMs: pollIntervalMs,
+      onData: (payload) => {
+        setLanConnected(true);
+        const record = (payload && typeof payload === 'object') ? (payload as Record<string, unknown>) : {};
+        lanItemsRef.current = Array.isArray(record[lanResponseKey]) ? (record[lanResponseKey] as T[]) : [];
         mergeAndPublish();
-      } catch (err) {
-        if (active) setLanConnected(false);
-      }
-    };
-
-    pollLocalServer();
-    const interval = setInterval(pollLocalServer, pollIntervalMs);
-
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
+      },
+      onDisconnected: () => setLanConnected(false),
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [version, lanEndpoint, enabled]);
 
   return { items, loading, lanConnected };
 }

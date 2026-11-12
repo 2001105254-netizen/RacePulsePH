@@ -1,124 +1,51 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { doc, getDocFromServer, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { auth, db } from '../firebase';
 import { ChipRead } from '../types';
-
-const STORAGE_KEY = 'racepulse_pending_chip_reads_v1';
-
-function readQueue(): ChipRead[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-    return Array.isArray(saved) ? saved as ChipRead[] : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeQueue(reads: ChipRead[]): void {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(reads));
-}
-
-async function postToLan(record: ChipRead): Promise<void> {
-  try {
-    await fetch('/api/chip-reads', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(record),
-    });
-  } catch {
-    // The on-site server is optional. The browser queue remains the source of
-    // truth until Firestore confirms the scan from the cloud.
-  }
-}
-
-// Every timing scan goes here before it is sent anywhere. Firestore itself
-// has IndexedDB persistence, but this additional localStorage queue protects
-// a scan even if Firestore persistence is unavailable (for example in a
-// second browser tab). A queued item is removed only after a server read can
-// see the exact scan document.
+import { authenticatedFetch, useAccess } from './access';
+const key = (uid: string, raceId: string) => `racepulse_pending_chip_reads_v2:${uid}:${raceId}`;
+function readQueue(storageKey: string): ChipRead[] { try { const value = JSON.parse(localStorage.getItem(storageKey) || '[]'); return Array.isArray(value) ? value : []; } catch { return []; } }
 export function useOfflineScanQueue(raceId: string) {
-  const [pendingCount, setPendingCount] = useState(0);
-  const flushingRef = useRef(false);
-
-  const refreshCount = useCallback(() => {
-    setPendingCount(readQueue().filter((record) => record.raceId === raceId).length);
-  }, [raceId]);
-
+  const { can, version } = useAccess();
+  const uid = auth.currentUser?.uid || '';
+  const storageKey = key(uid, raceId);
+  const [pendingCount, setPendingCount] = useState(0), [queueError, setQueueError] = useState('');
+  const flushing = useRef(false);
+  const refresh = useCallback(() => setPendingCount(readQueue(storageKey).length), [storageKey]);
+  const discard = useCallback((id: string) => { localStorage.setItem(storageKey, JSON.stringify(readQueue(storageKey).filter(r => r.id !== id))); refresh(); }, [storageKey, refresh]);
   const flush = useCallback(async () => {
-    if (typeof window === 'undefined' || !navigator.onLine || flushingRef.current) return;
-    const queued = readQueue();
-    if (queued.length === 0) {
-      refreshCount();
-      return;
-    }
-
-    flushingRef.current = true;
-    let remaining = queued;
+    if (flushing.current || !uid || auth.currentUser?.uid !== uid || !navigator.onLine || !can('timing.scan')) return;
+    flushing.current = true;
     try {
-      for (const record of queued) {
-        const recordRef = doc(db, 'chipReads', record.id);
+      for (const record of readQueue(storageKey)) {
+        if (auth.currentUser?.uid !== uid || record.recordedBy !== uid || record.raceId !== raceId) continue;
         try {
-          // setDoc is idempotent because the scan ID was generated once when
-          // the runner crossed the station. Retrying never creates a second read.
-          await setDoc(recordRef, record);
-          void postToLan(record);
-          const cloudCopy = await getDocFromServer(recordRef);
-          if (cloudCopy.exists()) {
-            remaining = remaining.filter((queuedRecord) => queuedRecord.id !== record.id);
-            writeQueue(remaining);
-          }
-        } catch {
-          // Stop at the first unavailable/rejected record; retain every item
-          // for the next online, focus, or interval retry.
-          break;
-        }
+          // Ask the current backend policy before replaying any local item.
+          const session = await authenticatedFetch((import.meta.env.VITE_ACCESS_API_URL || 'https://asia-southeast1-racepulseph.cloudfunctions.net/accessApi') + '/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+          if (!session.ok) throw new Error('Authorization is unavailable. Scans remain queued.');
+          const value = await session.json();
+          if (!value.permissions['timing.scan'] || (value.scope !== 'all' && !value.allowedRaceIds.includes(raceId))) throw new Error('Race access changed. Queued scans require review.');
+          await setDoc(doc(db, 'chipReads', record.id), record);
+          await getDocFromServer(doc(db, 'chipReads', record.id));
+          void authenticatedFetch('/api/chip-reads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(record) }).catch(() => undefined);
+          discard(record.id); setQueueError('');
+        } catch (error: any) { setQueueError(error.message || 'Scan remains queued for review.'); }
       }
-    } finally {
-      flushingRef.current = false;
-      refreshCount();
-    }
-  }, [refreshCount]);
-
+    } finally { flushing.current = false; refresh(); }
+  }, [uid, storageKey, raceId, version, can, discard, refresh]);
   const enqueue = useCallback((record: ChipRead) => {
-    const current = readQueue();
-    if (!current.some((queuedRecord) => queuedRecord.id === record.id)) {
-      writeQueue([...current, record]);
-    }
-    refreshCount();
-    // Firestore publishes this to its local cache immediately, so the current
-    // timing screen and result calculations still update while fully offline.
-    void setDoc(doc(db, 'chipReads', record.id), record).catch(() => undefined);
-    // The LAN post is attempted even without WAN; it lets other timing desks
-    // on the local hotspot see the scan immediately.
-    void postToLan(record);
-    void flush();
-  }, [flush, refreshCount]);
-
-  // A timing operator may immediately correct an accidental manual entry.
-  // Remove it from the local safety queue too, otherwise an offline browser
-  // could upload the deleted read again when connectivity returns.
-  const discard = useCallback((recordId: string) => {
-    const current = readQueue();
-    const remaining = current.filter((record) => record.id !== recordId);
-    if (remaining.length !== current.length) writeQueue(remaining);
-    refreshCount();
-  }, [refreshCount]);
-
+    if (!can('timing.scan') || record.recordedBy !== uid || auth.currentUser?.uid !== uid) throw new Error('Timing access is unavailable.');
+    const records = readQueue(storageKey); if (!records.some(r => r.id === record.id)) localStorage.setItem(storageKey, JSON.stringify([...records, record]));
+    refresh(); void flush();
+  }, [uid, storageKey, can, refresh, flush]);
   useEffect(() => {
-    refreshCount();
-    void flush();
-    const retry = () => { void flush(); };
-    window.addEventListener('online', retry);
-    window.addEventListener('focus', retry);
-    const interval = window.setInterval(retry, 12_000);
-    return () => {
-      window.removeEventListener('online', retry);
-      window.removeEventListener('focus', retry);
-      window.clearInterval(interval);
-    };
-  }, [flush, refreshCount]);
-
-  return { pendingCount, enqueue, flush, discard };
+    // Migrate only this actor's old items; keep every other actor's legacy work intact.
+    const legacyKey = 'racepulse_pending_chip_reads_v1';
+    const legacy = readQueue(legacyKey), mine = legacy.filter(r => r.recordedBy === uid && r.raceId === raceId);
+    if (mine.length) { const merged = new Map([...readQueue(storageKey), ...mine].map(r => [r.id, r])); localStorage.setItem(storageKey, JSON.stringify([...merged.values()])); localStorage.setItem(legacyKey, JSON.stringify(legacy.filter(r => !mine.includes(r)))); }
+    refresh(); void flush(); const retry = () => { void flush(); };
+    window.addEventListener('online', retry); window.addEventListener('focus', retry); const timer = setInterval(retry, 12000);
+    return () => { window.removeEventListener('online', retry); window.removeEventListener('focus', retry); clearInterval(timer); };
+  }, [uid, raceId, storageKey, refresh, flush]);
+  return { pendingCount, enqueue, flush, discard, queueError };
 }

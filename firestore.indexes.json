@@ -1,0 +1,4 @@
+{
+  "indexes": [{ "collectionGroup": "accessHistory", "queryScope": "COLLECTION", "fields": [{"fieldPath":"targetUid","order":"ASCENDING"},{"fieldPath":"at","order":"DESCENDING"}] }],
+  "fieldOverrides": []
+}

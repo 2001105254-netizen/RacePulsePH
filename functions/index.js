@@ -7,12 +7,14 @@
  * and its race bib.
  */
 const crypto = require('crypto');
+const accessPolicy = require('./access-policy');
 const admin = require('firebase-admin');
 const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret, defineString } = require('firebase-functions/params');
 
 admin.initializeApp();
 exports.accountApi = require('./auth-api').accountApi;
+exports.raceBibClaimApi = require('./race-bib-claim-api').raceBibClaimApi;
 const db = admin.firestore();
 
 const paymongoSecretKey = defineSecret('PAYMONGO_SECRET_KEY');
@@ -20,8 +22,11 @@ const paymongoWebhookSecret = defineSecret('PAYMONGO_WEBHOOK_SECRET');
 const appUrl = defineString('PAYMENTS_APP_URL', { default: 'https://racepulseph.web.app' });
 
 const allowedOrigins = new Set([
+  'https://racepulseph.com',
+  'https://www.racepulseph.com',
   'https://racepulseph.web.app',
   'https://racepulseph.firebaseapp.com',
+  'capacitor://localhost',
   'http://localhost:3000',
   'http://localhost:5173',
 ]);
@@ -53,6 +58,12 @@ function registrationFromRequest(input) {
   if (!allowedEntryCategories.has(entryCategory)) throw new Error('Choose a valid entry category.');
   const age = Number(input?.age);
   if (!Number.isInteger(age) || age < 1 || age > 120) throw new Error('Enter a valid age.');
+  const parentalConsentConfirmed = Boolean(input?.parentalConsentConfirmed);
+  const parentalGuardianName = safeText(input?.parentalGuardianName, 100, 'Parent or guardian name', age < 13);
+  const parentalGuardianRelationship = safeText(input?.parentalGuardianRelationship, 40, 'Guardian relationship', age < 13);
+  if (age < 13 && !parentalConsentConfirmed) {
+    throw new Error('Verifiable parent or legal guardian consent is required for participants under 13.');
+  }
   const gender = safeText(input?.gender, 10, 'Gender').toLowerCase();
   if (gender !== 'male' && gender !== 'female') throw new Error('Choose a valid gender.');
   const fullName = safeText(input?.fullName, 100, 'Full name').toUpperCase();
@@ -75,14 +86,19 @@ function registrationFromRequest(input) {
     emergencyContactPhone: safeText(input?.emergencyContactPhone, 30, 'Emergency contact number'),
     ...(safeText(input?.shirtSize, 20, 'Shirt size', false) ? { shirtSize: safeText(input?.shirtSize, 20, 'Shirt size', false).toUpperCase() } : {}),
     ...(entryCategory !== 'solo' ? { teamName, teamMembers } : {}),
+    ...(age < 13 ? { parentalConsentConfirmed: true, parentalGuardianName: parentalGuardianName.toUpperCase(), parentalGuardianRelationship: parentalGuardianRelationship.toUpperCase() } : {}),
+    ...(typeof input?.termsAcceptedAt === 'string' && input.termsAcceptedAt ? { termsAcceptedAt: input.termsAcceptedAt.slice(0, 64) } : {}),
+    ...(typeof input?.marketingOptIn === 'boolean' ? { marketingOptIn: input.marketingOptIn } : {}),
   };
 }
 
-async function requireUser(request) {
+async function requireUser(request, action) {
   const header = request.get('authorization') || '';
   if (!header.startsWith('Bearer ')) throw new Error('Please sign in to continue.');
   const user = await admin.auth().verifyIdToken(header.slice(7), true);
-  if (!user.email_verified) throw new Error('Verify your email before continuing.');
+  const [profile, access] = await Promise.all([db.doc(`users/${user.uid}`).get(), db.doc(`userAccess/${user.uid}`).get()]);
+  if (!profile.exists) throw new Error('Finish creating your account before continuing.');
+  if (action && !accessPolicy.can(profile.data(), access.data(), action)) throw new Error('This action is disabled for your account.');
   return user;
 }
 
@@ -105,13 +121,23 @@ function verifyWebhookSignature(request) {
     return [key, rest.join('=')];
   }));
   const timestamp = fields.t;
+  const tsSeconds = Number(timestamp);
   const rawBody = Buffer.isBuffer(request.rawBody) ? request.rawBody.toString('utf8') : JSON.stringify(request.body || {});
-  if (!timestamp || !rawBody) return false;
+  if (!timestamp || !Number.isFinite(tsSeconds) || Math.abs(Date.now() / 1000 - tsSeconds) > 86400 || !rawBody) return false;
   const expected = crypto.createHmac('sha256', paymongoWebhookSecret.value()).update(`${timestamp}.${rawBody}`).digest('hex');
   const payload = request.body || {};
   const candidate = payload?.data?.attributes?.livemode ? fields.li : fields.te;
   if (!candidate || candidate.length !== expected.length) return false;
   return crypto.timingSafeEqual(Buffer.from(candidate), Buffer.from(expected));
+}
+
+function manilaDateToday() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
 }
 
 function counterIdFor(raceId, distance, entryCategory) {
@@ -133,7 +159,7 @@ async function createCheckout(request, response) {
   let decoded;
   let registration;
   try {
-    decoded = await requireUser(request);
+    decoded = await requireUser(request, 'personal.checkout');
     registration = registrationFromRequest(request.body?.registration);
   } catch (error) {
     return sendJson(response, 400, { error: error.message || 'Invalid registration.' });
@@ -148,7 +174,7 @@ async function createCheckout(request, response) {
     if (!raceSnapshot.exists) throw new Error('This race is no longer available.');
     race = raceSnapshot.data();
     if (race.registrationOpen === false || !race.onlinePaymentEnabled) throw new Error('Online registration is not open for this race.');
-    if (race.registrationCloseDate && race.registrationCloseDate < new Date().toISOString().slice(0, 10)) throw new Error('Registration for this race has closed.');
+    if (race.registrationCloseDate && race.registrationCloseDate < manilaDateToday()) throw new Error('Registration for this race has closed.');
     const distance = (race.distances || []).find((item) => item.label === registration.distance);
     if (!distance || !Number.isFinite(Number(distance.price)) || Number(distance.price) <= 0) throw new Error('Choose a paid race distance configured by the organizer.');
     const allowedEntries = Array.isArray(race.entryCategories) && race.entryCategories.length ? race.entryCategories : ['solo'];
@@ -207,7 +233,7 @@ async function createCheckout(request, response) {
         data: {
           attributes: {
             billing: { name: registration.fullName, email: decoded.email || '', phone: registration.emergencyContactPhone },
-            line_items: [{ name: `${race.name} — ${registration.distance}`, amount, currency: 'PHP', quantity: 1 }],
+            line_items: [{ name: `${race.name}: ${registration.distance}`, amount, currency: 'PHP', quantity: 1 }],
             payment_method_types: ['card', 'gcash', 'paymaya', 'qrph'],
             reference_number: paymentId,
             success_url: `${origin}/?payment=${encodeURIComponent(paymentId)}`,
@@ -219,6 +245,7 @@ async function createCheckout(request, response) {
           },
         },
       }),
+      signal: AbortSignal.timeout(15000),
     });
     const result = await paymongoResponse.json();
     const checkoutUrl = result?.data?.attributes?.checkout_url;
@@ -311,10 +338,15 @@ async function handleWebhook(request, response) {
 
 exports.paymentsApi = onRequest({
   region: 'asia-southeast1',
+  maxInstances: 20,
   secrets: [paymongoSecretKey, paymongoWebhookSecret],
 }, async (request, response) => {
+  response.set('Cache-Control', 'no-store');
   setCors(request, response);
   if (request.method === 'OPTIONS') return response.status(204).send('');
+  if (request.method === 'POST' && (!request.is('application/json') || (request.rawBody?.length || 0) > 65536)) {
+    return sendJson(response, 400, { error: 'Invalid request.' });
+  }
   const path = (request.path || '/').replace(/\/+$/, '') || '/';
   if (request.method === 'POST' && path === '/checkout') return createCheckout(request, response);
   if (request.method === 'POST' && path === '/webhooks/paymongo') return handleWebhook(request, response);

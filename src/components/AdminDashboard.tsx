@@ -1,63 +1,198 @@
-import { useEffect, useMemo, useState } from 'react';
-import { collection, doc, getDocs, onSnapshot, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { collection, doc, getDoc, getDocs, onSnapshot, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { useAccess, accessCommand } from '../lib/access';
 import { db, signOutUser } from '../firebase';
 import { RunnerProfile, UserProfile } from '../types';
-import OperatorDashboard from './OperatorDashboard';
-import TimingConsole from './TimingConsole';
-import RaceSetupPanel from './RaceSetupPanel';
-import BottomNav from './BottomNav';
+import WorkspaceShell from './WorkspaceShell';
+import type { WorkspaceSwitchProps } from './DesktopSidebar';
+import AccountPrivacyModal from './AccountPrivacyModal';
+import { AnimatedMetricValue, AnimatedTabView, ViewLoadingSkeleton, resolveTabDirection, type NavDirection } from './ui/MotionPrimitives';
+import type { TimingLaunchRequest } from './TimingConsole';
+import type { RaceSetupLaunchRequest } from './RaceSetupPanel';
+import type { LiveBroadcastLaunchRequest } from './LiveBroadcastPanel';
+import type { EngravingLaunchRequest } from './OperatorDashboard';
 import {
-  Award, Radio, Flag, Users, Users2, LogOut, CheckCircle, XCircle, ShieldCheck, Search, Trash2,
+  Award, CalendarDays, Timer, Tv, Flag, UserCog, Users, LogOut, CheckCircle, XCircle, ShieldCheck, Search, Trash2, Printer,
 } from 'lucide-react';
 
-type AdminTab = 'engraving' | 'timing' | 'race' | 'organizers' | 'runners';
+const LiveBroadcastPanel = lazy(() => import('./LiveBroadcastPanel'));
+const MyRaceEventsPanel = lazy(() => import('./MyRaceEventsPanel'));
+const OperatorDashboard = lazy(() => import('./OperatorDashboard'));
+const TimingConsole = lazy(() => import('./TimingConsole'));
+const RaceSetupPanel = lazy(() => import('./RaceSetupPanel'));
+const AccessPanel = lazy(() => import('./AccessPanel'));
+const BibStudioPanel = lazy(() => import('./BibStudioPanel'));
+
+type AdminTab = 'engraving' | 'timing' | 'race' | 'bibstudio' | 'organizers' | 'runners' | 'access' | 'events' | 'hub';
+
+const ADMIN_TAB_ORDER: readonly AdminTab[] = ['events', 'hub', 'engraving', 'timing', 'race', 'bibstudio', 'organizers', 'runners', 'access'];
 
 interface AdminDashboardProps {
   profile: UserProfile;
+  workspaceSwitch?: WorkspaceSwitchProps;
+  pendingApprovalNotice?: boolean;
 }
 
-export default function AdminDashboard({ profile }: AdminDashboardProps) {
-  const [tab, setTab] = useState<AdminTab>('engraving');
-  const isSuperAdmin = profile.role === 'superadmin';
+export default function AdminDashboard({ profile, workspaceSwitch, pendingApprovalNotice }: AdminDashboardProps) {
+  const { can, authority: isSuperAdmin } = useAccess();
+  const [tab, setTab] = useState<AdminTab>(can('engraving.view') ? 'engraving' : 'events');
+  const [tabDirection, setTabDirection] = useState<NavDirection>('forward');
+  const [showAccountPrivacy, setShowAccountPrivacy] = useState(false);
+  const launchSeqRef = useRef(0);
+  const [timingLaunch, setTimingLaunch] = useState<TimingLaunchRequest | null>(null);
+  const [setupLaunch, setSetupLaunch] = useState<RaceSetupLaunchRequest | null>(null);
+  const [hubLaunch, setHubLaunch] = useState<LiveBroadcastLaunchRequest | null>(null);
+  const [engravingLaunch, setEngravingLaunch] = useState<EngravingLaunchRequest | null>(null);
+
+  const selectTab = (next: AdminTab, explicitDirection?: NavDirection) => {
+    setTabDirection(explicitDirection ?? resolveTabDirection(ADMIN_TAB_ORDER, tabRefOrCurrent(activeRef.current), next));
+    setTab(next);
+  };
+  const tabRefOrCurrent = (current: AdminTab) => current;
+
+  const nextNonce = () => {
+    launchSeqRef.current += 1;
+    return launchSeqRef.current;
+  };
+  const openRaceTiming = (raceId: string, mode: 'record' | 'roster' = 'record') => {
+    localStorage.setItem('racepulse_active_race', raceId);
+    setTimingLaunch({ raceId, mode, nonce: nextNonce() });
+    selectTab('timing');
+  };
+  const openRaceEngraving = (raceId: string) => {
+    localStorage.setItem('racepulse_engraving_race', raceId);
+    setEngravingLaunch({ raceId, nonce: nextNonce() });
+    selectTab('engraving');
+  };
+  const openRaceSetup = (raceId?: string) => {
+    setSetupLaunch(
+      raceId
+        ? { mode: 'edit', raceId, nonce: nextNonce() }
+        : { mode: 'create', nonce: nextNonce() },
+    );
+    selectTab('race');
+  };
+  const openRaceHub = (raceId: string) => {
+    setHubLaunch({ raceId, nonce: nextNonce() });
+    selectTab('hub');
+  };
+  const allowed: Record<AdminTab, boolean> = { engraving: can('engraving.view'), timing: can('timing.view') || can('roster.view'), race: can('race.view') || can('race.create'), bibstudio: isSuperAdmin, organizers: can('users.view') || isSuperAdmin, runners: can('users.view') || isSuperAdmin, access: isSuperAdmin, events: can('race.view'), hub: can('hub.manage') || can('hub.publish') };
+  const active = allowed[tab] ? tab : (Object.keys(allowed).find(key => allowed[key]) as AdminTab);
+  const homeTab: AdminTab = can('engraving.view') ? 'engraving' : (Object.keys(allowed).find(key => allowed[key]) as AdminTab) || 'events';
+  const activeRef = useRef(active);
+  const homeTabRef = useRef(homeTab);
+  activeRef.current = active;
+  homeTabRef.current = homeTab;
 
   useEffect(() => {
-    const goHome = () => setTab('engraving');
+    const goHome = (event: Event) => {
+      const isHardware = (event as CustomEvent<{ hardware?: boolean }>).detail?.hardware === true;
+      if (isHardware) {
+        if (event.defaultPrevented || activeRef.current === homeTabRef.current) return;
+        event.preventDefault();
+      }
+      setTabDirection('back');
+      setTab(homeTabRef.current);
+    };
     window.addEventListener('racepulse:back', goHome);
     return () => window.removeEventListener('racepulse:back', goHome);
   }, []);
 
+  const spaceTitle = isSuperAdmin
+    ? 'Super Admin Console'
+    : profile.role === 'admin'
+      ? 'Admin Console'
+      : profile.role === 'organizer'
+        ? 'Organizer Console'
+        : 'Operations';
+
+  const navItems = [
+    { key: 'events', icon: <CalendarDays className="w-4 h-4" />, label: 'My Events', shortLabel: 'Events', active: active === 'events', onClick: () => selectTab('events') },
+    { key: 'hub', icon: <Tv className="w-4 h-4" />, label: 'Live Hub', shortLabel: 'Live Hub', active: active === 'hub', onClick: () => selectTab('hub') },
+    { key: 'engraving', icon: <Award className="w-4 h-4" />, label: 'Engraving', shortLabel: 'Engrave', active: active === 'engraving', onClick: () => selectTab('engraving') },
+    { key: 'timing', icon: <Timer className="w-4 h-4" />, label: 'Timing', shortLabel: 'Timing', active: active === 'timing', onClick: () => selectTab('timing') },
+    { key: 'race', icon: <Flag className="w-4 h-4" />, label: 'Race Setup', shortLabel: 'Setup', active: active === 'race', onClick: () => selectTab('race') },
+    { key: 'bibstudio', icon: <Printer className="w-4 h-4" />, label: 'Bib Studio', shortLabel: 'Bibs', active: active === 'bibstudio', onClick: () => selectTab('bibstudio') },
+    { key: 'organizers', icon: <UserCog className="w-4 h-4" />, label: 'Organizers', shortLabel: 'Orgs', active: active === 'organizers', onClick: () => selectTab('organizers') },
+    { key: 'runners', icon: <Users className="w-4 h-4" />, label: 'Runners', shortLabel: 'Runners', active: active === 'runners', onClick: () => selectTab('runners') },
+    { key: 'access', icon: <ShieldCheck className="w-4 h-4" />, label: 'Access', shortLabel: 'Access', active: active === 'access', onClick: () => selectTab('access') },
+  ].filter(item => allowed[item.key as AdminTab]);
+
+  const isLocked = active === 'engraving' || active === 'events' || active === 'hub' || active === 'timing';
+
   return (
-    <div className="w-full max-w-7xl mx-auto px-4 py-4 pb-28 space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between glass-panel hero-glow px-4 sm:px-6 py-5 gap-4 animate-fadeIn">
-        <div>
-          <span className="text-[10px] tracking-widest font-extrabold text-amber-500 font-display bg-amber-500/10 px-2.5 py-1 rounded-full uppercase border border-amber-500/20">{isSuperAdmin ? 'Super Admin Console' : 'Admin Console'}</span>
-          <h1 className="heading-float text-2xl font-black tracking-tight font-display text-[var(--text-primary)] mt-1.5 uppercase">Welcome, {profile.displayName}</h1>
-          <p className="text-xs text-[var(--text-secondary)] mt-1">{isSuperAdmin ? 'Secure control over accounts, organizer approvals, races, timing, and engraving.' : 'Operational control over engraving, timing, and race setup.'}</p>
+    <WorkspaceShell
+      spaceTitle={spaceTitle}
+      navLabel="Operations navigation"
+      items={navItems}
+      profile={profile}
+      workspaceSwitch={workspaceSwitch}
+      pendingApprovalNotice={pendingApprovalNotice}
+      maxWidthClass="max-w-[1800px]"
+      desktopLocked={isLocked}
+      onOpenProfile={() => setShowAccountPrivacy(true)}
+    >
+      {/* Mobile-only compact console header + account privacy + sign out; desktop uses the sidebar avatar tooltip and persistent top bar */}
+      <div
+        className={`lg:hidden glass-panel hero-glow flex justify-between ${
+          active === 'timing'
+            ? 'flex-row items-center px-3 py-2 gap-2'
+            : 'flex-col sm:flex-row sm:items-center px-4 py-4 gap-3'
+        }`}
+      >
+        <div className="min-w-0">
+          <span className="text-xs tracking-wider font-semibold text-red-700 dark:text-red-400 uppercase block truncate">{spaceTitle}</span>
+          <h1 className={`heading-float font-semibold tracking-tight font-display text-[var(--text-primary)] truncate ${active === 'timing' ? 'text-sm' : 'text-xl mt-1'}`}>{profile.displayName}</h1>
         </div>
-        <button
-          onClick={() => signOutUser()}
-          className="text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)]/75 backdrop-blur-md hover:text-[var(--text-primary)] font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider self-start"
-        >
-          <LogOut className="w-3.5 h-3.5" /> Sign Out
-        </button>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowAccountPrivacy(true)}
+            className="min-h-11 shrink-0 text-xs text-[var(--text-primary)] border border-[var(--border-default)] hover:border-red-500/40 hover:text-red-700 dark:hover:text-red-400 font-semibold px-3 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
+          >
+            <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" /> Privacy
+          </button>
+          <button
+            type="button"
+            onClick={() => signOutUser()}
+            className="min-h-11 shrink-0 text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)] hover:text-[var(--text-primary)] font-semibold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
+          >
+            <LogOut className="w-3.5 h-3.5" aria-hidden="true" /> Sign Out
+          </button>
+        </div>
       </div>
 
-      {tab === 'engraving' && <OperatorDashboard />}
-      {tab === 'timing' && <TimingConsole uid={profile.uid} canSeeAllRaces />}
-      {tab === 'race' && <RaceSetupPanel uid={profile.uid} canSeeAllRaces canDeleteRaces={profile.role === 'superadmin'} />}
-      {tab === 'organizers' && <OrganizersPanel canManageAccounts={isSuperAdmin} currentUserId={profile.uid} />}
-      {tab === 'runners' && <RunnersPanel canManageAccounts={isSuperAdmin} currentUserId={profile.uid} />}
+      <AnimatedTabView
+        tabKey={active}
+        direction={tabDirection}
+        className={isLocked ? 'lg:flex-1 lg:min-h-0 lg:flex lg:flex-col' : ''}
+      >
+        <Suspense fallback={<ViewLoadingSkeleton label="Loading module" compact />}>
+          {active === 'engraving' && <OperatorDashboard launchRequest={engravingLaunch} />}
+          {active === 'timing' && <TimingConsole uid={profile.uid} canSeeAllRaces launchRequest={timingLaunch} />}
+          {active === 'race' && <RaceSetupPanel uid={profile.uid} canSeeAllRaces canDeleteRaces={isSuperAdmin} launchRequest={setupLaunch} />}
+          {active === 'bibstudio' && <BibStudioPanel />}
+          {active === 'events' && (
+            <MyRaceEventsPanel
+              uid={profile.uid}
+              onManageRace={(id) => openRaceTiming(id, 'record')}
+              onOpenTiming={(id) => openRaceTiming(id, 'record')}
+              onOpenRunners={(id) => openRaceTiming(id, 'roster')}
+              onOpenEngraving={openRaceEngraving}
+              onOpenSetup={(id) => openRaceSetup(id)}
+              onOpenLiveHub={openRaceHub}
+              onCreateEvent={() => openRaceSetup()}
+            />
+          )}
+          {active === 'hub' && <LiveBroadcastPanel uid={profile.uid} launchRequest={hubLaunch} />}
+          {active === 'organizers' && <OrganizersPanel canManageAccounts={isSuperAdmin} currentUserId={profile.uid} />}
+          {active === 'runners' && <RunnersPanel canManageAccounts={isSuperAdmin} currentUserId={profile.uid} />}
+          {active === 'access' && <AccessPanel />}
+        </Suspense>
+      </AnimatedTabView>
 
-      <BottomNav
-        items={[
-          { key: 'engraving', icon: <Award className="w-4 h-4" />, label: 'Engraving', active: tab === 'engraving', onClick: () => setTab('engraving') },
-          { key: 'timing', icon: <Radio className="w-4 h-4" />, label: 'Timing', active: tab === 'timing', onClick: () => setTab('timing') },
-          { key: 'race', icon: <Flag className="w-4 h-4" />, label: 'Race Setup', active: tab === 'race', onClick: () => setTab('race') },
-          { key: 'organizers', icon: <Users className="w-4 h-4" />, label: 'Organizers', active: tab === 'organizers', onClick: () => setTab('organizers') },
-          { key: 'runners', icon: <Users2 className="w-4 h-4" />, label: 'Runners', active: tab === 'runners', onClick: () => setTab('runners') },
-        ]}
-      />
-    </div>
+      {showAccountPrivacy && <AccountPrivacyModal profile={profile} onClose={() => setShowAccountPrivacy(false)} />}
+    </WorkspaceShell>
   );
 }
 
@@ -65,12 +200,8 @@ export default function AdminDashboard({ profile }: AdminDashboardProps) {
 // ========== ORGANIZER APPROVALS ==========
 
 async function removeAppAccount(user: UserProfile): Promise<void> {
-  const runnerSnapshot = await getDocs(query(collection(db, 'runners'), where('uid', '==', user.uid)));
-  const batch = writeBatch(db);
-  runnerSnapshot.forEach((runnerDoc) => batch.delete(runnerDoc.ref));
-  batch.delete(doc(db, 'users', user.uid));
-  batch.set(doc(db, 'removedAccounts', user.uid), { removedAt: new Date().toISOString(), email: user.email });
-  await batch.commit();
+  const access = (await getDoc(doc(db, 'userAccess', user.uid))).data();
+  await accessCommand('remove', { uid: user.uid, revision: access?.revision || 0, requestId: crypto.randomUUID() });
 }
 
 function OrganizersPanel({ canManageAccounts, currentUserId }: { canManageAccounts: boolean; currentUserId: string }) {
@@ -81,18 +212,20 @@ function OrganizersPanel({ canManageAccounts, currentUserId }: { canManageAccoun
       const list: UserProfile[] = [];
       snapshot.forEach((docSnap) => list.push(docSnap.data() as UserProfile));
       list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      setUsers(list);
+      setUsers(list.filter(user => !user.accessRemoved));
     }, (err) => console.warn('Users listener failed:', err.message));
     return () => unsubscribe();
   }, []);
 
   const pending = users.filter((u) => u.role === 'organizer' && !u.approved);
   const approvedOrganizers = users.filter((u) => u.role === 'organizer' && u.approved);
-  const admins = users.filter((u) => u.role === 'admin' || u.role === 'superadmin');
+  const admins = users.filter((u) => u.role === 'admin');
+  const superAdmins = users.filter((u) => u.role === 'superadmin');
 
   const setApproved = async (uid: string, approved: boolean) => {
     try {
-      await updateDoc(doc(db, 'users', uid), { approved });
+      const access = (await getDoc(doc(db, 'userAccess', uid))).data() || { scope: 'owned-assigned', raceIds: [], status: 'active', overrides: {}, revision: 0 };
+      await accessCommand('save', { ...access, role: 'organizer', approved, uid, requestId: crypto.randomUUID() });
     } catch (err) {
       console.warn('Failed to update organizer approval:', err);
     }
@@ -109,10 +242,11 @@ function OrganizersPanel({ canManageAccounts, currentUserId }: { canManageAccoun
 
   return (
     <div className="space-y-6">
+      <h1 className="sr-only">Organizers</h1>
       <div className="glass-panel p-5">
-        <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2 mb-3">
-          <Users className="w-4 h-4 text-red-500" /> Pending Organizer Approvals
-        </h3>
+        <h2 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2 mb-3">
+          <UserCog className="w-4 h-4 text-red-500" aria-hidden="true" /> Pending Organizer Approvals
+        </h2>
         {pending.length === 0 ? (
           <p className="text-xs text-[var(--text-secondary)]">No pending requests.</p>
         ) : (
@@ -161,7 +295,23 @@ function OrganizersPanel({ canManageAccounts, currentUserId }: { canManageAccoun
           <ShieldCheck className="w-4 h-4 text-amber-500" /> Admins
         </h3>
         <div className="space-y-2">
+          {admins.length === 0 && <p className="text-xs text-[var(--text-secondary)]">No admins yet.</p>}
           {admins.map((u) => (
+            <div key={u.uid} className="glass-inset px-4 py-3">
+              <p className="text-sm font-bold text-[var(--text-primary)]">{u.displayName}</p>
+              <p className="text-[10px] text-[var(--text-secondary)]">{u.email}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="glass-panel p-5">
+        <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2 mb-3">
+          <ShieldCheck className="w-4 h-4 text-amber-500" /> Super Admins
+        </h3>
+        <div className="space-y-2">
+          {superAdmins.length === 0 && <p className="text-xs text-[var(--text-secondary)]">No super admins yet.</p>}
+          {superAdmins.map((u) => (
             <div key={u.uid} className="glass-inset px-4 py-3">
               <p className="text-sm font-bold text-[var(--text-primary)]">{u.displayName}</p>
               <p className="text-[10px] text-[var(--text-secondary)]">{u.email}</p>
@@ -177,15 +327,21 @@ function OrganizersPanel({ canManageAccounts, currentUserId }: { canManageAccoun
 
 function RunnersPanel({ canManageAccounts, currentUserId }: { canManageAccounts: boolean; currentUserId: string }) {
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [usersLoaded, setUsersLoaded] = useState(false);
   const [registrationCounts, setRegistrationCounts] = useState<Record<string, number>>({});
+  const [registrationsLoaded, setRegistrationsLoaded] = useState(false);
   const [search, setSearch] = useState('');
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
       const list: UserProfile[] = [];
       snapshot.forEach((docSnap) => list.push(docSnap.data() as UserProfile));
-      setUsers(list);
-    }, (err) => console.warn('Users listener failed:', err.message));
+      setUsers(list.filter(user => !user.accessRemoved));
+      setUsersLoaded(true);
+    }, (err) => {
+      console.warn('Users listener failed:', err.message);
+      setUsersLoaded(true);
+    });
     return () => unsubscribe();
   }, []);
 
@@ -199,7 +355,11 @@ function RunnersPanel({ canManageAccounts, currentUserId }: { canManageAccounts:
         counts[data.uid] = (counts[data.uid] || 0) + 1;
       });
       setRegistrationCounts(counts);
-    }, (err) => console.warn('Runner registrations listener failed:', err.message));
+      setRegistrationsLoaded(true);
+    }, (err) => {
+      console.warn('Runner registrations listener failed:', err.message);
+      setRegistrationsLoaded(true);
+    });
     return () => unsubscribe();
   }, []);
 
@@ -231,21 +391,36 @@ function RunnersPanel({ canManageAccounts, currentUserId }: { canManageAccounts:
 
   return (
     <div className="space-y-6">
+      <h1 className="sr-only">Runners Directory</h1>
       <div className="grid grid-cols-2 gap-4">
         <div className="glass-panel p-5 text-center">
-          <p className="text-3xl font-black font-display text-[var(--text-primary)]">{allRunners.length}</p>
+          <p className="text-3xl font-black font-display text-[var(--text-primary)]">
+            <AnimatedMetricValue
+              value={allRunners.length}
+              loading={!usersLoaded}
+              skeletonWidthClass="w-16"
+              skeletonHeightClass="h-8"
+            />
+          </p>
           <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] mt-1">Total Runner Accounts</p>
         </div>
         <div className="glass-panel p-5 text-center">
-          <p className="text-3xl font-black font-display text-red-500">{activeRunnerCount}</p>
+          <p className="text-3xl font-black font-display text-red-500">
+            <AnimatedMetricValue
+              value={activeRunnerCount}
+              loading={!usersLoaded || !registrationsLoaded}
+              skeletonWidthClass="w-16"
+              skeletonHeightClass="h-8"
+            />
+          </p>
           <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] mt-1">Registered for a Race</p>
         </div>
       </div>
 
       <div className="glass-panel p-5">
-        <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2 mb-3">
-          <Users2 className="w-4 h-4 text-red-500" /> All Runners
-        </h3>
+        <h2 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2 mb-3">
+          <Users className="w-4 h-4 text-red-500" aria-hidden="true" /> All Runners
+        </h2>
         {allRunners.length > 0 && (
           <div className="relative mb-3">
             <Search className="w-3.5 h-3.5 text-[var(--text-muted)] absolute left-3.5 top-1/2 -translate-y-1/2" />
