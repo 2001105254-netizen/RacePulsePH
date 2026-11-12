@@ -295,6 +295,19 @@
       "mirror": "skills/racepulse-release-engineering"
     },
     {
+      "name": "racepulse-github-release-cicd",
+      "path": ".agents/skills/racepulse-github-release-cicd",
+      "origin": "repo",
+      "status": "active",
+      "category": "release",
+      "description": "Automate RacePulsePH semantic versioning, commit hooks, always-RacePulsePH Android APK/AAB naming, GitHub Actions CI/CD, and standard GitHub Releases. Use when setting up CI/CD workflows, versioning hooks, or publishing app releases.",
+      "dependsOn": ["racepulse-release-engineering", "capacitor-android-architect"],
+      "rules": ["C-2", "C-4", "C-5", "R-02", "R-33", "R-35", "R-36"],
+      "references": ["checklist.md"],
+      "scripts": [],
+      "mirror": "skills/racepulse-github-release-cicd"
+    },
+    {
       "name": "racepulse-observability",
       "path": ".agents/skills/racepulse-observability",
       "origin": "repo",

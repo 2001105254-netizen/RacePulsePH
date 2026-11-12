@@ -41,3 +41,4 @@ Load with: `antislop`, `antislop-layoutmobile`, `antislop-human`, `capacitor-and
 1. Edit Kotlin, XML, HTML, and CSS sources directly without patching built files (`R-33`).
 2. Confirm every verification check passes (Insets portrait/landscape, IME keyboard, List `key`/`contentType`, Touch targets `>= 48.dp` native / `>= 44px` web, Hierarchy depth) in emulator or device inspection.
 3. For RacePulsePH WebView edits, run `npm run lint`, `npm run build`, and `npm run android:sync` (plus `./gradlew bundleRelease` / `.\gradlew.bat bundleRelease` for native shell changes) and deliver the `AGENTS.md` PASS/FAIL Delivery Gate report.
+

@@ -1,5 +1,9 @@
 apply plugin: 'com.android.application'
 
+base {
+    archivesName = "RacePulsePH"
+}
+
 android {
     namespace = "com.racepulseph.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +11,8 @@ android {
         applicationId "com.racepulseph.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 2
+        versionName "1.0.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -34,6 +38,35 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             if (signingConfigs.release.storeFile != null) {
                 signingConfig signingConfigs.release
+            }
+        }
+    }
+    applicationVariants.all { variant ->
+        if (variant.buildType.name == "release") {
+            variant.outputs.all { output ->
+                outputFileName = "RacePulsePH.apk"
+            }
+        }
+    }
+}
+
+afterEvaluate {
+    tasks.matching { it.name == 'signReleaseBundle' || it.name == 'bundleRelease' }.configureEach { bundleTask ->
+        bundleTask.doLast {
+            def bundleDir = layout.buildDirectory.dir("outputs/bundle/release").get().asFile
+            def target = new File(bundleDir, "RacePulsePH.aab")
+            def candidates = (bundleDir.listFiles()?.findAll { it.name.endsWith(".aab") && it.name != "RacePulsePH.aab" } ?: [])
+                .sort { a, b ->
+                    def aPreferred = a.name == "RacePulsePH-release.aab" ? 0 : 1
+                    def bPreferred = b.name == "RacePulsePH-release.aab" ? 0 : 1
+                    aPreferred != bPreferred ? (aPreferred <=> bPreferred) : (b.lastModified() <=> a.lastModified())
+                }
+            if (!candidates.isEmpty()) {
+                java.nio.file.Files.copy(
+                    candidates[0].toPath(),
+                    target.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                )
             }
         }
     }

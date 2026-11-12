@@ -143,3 +143,4 @@ Cap per-item delays to the first 6 to 8 visible viewport items (`0.28s` max) so 
 - **`mode="wait"` vs `mode="popLayout"`:** `mode="wait"` keeps the user looking at the outgoing page until exit finishes before mounting the next route. Use `mode="popLayout"` for spatial slide transitions so exit detaches cleanly while entrance begins on the next frame.
 - **Portals and `transform` ancestors:** A `position: fixed` modal placed inside an element with an active `transform` or `will-change: transform` clips to the transformed container. Render dialogs and sheets via top-layer `<dialog>` or `createPortal(..., document.body)` as done in `src/components/ui/DialogSurface.tsx`.
 - **Static `backdrop-filter`:** Never animate blur values on Android WebViews. Keep `backdrop-filter` static on at most 1 to 2 focal surfaces (`R-10`), and drop it if scrolling underneath lags on target hardware.
+

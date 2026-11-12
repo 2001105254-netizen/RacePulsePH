@@ -43,3 +43,4 @@ Load with: `antislop`, `antislop-ui`, `antislop-layoutmobile`, `capacitor-androi
 1. Confirm design direction (`R-37`), MOTION dial (`R-19`), and visual asset approval (`R-23`), then edit `.tsx` and `.css` sources directly without patch scripts (`R-33`).
 2. Run `npm run lint`, `npm run build`, and `npm run android:sync` (all exit `0`) and test forward push, hardware back pop, tab `layoutId`, loading/error states (`R-27`), and OS reduced-motion mode in browser and Android WebView.
 3. Deliver the `AGENTS.md` PASS/FAIL report listing tested interactions, command exit codes, and a 1-line `R-31` UX purpose for every animated surface.
+
