@@ -1,41 +1,47 @@
 {
-  "version": 1,
+  "version": 2,
   "skills": {
     "antislop": {
       "source": "miqdadbadjuber/anti-slop",
       "sourceType": "github",
       "skillPath": "skills/antislop/SKILL.md",
-      "computedHash": "26d11f0397c70bfdda43fc5ecd5589170674f9d823783a955db71bf1755d80fe"
+      "computedHash": "666b1b0d686f47136f8fb55ebf86d5bd2dad2a80594615ea665be2be4e6277b8"
     },
     "antislop-code": {
       "source": "miqdadbadjuber/anti-slop",
       "sourceType": "github",
       "skillPath": "skills/antislop-code/SKILL.md",
-      "computedHash": "459c556cee628a295f1e4ab0f575a6ca9f63032bb87e52e8dfd7a50cbc9c88c9"
+      "computedHash": "648f9f24b44a610626dcd1dbe52a2147c3f5f994c3e641b83aeab58404a09fa9"
     },
     "antislop-copywriting": {
       "source": "miqdadbadjuber/anti-slop",
       "sourceType": "github",
       "skillPath": "skills/antislop-copywriting/SKILL.md",
-      "computedHash": "506633a939259f1a4d0defdb36e6462cde1ac78d31026829cb5c5e8f4a5fae07"
+      "computedHash": "3b84ee78a04288074ddf4e0eec27439708ad7980935eb959d5c808b64b24ef6f"
     },
     "antislop-human": {
       "source": "miqdadbadjuber/anti-slop",
       "sourceType": "github",
       "skillPath": "skills/antislop-human/SKILL.md",
-      "computedHash": "4bc2343e2e6c1bef78b076f3b31655f318fe9af9ea33635932e16dd4c3700a9a"
+      "computedHash": "7d84051dca0006b59433e03fd0bdc324db15affc4b51bf6993fc52d1a1dfeae3"
     },
     "antislop-layoutmobile": {
       "source": "miqdadbadjuber/anti-slop",
       "sourceType": "github",
       "skillPath": "skills/antislop-layoutmobile/SKILL.md",
-      "computedHash": "1def32958e5be3356d1dd27428d04df0bd69bb9df8df9117c11abacc464b4ef6"
+      "computedHash": "90c893982c197eb438a7136aee48d084da7e9210127670e924431d45fecc225e"
     },
     "antislop-ui": {
       "source": "miqdadbadjuber/anti-slop",
       "sourceType": "github",
       "skillPath": "skills/antislop-ui/SKILL.md",
-      "computedHash": "fab0b57f0c8e54faf7ef05d2620d3dd24a8e3d4e465f508ae0d1dd0d35e6fb29"
+      "computedHash": "588c3a726f2054c0aa3335f61cea6a3a9e53b2821cafda40d25ebf8d1c37e59e"
+    },
+    "modern-web-guidance": {
+      "source": "GoogleChrome/modern-web-guidance",
+      "sourceType": "github",
+      "skillPath": "skills/modern-web-guidance/SKILL.md",
+      "computedHash": "9e69ce00dc314b64f6664031b70295ea46c7de93ac682c624808df6e48e08b66"
     }
   }
 }
