@@ -111,12 +111,12 @@ function RouteCanvas({ route, raceName }: { route: GpxRoute; raceName: string })
         <circle cx={finish.x} cy={finish.y} r="7" fill="#dc2626" stroke="var(--surface-page)" strokeWidth="3" />
       </svg>
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border-default)] px-3 py-2">
-        <p className="text-[10px] text-[var(--text-secondary)]">Drag the route to rotate. Elevation comes from the GPX file.</p>
-        <div className="flex items-center gap-1">
-          <button type="button" onClick={() => setYaw((current) => current - 20)} className="min-h-9 rounded-lg border border-[var(--border-default)] px-2.5 text-[10px] font-semibold text-[var(--text-primary)] hover:border-red-500/50 hover:text-red-500">Turn left</button>
-          <button type="button" onClick={() => setYaw((current) => current + 20)} className="min-h-9 rounded-lg border border-[var(--border-default)] px-2.5 text-[10px] font-semibold text-[var(--text-primary)] hover:border-red-500/50 hover:text-red-500">Turn right</button>
-          <button type="button" onClick={() => { setYaw(-28); setPitch(58); }} className="min-h-9 rounded-lg p-2 text-[var(--text-secondary)] hover:text-red-500" aria-label="Reset route view"><RotateCcw className="h-4 w-4" /></button>
-          <a href={openStreetMapUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2.5 text-[10px] font-semibold text-red-600 hover:bg-red-500/10 dark:text-red-400"><MapPinned className="h-3.5 w-3.5" /> Open location <ExternalLink className="h-3 w-3" /></a>
+        <p className="text-xs text-[var(--text-secondary)]">Drag the route to rotate. Elevation comes from the GPX file.</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => setYaw((current) => current - 20)} className="min-h-11 rounded-lg border border-[var(--border-default)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-700/50 dark:hover:border-red-400/50 hover:text-red-700 dark:hover:text-red-400">Turn left</button>
+          <button type="button" onClick={() => setYaw((current) => current + 20)} className="min-h-11 rounded-lg border border-[var(--border-default)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-700/50 dark:hover:border-red-400/50 hover:text-red-700 dark:hover:text-red-400">Turn right</button>
+          <button type="button" onClick={() => { setYaw(-28); setPitch(58); }} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg p-2 text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400" aria-label="Reset route view"><RotateCcw className="h-4 w-4" aria-hidden="true" /></button>
+          <a href={openStreetMapUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-1 rounded-lg px-3 text-xs font-semibold text-red-700 hover:bg-red-700/10 dark:text-red-400"><MapPinned className="h-3.5 w-3.5" aria-hidden="true" /> Open location <ExternalLink className="h-3 w-3" aria-hidden="true" /></a>
         </div>
       </div>
     </div>
@@ -144,14 +144,14 @@ export default function RouteMap3D({ gpxUrl, raceName, fileName, compact = false
     <section className="rounded-[20px] border border-[var(--border-default)] bg-[var(--surface-panel)] p-4 sm:p-5" aria-label={`${raceName} route`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="flex items-center gap-2 text-base font-semibold text-[var(--text-primary)]"><MapPinned className="h-5 w-5 text-red-500" /> Race route</h3>
+          <h3 className="flex items-center gap-2 text-base font-semibold text-[var(--text-primary)]"><MapPinned className="h-5 w-5 text-red-700 dark:text-red-400" aria-hidden="true" /> Race route</h3>
           <p className="mt-1 text-xs text-[var(--text-secondary)]">{fileName || 'GPX route file'}</p>
         </div>
         {route && <div className="text-right text-xs text-[var(--text-secondary)]"><p><span className="font-semibold text-[var(--text-primary)]">{route.distanceKm.toFixed(1)} km</span> route distance</p><p className="mt-1"><span className="font-semibold text-[var(--text-primary)]">+{Math.round(route.elevationGainM)} m</span> ascent</p></div>}
       </div>
       <div className={compact ? 'mt-3' : 'mt-4'}>
         {route ? <RouteCanvas route={route} raceName={raceName} /> : error ? (
-          <div className="rounded-[16px] border border-red-500/30 bg-red-500/10 px-4 py-5 text-sm text-red-600 dark:text-red-300">Route file is available, but the preview could not load. Download or replace the GPX file, then try again.</div>
+          <div className="rounded-[16px] border border-red-500/30 bg-red-500/10 px-4 py-5 text-sm text-red-700 dark:text-red-300">Route file is available, but the preview could not load. Download or replace the GPX file, then try again.</div>
         ) : (
           <div className="flex min-h-48 items-center justify-center gap-2 rounded-[16px] border border-[var(--border-default)] bg-[var(--surface-inset)] text-sm text-[var(--text-secondary)]"><RefreshCw className="h-4 w-4 animate-spin" /> Loading route preview</div>
         )}

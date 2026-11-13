@@ -114,11 +114,11 @@ export default function OrganizerDashboard({ profile }: OrganizerDashboardProps)
         <div className="flex flex-wrap items-center gap-2 shrink-0">
           {tab !== 'timing' && (
             <>
-              <button type="button" onClick={() => setShowSetupGuide(true)} className="min-h-11 text-xs text-[var(--text-primary)] border border-[var(--border-default)] hover:border-red-500/40 hover:text-red-700 dark:hover:text-red-400 font-semibold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"><BookOpen className="w-3.5 h-3.5" aria-hidden="true" /> Setup guide</button>
-              <button type="button" onClick={() => setShowAccountPrivacy(true)} title="Account and Privacy Settings" className="min-h-11 text-xs text-[var(--text-primary)] border border-[var(--border-default)] hover:border-red-500/40 hover:text-red-700 dark:hover:text-red-400 font-semibold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"><ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" /> Account &amp; Privacy</button>
+              <button type="button" onClick={() => setShowSetupGuide(true)} className="min-h-11 text-xs text-[var(--text-primary)] border border-[var(--border-default)] hover:border-red-500/40 hover:text-red-700 dark:hover:text-red-400 font-semibold px-4 py-2 rounded-[20px] transition flex items-center gap-2 uppercase tracking-wider"><BookOpen className="w-3.5 h-3.5" aria-hidden="true" /> Setup guide</button>
+              <button type="button" onClick={() => setShowAccountPrivacy(true)} title="Account and Privacy Settings" className="min-h-11 text-xs text-[var(--text-primary)] border border-[var(--border-default)] hover:border-red-500/40 hover:text-red-700 dark:hover:text-red-400 font-semibold px-4 py-2 rounded-[20px] transition flex items-center gap-2 uppercase tracking-wider"><ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" /> Account &amp; Privacy</button>
             </>
           )}
-          <button type="button" onClick={() => signOutUser()} className="lg:hidden min-h-11 text-xs text-[var(--text-secondary)] border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-card)] hover:text-[var(--text-primary)] font-semibold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"><LogOut className="w-3.5 h-3.5" aria-hidden="true" /> Sign Out</button>
+          <button type="button" onClick={() => signOutUser()} className="lg:hidden min-h-11 text-xs text-[var(--text-secondary)] border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-card)] hover:text-[var(--text-primary)] font-semibold px-4 py-2 rounded-[20px] transition flex items-center gap-2 uppercase tracking-wider"><LogOut className="w-3.5 h-3.5" aria-hidden="true" /> Sign Out</button>
         </div>
       </div>
 

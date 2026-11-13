@@ -152,7 +152,7 @@ export default function DeleteAccountModal({ profile, onClose }: DeleteAccountMo
 
       {profile.role === 'organizer' && (
         <div className="mt-4 rounded-xl border border-amber-700/40 bg-amber-50 dark:bg-amber-950/40 p-3 text-xs text-amber-950 dark:text-amber-200 flex items-start gap-2">
-          <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5 text-amber-800 dark:text-amber-300" aria-hidden="true" />
+          <ShieldAlert className="w-4 h-4 shrink-0 mt-1 text-amber-800 dark:text-amber-300" aria-hidden="true" />
           <span>
             Deleting an organizer account removes your staff access and profile immediately while keeping published public race timing logs intact.
           </span>
@@ -164,7 +164,7 @@ export default function DeleteAccountModal({ profile, onClose }: DeleteAccountMo
           <div>
             <label
               htmlFor={`${dialogId}-password`}
-              className="block text-xs font-semibold text-[var(--text-secondary)] mb-1.5"
+              className="block text-xs font-semibold text-[var(--text-secondary)] mb-2"
             >
               Confirm current password
             </label>
@@ -183,7 +183,7 @@ export default function DeleteAccountModal({ profile, onClose }: DeleteAccountMo
         <div>
           <label
             htmlFor={`${dialogId}-confirm`}
-            className="block text-xs font-semibold text-[var(--text-secondary)] mb-1.5"
+            className="block text-xs font-semibold text-[var(--text-secondary)] mb-2"
           >
             Type <span className="font-mono text-red-700 dark:text-red-400">DELETE</span> to confirm permanent removal
           </label>

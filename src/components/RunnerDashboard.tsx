@@ -423,14 +423,14 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
     >
       <div className="flex flex-col md:flex-row md:items-center justify-between glass-panel hero-glow px-4 sm:px-6 py-5 gap-4 animate-fadeIn">
         <div>
-          <h1 className="heading-float text-2xl font-black tracking-tight font-display text-[var(--text-primary)] uppercase">Welcome, {profile.displayName}</h1>
+          <h1 className="heading-float text-2xl font-semibold tracking-tight font-display text-[var(--text-primary)] uppercase">Welcome, {profile.displayName}</h1>
           <p className="text-xs text-[var(--text-secondary)] mt-1">Register for races, track your splits, and personalize your finisher medal.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start">
           <button
             type="button"
             onClick={() => { setEventQrError(''); setEventQrMessage(''); setBibClaimError(''); setShowEventQrScanner(true); }}
-            className="min-h-11 text-xs text-violet-500 border border-violet-500/30 hover:bg-violet-500/10 font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
+            className="min-h-11 text-xs text-violet-700 dark:text-violet-400 border border-violet-500/30 hover:bg-violet-500/10 font-semibold px-4 py-2 rounded-[20px] transition flex items-center gap-2 uppercase tracking-wider"
           >
             <Camera className="w-3.5 h-3.5" aria-hidden="true" /> Scan Race / Bib QR
           </button>
@@ -439,7 +439,7 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
             onClick={() => setShowProfile(true)}
             title="My Profile"
             aria-label="Open my profile"
-            className="w-11 h-11 rounded-full overflow-hidden glass-inset flex items-center justify-center text-red-500 font-black text-sm hover:border-red-500/40 transition shrink-0"
+            className="w-11 h-11 rounded-full overflow-hidden glass-inset flex items-center justify-center text-red-700 dark:text-red-400 font-semibold text-sm hover:border-red-500/40 transition shrink-0"
           >
             {profile.photoURL ? (
               <img src={profile.photoURL} alt="" width={44} height={44} className="w-full h-full object-cover" />
@@ -450,7 +450,7 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
           <button
             type="button"
             onClick={() => signOutUser()}
-            className="lg:hidden min-h-11 text-xs text-[var(--text-secondary)] border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-card)] hover:text-[var(--text-primary)] font-bold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
+            className="lg:hidden min-h-11 text-xs text-[var(--text-secondary)] border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-card)] hover:text-[var(--text-primary)] font-semibold px-4 py-2 rounded-[20px] transition flex items-center gap-2 uppercase tracking-wider"
           >
             <LogOut className="w-3.5 h-3.5" aria-hidden="true" /> Sign Out
           </button>
@@ -471,11 +471,10 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
         >
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-700 dark:text-violet-400">Race bib QR found</p>
-              <h2 id="pending-bib-claim-title" className="heading-float text-xl font-black font-display uppercase text-[var(--text-primary)] mt-1">
-                {pendingBibClaim.alreadyLinked ? 'Already in My Races' : 'Add this race?'}
+              <h2 id="pending-bib-claim-title" className="heading-float text-xl font-semibold font-display uppercase text-[var(--text-primary)]">
+                {pendingBibClaim.alreadyLinked ? 'Already in My Races' : 'Add this race bib?'}
               </h2>
-              <p className="text-xs text-[var(--text-secondary)] mt-1.5">{pendingBibClaim.race.name} • {pendingBibClaim.race.date}</p>
+              <p className="text-xs text-[var(--text-secondary)] mt-1">{pendingBibClaim.race.name} • {pendingBibClaim.race.date}</p>
             </div>
             <button
               type="button"
@@ -488,18 +487,18 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
             </button>
           </div>
           <div className="glass-inset p-4 grid grid-cols-2 gap-x-4 gap-y-3 text-left">
-            <span className="col-span-2"><span className="block text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Runner / team</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5">{pendingBibClaim.runner.fullName}</span></span>
-            <span><span className="block text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Bib number</span><span className="block text-lg font-mono font-black text-red-700 dark:text-red-400 mt-0.5">#{pendingBibClaim.runner.bibNumber}</span></span>
-            <span><span className="block text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Distance</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5">{pendingBibClaim.runner.distance}</span></span>
-            <span><span className="block text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Category</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5">{claimableEntryLabel(pendingBibClaim.runner.entryCategory)}</span></span>
-            <span><span className="block text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Gender</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5 capitalize">{pendingBibClaim.runner.gender}</span></span>
+            <span className="col-span-2"><span className="block text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Runner / team</span><span className="block text-sm font-semibold text-[var(--text-primary)] mt-1">{pendingBibClaim.runner.fullName}</span></span>
+            <span><span className="block text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Bib number</span><span className="block text-lg font-mono font-semibold text-red-700 dark:text-red-400 mt-1">#{pendingBibClaim.runner.bibNumber}</span></span>
+            <span><span className="block text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Distance</span><span className="block text-sm font-semibold text-[var(--text-primary)] mt-1">{pendingBibClaim.runner.distance}</span></span>
+            <span><span className="block text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Category</span><span className="block text-sm font-semibold text-[var(--text-primary)] mt-1">{claimableEntryLabel(pendingBibClaim.runner.entryCategory)}</span></span>
+            <span><span className="block text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Gender</span><span className="block text-sm font-semibold text-[var(--text-primary)] mt-1 capitalize">{pendingBibClaim.runner.gender}</span></span>
           </div>
-          {pendingBibClaim.runner.teamMembers && pendingBibClaim.runner.teamMembers.length > 1 && <p className="text-xs text-[var(--text-secondary)]"><span className="font-semibold uppercase tracking-wide text-[var(--text-muted)]">Members: </span>{pendingBibClaim.runner.teamMembers.join(' • ')}</p>}
-          {bibClaimError && <p role="alert" className="text-xs font-bold text-red-700 dark:text-red-400">{bibClaimError}</p>}
+          {pendingBibClaim.runner.teamMembers && pendingBibClaim.runner.teamMembers.length > 1 && <p className="text-xs text-[var(--text-secondary)]"><span className="font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Members: </span>{pendingBibClaim.runner.teamMembers.join(' • ')}</p>}
+          {bibClaimError && <p role="alert" className="text-xs font-semibold text-red-700 dark:text-red-400">{bibClaimError}</p>}
           <p className="text-xs text-[var(--text-secondary)]">Only confirm if this is your official race bib. Your event, live splits, and published result will appear under My Races.</p>
           <div className="grid grid-cols-2 gap-3">
             <button type="button" onClick={() => setPendingBibClaim(null)} disabled={claimingBib} className="min-h-11 py-3 rounded-[var(--radius-control)] glass-inset text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Cancel</button>
-            <button type="button" onClick={confirmBibClaim} disabled={claimingBib} className="min-h-11 py-3 rounded-[var(--radius-control)] bg-gradient-to-r from-red-600 to-red-700 text-white text-xs font-semibold uppercase tracking-widest shadow-lg shadow-red-900/30 disabled:opacity-60">{claimingBib ? 'Adding...' : pendingBibClaim.alreadyLinked ? 'Open My Races' : 'Confirm & Add Race'}</button>
+            <button type="button" onClick={confirmBibClaim} disabled={claimingBib} className="min-h-11 py-3 rounded-[var(--radius-control)] bg-gradient-to-r from-red-700 to-red-800 text-white text-xs font-semibold uppercase tracking-widest shadow-lg shadow-red-900/30 disabled:opacity-60">{claimingBib ? 'Adding...' : pendingBibClaim.alreadyLinked ? 'Open My Races' : 'Confirm & Add Race'}</button>
           </div>
         </DialogSurface>
       )}
@@ -661,9 +660,9 @@ function MyRacesView({ runnerProfiles, onBrowseEvents }: MyRacesViewProps) {
         <button
           type="button"
           onClick={() => setViewingProfile(null)}
-          className="text-xs font-bold text-[var(--text-secondary)] hover:text-red-500 flex items-center gap-1.5 transition"
+          className="min-h-11 py-2 text-xs font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 flex items-center gap-2 transition"
         >
-          <ArrowLeft className="w-3.5 h-3.5" /> Back to My Races
+          <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" /> Back to My Races
         </button>
         {viewedRace?.routeGpxUrl && <RouteMap3D gpxUrl={viewedRace.routeGpxUrl} fileName={viewedRace.routeGpxFileName} raceName={viewedRace.name} />}
         {can('personal.results') ? <RunnerSplitsView runnerProfile={viewingProfile} /> : viewedRace && can('personal.bibs') ? <DigitalRaceBib race={viewedRace} runnerProfile={viewingProfile} /> : <p>Results access is disabled for this account.</p>}
@@ -688,15 +687,15 @@ function MyRacesView({ runnerProfiles, onBrowseEvents }: MyRacesViewProps) {
       <button
         type="button"
         onClick={onBrowseEvents}
-        className="w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-black uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-red-900/30"
+        className="min-h-11 w-full py-3 px-6 rounded-[var(--radius-control)] font-display font-semibold uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 text-white bg-gradient-to-r from-red-700 to-red-800 hover:from-red-600 hover:to-red-700 shadow-red-900/30"
       >
-        <Flag className="w-4 h-4" /> Browse All Events
+        <Flag className="w-4 h-4" aria-hidden="true" /> Browse All Events
       </button>
 
       {runnerProfiles.length === 0 ? (
         <div className="glass-panel p-8 text-center space-y-2">
-          <Flag className="w-8 h-8 text-[var(--text-muted)] mx-auto" />
-          <p className="text-sm font-bold text-[var(--text-primary)]">You're not registered for any races yet</p>
+          <Flag className="w-8 h-8 text-[var(--text-secondary)] mx-auto" aria-hidden="true" />
+          <p className="text-sm font-semibold text-[var(--text-primary)]">You're not registered for any races yet</p>
           <p className="text-xs text-[var(--text-secondary)]">Tap "Browse All Events" above, or the Events tab below, to see what's on offer.</p>
         </div>
       ) : (
@@ -881,24 +880,24 @@ function FriendsView({ profile, onOpenRace }: { profile: UserProfile; onOpenRace
   };
 
   if (!profile.username) {
-    return <div className="glass-panel p-7 text-center space-y-2"><Users2 className="w-9 h-9 text-red-500 mx-auto" /><h2 className="text-base font-black text-[var(--text-primary)]">Choose a username first</h2><p className="text-xs text-[var(--text-secondary)]">Open your profile and save a unique username to use Friends. We use usernames so email addresses stay private.</p></div>;
+    return <div className="glass-panel p-8 text-center space-y-2"><Users2 className="w-9 h-9 text-red-700 dark:text-red-400 mx-auto" aria-hidden="true" /><h2 className="text-base font-semibold text-[var(--text-primary)]">Choose a username first</h2><p className="text-xs text-[var(--text-secondary)]">Open your profile and save a unique username to use Friends. We use usernames so email addresses stay private.</p></div>;
   }
 
   return (
     <div className="max-w-3xl mx-auto space-y-5 animate-fadeIn">
       <div className="glass-panel p-5">
-        <div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-red-500/10 text-red-500"><Users2 className="w-5 h-5" /></span><div><h2 className="text-base font-black uppercase tracking-tight text-[var(--text-primary)]">Runner Friends</h2><p className="mt-1 text-xs text-[var(--text-secondary)]">Find a runner by username, then both of you must agree before profiles and recent races are shared.</p></div></div>
-        <div className="mt-4 flex gap-2"><input value={searchUsername} onChange={(event) => setSearchUsername(event.target.value.toLowerCase())} onKeyDown={(event) => { if (event.key === 'Enter') void search(); }} placeholder="Search exact username, e.g. juan.runner" autoCapitalize="none" autoCorrect="off" maxLength={24} className="min-w-0 flex-1 glass-inset px-3 py-2.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" /><button type="button" onClick={() => void search()} disabled={busy} className="rounded-[12px] bg-red-600 px-4 text-[10px] font-black uppercase tracking-wide text-white disabled:opacity-60">Search</button></div>
-        {error && <p className="mt-3 text-xs text-red-500">{error}</p>}
-        {notice && <p className="mt-3 text-xs text-emerald-500">{notice}</p>}
-        {searchResult && <div className="mt-4 flex items-center justify-between gap-3 rounded-[16px] border border-[var(--border-default)] bg-[var(--surface-inset)]/50 p-3"><div className="flex min-w-0 items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-red-500/10 font-black text-red-500">{searchResult.photoURL ? <img src={searchResult.photoURL} alt="" className="h-full w-full object-cover" /> : searchResult.displayName.charAt(0).toUpperCase()}</span><span className="min-w-0"><strong className="block truncate text-sm text-[var(--text-primary)]">{searchResult.nickname || searchResult.displayName}</strong><small className="block text-[11px] text-[var(--text-secondary)]">@{searchResult.username}</small></span></div><button type="button" onClick={() => void sendFriendRequest()} disabled={busy} className="shrink-0 rounded-[12px] border border-red-500/30 bg-red-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-red-500 transition hover:bg-red-500 hover:text-white disabled:opacity-60"><UserPlus className="mr-1 inline h-3.5 w-3.5" /> Add</button></div>}
+        <div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-red-700/10 text-red-700 dark:bg-red-500/10 dark:text-red-400"><Users2 className="w-5 h-5" aria-hidden="true" /></span><div><h2 className="text-base font-semibold uppercase tracking-tight text-[var(--text-primary)]">Runner Friends</h2><p className="mt-1 text-xs text-[var(--text-secondary)]">Find a runner by username, then both of you must agree before profiles and recent races are shared.</p></div></div>
+        <div className="mt-4 flex flex-wrap sm:flex-nowrap gap-2"><input value={searchUsername} onChange={(event) => setSearchUsername(event.target.value.toLowerCase())} onKeyDown={(event) => { if (event.key === 'Enter') void search(); }} placeholder="Search exact username, e.g. juan.runner" autoCapitalize="none" autoCorrect="off" maxLength={24} className="min-w-0 flex-1 min-h-11 glass-inset px-3 py-2 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50" /><button type="button" onClick={() => void search()} disabled={busy} className="min-h-11 rounded-xl bg-red-700 hover:bg-red-800 px-4 text-xs font-semibold uppercase tracking-wide text-white disabled:opacity-60">Search</button></div>
+        {error && <p role="alert" className="mt-3 text-xs text-red-700 dark:text-red-400">{error}</p>}
+        {notice && <p role="status" className="mt-3 text-xs text-emerald-700 dark:text-emerald-400">{notice}</p>}
+        {searchResult && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-[var(--border-default)] bg-[var(--surface-inset)]/50 p-3"><div className="flex min-w-0 items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-red-700/10 dark:bg-red-500/10 font-semibold text-red-700 dark:text-red-400">{searchResult.photoURL ? <img src={searchResult.photoURL} alt="" className="h-full w-full object-cover" /> : searchResult.displayName.charAt(0).toUpperCase()}</span><span className="min-w-0"><strong className="block truncate text-sm text-[var(--text-primary)]">{searchResult.nickname || searchResult.displayName}</strong><small className="block text-xs text-[var(--text-secondary)]">@{searchResult.username}</small></span></div><button type="button" onClick={() => void sendFriendRequest()} disabled={busy} className="shrink-0 min-h-11 inline-flex items-center rounded-xl border border-red-700/30 dark:border-red-400/30 bg-red-700/10 dark:bg-red-500/10 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-red-700 dark:text-red-400 transition hover:bg-red-700 hover:text-white disabled:opacity-60"><UserPlus className="mr-1 inline h-3.5 w-3.5" aria-hidden="true" /> Add</button></div>}
       </div>
 
-      {invites.length > 0 && <div className="glass-panel p-5"><h3 className="text-[11px] font-black uppercase tracking-widest text-violet-500">Race invitations</h3><div className="mt-3 space-y-2">{invites.map((invite) => <div key={`${invite.fromUid}_${invite.raceId}`} className="flex items-center justify-between gap-3 rounded-[14px] border border-violet-500/20 bg-violet-500/5 p-3"><div><p className="text-xs font-bold text-[var(--text-primary)]">{invite.raceName}</p><p className="mt-0.5 text-[10.5px] text-[var(--text-secondary)]">Invited by {invite.fromDisplayName} • {invite.raceDate}</p></div><button type="button" onClick={() => void openInvite(invite)} className="shrink-0 rounded-[10px] bg-violet-600 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-white">View event</button></div>)}</div></div>}
+      {invites.length > 0 && <div className="glass-panel p-5"><h3 className="text-xs font-semibold uppercase tracking-widest text-violet-700 dark:text-violet-400">Race invitations</h3><div className="mt-3 space-y-2">{invites.map((invite) => <div key={`${invite.fromUid}_${invite.raceId}`} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-violet-500/20 bg-violet-500/5 p-3"><div className="min-w-0"><p className="text-xs font-semibold text-[var(--text-primary)]">{invite.raceName}</p><p className="mt-1 text-xs text-[var(--text-secondary)]">Invited by {invite.fromDisplayName} • {invite.raceDate}</p></div><button type="button" onClick={() => void openInvite(invite)} className="shrink-0 min-h-11 inline-flex items-center rounded-xl bg-violet-700 hover:bg-violet-800 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white">View event</button></div>)}</div></div>}
 
-      {incoming.length > 0 && <div className="glass-panel p-5"><h3 className="text-[11px] font-black uppercase tracking-widest text-amber-500">Friend requests</h3><div className="mt-3 space-y-2">{incoming.map((request) => <div key={`${request.fromUid}_${request.toUid}`} className="flex items-center justify-between gap-3 rounded-[14px] border border-[var(--border-default)] p-3"><div><p className="text-sm font-bold text-[var(--text-primary)]">{request.fromDisplayName}</p><p className="text-[10.5px] text-[var(--text-secondary)]">@{request.fromUsername} wants to connect.</p></div><div className="flex gap-1.5"><button type="button" onClick={() => void respondToRequest(request, false)} disabled={busy} className="rounded-[10px] glass-inset px-3 py-2 text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)]">Decline</button><button type="button" onClick={() => void respondToRequest(request, true)} disabled={busy} className="rounded-[10px] bg-emerald-600 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-white"><UserCheck className="mr-1 inline h-3.5 w-3.5" /> Accept</button></div></div>)}</div></div>}
+      {incoming.length > 0 && <div className="glass-panel p-5"><h3 className="text-xs font-semibold uppercase tracking-widest text-amber-800 dark:text-amber-300">Friend requests</h3><div className="mt-3 space-y-2">{incoming.map((request) => <div key={`${request.fromUid}_${request.toUid}`} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[var(--border-default)] p-3"><div className="min-w-0"><p className="text-sm font-semibold text-[var(--text-primary)]">{request.fromDisplayName}</p><p className="text-xs text-[var(--text-secondary)]">@{request.fromUsername} wants to connect.</p></div><div className="flex gap-2"><button type="button" onClick={() => void respondToRequest(request, false)} disabled={busy} className="min-h-11 inline-flex items-center rounded-xl glass-inset px-4 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Decline</button><button type="button" onClick={() => void respondToRequest(request, true)} disabled={busy} className="min-h-11 inline-flex items-center rounded-xl bg-emerald-700 hover:bg-emerald-800 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white"><UserCheck className="mr-1 inline h-3.5 w-3.5" aria-hidden="true" /> Accept</button></div></div>)}</div></div>}
 
-      <div className="glass-panel p-5"><div className="flex items-center justify-between"><h3 className="text-[11px] font-black uppercase tracking-widest text-[var(--text-secondary)]">Your friends</h3><span className="text-xs font-mono font-bold text-red-500">{friends.length}</span></div>{friends.length === 0 ? <p className="mt-3 text-xs text-[var(--text-secondary)]">No friends yet. Search their username above to send your first request.</p> : <div className="mt-3 space-y-3">{friends.map((friend) => { const activity = activities[friend.uid]; return <div key={friend.uid} className="rounded-[16px] border border-[var(--border-default)] bg-[var(--surface-inset)]/35 p-4"><div className="flex items-center gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-red-500/10 font-black text-red-500">{friend.photoURL ? <img src={friend.photoURL} alt="" className="h-full w-full object-cover" /> : friend.displayName.charAt(0).toUpperCase()}</span><div className="min-w-0"><p className="truncate text-sm font-black text-[var(--text-primary)]">{friend.nickname || friend.displayName}</p><p className="text-[10.5px] text-[var(--text-secondary)]">@{friend.username}</p></div></div><div className="mt-3 border-t border-[var(--border-subtle)] pt-3"><p className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Recent races</p>{activity?.recentRaces?.length ? <div className="mt-2 space-y-1.5">{activity.recentRaces.slice(0, 3).map((race) => <p key={`${race.raceId}_${race.distance}`} className="text-xs text-[var(--text-secondary)]"><strong className="text-[var(--text-primary)]">{race.raceName}</strong> <span className="text-red-500">• {race.distance}</span> <span className="text-[var(--text-muted)]">• {race.date}</span></p>)}</div> : <p className="mt-1 text-xs text-[var(--text-muted)]">No shared race activity yet.</p>}</div></div>; })}</div>}</div>
+      <div className="glass-panel p-5"><div className="flex items-center justify-between"><h3 className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Your friends</h3><span className="text-xs font-mono font-semibold text-red-700 dark:text-red-400">{friends.length}</span></div>{friends.length === 0 ? <p className="mt-3 text-xs text-[var(--text-secondary)]">No friends yet. Search their username above to send your first request.</p> : <div className="mt-3 space-y-3">{friends.map((friend) => { const activity = activities[friend.uid]; return <div key={friend.uid} className="rounded-[16px] border border-[var(--border-default)] bg-[var(--surface-inset)]/35 p-4"><div className="flex items-center gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-red-700/10 dark:bg-red-500/10 font-semibold text-red-700 dark:text-red-400">{friend.photoURL ? <img src={friend.photoURL} alt="" className="h-full w-full object-cover" /> : friend.displayName.charAt(0).toUpperCase()}</span><div className="min-w-0"><p className="truncate text-sm font-semibold text-[var(--text-primary)]">{friend.nickname || friend.displayName}</p><p className="text-xs text-[var(--text-secondary)]">@{friend.username}</p></div></div><div className="mt-3 border-t border-[var(--border-subtle)] pt-3"><p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Recent races</p>{activity?.recentRaces?.length ? <div className="mt-2 space-y-2">{activity.recentRaces.slice(0, 3).map((race) => <p key={`${race.raceId}_${race.distance}`} className="text-xs text-[var(--text-secondary)]"><strong className="text-[var(--text-primary)]">{race.raceName}</strong> <span className="text-red-700 dark:text-red-400">• {race.distance}</span> <span className="text-[var(--text-secondary)]">• {race.date}</span></p>)}</div> : <p className="mt-1 text-xs text-[var(--text-secondary)]">No shared race activity yet.</p>}</div></div>; })}</div>}</div>
     </div>
   );
 }
@@ -954,8 +953,8 @@ function InviteFriendsToRace({ uid, senderName, race }: { uid: string; senderNam
 
   return (
     <div className="rounded-[16px] border border-violet-500/20 bg-violet-500/5 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-black text-[var(--text-primary)]">Running with friends?</p><p className="mt-0.5 text-[10.5px] text-[var(--text-secondary)]">Send this event straight to an accepted RacePulse friend.</p></div><button type="button" onClick={() => { setOpen((value) => !value); setMessage(''); }} className="rounded-[12px] border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-violet-500 transition hover:bg-violet-600 hover:text-white"><UserPlus className="mr-1 inline h-3.5 w-3.5" /> Invite friends</button></div>
-      {open && <div className="mt-3 border-t border-violet-500/15 pt-3"><p className="text-[9px] font-black uppercase tracking-widest text-violet-500">Choose friend</p>{friends.length === 0 ? <p className="mt-2 text-xs text-[var(--text-secondary)]">No accepted friends yet. Add friends first from the Friends tab.</p> : <div className="mt-2 space-y-1.5">{friends.map((friend) => <div key={friend.uid} className="flex items-center justify-between gap-2 rounded-[12px] bg-black/10 px-3 py-2"><span className="min-w-0"><strong className="block truncate text-xs text-[var(--text-primary)]">{friend.nickname || friend.displayName}</strong><small className="text-[10px] text-[var(--text-secondary)]">@{friend.username}</small></span><button type="button" onClick={() => void invite(friend)} disabled={sendingTo === friend.uid} className="rounded-lg bg-violet-600 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wide text-white disabled:opacity-60">{sendingTo === friend.uid ? 'Sending…' : 'Invite'}</button></div>)}</div>}{message && <p className={`mt-2 text-[10.5px] ${message.startsWith('Invite sent') ? 'text-emerald-500' : 'text-red-500'}`}>{message}</p>}</div>}
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-semibold text-[var(--text-primary)]">Running with friends?</p><p className="mt-1 text-xs text-[var(--text-secondary)]">Send this event straight to an accepted RacePulse friend.</p></div><button type="button" onClick={() => { setOpen((value) => !value); setMessage(''); }} className="min-h-11 inline-flex items-center rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-400 transition hover:bg-violet-700 hover:text-white"><UserPlus className="mr-1 inline h-3.5 w-3.5" aria-hidden="true" /> Invite friends</button></div>
+      {open && <div className="mt-3 border-t border-violet-500/15 pt-3"><p className="text-xs font-semibold uppercase tracking-widest text-violet-700 dark:text-violet-400">Choose friend</p>{friends.length === 0 ? <p className="mt-2 text-xs text-[var(--text-secondary)]">No accepted friends yet. Add friends first from the Friends tab.</p> : <div className="mt-2 space-y-2">{friends.map((friend) => <div key={friend.uid} className="flex items-center justify-between gap-2 rounded-xl bg-black/10 px-3 py-2"><span className="min-w-0"><strong className="block truncate text-xs text-[var(--text-primary)]">{friend.nickname || friend.displayName}</strong><small className="text-xs text-[var(--text-secondary)]">@{friend.username}</small></span><button type="button" onClick={() => void invite(friend)} disabled={sendingTo === friend.uid} className="min-h-11 inline-flex items-center rounded-lg bg-violet-700 hover:bg-violet-800 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white disabled:opacity-60">{sendingTo === friend.uid ? 'Sending…' : 'Invite'}</button></div>)}</div>}{message && <p className={`mt-2 text-xs ${message.startsWith('Invite sent') ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}`}>{message}</p>}</div>}
     </div>
   );
 }
@@ -976,7 +975,7 @@ function RaceProfileSection({
   const { can, authority } = useAccess();
   return (
     <div className="glass-panel p-5">
-      <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] mb-3">{title}</h3>
+      <h3 className="text-xs font-semibold font-display uppercase tracking-widest text-[var(--text-secondary)] mb-3">{title}</h3>
       {profiles.length === 0 ? (
         <p className="text-xs text-[var(--text-secondary)]">{emptyText}</p>
       ) : (
@@ -995,14 +994,14 @@ function RaceProfileSection({
               <button
                 key={p.raceId}
                 onClick={() => onSelect(p)}
-                className="w-full flex items-center justify-between glass-inset px-4 py-3 text-left hover:border-red-500/40 transition"
+                className="min-h-11 w-full flex items-center justify-between glass-inset px-4 py-3 text-left hover:border-red-500/40 transition"
               >
                 <div className="min-w-0">
-                  <p className="text-sm font-bold text-[var(--text-primary)] truncate">{race?.name || 'Unknown Race'}</p>
-                  <p className="text-[11px] text-[var(--text-secondary)] flex items-center gap-1.5 mt-0.5">
-                    <Calendar className="w-3 h-3 text-red-700 dark:text-red-400" aria-hidden="true" /> {race?.date || '--'} &bull; {p.distance} &bull; #{p.bibNumber}
+                  <p className="text-sm font-semibold text-[var(--text-primary)] truncate">{race?.name || 'Unknown Race'}</p>
+                  <p className="text-xs text-[var(--text-secondary)] flex items-center gap-2 mt-1">
+                    <Calendar className="w-3 h-3 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" /> {race?.date || '--'} &bull; {p.distance} &bull; #{p.bibNumber}
                   </p>
-                  <span className={`inline-flex mt-2 text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full border ${
+                  <span className={`inline-flex mt-2 text-xs font-semibold uppercase tracking-wide px-2 py-1 rounded-full border ${
                     raceStatus === 'Race completed'
                       ? 'text-emerald-800 dark:text-emerald-300 bg-emerald-500/10 border-emerald-500/25'
                       : raceStatus === 'Race day'
@@ -1010,7 +1009,7 @@ function RaceProfileSection({
                         : 'text-[var(--text-secondary)] bg-[var(--surface-hover)] border-[var(--border-default)]'
                   }`}>{raceStatus}</span>
                 </div>
-                <ArrowRight className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
+                <ArrowRight className="w-3.5 h-3.5 text-[var(--text-secondary)] shrink-0" aria-hidden="true" />
               </button>
             );
           })}
@@ -1058,15 +1057,15 @@ function RegistrationProgress({ currentStep }: { currentStep: 1 | 2 | 3 }) {
   const { can, authority } = useAccess();
   const steps = ['Choose race', 'Runner details', 'Confirmed'];
   return (
-    <ol className="grid grid-cols-3 gap-1.5 max-w-xl mx-auto" aria-label="Registration progress">
+    <ol className="grid grid-cols-3 gap-2 max-w-xl mx-auto" aria-label="Registration progress">
       {steps.map((label, index) => {
         const step = (index + 1) as 1 | 2 | 3;
         const complete = step < currentStep;
         const active = step === currentStep;
         return (
-          <li key={label} className={`rounded-xl border px-2 py-2 text-center transition ${complete || active ? 'border-red-500/30 bg-red-500/10 text-red-500' : 'border-[var(--border-default)] bg-[var(--surface-inset)]/40 text-[var(--text-muted)]'}`}>
-            <span className="flex items-center justify-center gap-1.5 text-[9px] sm:text-[10px] font-black uppercase tracking-wide">
-              {complete ? <CheckCircle2 className="w-3.5 h-3.5" /> : <span className={`w-4 h-4 rounded-full border flex items-center justify-center text-[8px] ${active ? 'border-red-500' : 'border-current'}`}>{step}</span>}
+          <li key={label} className={`rounded-xl border px-2 py-2 text-center transition ${complete || active ? 'border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400' : 'border-[var(--border-default)] bg-[var(--surface-inset)]/40 text-[var(--text-secondary)]'}`}>
+            <span className="flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-wide">
+              {complete ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> : <span className={`w-5 h-5 rounded-full border flex items-center justify-center text-xs shrink-0 ${active ? 'border-red-700 dark:border-red-400' : 'border-current'}`}>{step}</span>}
               <span className="hidden sm:inline">{label}</span><span className="sm:hidden">{step === 1 ? 'Race' : step === 2 ? 'Details' : 'Done'}</span>
             </span>
           </li>
@@ -1087,35 +1086,35 @@ function RegistrationConfirmation({ race, registration, updated, onViewMyRace, o
   return (
     <div className="max-w-xl mx-auto space-y-5 animate-fadeIn">
       <RegistrationProgress currentStep={3} />
-      <div className="glass-panel p-7 text-center space-y-5 overflow-hidden relative">
-        <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-red-600 via-emerald-500 to-red-600" />
-        <div className="w-14 h-14 rounded-full mx-auto bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-emerald-500">
-          <CheckCircle2 className="w-8 h-8" />
+      <div className="glass-panel p-6 sm:p-8 text-center space-y-5 overflow-x-clip relative">
+        <div className="absolute inset-x-0 top-0 h-1 rounded-t-2xl bg-gradient-to-r from-red-600 via-emerald-500 to-red-600" />
+        <div className="w-14 h-14 rounded-full mx-auto bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-emerald-700 dark:text-emerald-400">
+          <CheckCircle2 className="w-8 h-8" aria-hidden="true" />
         </div>
         <div>
-          <p className={`text-[10px] font-black uppercase tracking-[0.18em] ${registration.paymentStatus === 'pending' ? 'text-amber-500' : 'text-emerald-500'}`}>{registration.paymentStatus === 'pending' ? 'Payment verification needed' : updated ? 'Registration updated' : 'Registration confirmed'}</p>
-          <h2 className="heading-float text-xl font-black font-display uppercase tracking-tight text-[var(--text-primary)] mt-2">{registration.paymentStatus === 'pending' ? 'Registration reserved' : 'You’re in!'}</h2>
+          <h2 className="heading-float text-xl font-semibold font-display uppercase tracking-tight text-[var(--text-primary)]">{registration.paymentStatus === 'pending' ? 'Registration reserved' : 'You’re in!'}</h2>
+          <p className={`text-xs font-semibold uppercase tracking-[0.18em] mt-1 ${registration.paymentStatus === 'pending' ? 'text-amber-800 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-400'}`}>{registration.paymentStatus === 'pending' ? 'Payment verification needed' : updated ? 'Registration updated' : 'Registration confirmed'}</p>
           <p className="text-xs text-[var(--text-secondary)] mt-2">{registration.paymentStatus === 'pending' ? 'Your bib is reserved. Follow the payment instructions below; the organizer will confirm payment before race day.' : 'Your race registration is saved under your account.'}</p>
         </div>
         {registration.paymentStatus === 'pending' && (
           <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-left">
-            <p className="text-[10px] font-black uppercase tracking-widest text-amber-500">Manual payment instructions</p>
-            <p className="text-xs text-[var(--text-primary)] whitespace-pre-line mt-1.5">{race?.manualPaymentInstructions || 'Please contact the race organizer to complete payment.'}</p>
+            <p className="text-xs font-semibold uppercase tracking-widest text-amber-800 dark:text-amber-300">Manual payment instructions</p>
+            <p className="text-xs text-[var(--text-primary)] whitespace-pre-line mt-1">{race?.manualPaymentInstructions || 'Please contact the race organizer to complete payment.'}</p>
             {race?.manualPaymentQrImage && <img src={race.manualPaymentQrImage} alt="GCash or QRPh payment code" className="mt-3 mx-auto w-44 max-w-full rounded-xl bg-white p-2" />}
           </div>
         )}
         <div className="glass-inset p-4 text-left grid grid-cols-2 gap-y-3 gap-x-4">
-          <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Race</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5 truncate">{race?.name || 'Race event'}</span></span>
-          <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Race date</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5">{race?.date || 'To be announced'}</span></span>
-          <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Distance</span><span className="block text-sm font-bold text-red-500 mt-0.5">{registration.distance}</span></span>
-          <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Bib number</span><span className="block text-lg font-mono font-black text-red-500 mt-0.5">#{registration.bibNumber}</span></span>
-          {registration.paymentStatus === 'pending' && registration.paymentReference && <span className="col-span-2"><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Payment reference</span><span className="block text-sm font-mono font-bold text-amber-500 mt-0.5 break-all">{registration.paymentReference}</span></span>}
-          {registration.shirtSize && <span><span className="block text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Shirt size</span><span className="block text-sm font-bold text-[var(--text-primary)] mt-0.5">{registration.shirtSize}</span></span>}
+          <span><span className="block text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Race</span><span className="block text-sm font-semibold text-[var(--text-primary)] mt-1 truncate">{race?.name || 'Race event'}</span></span>
+          <span><span className="block text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Race date</span><span className="block text-sm font-semibold text-[var(--text-primary)] mt-1">{race?.date || 'To be announced'}</span></span>
+          <span><span className="block text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Distance</span><span className="block text-sm font-semibold text-red-700 dark:text-red-400 mt-1">{registration.distance}</span></span>
+          <span><span className="block text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Bib number</span><span className="block text-lg font-mono font-semibold text-red-700 dark:text-red-400 mt-1">#{registration.bibNumber}</span></span>
+          {registration.paymentStatus === 'pending' && registration.paymentReference && <span className="col-span-2"><span className="block text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Payment reference</span><span className="block text-sm font-mono font-semibold text-amber-800 dark:text-amber-300 mt-1 break-all">{registration.paymentReference}</span></span>}
+          {registration.shirtSize && <span><span className="block text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Shirt size</span><span className="block text-sm font-semibold text-[var(--text-primary)] mt-1">{registration.shirtSize}</span></span>}
         </div>
-        <p className="text-[10.5px] text-[var(--text-secondary)]">Your QR race pass and live race status will be available under My Races.</p>
+        <p className="text-xs text-[var(--text-secondary)]">Your QR race pass and live race status will be available under My Races.</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <button type="button" onClick={onViewMyRace} className="py-3 px-4 rounded-[var(--radius-control)] font-display font-black uppercase text-[10px] tracking-widest text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 transition">View My Race Pass</button>
-          <button type="button" onClick={onRegisterAnother} className="py-3 px-4 rounded-[var(--radius-control)] font-display font-black uppercase text-[10px] tracking-widest glass-inset text-[var(--text-secondary)] hover:text-red-500 transition">Register another race</button>
+          <button type="button" onClick={onViewMyRace} className="min-h-11 py-3 px-4 rounded-[var(--radius-control)] font-display font-semibold uppercase text-xs tracking-widest text-white bg-gradient-to-r from-red-700 to-red-800 hover:from-red-600 hover:to-red-700 shadow-lg shadow-red-900/30 transition">View My Race Pass</button>
+          <button type="button" onClick={onRegisterAnother} className="min-h-11 py-3 px-4 rounded-[var(--radius-control)] font-display font-semibold uppercase text-xs tracking-widest glass-inset text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition">Register another race</button>
         </div>
       </div>
     </div>
@@ -1379,9 +1378,9 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
       <div className="max-w-xl mx-auto space-y-5 animate-fadeIn">
         <RegistrationProgress currentStep={3} />
         <div className="glass-panel p-7 text-center space-y-4">
-          <div className="w-14 h-14 rounded-full mx-auto bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-emerald-500"><CheckCircle2 className="w-8 h-8" /></div>
-          <div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-500">Payment verified</p><h2 className="heading-float text-xl font-black font-display uppercase text-[var(--text-primary)] mt-2">Race registration confirmed</h2><p className="text-xs text-[var(--text-secondary)] mt-2">Your PayMongo payment was confirmed securely. Your race pass will appear in My Races.</p></div>
-          <button type="button" onClick={() => onSaved?.()} className="w-full py-3.5 rounded-[var(--radius-control)] font-display font-black uppercase text-xs tracking-widest text-white bg-gradient-to-r from-red-600 to-red-700">View My Races</button>
+          <div className="w-14 h-14 rounded-full mx-auto bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-emerald-700 dark:text-emerald-400"><CheckCircle2 className="w-8 h-8" aria-hidden="true" /></div>
+          <div><h2 className="heading-float text-xl font-semibold font-display uppercase text-[var(--text-primary)]">Race registration confirmed</h2><p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-400 mt-1">Payment verified</p><p className="text-xs text-[var(--text-secondary)] mt-2">Your PayMongo payment was confirmed securely. Your race pass will appear in My Races.</p></div>
+          <button type="button" onClick={() => onSaved?.()} className="min-h-11 w-full py-3 rounded-[var(--radius-control)] font-display font-semibold uppercase text-xs tracking-widest text-white bg-gradient-to-r from-red-700 to-red-800">View My Races</button>
         </div>
       </div>
     );
@@ -1395,9 +1394,9 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
           <button
             type="button"
             onClick={onCancel}
-            className="text-xs font-bold text-[var(--text-secondary)] hover:text-red-500 flex items-center gap-1.5 transition"
+            className="min-h-11 py-2 text-xs font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 flex items-center gap-2 transition"
           >
-            <ArrowLeft className="w-3.5 h-3.5" /> Back to My Races
+            <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" /> Back to My Races
           </button>
         )}
         <RaceList
@@ -1420,9 +1419,9 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
         <button
           type="button"
           onClick={() => setRaceId('')}
-          className="text-xs font-bold text-[var(--text-secondary)] hover:text-red-500 flex items-center gap-1.5 transition"
+          className="min-h-11 py-2 text-xs font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 flex items-center gap-2 transition"
         >
-          <ArrowLeft className="w-3.5 h-3.5" /> Back to Race List
+          <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" /> Back to Race List
         </button>
 
         {selectedRace?.posterImage && (
@@ -1430,20 +1429,20 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
         )}
 
         <div>
-          <h2 className="heading-float text-xl font-black font-display uppercase tracking-tight text-[var(--text-primary)]">{selectedRace?.name}</h2>
-          <p className="text-xs text-[var(--text-secondary)] mt-1 flex items-center gap-1.5">
-            <Calendar className="w-3.5 h-3.5 text-red-500" /> {selectedRace?.date}
+          <h2 className="heading-float text-xl font-semibold font-display uppercase tracking-tight text-[var(--text-primary)]">{selectedRace?.name}</h2>
+          <p className="text-xs text-[var(--text-secondary)] mt-1 flex items-center gap-2">
+            <Calendar className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" /> {selectedRace?.date}
           </p>
         </div>
 
         <div>
-          <h3 className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] mb-2 flex items-center gap-1.5"><Coins className="w-3.5 h-3.5 text-red-500" /> Distances &amp; Pricing</h3>
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)] mb-2 flex items-center gap-2"><Coins className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" /> Distances &amp; Pricing</h3>
           {(selectedRace?.distances || []).length === 0 ? (
-            <p className="text-xs text-[var(--text-muted)]">Not set yet.</p>
+            <p className="text-xs text-[var(--text-secondary)]">Not set yet.</p>
           ) : (
             <div className="flex flex-wrap gap-2">
               {selectedRace!.distances.map((d) => (
-                <span key={d.id} className="text-xs font-bold px-3 py-1.5 rounded-full bg-red-500/10 border border-red-500/20 text-red-500">
+                <span key={d.id} className="text-xs font-semibold px-3 py-1 rounded-full bg-red-700/10 dark:bg-red-500/10 border border-red-500/20 text-red-700 dark:text-red-400">
                   {d.label}{d.price > 0 && `: ₱${d.price.toFixed(0)}`}
                 </span>
               ))}
@@ -1453,10 +1452,10 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
 
         {(selectedRace?.inclusions || []).length > 0 && (
           <div>
-            <h3 className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] mb-2 flex items-center gap-1.5"><PackageCheck className="w-3.5 h-3.5 text-red-500" /> Inclusions</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)] mb-2 flex items-center gap-2"><PackageCheck className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" /> Inclusions</h3>
             <div className="flex flex-wrap gap-2">
               {selectedRace!.inclusions.map((incl, idx) => (
-                <span key={idx} className="text-xs font-semibold px-3 py-1.5 rounded-full glass-inset text-[var(--text-primary)]">{incl}</span>
+                <span key={idx} className="text-xs font-semibold px-3 py-1 rounded-full glass-inset text-[var(--text-primary)]">{incl}</span>
               ))}
             </div>
           </div>
@@ -1464,16 +1463,16 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
 
         {selectedRace?.inclusionImage && (
           <div>
-            <h3 className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] mb-2 flex items-center gap-1.5"><PackageCheck className="w-3.5 h-3.5 text-red-500" /> Shirt / Kit Design</h3>
-            <button type="button" onClick={() => setShowInclusionImage(true)} className="group relative w-full rounded-[16px] overflow-hidden border border-[var(--border-default)] bg-[var(--surface-inset)] text-left focus:outline-none focus:ring-2 focus:ring-red-500/50">
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)] mb-2 flex items-center gap-2"><PackageCheck className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" /> Shirt / Kit Design</h3>
+            <button type="button" onClick={() => setShowInclusionImage(true)} className="group relative w-full rounded-2xl overflow-clip border border-[var(--border-default)] bg-[var(--surface-inset)] text-left focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50">
               <img src={selectedRace.inclusionImage} alt={`${selectedRace.name} shirt or kit design`} className="w-full max-h-96 object-contain" />
-              <span className="absolute right-3 bottom-3 inline-flex items-center gap-1.5 rounded-full bg-black/70 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-white opacity-0 group-hover:opacity-100 group-focus:opacity-100 transition"><Maximize2 className="w-3.5 h-3.5" /> Full screen</span>
+              <span className="absolute right-3 bottom-3 inline-flex items-center gap-2 rounded-full bg-black/75 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white opacity-0 group-hover:opacity-100 group-focus:opacity-100 transition"><Maximize2 className="w-3.5 h-3.5" aria-hidden="true" /> Full screen</span>
             </button>
           </div>
         )}
 
         <div>
-          <h3 className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] mb-2 flex items-center gap-1.5"><CheckSquare className="w-3.5 h-3.5 text-red-500" /> Checkpoints</h3>
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)] mb-2 flex items-center gap-2"><CheckSquare className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" /> Checkpoints</h3>
           <p className="text-xs text-[var(--text-secondary)]">
             {[...(selectedRace?.checkpoints || [])].sort((a, b) => a.order - b.order).map((c) => c.label).join(' → ') || 'Not set yet.'}
           </p>
@@ -1488,7 +1487,7 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
         <button
           type="button"
           onClick={() => setShowForm(true)}
-          className="min-h-11 w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-semibold uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-red-900/30"
+          className="min-h-11 w-full py-3 px-6 rounded-[var(--radius-control)] font-display font-semibold uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 text-white bg-gradient-to-r from-red-700 to-red-800 hover:from-red-600 hover:to-red-700 shadow-red-900/30"
         >
           <ArrowRight className="w-4 h-4" aria-hidden="true" /> {existingForRace ? 'Continue to Update Details' : 'Continue to Runner Details'}
         </button>
@@ -1529,13 +1528,13 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
       <button
         type="button"
         onClick={() => setShowForm(false)}
-        className="text-xs font-bold text-[var(--text-secondary)] hover:text-red-500 flex items-center gap-1.5 transition"
+        className="min-h-11 py-2 text-xs font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 flex items-center gap-2 transition"
       >
-        <ArrowLeft className="w-3.5 h-3.5" /> Back to Race Details
+        <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" /> Back to Race Details
       </button>
 
       <div>
-        <h2 className="heading-float text-lg font-black font-display uppercase tracking-tight text-[var(--text-primary)]">
+        <h2 className="heading-float text-lg font-semibold font-display uppercase tracking-tight text-[var(--text-primary)]">
           {existingForRace ? 'Update Registration for' : 'Register for'} {selectedRace?.name}
         </h2>
         <p className="text-xs text-[var(--text-secondary)] mt-1">This links your account to your bib so organizers can record your checkpoint times.</p>
@@ -1543,47 +1542,47 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
 
       <form onSubmit={handleSubmit} className="space-y-4"><fieldset className="contents" disabled={!can('personal.register')} >
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Full Name</label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Full Name</label>
             <div className="relative">
-              <User className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
+              <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] pointer-events-none" aria-hidden="true" />
               <input type="text" required value={fullName} onChange={(e) => setFullName(e.target.value.toUpperCase())}
-                className="w-full glass-inset pl-10 pr-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" placeholder="EX: JUAN DELA CRUZ" />
+                className="w-full min-h-11 glass-inset pl-10 pr-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50" placeholder="EX: JUAN DELA CRUZ" />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Race Distance</label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Race Distance</label>
             {existingForRace ? (
               <div className="glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-red-500" /> {existingForRace.distance}
+                <MapPin className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> {existingForRace.distance}
               </div>
             ) : (
               <div className="relative">
-                <MapPin className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
+                <MapPin className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] pointer-events-none" aria-hidden="true" />
                 <select value={distance} onChange={(e) => setDistance(e.target.value)}
-                  className="w-full appearance-none glass-inset pl-10 pr-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50">
+                  className="w-full min-h-11 appearance-none glass-inset pl-10 pr-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50">
                   {raceDistances.map((d) => <option key={d.id} value={d.label}>{d.label}</option>)}
                   <option value="Custom">Custom Distance...</option>
                 </select>
               </div>
             )}
             {!existingForRace && raceDistances.length === 0 && (
-              <p className="text-[10.5px] text-[var(--text-muted)] mt-1.5 pl-1">This race has no preset distances yet - enter your own below.</p>
+              <p className="text-xs text-[var(--text-secondary)] mt-2 pl-1">This race has no preset distances yet - enter your own below.</p>
             )}
           </div>
 
           {!existingForRace && distance === 'Custom' && (
             <input type="text" required value={customDistance} onChange={(e) => setCustomDistance(e.target.value.toUpperCase())}
-              className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" placeholder="EX: 15K TRAIL RUN" />
+              className="w-full min-h-11 glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50" placeholder="EX: 15K TRAIL RUN" />
           )}
 
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Entry Category</label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Entry Category</label>
             {existingForRace ? (
-              <div className="glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2"><Users2 className="w-4 h-4 text-red-500" /> {entryCategoryLabels[runnerEntryCategory(existingForRace)]}</div>
+              <div className="glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2"><Users2 className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> {entryCategoryLabels[runnerEntryCategory(existingForRace)]}</div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {availableEntryCategories.map((category) => <button key={category} type="button" onClick={() => setEntryCategory(category)} className={`rounded-xl border px-2 py-2.5 text-[10px] font-black uppercase tracking-wide transition ${entryCategory === category ? 'border-red-500/45 bg-red-500/10 text-red-500' : 'border-[var(--border-default)] glass-inset text-[var(--text-secondary)]'}`}>{entryCategoryLabels[category]}</button>)}
+                {availableEntryCategories.map((category) => <button key={category} type="button" onClick={() => setEntryCategory(category)} className={`min-h-11 rounded-xl border px-3 py-2 text-xs font-semibold uppercase tracking-wide transition ${entryCategory === category ? 'border-red-700/45 dark:border-red-400/45 bg-red-700/10 dark:bg-red-500/10 text-red-700 dark:text-red-400' : 'border-[var(--border-default)] glass-inset text-[var(--text-secondary)]'}`}>{entryCategoryLabels[category]}</button>)}
               </div>
             )}
           </div>
@@ -1591,39 +1590,39 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
           {entryCategory !== 'solo' && (
             <div className="glass-inset p-3 space-y-3">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">{entryCategoryLabels[entryCategory]} Team Name</label>
-                <input type="text" required value={teamName} onChange={(e) => setTeamName(e.target.value.toUpperCase())} className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" placeholder="EX: TEAM RACEPULSE" />
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">{entryCategoryLabels[entryCategory]} Team Name</label>
+                <input type="text" required value={teamName} onChange={(e) => setTeamName(e.target.value.toUpperCase())} className="w-full min-h-11 glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50" placeholder="EX: TEAM RACEPULSE" />
               </div>
               {Array.from({ length: entryMemberCount[entryCategory] }).map((_, index) => (
                 <div key={index}>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Member {index + 1}{index === 0 ? ' / Team Captain' : ''}</label>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Member {index + 1}{index === 0 ? ' / Team Captain' : ''}</label>
                   <input type="text" required value={index === 0 ? fullName : (teamMembers[index] || '')} onChange={(e) => {
                     const value = e.target.value.toUpperCase();
                     if (index === 0) setFullName(value);
                     else setTeamMembers((current) => { const next = [...current]; next[index] = value; return next; });
-                  }} className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" placeholder={`FULL NAME OF MEMBER ${index + 1}`} />
+                  }} className="w-full min-h-11 glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50" placeholder={`FULL NAME OF MEMBER ${index + 1}`} />
                 </div>
               ))}
-              <p className="text-[10px] text-[var(--text-muted)]">One shared bib and timing chip will be assigned to this team. Their result is ranked against other {entryCategoryLabels[entryCategory]} teams only.</p>
+              <p className="text-xs text-[var(--text-secondary)]">One shared bib and timing chip will be assigned to this team. Their result is ranked against other {entryCategoryLabels[entryCategory]} teams only.</p>
             </div>
           )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label htmlFor="reg-gender" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Gender</label>
+              <label htmlFor="reg-gender" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Gender</label>
               <select id="reg-gender" value={gender} onChange={(e) => setGender(e.target.value as Gender)}
-                className="w-full appearance-none glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50">
+                className="w-full min-h-11 appearance-none glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50">
                 <option value="male">Male</option>
                 <option value="female">Female</option>
               </select>
             </div>
             <div>
-              <label htmlFor="reg-age" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Age</label>
+              <label htmlFor="reg-age" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Age</label>
               <input id="reg-age" type="number" required min={1} max={120} value={age} onChange={(e) => setAge(e.target.value)}
-                className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" placeholder="EX: 27" />
+                className="w-full min-h-11 glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50" placeholder="EX: 27" />
             </div>
           </div>
-          <p className="text-xs text-[var(--text-muted)] -mt-2 pl-1">Used to place the athlete in the correct age category on race reports.</p>
+          <p className="text-xs text-[var(--text-secondary)] -mt-2 pl-1">Used to place the athlete in the correct age category on race reports.</p>
 
           {age !== '' && !Number.isNaN(Number(age)) && Number(age) < 13 && (
             <div className="rounded-[var(--radius-control)] border border-amber-600/40 bg-amber-500/10 p-4 space-y-3">
@@ -1635,7 +1634,7 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label htmlFor="reg-guardian-name" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+                  <label htmlFor="reg-guardian-name" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">
                     Parent / Legal Guardian Name <span className="text-red-700 dark:text-red-400">required</span>
                   </label>
                   <input
@@ -1646,11 +1645,11 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
                     value={parentGuardianName}
                     onChange={(e) => setParentGuardianName(e.target.value)}
                     placeholder="EX: MARIA DELA CRUZ"
-                    className="w-full glass-inset px-3.5 py-2.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                    className="w-full min-h-11 glass-inset px-4 py-2 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50"
                   />
                 </div>
                 <div>
-                  <label htmlFor="reg-guardian-rel" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+                  <label htmlFor="reg-guardian-rel" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">
                     Relationship <span className="text-red-700 dark:text-red-400">required</span>
                   </label>
                   <input
@@ -1661,17 +1660,17 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
                     value={parentGuardianRelationship}
                     onChange={(e) => setParentGuardianRelationship(e.target.value)}
                     placeholder="Mother, Father, Guardian"
-                    className="w-full glass-inset px-3.5 py-2.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                    className="w-full min-h-11 glass-inset px-4 py-2 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50"
                   />
                 </div>
               </div>
-              <label htmlFor="reg-parental-consent" className="flex items-start gap-2.5 cursor-pointer pt-1">
+              <label htmlFor="reg-parental-consent" className="min-h-11 flex items-start gap-2 cursor-pointer pt-1">
                 <input
                   id="reg-parental-consent"
                   type="checkbox"
                   checked={parentalConsentConfirmed}
                   onChange={(e) => setParentalConsentConfirmed(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--border-default)] accent-[var(--color-red-500)]"
+                  className="rp-checkbox shrink-0"
                 />
                 <span className="text-xs text-[var(--text-primary)] leading-relaxed">
                   I certify that I am the parent or legal guardian (aged 18+) of this minor participant and grant verifiable parental consent for race participation, emergency contact use, and event timing under the Privacy Policy.
@@ -1681,24 +1680,24 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
           )}
 
           <div className="glass-inset p-4 space-y-3">
-            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-[var(--text-secondary)]"><HeartPulse className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> Emergency Contact</div>
-            <p className="text-xs text-[var(--text-muted)] -mt-1">Collected strictly for race-day medical emergency response by authorized organizers.</p>
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]"><HeartPulse className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> Emergency Contact</div>
+            <p className="text-xs text-[var(--text-secondary)] -mt-1">Collected strictly for race-day medical emergency response by authorized organizers.</p>
             <div>
-              <label htmlFor="reg-emergency-name" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Contact Person</label>
-              <input id="reg-emergency-name" type="text" required value={emergencyContactName} onChange={(e) => setEmergencyContactName(e.target.value.toUpperCase())} maxLength={100} className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" placeholder="EX: MARIA DELA CRUZ (MOTHER)" />
+              <label htmlFor="reg-emergency-name" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Contact Person</label>
+              <input id="reg-emergency-name" type="text" required value={emergencyContactName} onChange={(e) => setEmergencyContactName(e.target.value.toUpperCase())} maxLength={100} className="w-full min-h-11 glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50" placeholder="EX: MARIA DELA CRUZ (MOTHER)" />
             </div>
             <div>
-              <label htmlFor="reg-emergency-phone" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Contact Number</label>
-              <div className="relative"><Phone className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" aria-hidden="true" /><input id="reg-emergency-phone" type="tel" required value={emergencyContactPhone} onChange={(e) => setEmergencyContactPhone(e.target.value)} maxLength={30} className="w-full glass-inset pl-10 pr-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" placeholder="EX: 0917 123 4567" /></div>
+              <label htmlFor="reg-emergency-phone" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Contact Number</label>
+              <div className="relative"><Phone className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] pointer-events-none" aria-hidden="true" /><input id="reg-emergency-phone" type="tel" required value={emergencyContactPhone} onChange={(e) => setEmergencyContactPhone(e.target.value)} maxLength={30} className="w-full min-h-11 glass-inset pl-10 pr-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50" placeholder="EX: 0917 123 4567" /></div>
             </div>
           </div>
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Shirt Size <span className="normal-case font-normal text-[var(--text-muted)]">(optional unless included with race kit)</span></label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Shirt Size <span className="normal-case font-normal text-[var(--text-secondary)]">(optional unless included with race kit)</span></label>
             <ShirtSizePicker key={`${raceId}_${existingForRace?.shirtSize || initialShirtSize || ''}`} value={shirtSize} onChange={setShirtSize} emptyLabel="Select shirt size" />
-            <p className="text-xs text-[var(--text-muted)] mt-1.5 pl-1">Shared only with the kit desk for size allocation.</p>
+            <p className="text-xs text-[var(--text-secondary)] mt-2 pl-1">Shared only with the kit desk for size allocation.</p>
           </div>
 
-          <p className="text-xs text-[var(--text-secondary)] glass-inset px-3 py-2 flex items-center gap-1.5">
+          <p className="text-xs text-[var(--text-secondary)] glass-inset px-3 py-2 flex items-center gap-2">
             <Hash className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
             {existingForRace
               ? `Your bib number stays #${existingForRace.bibNumber}.`
@@ -1709,11 +1708,11 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
             const entryFee = raceDistances.find((item) => item.label === distance)?.price || 0;
             const passedOnFee = selectedRace.onlinePaymentEnabled && selectedRace.paymentFeeMode === 'passed_on';
             return (
-              <div className="glass-inset p-4 space-y-2.5 border border-[var(--border-default)]">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] flex items-center gap-1.5">
+              <div className="glass-inset p-4 space-y-3 border border-[var(--border-default)]">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] flex items-center gap-2">
                   <Coins className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" /> Upfront Cost, Tax, and Cancellation Summary
                 </h3>
-                <dl className="space-y-1.5 text-xs">
+                <dl className="space-y-2 text-xs">
                   <div className="flex items-center justify-between gap-4">
                     <dt className="text-[var(--text-secondary)]">Entry fee ({distance})</dt>
                     <dd className="font-mono font-semibold text-[var(--text-primary)]">PHP {entryFee.toFixed(2)}</dd>
@@ -1739,13 +1738,16 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
                 </dl>
                 <p className="text-xs text-[var(--text-secondary)] leading-relaxed pt-1 border-t border-[var(--border-subtle)]">
                   Cancellation &amp; refunds: Full refund if organizer cancels. Runner cancellations follow our{' '}
-                  <button
-                    type="button"
-                    onClick={() => openLegalDoc('refund')}
-                    className="font-semibold text-red-700 dark:text-red-400 underline underline-offset-2"
+                  <a
+                    href="#legal-refund"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      openLegalDoc('refund');
+                    }}
+                    className="inline-flex items-center min-h-6 font-semibold text-red-700 dark:text-red-400 underline underline-offset-2"
                   >
                     Refund Policy
-                  </button>
+                  </a>
                   {' '}(100% at 14+ days before race day unless organizer terms state otherwise).
                 </p>
               </div>
@@ -1753,57 +1755,57 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
           })()}
 
           {!existingForRace && selectedRace.onlinePaymentEnabled && (raceDistances.find((item) => item.label === distance)?.price || 0) > 0 && (
-            <p className="text-xs text-emerald-800 dark:text-emerald-300 border border-emerald-500/30 bg-emerald-500/10 rounded-xl px-3 py-2 flex items-center gap-1.5"><Coins className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> Secure checkout: GCash, Maya, QRPh, or card. Your registration is confirmed only after payment verification.</p>
+            <p className="text-xs text-emerald-800 dark:text-emerald-300 border border-emerald-500/30 bg-emerald-500/10 rounded-xl px-3 py-2 flex items-center gap-2"><Coins className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> Secure checkout: GCash, Maya, QRPh, or card. Your registration is confirmed only after payment verification.</p>
           )}
           {!existingForRace && selectedRace.manualPaymentEnabled && (raceDistances.find((item) => item.label === distance)?.price || 0) > 0 && (
-            <div className="text-xs text-amber-900 dark:text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-xl px-3 py-2.5">
-              <p className="font-bold">Manual payment &bull; PHP {(raceDistances.find((item) => item.label === distance)?.price || 0).toFixed(2)}</p>
+            <div className="text-xs text-amber-900 dark:text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-xl px-3 py-2">
+              <p className="font-semibold">Manual payment &bull; PHP {(raceDistances.find((item) => item.label === distance)?.price || 0).toFixed(2)}</p>
               <p className="text-[var(--text-secondary)] whitespace-pre-line mt-1">{selectedRace.manualPaymentInstructions || 'Submit your registration, then follow the organizer payment instructions. Your bib will be reserved pending verification.'}</p>
               {selectedRace.manualPaymentQrImage && (
                 <div className="mt-3 text-center">
-                  <p className="text-xs font-semibold uppercase tracking-widest text-amber-900 dark:text-amber-300 mb-1.5">Scan to pay</p>
+                  <p className="text-xs font-semibold uppercase tracking-widest text-amber-900 dark:text-amber-300 mb-2">Scan to pay</p>
                   <img src={selectedRace.manualPaymentQrImage} alt="GCash or QRPh payment code" className="mx-auto w-48 max-w-full rounded-xl bg-white p-2 shadow-sm" />
                 </div>
               )}
               <div className="mt-3">
-                <label htmlFor="reg-payment-ref" className="block text-xs font-semibold uppercase tracking-widest text-amber-900 dark:text-amber-300 mb-1.5">Payment reference number <span className="text-red-700 dark:text-red-400">required</span></label>
-                <input id="reg-payment-ref" type="text" required value={paymentReference} onChange={(event) => setPaymentReference(event.target.value.toUpperCase())} maxLength={100} autoCapitalize="characters" autoCorrect="off" placeholder="GCash / bank transaction reference" className="w-full glass-inset px-3 py-2.5 text-sm font-mono font-bold tracking-wide text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
-                <p className="mt-1.5 text-xs text-[var(--text-secondary)]">Used solely to reconcile your transfer. A screenshot is not required.</p>
+                <label htmlFor="reg-payment-ref" className="block text-xs font-semibold uppercase tracking-widest text-amber-900 dark:text-amber-300 mb-2">Payment reference number <span className="text-red-700 dark:text-red-400">required</span></label>
+                <input id="reg-payment-ref" type="text" required value={paymentReference} onChange={(event) => setPaymentReference(event.target.value.toUpperCase())} maxLength={100} autoCapitalize="characters" autoCorrect="off" placeholder="GCash / bank transaction reference" className="w-full min-h-11 glass-inset px-3 py-2 text-sm font-mono font-semibold tracking-wide text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                <p className="mt-2 text-xs text-[var(--text-secondary)]">Used solely to reconcile your transfer. A screenshot is not required.</p>
               </div>
             </div>
           )}
 
           {(checkingPayment || paymentReturn?.status === 'pending' || paymentReturn?.status === 'creating') && (
-            <p className="text-xs text-amber-900 dark:text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-xl px-3 py-2 flex items-center gap-1.5"><RefreshCw className="w-3.5 h-3.5 motion-safe:animate-spin shrink-0" aria-hidden="true" /> Verifying your PayMongo payment securely...</p>
+            <p className="text-xs text-amber-900 dark:text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-xl px-3 py-2 flex items-center gap-2"><RefreshCw className="w-3.5 h-3.5 motion-safe:animate-spin shrink-0" aria-hidden="true" /> Verifying your PayMongo payment securely...</p>
           )}
           {(paymentReturn?.status === 'failed' || paymentReturn?.status === 'expired') && (
             <p role="alert" className="text-xs text-red-700 dark:text-red-400 border border-red-500/30 bg-red-500/10 rounded-xl px-3 py-2">Your checkout was not completed. No registration or charge was created; you may retry payment anytime.</p>
           )}
 
           <div className="glass-inset p-4 space-y-3 rounded-[var(--radius-control)]">
-            <label htmlFor="reg-terms-consent" className="flex items-start gap-2.5 cursor-pointer">
+            <label htmlFor="reg-terms-consent" className="min-h-11 flex items-start gap-2 cursor-pointer">
               <input
                 id="reg-terms-consent"
                 type="checkbox"
                 checked={acceptedRegistrationTerms}
                 onChange={(e) => setAcceptedRegistrationTerms(e.target.checked)}
-                className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--border-default)] accent-[var(--color-red-500)]"
+                className="rp-checkbox shrink-0"
               />
               <span className="text-xs text-[var(--text-primary)] leading-relaxed">
                 I accept the{' '}
-                <button type="button" onClick={() => openLegalDoc('terms')} className="font-semibold underline underline-offset-2 text-red-700 dark:text-red-400">Terms of Service</button>,{' '}
-                <button type="button" onClick={() => openLegalDoc('privacy')} className="font-semibold underline underline-offset-2 text-red-700 dark:text-red-400">Privacy Policy</button>, and{' '}
-                <button type="button" onClick={() => openLegalDoc('refund')} className="font-semibold underline underline-offset-2 text-red-700 dark:text-red-400">Refund Policy</button>{' '}
+                <a href="#legal-terms" onClick={(e) => { e.preventDefault(); openLegalDoc('terms'); }} className="inline-flex items-center min-h-6 font-semibold underline underline-offset-2 text-red-700 dark:text-red-400">Terms of Service</a>,{' '}
+                <a href="#legal-privacy" onClick={(e) => { e.preventDefault(); openLegalDoc('privacy'); }} className="inline-flex items-center min-h-6 font-semibold underline underline-offset-2 text-red-700 dark:text-red-400">Privacy Policy</a>, and{' '}
+                <a href="#legal-refund" onClick={(e) => { e.preventDefault(); openLegalDoc('refund'); }} className="inline-flex items-center min-h-6 font-semibold underline underline-offset-2 text-red-700 dark:text-red-400">Refund Policy</a>{' '}
                 for this event registration, including official timing and public leaderboard publication.
               </span>
             </label>
-            <label htmlFor="reg-marketing-optin" className="flex items-start gap-2.5 cursor-pointer">
+            <label htmlFor="reg-marketing-optin" className="min-h-11 flex items-start gap-2 cursor-pointer">
               <input
                 id="reg-marketing-optin"
                 type="checkbox"
                 checked={marketingOptIn}
                 onChange={(e) => setMarketingOptIn(e.target.checked)}
-                className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--border-default)] accent-[var(--color-red-500)]"
+                className="rp-checkbox shrink-0"
               />
               <span className="text-xs text-[var(--text-secondary)] leading-relaxed">
                 Send me optional announcements about future runs and post-race certificates (optional, unsubscribe anytime).
@@ -1811,10 +1813,10 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
             </label>
           </div>
 
-          {error && <p role="alert" className="text-xs text-red-700 dark:text-red-400 font-semibold flex items-start gap-1.5"><AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" /> <span>{error}</span></p>}
+          {error && <p role="alert" className="text-xs text-red-700 dark:text-red-400 font-semibold flex items-start gap-2"><AlertTriangle className="w-4 h-4 shrink-0 mt-1" aria-hidden="true" /> <span>{error}</span></p>}
 
           <button type="submit" disabled={saving}
-            className="min-h-11 w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-semibold uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-red-900/30 disabled:opacity-60">
+            className="min-h-11 w-full py-3 px-6 rounded-[var(--radius-control)] font-display font-semibold uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 text-white bg-gradient-to-r from-red-700 to-red-800 hover:from-red-600 hover:to-red-700 shadow-red-900/30 disabled:opacity-60">
             {saving ? <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <ClipboardList className="w-4 h-4" aria-hidden="true" />} {existingForRace ? 'Update Registration' : selectedRace.onlinePaymentEnabled && (raceDistances.find((item) => item.label === distance)?.price || 0) > 0 ? `Continue to checkout (PHP ${(raceDistances.find((item) => item.label === distance)?.price || 0).toFixed(2)})` : selectedRace.manualPaymentEnabled && (raceDistances.find((item) => item.label === distance)?.price || 0) > 0 ? `Reserve slot (PHP ${(raceDistances.find((item) => item.label === distance)?.price || 0).toFixed(2)})` : 'Save Race Profile'}
           </button>
       </fieldset></form>
@@ -1868,20 +1870,23 @@ function RunnerRacePass({ race, runnerProfile, result, orderedCheckpoints }: {
   const currentStep = [...steps].reverse().find((step) => step.completed)?.label || 'Registered';
 
   return (
-    <div className="lg:col-span-12 glass-panel overflow-hidden animate-fadeIn">
-      <div className="relative p-5 sm:p-6 overflow-hidden">
+    <div className="lg:col-span-12 glass-panel overflow-x-clip animate-fadeIn">
+      <div className="relative p-5 sm:p-6 overflow-clip rounded-t-2xl">
         {race.posterImage && <img src={race.posterImage} alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover opacity-[0.12]" />}
         <div className="absolute inset-0 bg-gradient-to-r from-red-950/60 via-[var(--surface-card)]/90 to-[var(--surface-card)]" />
         <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-5">
           <div className="min-w-0">
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-red-700 dark:text-red-300 bg-red-500/10 border border-red-500/25 rounded-full px-2.5 py-1"><Radio className="w-3 h-3" aria-hidden="true" /> My Race Pass</span>
-            <h2 className="heading-float text-xl sm:text-2xl font-black font-display uppercase tracking-tight text-[var(--text-primary)] mt-3 truncate">{race.name}</h2>
-            <p className="text-xs text-[var(--text-secondary)] mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1"><span className="inline-flex items-center gap-1"><Calendar className="w-3.5 h-3.5 text-red-500 mr-1.5" />{race.date}</span><span className="inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-red-500 mr-1.5" />{runnerProfile.distance}</span></p>
+            <h2 className="heading-float text-xl sm:text-2xl font-semibold font-display uppercase tracking-tight text-[var(--text-primary)] truncate">{race.name}</h2>
+            <p className="text-xs text-[var(--text-secondary)] mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+              <span className="inline-flex items-center gap-1 font-semibold uppercase tracking-widest text-red-700 dark:text-red-300 bg-red-700/10 border border-red-500/25 rounded-full px-3 py-1"><Radio className="w-3 h-3" aria-hidden="true" /> My Race Pass</span>
+              <span className="inline-flex items-center gap-1"><Calendar className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />{race.date}</span>
+              <span className="inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />{runnerProfile.distance}</span>
+            </p>
           </div>
           <div className="flex items-center gap-3 shrink-0">
             <div className="glass-inset px-4 py-3 text-center min-w-[104px]">
-              <span className="block text-[9px] font-bold uppercase tracking-widest text-[var(--text-secondary)]">Bib number</span>
-              <span className="block text-xl font-mono font-black tracking-wider text-red-500 mt-0.5">#{runnerProfile.bibNumber}</span>
+              <span className="block text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Bib number</span>
+              <span className="block text-xl font-mono font-semibold tracking-wider text-red-700 dark:text-red-400 mt-1">#{runnerProfile.bibNumber}</span>
             </div>
             <div className="bg-white p-2 rounded-xl shadow-xl border border-[var(--border-default)]" title="Show this QR code at a race checkpoint">
               <QRCodeSVG value={`RPCHIPv1|${runnerProfile.raceId}|${runnerProfile.bibNumber}`} size={66} level="M" />
@@ -1891,18 +1896,18 @@ function RunnerRacePass({ race, runnerProfile, result, orderedCheckpoints }: {
       </div>
 
       <div className="p-5 sm:p-6 border-t border-[var(--border-default)]">
-        <div className="flex items-center justify-between gap-3 mb-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div>
-            <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)]">Race status</h3>
-            <p className="text-xs text-[var(--text-primary)] font-bold mt-1">Current: <span className="text-red-500">{currentStep}</span></p>
+            <h3 className="text-xs font-semibold font-display uppercase tracking-widest text-[var(--text-secondary)]">Race status</h3>
+            <p className="text-xs text-[var(--text-primary)] font-semibold mt-1">Current: <span className="text-red-700 dark:text-red-400">{currentStep}</span></p>
           </div>
-          {result?.finishTime && <span className="text-xs font-mono font-black text-emerald-400 border border-emerald-500/25 bg-emerald-500/10 rounded-full px-3 py-1.5">Official time {formatRaceTime(result.finishTime)}</span>}
+          {result?.finishTime && <span className="text-xs font-mono font-semibold text-emerald-800 dark:text-emerald-300 border border-emerald-500/25 bg-emerald-500/10 rounded-full px-3 py-1">Official time {formatRaceTime(result.finishTime)}</span>}
         </div>
         <ol className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-2">
           {steps.map((step, index) => (
             <li key={step.id} className={`flex items-center gap-3 rounded-xl border px-3 py-3 ${step.completed ? 'border-red-500/25 bg-red-500/5' : 'border-[var(--border-default)] bg-[var(--surface-inset)]/35'}`}>
-              <span className={step.completed ? 'text-red-500' : 'text-[var(--text-muted)]'}>{step.completed ? <CheckCircle2 className="w-5 h-5" /> : <Circle className="w-5 h-5" />}</span>
-              <span className="min-w-0"><span className="block text-xs font-black text-[var(--text-primary)]">{index + 1}. {step.label}</span><span className="block text-[10px] text-[var(--text-secondary)] truncate">{step.completed && step.timestamp ? formatScanTime(step.timestamp) : step.detail}</span></span>
+              <span className={step.completed ? 'text-red-700 dark:text-red-400' : 'text-[var(--text-secondary)]'}>{step.completed ? <CheckCircle2 className="w-5 h-5" aria-hidden="true" /> : <Circle className="w-5 h-5" aria-hidden="true" />}</span>
+              <span className="min-w-0"><span className="block text-xs font-semibold text-[var(--text-primary)]">{index + 1}. {step.label}</span><span className="block text-xs text-[var(--text-secondary)] truncate">{step.completed && step.timestamp ? formatScanTime(step.timestamp) : step.detail}</span></span>
             </li>
           ))}
         </ol>
@@ -1975,8 +1980,8 @@ function DigitalRaceBib({ race, runnerProfile }: { race: Race; runnerProfile: Ru
     <div className="glass-panel p-5 space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2"><Hash className="w-4 h-4 text-red-500" /> Your Digital Race Bib</h3>
-          <p className="text-[10.5px] text-[var(--text-secondary)] mt-1">Your name and official bib number are ready for this race.</p>
+          <h3 className="text-xs font-semibold font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2"><Hash className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> Your Digital Race Bib</h3>
+          <p className="text-xs text-[var(--text-secondary)] mt-1">Your name and official bib number are ready for this race.</p>
         </div>
       </div>
       <div ref={bibRef} className="relative w-full aspect-[3/2] overflow-hidden rounded-xl bg-[var(--surface-inset)] select-none" style={{ containerType: 'inline-size' }}>
@@ -1985,10 +1990,10 @@ function DigitalRaceBib({ race, runnerProfile }: { race: Race; runnerProfile: Ru
         {race.raceBibShowRaffleNumber && <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${layout.raffleNumberX ?? 50}%`, top: `${layout.raffleNumberY ?? 88}%`, fontSize: `${layout.raffleNumberSize ?? 7}cqw`, color: layout.raffleNumberColor ?? '#FFFFFF', fontFamily: raceBibFontFamily(layout.raffleNumberFont ?? 'mono', race.raceBibCustomFont), WebkitTextStroke: `${layout.raffleNumberStrokeWidth ?? 0}cqw ${layout.raffleNumberStrokeColor ?? '#000000'}`, paintOrder: 'stroke fill' }}>{runnerProfile.bibNumber}</span>}
         <div className="absolute -translate-x-1/2 -translate-y-1/2 w-[90%] text-center leading-[1.16] font-black tracking-wide drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)]" style={{ left: `${layout.runnerNameX}%`, top: `${layout.runnerNameY}%`, fontSize: `${previewNameSize}cqw`, color: layout.runnerNameColor ?? '#FFFFFF', fontFamily: raceBibFontFamily(layout.runnerNameFont, race.raceBibCustomFont), WebkitTextStroke: `${layout.runnerNameStrokeWidth ?? 0}cqw ${layout.runnerNameStrokeColor ?? '#000000'}`, paintOrder: 'stroke fill' }}>{nameLines.map((name, index) => <span key={`${name}-${index}`} className="block">{name}</span>)}</div>
       </div>
-      <button hidden={!can('personal.bibs')} type="button" onClick={handleDownload} disabled={downloading} className="w-full py-2.5 px-4 rounded-[var(--radius-control)] font-display font-black uppercase text-[10px] tracking-widest text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 transition disabled:opacity-60 flex items-center justify-center gap-2">
-        {downloading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />} {downloading ? 'Preparing Bib...' : 'Download Race Bib'}
+      <button hidden={!can('personal.bibs')} type="button" onClick={handleDownload} disabled={downloading} className="min-h-11 w-full py-3 px-4 rounded-[var(--radius-control)] font-display font-semibold uppercase text-xs tracking-widest text-white bg-gradient-to-r from-red-700 to-red-800 hover:from-red-600 hover:to-red-700 shadow-lg shadow-red-900/30 transition disabled:opacity-60 flex items-center justify-center gap-2">
+        {downloading ? <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <FileDown className="w-4 h-4" aria-hidden="true" />} {downloading ? 'Preparing Bib...' : 'Download Race Bib'}
       </button>
-      {downloadError && <p className="text-[10.5px] text-red-500 text-center">{downloadError}</p>}
+      {downloadError && <p role="alert" className="text-xs text-red-700 dark:text-red-400 text-center">{downloadError}</p>}
     </div>
   );
 }
@@ -2070,8 +2075,8 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
       {race && <RunnerRacePass race={race} runnerProfile={runnerProfile} result={result} orderedCheckpoints={orderedCheckpoints} />}
       <div className="lg:col-span-7 space-y-6">
         <div className="glass-panel p-5">
-          <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2 mb-4">
-            <Clock className="w-4 h-4 text-red-500" /> Checkpoint Splits
+          <h3 className="text-xs font-semibold font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2 mb-4">
+            <Clock className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> Checkpoint Splits
           </h3>
           {!race && <p className="text-xs text-[var(--text-secondary)]">Loading race details...</p>}
           {race && orderedCheckpoints.length === 0 && <p className="text-xs text-[var(--text-secondary)]">This race has no checkpoints configured yet.</p>}
@@ -2088,18 +2093,18 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
               const usesGunFallback = phase === 'start' && !split && result?.timingMethod === 'gun' && !!waveStartTime;
               const usesSequenceStart = phase === 'start' && !!result?.sequenceStartTime;
               return (
-                <div key={cp.id} className="flex items-center justify-between glass-inset px-4 py-3">
+                <div key={cp.id} className="flex items-center justify-between glass-inset px-4 py-3 gap-3">
                   <span className="min-w-0">
-                    <span className="block text-sm font-bold text-[var(--text-primary)]">{cp.label}</span>
-                    <span className="block text-[9px] font-bold uppercase tracking-wide text-[var(--text-muted)] mt-0.5">
+                    <span className="block text-sm font-semibold text-[var(--text-primary)]">{cp.label}</span>
+                    <span className="block text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)] mt-1">
                       {phase === 'checkin' ? 'Check-In' : phase === 'start' ? 'Official Start' : phase === 'finish' ? 'Finish' : cutoffDeadline ? `Cutoff ${formatClockTime(cutoffDeadline)}` : 'Split'}
                     </span>
                   </span>
-                  <span className={`font-mono text-sm font-black shrink-0 text-right ${afterCutoff ? 'text-amber-500' : usesSequenceStart ? 'text-emerald-500' : split ? 'text-red-500' : usesGunFallback ? 'text-emerald-500' : 'text-[var(--text-muted)]'}`}>
+                  <span className={`font-mono text-sm font-semibold shrink-0 text-right ${afterCutoff ? 'text-amber-800 dark:text-amber-300' : usesSequenceStart ? 'text-emerald-700 dark:text-emerald-400' : split ? 'text-red-700 dark:text-red-400' : usesGunFallback ? 'text-emerald-700 dark:text-emerald-400' : 'text-[var(--text-secondary)]'}`}>
                     {usesSequenceStart ? formatClockTime(result!.sequenceStartTime!) : split ? formatClockTime(split.timestamp) : usesGunFallback ? `Gun ${formatClockTime(waveStartTime!)}` : 'Pending'}
-                    {usesSequenceStart && <span className="block text-[9px] font-sans uppercase tracking-wide">Previous entry finish</span>}
-                    {afterCutoff && <span className="block text-[9px] font-sans uppercase tracking-wide">After cutoff</span>}
-                    {usesGunFallback && <span className="block text-[9px] font-sans uppercase tracking-wide">Official fallback</span>}
+                    {usesSequenceStart && <span className="block text-xs font-sans uppercase tracking-wide">Previous entry finish</span>}
+                    {afterCutoff && <span className="block text-xs font-sans uppercase tracking-wide">After cutoff</span>}
+                    {usesGunFallback && <span className="block text-xs font-sans uppercase tracking-wide">Official fallback</span>}
                   </span>
                 </div>
               );
@@ -2107,17 +2112,17 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
           </div>
 
           {result?.finishTime && (
-            <div className="mt-4 bg-emerald-950/20 border border-emerald-800/40 p-4 rounded-2xl text-center">
-              <p className="text-[10px] uppercase font-bold tracking-widest text-emerald-500">Finish Time</p>
-              <p className="text-2xl font-mono font-black text-emerald-400 mt-1">{formatRaceTime(result.finishTime)}</p>{result.finishReviewRequired && <p className="text-amber-500 text-xs">Provisional place · Needs finish review</p>}
-              {result.overallRank && <p className="text-xs text-emerald-500 mt-1">Overall #{result.overallRank} in {runnerDivisionLabel(runnerProfile)}{result.categoryRank ? ` · ${result.categoryLabel || 'Category'} #${result.categoryRank}` : ''}</p>}
+            <div className="mt-4 bg-emerald-950/15 dark:bg-emerald-950/30 border border-emerald-700/35 p-4 rounded-2xl text-center">
+              <p className="text-xs uppercase font-semibold tracking-widest text-emerald-700 dark:text-emerald-400">Finish Time</p>
+              <p className="text-2xl font-mono font-semibold text-emerald-800 dark:text-emerald-300 mt-1">{formatRaceTime(result.finishTime)}</p>{result.finishReviewRequired && <p className="text-amber-800 dark:text-amber-300 text-xs">Provisional place · Needs finish review</p>}
+              {result.overallRank && <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-1">Overall #{result.overallRank} in {runnerDivisionLabel(runnerProfile)}{result.categoryRank ? ` · ${result.categoryLabel || 'Category'} #${result.categoryRank}` : ''}</p>}
               {race && (
                 <button
                   type="button"
                   hidden={!can('personal.certificates')} onClick={() => downloadFinisherCertificate(race, runnerProfile, result)}
-                  className="mt-4 w-full sm:w-auto px-4 py-2.5 rounded-[var(--radius-control)] font-display font-black uppercase text-[10px] tracking-widest text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 transition inline-flex items-center justify-center gap-2"
+                  className="mt-4 min-h-11 w-full sm:w-auto px-4 py-3 rounded-[var(--radius-control)] font-display font-semibold uppercase text-xs tracking-widest text-white bg-gradient-to-r from-red-700 to-red-800 hover:from-red-600 hover:to-red-700 shadow-lg shadow-red-900/30 transition inline-flex items-center justify-center gap-2"
                 >
-                  <FileDown className="w-4 h-4" /> Download E-Certificate
+                  <FileDown className="w-4 h-4" aria-hidden="true" /> Download E-Certificate
                 </button>
               )}
             </div>
@@ -2127,14 +2132,14 @@ function RunnerSplitsView({ runnerProfile }: { runnerProfile: RunnerProfile }) {
 
       <div className="lg:col-span-5 space-y-6">
         <div className="glass-panel p-5 text-center space-y-4">
-          <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)]">Your Checkpoint Bib QR</h3>
-          <p className="text-[11px] text-[var(--text-secondary)]">Show this to organizers at each checkpoint to scan-and-record your time.</p>
+          <h3 className="text-xs font-semibold font-display uppercase tracking-widest text-[var(--text-secondary)]">Your Checkpoint Bib QR</h3>
+          <p className="text-xs text-[var(--text-secondary)]">Show this to organizers at each checkpoint to scan-and-record your time.</p>
           <div className="bg-white p-4 rounded-2xl inline-block shadow-xl border border-[var(--border-default)]">
             <QRCodeSVG value={`RPCHIPv1|${runnerProfile.raceId}|${runnerProfile.bibNumber}`} size={180} level="M" />
           </div>
           <div className="glass-inset p-3">
-            <span className="text-[10px] font-mono text-[var(--text-secondary)] uppercase block tracking-wider mb-1">Bib Number</span>
-            <span className="text-xl font-mono font-black text-red-500 tracking-widest">#{runnerProfile.bibNumber}</span>
+            <span className="text-xs font-mono text-[var(--text-secondary)] uppercase block tracking-wider mb-1">Bib Number</span>
+            <span className="text-xl font-mono font-semibold text-red-700 dark:text-red-400 tracking-widest">#{runnerProfile.bibNumber}</span>
           </div>
         </div>
         {race && <DigitalRaceBib race={race} runnerProfile={runnerProfile} />}
@@ -2326,7 +2331,7 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
     <DialogSurface
       titleId="profile-modal-title"
       onRequestClose={onClose}
-      className="glass-panel w-full max-w-lg p-6 space-y-5 relative"
+      className="glass-panel w-full max-w-lg p-6"
     >
       <div className="space-y-5 relative">
         <div className="flex items-center justify-between gap-3">
@@ -2347,7 +2352,7 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="relative w-24 h-24 rounded-full overflow-hidden glass-inset flex items-center justify-center text-red-700 dark:text-red-400 font-black text-3xl group"
+            className="relative w-24 h-24 rounded-full overflow-hidden glass-inset flex items-center justify-center text-red-700 dark:text-red-400 font-semibold text-3xl group"
             aria-label="Change profile photo"
             title="Change profile picture"
           >
@@ -2361,25 +2366,25 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
             </span>
           </button>
           <input ref={fileInputRef} type="file" accept="image/*" aria-label="Upload profile photo" onChange={handleFileChange} className="hidden" />
-          <button type="button" onClick={() => fileInputRef.current?.click()} className="min-h-11 px-3 text-xs font-semibold text-red-700 dark:text-red-400 hover:underline flex items-center gap-1.5 uppercase tracking-wide">
+          <button type="button" onClick={() => fileInputRef.current?.click()} className="min-h-11 px-3 text-xs font-semibold text-red-700 dark:text-red-400 hover:underline flex items-center gap-2 uppercase tracking-wide">
             <Pencil className="w-3.5 h-3.5" aria-hidden="true" /> Change Photo
           </button>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="sm:col-span-2">
-            <label htmlFor="profile-fullname" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Full Name</label>
+            <label htmlFor="profile-fullname" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Full Name</label>
             <input
               id="profile-fullname"
               type="text"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               maxLength={100}
-              className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+              className="w-full min-h-11 glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50"
             />
           </div>
           <div>
-            <label htmlFor="profile-nickname" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Nickname</label>
+            <label htmlFor="profile-nickname" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Nickname</label>
             <input
               id="profile-nickname"
               type="text"
@@ -2387,64 +2392,64 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
               onChange={(e) => setNickname(e.target.value)}
               placeholder={profile.displayName}
               maxLength={30}
-              className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+              className="w-full min-h-11 glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50"
             />
           </div>
-          <div>
-            <span className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Account Email</span>
-            <div className="glass-inset px-4 py-3 text-sm text-[var(--text-secondary)] flex items-center gap-2"><Mail className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />{profile.email}</div>
+          <div className="min-w-0">
+            <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Account Email</span>
+            <div className="glass-inset px-4 py-3 text-sm text-[var(--text-secondary)] flex items-center gap-2 min-w-0"><Mail className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" /><span className="break-all min-w-0">{profile.email}</span></div>
           </div>
           <div className="sm:col-span-2">
-            <label htmlFor="profile-username" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Sign-in Username</label>
+            <label htmlFor="profile-username" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Sign-in Username</label>
             {profile.username ? (
-              <div className="glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2"><User className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />{profile.username}</div>
+              <div className="glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2 min-w-0"><User className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" /><span className="truncate">{profile.username}</span></div>
             ) : (
               <>
-                <input id="profile-username" type="text" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} autoCapitalize="none" autoCorrect="off" maxLength={24} placeholder="e.g. juan.runner" className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
-                <p className="mt-1.5 text-xs text-[var(--text-muted)]">Optional for existing accounts. Once saved, you can sign in using this username and it cannot be changed.</p>
+                <input id="profile-username" type="text" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} autoCapitalize="none" autoCorrect="off" maxLength={24} placeholder="e.g. juan.runner" className="w-full min-h-11 glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50" />
+                <p className="mt-2 text-xs text-[var(--text-secondary)]">Optional for existing accounts. Once saved, you can sign in using this username and it cannot be changed.</p>
               </>
             )}
           </div>
         </div>
 
         <div className="space-y-3">
-          <h3 className="text-xs font-bold uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-1.5"><PackageCheck className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" /> Race preferences</h3>
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2"><PackageCheck className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" /> Race preferences</h3>
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Shirt Size</label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Shirt Size</label>
             <ShirtSizePicker value={shirtSize} onChange={setShirtSize} emptyLabel="Not selected" />
           </div>
         </div>
 
         <div className="space-y-3">
-          <h3 className="text-xs font-bold uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-1.5"><HeartPulse className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" /> Emergency &amp; medical</h3>
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2"><HeartPulse className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" /> Emergency &amp; medical</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label htmlFor="profile-emergency-name" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Emergency Contact</label>
-              <input id="profile-emergency-name" type="text" value={emergencyContactName} onChange={(e) => setEmergencyContactName(e.target.value)} maxLength={100} placeholder="Full name" className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
+              <label htmlFor="profile-emergency-name" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Emergency Contact</label>
+              <input id="profile-emergency-name" type="text" value={emergencyContactName} onChange={(e) => setEmergencyContactName(e.target.value)} maxLength={100} placeholder="Full name" className="w-full min-h-11 glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50" />
             </div>
             <div>
-              <label htmlFor="profile-emergency-phone" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Contact Number</label>
-              <div className="relative"><Phone className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" aria-hidden="true" /><input id="profile-emergency-phone" type="tel" value={emergencyContactPhone} onChange={(e) => setEmergencyContactPhone(e.target.value)} maxLength={30} placeholder="09XX XXX XXXX" className="w-full glass-inset pl-10 pr-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" /></div>
+              <label htmlFor="profile-emergency-phone" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Contact Number</label>
+              <div className="relative"><Phone className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] pointer-events-none" aria-hidden="true" /><input id="profile-emergency-phone" type="tel" value={emergencyContactPhone} onChange={(e) => setEmergencyContactPhone(e.target.value)} maxLength={30} placeholder="09XX XXX XXXX" className="w-full min-h-11 glass-inset pl-10 pr-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50" /></div>
             </div>
           </div>
           <div>
-            <label htmlFor="profile-medical-notes" className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Medical Note <span className="normal-case font-normal text-[var(--text-muted)]">(optional)</span></label>
-            <textarea id="profile-medical-notes" value={medicalNotes} onChange={(e) => setMedicalNotes(e.target.value)} maxLength={600} rows={3} placeholder="Example: allergy, asthma, or other information for race-day emergencies." className="w-full resize-y glass-inset px-4 py-3 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
-            <p className="text-xs text-[var(--text-muted)] mt-1">Keep this brief. It is visible only to you and authorized RacePulse staff.</p>
+            <label htmlFor="profile-medical-notes" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Medical Note <span className="normal-case font-normal text-[var(--text-secondary)]">(optional)</span></label>
+            <textarea id="profile-medical-notes" value={medicalNotes} onChange={(e) => setMedicalNotes(e.target.value)} maxLength={600} rows={3} placeholder="Example: allergy, asthma, or other information for race-day emergencies." className="w-full resize-y glass-inset px-4 py-3 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50" />
+            <p className="text-xs text-[var(--text-secondary)] mt-1">Keep this brief. It is visible only to you and authorized RacePulse staff.</p>
           </div>
         </div>
 
         <div className="space-y-3">
-          <h3 className="text-xs font-bold uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-1.5">
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2">
             <ShieldCheck className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" /> Email Preferences
           </h3>
-          <label htmlFor="profile-marketing-optin" className="glass-inset p-4 flex items-start gap-3 cursor-pointer">
+          <label htmlFor="profile-marketing-optin" className="min-h-11 glass-inset p-4 flex items-start gap-2 cursor-pointer">
             <input
               id="profile-marketing-optin"
               type="checkbox"
               checked={marketingOptIn}
               onChange={(e) => setMarketingOptIn(e.target.checked)}
-              className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--border-default)] accent-[var(--color-red-500)]"
+              className="rp-checkbox shrink-0"
             />
             <span className="text-xs text-[var(--text-primary)] leading-relaxed">
               Send me optional race announcements and post-event update emails. Transactional account security and registration receipts are always delivered.
@@ -2453,51 +2458,51 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
         </div>
 
         <div className="glass-inset p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div><p className="text-xs font-bold text-[var(--text-primary)]">Password</p><p className="text-xs text-[var(--text-secondary)] mt-0.5">We will send a reset code to your verified email.</p></div>
-          <button type="button" onClick={() => setResettingPassword(true)} className="min-h-11 text-xs font-semibold uppercase tracking-wide px-3.5 py-2.5 rounded-[14px] bg-red-500/10 text-red-700 dark:text-red-400 border border-red-500/30 hover:bg-red-700 hover:text-white transition">Reset password</button>
+          <div><p className="text-xs font-semibold text-[var(--text-primary)]">Password</p><p className="text-xs text-[var(--text-secondary)] mt-1">We will send a reset code to your verified email.</p></div>
+          <button type="button" onClick={() => setResettingPassword(true)} className="min-h-11 text-xs font-semibold uppercase tracking-wide px-4 py-2 rounded-[14px] bg-red-700/10 dark:bg-red-500/10 text-red-700 dark:text-red-400 border border-red-500/30 hover:bg-red-700 hover:text-white transition">Reset password</button>
         </div>
 
         <div>
-          <h3 className="text-xs font-bold uppercase tracking-widest text-[var(--text-secondary)] mb-2 flex items-center gap-1.5">
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)] mb-2 flex items-center gap-2">
             <Trophy className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" /> Most Recent Race
           </h3>
           {!mostRecentPast || !recentRace ? (
-            <p className="text-xs text-[var(--text-secondary)] glass-inset px-3 py-2.5">No completed races yet.</p>
+            <p className="text-xs text-[var(--text-secondary)] glass-inset px-3 py-2">No completed races yet.</p>
           ) : recentResult === undefined ? (
-            <p className="text-xs text-[var(--text-secondary)] glass-inset px-3 py-2.5 flex items-center gap-1.5"><RefreshCw className="w-3 h-3 motion-safe:animate-spin" aria-hidden="true" /> Loading...</p>
+            <p className="text-xs text-[var(--text-secondary)] glass-inset px-3 py-2 flex items-center gap-2"><RefreshCw className="w-3 h-3 motion-safe:animate-spin" aria-hidden="true" /> Loading...</p>
           ) : (
-            <div className="glass-inset px-4 py-3 space-y-1.5">
-              <p className="text-sm font-bold text-[var(--text-primary)]">{recentRace.name}</p>
+            <div className="glass-inset px-4 py-3 space-y-2">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">{recentRace.name}</p>
               <p className="text-xs text-[var(--text-secondary)]">{recentRace.date} &bull; {mostRecentPast.distance} &bull; #{mostRecentPast.bibNumber}</p>
               <div className="flex items-center gap-4 pt-1">
                 <div>
-                  <span className="block text-[10px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Rank</span>
-                  <span className="text-lg font-mono font-black text-red-700 dark:text-red-400">{recentResult?.rank ? `#${recentResult.rank}` : '--'}</span>
+                  <span className="block text-xs uppercase font-semibold text-[var(--text-secondary)] tracking-wider">Rank</span>
+                  <span className="text-lg font-mono font-semibold text-red-700 dark:text-red-400">{recentResult?.rank ? `#${recentResult.rank}` : '--'}</span>
                 </div>
                 <div>
-                  <span className="block text-[10px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Finish Time</span>
-                  <span className="text-lg font-mono font-black text-red-700 dark:text-red-400">{formatRaceTime(recentResult?.finishTime)}</span>
+                  <span className="block text-xs uppercase font-semibold text-[var(--text-secondary)] tracking-wider">Finish Time</span>
+                  <span className="text-lg font-mono font-semibold text-red-700 dark:text-red-400">{formatRaceTime(recentResult?.finishTime)}</span>
                 </div>
               </div>
             </div>
           )}
         </div>
 
-        {error && <p role="alert" className="text-xs text-red-700 dark:text-red-400 font-semibold flex items-start gap-1.5"><AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" /> <span>{error}</span></p>}
-        {notice && <p role="status" className="text-xs text-emerald-800 dark:text-emerald-300 font-semibold flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" /> <span>{notice}</span></p>}
+        {error && <p role="alert" className="text-xs text-red-700 dark:text-red-400 font-semibold flex items-start gap-2"><AlertTriangle className="w-4 h-4 shrink-0 mt-1" aria-hidden="true" /> <span>{error}</span></p>}
+        {notice && <p role="status" className="text-xs text-emerald-800 dark:text-emerald-300 font-semibold flex items-center gap-2"><CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" /> <span>{notice}</span></p>}
 
         <button
           type="button"
           onClick={handleSave}
           disabled={saving}
-          className="min-h-11 w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-semibold uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-red-900/30 disabled:opacity-60"
+          className="min-h-11 w-full py-3 px-6 rounded-[var(--radius-control)] font-display font-semibold uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 transition duration-200 text-white bg-gradient-to-r from-red-700 to-red-800 hover:from-red-600 hover:to-red-700 shadow-red-900/30 disabled:opacity-60"
         >
           {saving ? <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <User className="w-4 h-4" aria-hidden="true" />} Save Settings
         </button>
         <div className="rounded-[var(--radius-control)] border border-red-500/30 bg-red-500/5 p-4 space-y-2">
-          <p className="text-xs font-bold uppercase tracking-wider text-red-700 dark:text-red-400">Delete Account &amp; Data</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-red-700 dark:text-red-400">Delete Account &amp; Data</p>
           <p className="text-xs text-[var(--text-secondary)] leading-relaxed">Permanently delete or anonymize your profile, race registrations, friends, and personal records.</p>
-          <button type="button" onClick={() => setShowDeleteAccount(true)} className="min-h-11 text-xs font-semibold uppercase tracking-wide px-3.5 py-2.5 rounded-[14px] border border-red-500/35 text-red-700 dark:text-red-400 hover:bg-red-700 hover:text-white transition">Delete My Account &amp; Data</button>
+          <button type="button" onClick={() => setShowDeleteAccount(true)} className="min-h-11 text-xs font-semibold uppercase tracking-wide px-4 py-2 rounded-[14px] border border-red-500/35 text-red-700 dark:text-red-400 hover:bg-red-700 hover:text-white transition">Delete My Account &amp; Data</button>
         </div>
       </div>
       {showDeleteAccount && <DeleteAccountModal profile={profile} onClose={() => setShowDeleteAccount(false)} />}

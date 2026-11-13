@@ -325,7 +325,7 @@ export function ResultsSkeletonList({ rows = 5 }: { rows?: number }) {
         >
           <ShimmerSweep />
           <div className="w-8 h-5 rounded bg-[var(--surface-card)] shrink-0" />
-          <div className="flex-1 min-w-0 space-y-1.5">
+          <div className="flex-1 min-w-0 space-y-2">
             <div className="h-4 w-44 max-w-full rounded bg-[var(--surface-card)]" />
             <div className="h-3 w-60 max-w-full rounded bg-[var(--surface-card)]" />
           </div>

@@ -69,9 +69,9 @@ export default function PublicLiveRaceHub({ races }: PublicLiveRaceHubProps) {
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div>
             <h3 className="heading-float text-xl sm:text-2xl font-semibold font-display tracking-tight text-[var(--text-primary)]">{activeRace.name}</h3>
-            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
               <p className="text-xs text-[var(--text-secondary)]">{activeRace.date}</p>
-              <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full border ${statusClass}`}>
+              <span className={`inline-flex items-center gap-2 text-xs font-semibold px-3 py-1 rounded-full border ${statusClass}`}>
                 <span className="w-1.5 h-1.5 rounded-full bg-current" aria-hidden="true" /> {statusLabel}
               </span>
             </div>
@@ -79,7 +79,7 @@ export default function PublicLiveRaceHub({ races }: PublicLiveRaceHubProps) {
           {races.length > 1 && (
             <label className="block sm:w-64">
               <span className="sr-only">Choose live race</span>
-              <select value={activeRaceId} onChange={(event) => setActiveRaceId(event.target.value)} className="w-full min-h-11 glass-inset px-3 py-2.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50">
+              <select value={activeRaceId} onChange={(event) => setActiveRaceId(event.target.value)} className="w-full min-h-11 glass-inset px-3 py-2 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50">
                 {races.map((race) => <option key={race.id} value={race.id}>{race.name}</option>)}
               </select>
             </label>
@@ -111,7 +111,7 @@ export default function PublicLiveRaceHub({ races }: PublicLiveRaceHubProps) {
           {mapEmbed ? (
             <iframe title={`${activeRace.name} course map`} src={mapEmbed} className="w-full aspect-video rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)]" loading="lazy" />
           ) : mapUrl ? (
-            <a href={mapUrl} target="_blank" rel="noreferrer" className="min-h-11 glass-inset px-5 py-3.5 text-sm font-semibold text-red-700 dark:text-red-400 hover:border-red-700/40 dark:hover:border-red-400/40 transition flex items-center justify-center gap-2">
+            <a href={mapUrl} target="_blank" rel="noreferrer" className="min-h-11 glass-inset px-5 py-3 text-sm font-semibold text-red-700 dark:text-red-400 hover:border-red-700/40 dark:hover:border-red-400/40 transition flex items-center justify-center gap-2">
               <MapPinned className="w-4 h-4" /> Open course map <ExternalLink className="w-3.5 h-3.5" />
             </a>
           ) : (
@@ -163,15 +163,15 @@ export default function PublicLiveRaceHub({ races }: PublicLiveRaceHubProps) {
                   <span className="text-xs font-semibold text-[var(--text-secondary)]">{officialResults.length} finishers</span>
                 </div>
                 <div className="relative">
-                  <Search className="w-4 h-4 text-[var(--text-secondary)] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
-                  <input value={resultSearch} onChange={(event) => setResultSearch(event.target.value)} placeholder="Search name or bib number" className="w-full min-h-11 glass-inset pl-10 pr-4 py-2.5 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50" aria-label="Search official results" />
+                  <Search className="w-4 h-4 text-[var(--text-secondary)] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
+                  <input value={resultSearch} onChange={(event) => setResultSearch(event.target.value)} placeholder="Search name or bib number" className="w-full min-h-11 glass-inset pl-10 pr-4 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50" aria-label="Search official results" />
                 </div>
                 {officialResults.length === 0 ? (
                   <p className="glass-inset px-4 py-5 text-center text-xs text-[var(--text-secondary)]">Official finisher results will appear after the first Finish scan.</p>
                 ) : filteredOfficialResults.length === 0 ? (
                   <p className="glass-inset px-4 py-5 text-center text-xs text-[var(--text-secondary)]">No official result matches “{resultSearch}”.</p>
                 ) : (
-                  <div className="space-y-1.5 max-h-[30rem] overflow-y-auto pr-1">
+                  <div className="space-y-2 max-h-[30rem] overflow-y-auto pr-1">
                     {filteredOfficialResults.map((result) => (
                       <div key={`${result.distance}_${result.rank}_${result.bibNumber}`} className="glass-inset px-4 py-3 flex items-center gap-3">
                         <span className="w-7 text-center font-mono font-semibold text-red-700 dark:text-red-400 shrink-0">#{result.rank}</span>

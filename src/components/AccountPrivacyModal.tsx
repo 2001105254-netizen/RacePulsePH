@@ -109,7 +109,7 @@ export default function AccountPrivacyModal({ profile, onClose }: AccountPrivacy
             disabled={saving}
             checked={marketingOptIn}
             onChange={(event) => void handleToggleMarketing(event.target.checked)}
-            className="mt-1 h-5 w-5 shrink-0 accent-red-700 rounded cursor-pointer"
+            className="rp-checkbox shrink-0"
           />
         </label>
 
