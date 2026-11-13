@@ -163,7 +163,7 @@ export default function QrScannerModal({
             <Camera className="w-5 h-5 text-violet-700 dark:text-violet-400 shrink-0" aria-hidden="true" />
             <div>
               <h2 id="qr-scanner-modal-title" className="heading-float text-base font-semibold tracking-tight font-display text-[var(--text-primary)] uppercase">{title}</h2>
-              <p className="text-[11px] text-[var(--text-secondary)] font-mono">{subtitle}</p>
+              <p className="text-xs text-[var(--text-secondary)] font-mono">{subtitle}</p>
             </div>
           </div>
           <button
@@ -195,7 +195,7 @@ export default function QrScannerModal({
                   )}
                 </div>
                 {permissionError ? (
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <p className="text-xs font-mono font-semibold text-red-300 tracking-wider">CAMERA ACCESS BLOCKED</p>
                     <p className="text-xs text-zinc-200 leading-relaxed">
                       Permission was denied. Enable webcam access via the Camera icon in your browser address bar, or upload a QR image below.
@@ -211,7 +211,7 @@ export default function QrScannerModal({
               </div>
             )}
             {cameraActive && (
-              <div className="absolute top-3 left-3 bg-zinc-900/90 border border-violet-400/40 text-violet-200 text-xs font-mono tracking-wider py-1 px-2.5 rounded-md uppercase font-semibold">
+              <div className="absolute top-3 left-3 bg-zinc-900/90 border border-violet-400/40 text-violet-200 text-xs font-mono tracking-wider py-1 px-3 rounded-md uppercase font-semibold">
                 Scanner Active
               </div>
             )}
@@ -220,7 +220,7 @@ export default function QrScannerModal({
           {/* Fallback Image Import Trigger */}
           <div className="w-full max-w-[280px] space-y-2">
             <label className="min-h-11 flex flex-col items-center justify-center border border-violet-500/45 hover:border-violet-400 bg-violet-500/10 p-3 rounded-[20px] cursor-pointer transition select-none active:scale-95 duration-150">
-              <span className="text-xs uppercase font-semibold text-violet-700 dark:text-violet-300 flex items-center gap-1.5 font-mono">
+              <span className="text-xs uppercase font-semibold text-violet-700 dark:text-violet-300 flex items-center gap-2 font-mono">
                 <Camera className="w-3.5 h-3.5" aria-hidden="true" /> Use iPhone Camera Photo
               </span>
               <p className="text-xs text-[var(--text-secondary)] mt-1 text-center">Best fallback for mobile: take a photo of the QR to scan it automatically.</p>
@@ -233,7 +233,7 @@ export default function QrScannerModal({
               />
             </label>
             <label className="min-h-11 flex flex-col items-center justify-center border border-dashed border-[var(--border-default)] bg-[var(--surface-inset)] p-3 rounded-[20px] cursor-pointer transition select-none active:scale-95 duration-150">
-              <span className="text-xs uppercase font-semibold text-[var(--text-primary)] flex items-center gap-1.5 font-mono">
+              <span className="text-xs uppercase font-semibold text-[var(--text-primary)] flex items-center gap-2 font-mono">
                 <UploadCloud className="w-3.5 h-3.5 text-amber-800 dark:text-amber-300" aria-hidden="true" />
                 Upload Existing QR Photo
               </span>
@@ -249,19 +249,19 @@ export default function QrScannerModal({
 
           {/* Dynamic Alerts */}
           {successMessage && (
-            <div role="status" className="w-full text-xs text-emerald-800 dark:text-emerald-300 font-semibold p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-[20px] text-center flex items-center justify-center gap-1.5">
+            <div role="status" className="w-full text-xs text-emerald-800 dark:text-emerald-300 font-semibold p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-[20px] text-center flex items-center justify-center gap-2">
               <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" /> <span>{successMessage}</span>
             </div>
           )}
 
           {errorMessage && (
-            <div role="alert" className="w-full text-xs text-red-700 dark:text-red-400 font-semibold p-3 bg-red-500/10 border border-red-500/30 rounded-[20px] text-center flex items-center justify-center gap-1.5">
+            <div role="alert" className="w-full text-xs text-red-700 dark:text-red-400 font-semibold p-3 bg-red-500/10 border border-red-500/30 rounded-[20px] text-center flex items-center justify-center gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" /> <span>{errorMessage}</span>
             </div>
           )}
 
           {localFileError && (
-            <div role="alert" className="w-full text-xs text-amber-900 dark:text-amber-300 font-semibold p-3 bg-amber-500/10 border border-amber-500/30 rounded-[20px] text-center flex items-center justify-center gap-1.5">
+            <div role="alert" className="w-full text-xs text-amber-900 dark:text-amber-300 font-semibold p-3 bg-amber-500/10 border border-amber-500/30 rounded-[20px] text-center flex items-center justify-center gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" /> <span>{localFileError}</span>
             </div>
           )}

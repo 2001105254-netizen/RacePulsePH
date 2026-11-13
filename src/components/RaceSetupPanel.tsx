@@ -818,51 +818,51 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <div className="glass-panel p-5 space-y-4">
-        <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2">
-          <Flag className="w-4 h-4 text-red-500" /> {editingId ? 'Edit Race' : 'Create Race'}
+        <h3 className="text-xs font-semibold font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2">
+          <Flag className="w-4 h-4 text-red-700 dark:text-red-400" /> {editingId ? 'Edit Race' : 'Create Race'}
         </h3>
 
         <form hidden={!editingId && !can('race.create')} onSubmit={handleSave} className="space-y-4">
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Race Name</label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Race Name</label>
             <input disabled={(!!editingId && !can('race.edit'))} type="text" required value={name} onChange={(e) => setName(e.target.value)}
-              className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" placeholder="EX: ANNUAL MARATHON CHAMPIONSHIP" />
+              className="w-full min-h-11 glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" placeholder="EX: ANNUAL MARATHON CHAMPIONSHIP" />
           </div>
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Race Date</label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Race Date</label>
             <input disabled={(!!editingId && !can('race.edit'))} type="date" required value={date} onChange={(e) => setDate(e.target.value)}
-              className="w-full glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
+              className="w-full min-h-11 glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
           </div>
 
           <div className="glass-inset p-3 space-y-3">
             <label className="flex items-center justify-between gap-3 cursor-pointer">
               <span>
-                <span className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">Registration status</span>
-                <span className="block text-[10.5px] text-[var(--text-muted)] mt-0.5">Only open races appear on the public registration page.</span>
+                <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Registration status</span>
+                <span className="block text-xs text-[var(--text-secondary)] mt-1">Only open races appear on the public registration page.</span>
               </span>
               <input disabled={(!!editingId && !can('race.registration'))}
                 type="checkbox"
                 checked={registrationOpen}
                 onChange={(e) => setRegistrationOpen(e.target.checked)}
-                className="w-4 h-4 accent-red-600 shrink-0"
+                className="rp-checkbox shrink-0"
               />
             </label>
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Registration closes on <span className="normal-case font-normal text-[var(--text-muted)]">(optional)</span></label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Registration closes on <span className="normal-case font-normal text-[var(--text-secondary)]">(optional)</span></label>
               <input
                 type="date"
                 value={registrationCloseDate}
                 onChange={(e) => setRegistrationCloseDate(e.target.value)}
                 disabled={(!registrationOpen) || (!!editingId && !can('race.registration'))}
-                className="w-full glass-inset px-3 py-2.5 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50"
+                className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50"
               />
             </div>
           </div>
 
           <div className="glass-inset p-3 space-y-3">
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">Organizer team</p>
-              <p className="text-[10.5px] text-[var(--text-muted)] mt-0.5">{canManageOrganizerTeam ? 'Add approved organizers who can edit this race, view registrations, assign chips, and run timing. The account that created the race remains the primary owner.' : 'You are a collaborator on this race. The primary organizer manages the organizer team.'}</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Organizer team</p>
+              <p className="text-xs text-[var(--text-secondary)] mt-1">{canManageOrganizerTeam ? 'Add approved organizers who can edit this race, view registrations, assign chips, and run timing. The account that created the race remains the primary owner.' : 'You are a collaborator on this race. The primary organizer manages the organizer team.'}</p>
             </div>
             <select
               value=""
@@ -871,9 +871,9 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                 if (organizerId) setOrganizerIds((current) => current.includes(organizerId) ? current : [...current, organizerId]);
               }}
               disabled={(!canManageOrganizerTeam || organizerIds.length >= 20) || (!!editingId && !can('race.team'))}
-              className="w-full glass-inset px-3 py-2.5 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-60"
+              className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-60"
             >
-              <option value="">{approvedOrganizers.length ? 'Add an approved organizer…' : 'No other approved organizer accounts available'}</option>
+              <option value="">{approvedOrganizers.length ? 'Add an approved organizer...' : 'No other approved organizer accounts available'}</option>
               {approvedOrganizers
                 .filter((organizer) => !organizerIds.includes(organizer.uid))
                 .map((organizer) => (
@@ -884,27 +884,27 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
               <div className="flex flex-wrap gap-2">
                 {organizerIds.map((organizerId) => {
                   const organizer = approvedOrganizers.find((candidate) => candidate.uid === organizerId);
-                  const label = organizer ? `${organizer.displayName} (${organizer.email})` : `Organizer account ${organizerId.slice(0, 8)}…`;
+                  const label = organizer ? `${organizer.displayName} (${organizer.email})` : `Organizer account ${organizerId.slice(0, 8)}...`;
                   return (
-                    <span key={organizerId} className="inline-flex items-center gap-1.5 rounded-full border border-red-500/25 bg-red-500/8 px-2.5 py-1 text-[10px] font-semibold text-[var(--text-primary)]">
+                    <span key={organizerId} className="inline-flex items-center gap-2 rounded-full border border-red-500/25 bg-red-500/10 pl-3 pr-1 py-1 text-xs font-semibold text-[var(--text-primary)]">
                       {label}
-                      <button type="button" disabled={(!canManageOrganizerTeam) || (!!editingId && !can('race.team'))} onClick={() => setOrganizerIds((current) => current.filter((id) => id !== organizerId))} className="text-[var(--text-muted)] hover:text-red-500 transition disabled:opacity-40" title={canManageOrganizerTeam ? `Remove ${label}` : 'Only the primary organizer can change the team'}>
-                        <X className="w-3 h-3" />
+                      <button type="button" disabled={(!canManageOrganizerTeam) || (!!editingId && !can('race.team'))} onClick={() => setOrganizerIds((current) => current.filter((id) => id !== organizerId))} className="min-h-8 min-w-8 flex items-center justify-center rounded-full text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition disabled:opacity-40" aria-label={canManageOrganizerTeam ? `Remove ${label}` : 'Only the primary organizer can change the team'} title={canManageOrganizerTeam ? `Remove ${label}` : 'Only the primary organizer can change the team'}>
+                        <X className="w-3.5 h-3.5" aria-hidden="true" />
                       </button>
                     </span>
                   );
                 })}
               </div>
             ) : (
-              <p className="text-[10px] text-[var(--text-muted)]">Only you can manage this race right now.</p>
+              <p className="text-xs text-[var(--text-secondary)]">Only you can manage this race right now.</p>
             )}
           </div>
 
           <div className="glass-inset p-3 space-y-3">
             <label className="flex items-center justify-between gap-3 cursor-pointer">
               <span>
-                <span className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">Online payment</span>
-                <span className="block text-[10.5px] text-[var(--text-muted)] mt-0.5">Collect paid registrations securely through PayMongo. A bib is issued only after payment is confirmed.</span>
+                <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Online payment</span>
+                <span className="block text-xs text-[var(--text-secondary)] mt-1">Collect paid registrations securely through PayMongo. A bib is issued only after payment is confirmed.</span>
               </span>
               <input disabled={(!!editingId && !can('payment.configure'))}
                 type="checkbox"
@@ -913,16 +913,16 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                   setOnlinePaymentEnabled(e.target.checked);
                   if (e.target.checked) setManualPaymentEnabled(false);
                 }}
-                className="w-4 h-4 accent-red-600 shrink-0"
+                className="rp-checkbox shrink-0"
               />
             </label>
             {onlinePaymentEnabled && (
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Payment processing fee</label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Payment processing fee</label>
                 <select disabled={(!!editingId && !can('payment.configure'))}
                   value={paymentFeeMode}
                   onChange={(e) => setPaymentFeeMode(e.target.value as 'absorbed' | 'passed_on')}
-                  className="w-full glass-inset px-3 py-2.5 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                  className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
                 >
                   <option value="absorbed">Organizer absorbs the fee: runner pays the listed price</option>
                   <option value="passed_on">Pass fee to runner: checkout adds PayMongo's fee</option>
@@ -932,8 +932,8 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
             <div className="border-t border-[var(--border-default)] pt-3">
               <label className="flex items-center justify-between gap-3 cursor-pointer">
                 <span>
-                  <span className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">Manual payment</span>
-                  <span className="block text-[10.5px] text-[var(--text-muted)] mt-0.5">For Cash, GCash, or bank transfer while PayMongo is pending. Runners register as pending until you mark payment received.</span>
+                  <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Manual payment</span>
+                  <span className="block text-xs text-[var(--text-secondary)] mt-1">For Cash, GCash, or bank transfer while PayMongo is pending. Runners register as pending until you mark payment received.</span>
                 </span>
                 <input disabled={(!!editingId && !can('payment.configure'))}
                   type="checkbox"
@@ -942,35 +942,35 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                     setManualPaymentEnabled(e.target.checked);
                     if (e.target.checked) setOnlinePaymentEnabled(false);
                   }}
-                  className="w-4 h-4 accent-red-600 shrink-0"
+                  className="rp-checkbox shrink-0"
                 />
               </label>
               {manualPaymentEnabled && (
                 <div className="mt-3 space-y-3">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Instructions shown to runners</label>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Instructions shown to runners</label>
                   <textarea disabled={(!!editingId && !can('payment.configure'))}
                     value={manualPaymentInstructions}
                     onChange={(e) => setManualPaymentInstructions(e.target.value)}
                     maxLength={500}
                     rows={3}
                     placeholder="EX: Pay via GCash to JUAN DELA CRUZ, 09XX XXX XXXX. Put your full name and race distance in the message. Cash payments accepted at the organizer's office."
-                    className="w-full glass-inset px-3 py-2.5 text-xs text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 resize-y"
+                    className="w-full glass-inset px-3 py-2 text-xs text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 resize-y"
                   />
-                  <p className="text-[10px] text-amber-500 mt-1.5">Only add a payment destination you are authorized to publish. Confirm each payment in Assign Chips before releasing the race kit.</p>
+                  <p className="text-xs text-amber-700 dark:text-amber-400 mt-2">Only add a payment destination you are authorized to publish. Confirm each payment in Assign Chips before releasing the race kit.</p>
                   <div className="border-t border-[var(--border-default)] pt-3">
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">GCash / QRPh code <span className="normal-case font-normal text-[var(--text-muted)]">(optional)</span></label>
-                    <p className="text-[10.5px] text-[var(--text-muted)] mb-2">Upload the organizer’s official payment QR. Runners can scan it directly during registration.</p>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">GCash / QRPh code <span className="normal-case font-normal text-[var(--text-secondary)]">(optional)</span></label>
+                    <p className="text-xs text-[var(--text-secondary)] mb-2">Upload the organizer’s official payment QR. Runners can scan it directly during registration.</p>
                     <input disabled={(!!editingId && !can('payment.configure'))} ref={manualPaymentQrInputRef} type="file" accept="image/*" onChange={handleManualPaymentQrSelected} className="hidden" />
                     {manualPaymentQrImage ? (
                       <div className="relative w-44 max-w-full rounded-[16px] overflow-hidden border border-[var(--border-default)] bg-white p-2">
                         <img src={manualPaymentQrImage} alt="Manual payment QR code preview" className="w-full aspect-square object-contain" />
-                        <button disabled={(!!editingId && !can('payment.configure'))} type="button" onClick={() => setManualPaymentQrImage('')} className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center transition" title="Remove payment QR"><X className="w-3.5 h-3.5" /></button>
-                        <button disabled={(!!editingId && !can('payment.configure'))} type="button" onClick={() => manualPaymentQrInputRef.current?.click()} className="absolute bottom-2 right-2 text-[9px] font-black uppercase tracking-wide px-2.5 py-1.5 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center gap-1 transition"><ImagePlus className="w-3 h-3" /> Change</button>
+                        <button disabled={(!!editingId && !can('payment.configure'))} type="button" onClick={() => setManualPaymentQrImage('')} className="absolute top-2 right-2 min-h-11 min-w-11 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center justify-center transition" aria-label="Remove payment QR" title="Remove payment QR"><X className="w-4 h-4" aria-hidden="true" /></button>
+                        <button disabled={(!!editingId && !can('payment.configure'))} type="button" onClick={() => manualPaymentQrInputRef.current?.click()} className="absolute bottom-2 right-2 min-h-11 text-xs font-semibold uppercase tracking-wide px-3 py-2 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center gap-1 transition"><ImagePlus className="w-3.5 h-3.5" aria-hidden="true" /> Change</button>
                       </div>
                     ) : (
-                      <button type="button" onClick={() => manualPaymentQrInputRef.current?.click()} disabled={(manualPaymentQrUploading) || (!!editingId && !can('payment.configure'))} className="w-full max-w-xs aspect-square rounded-[16px] border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-2 text-[var(--text-secondary)] hover:text-amber-500 hover:border-amber-500/40 transition disabled:opacity-60">
+                      <button type="button" onClick={() => manualPaymentQrInputRef.current?.click()} disabled={(manualPaymentQrUploading) || (!!editingId && !can('payment.configure'))} className="w-full max-w-xs aspect-square rounded-[16px] border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-2 text-[var(--text-secondary)] hover:text-amber-700 dark:hover:text-amber-400 hover:border-amber-500/40 transition disabled:opacity-60">
                         {manualPaymentQrUploading ? <RefreshCw className="w-6 h-6 animate-spin" /> : <ImagePlus className="w-6 h-6" />}
-                        <span className="text-xs font-bold uppercase tracking-wide">{manualPaymentQrUploading ? 'Processing...' : 'Upload GCash / QRPh Code'}</span>
+                        <span className="text-xs font-semibold uppercase tracking-wide">{manualPaymentQrUploading ? 'Processing...' : 'Upload GCash / QRPh Code'}</span>
                       </button>
                     )}
                   </div>
@@ -980,8 +980,8 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
           </div>
 
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Event Poster</label>
-            <p className="text-[10.5px] text-[var(--text-secondary)] mb-2">Shown on the race card runners see when browsing events - a good poster gets more registrations.</p>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Event Poster</label>
+            <p className="text-xs text-[var(--text-secondary)] mb-2">Shown on the race card runners see when browsing events - a good poster gets more registrations.</p>
             <input disabled={(!!editingId && !can('race.artwork'))} ref={posterInputRef} type="file" accept="image/*" onChange={handlePosterSelected} className="hidden" />
             {posterImage ? (
               <div className="relative rounded-[16px] overflow-hidden border border-[var(--border-default)]">
@@ -989,17 +989,18 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                 <button disabled={(!!editingId && !can('race.artwork'))}
                   type="button"
                   onClick={() => setPosterImage('')}
-                  className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center transition"
+                  className="absolute top-2 right-2 min-h-11 min-w-11 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center justify-center transition"
+                  aria-label="Remove poster"
                   title="Remove poster"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-4 h-4" aria-hidden="true" />
                 </button>
                 <button
                   type="button"
                   onClick={() => posterInputRef.current?.click()}
-                  className="absolute bottom-2 right-2 text-[10px] font-black uppercase tracking-wide px-3 py-1.5 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center gap-1.5 transition"
+                  className="absolute bottom-2 right-2 min-h-11 text-xs font-semibold uppercase tracking-wide px-3 py-2 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center gap-2 transition"
                 >
-                  <ImagePlus className="w-3 h-3" /> Change
+                  <ImagePlus className="w-3.5 h-3.5" aria-hidden="true" /> Change
                 </button>
               </div>
             ) : (
@@ -1007,17 +1008,17 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                 type="button"
                 onClick={() => posterInputRef.current?.click()}
                 disabled={posterUploading}
-                className="w-full aspect-[16/9] rounded-[16px] border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-2 text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 transition disabled:opacity-60"
+                className="w-full aspect-[16/9] rounded-[16px] border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-2 text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 hover:border-red-500/40 transition disabled:opacity-60"
               >
                 {posterUploading ? <RefreshCw className="w-6 h-6 animate-spin" /> : <ImagePlus className="w-6 h-6" />}
-                <span className="text-xs font-bold uppercase tracking-wide">{posterUploading ? 'Processing...' : 'Upload Poster Image'}</span>
+                <span className="text-xs font-semibold uppercase tracking-wide">{posterUploading ? 'Processing...' : 'Upload Poster Image'}</span>
               </button>
             )}
           </div>
 
           <div className="rounded-[16px] border border-[var(--border-default)] bg-[var(--surface-inset)]/40 p-4">
             <div className="flex items-start gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-red-500/10 text-red-500"><MapPinned className="h-5 w-5" /></span>
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-red-500/10 text-red-700 dark:text-red-400"><MapPinned className="h-5 w-5" /></span>
               <div>
                 <h4 className="text-sm font-semibold text-[var(--text-primary)]">Runner route, GPX</h4>
                 <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">Upload the official GPX route. Runners can open it from the event page and view the route with its recorded elevation.</p>
@@ -1028,27 +1029,27 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
               <div className="mt-4 flex flex-col gap-3 rounded-[12px] border border-emerald-500/25 bg-emerald-500/5 p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <p className="truncate text-xs font-semibold text-[var(--text-primary)]">{routeGpxFileName || 'race-route.gpx'}</p>
-                  <p className="mt-1 text-[10px] text-[var(--text-secondary)]">{routeGpxFile ? 'Ready to upload when you save this race.' : 'Published for runners on the race page.'}</p>
+                  <p className="mt-1 text-xs text-[var(--text-secondary)]">{routeGpxFile ? 'Ready to upload when you save this race.' : 'Published for runners on the race page.'}</p>
                 </div>
                 <div className="flex shrink-0 gap-2">
-                  <button type="button" disabled={(!!editingId && !can('race.artwork'))} onClick={() => routeGpxInputRef.current?.click()} className="min-h-10 rounded-lg border border-[var(--border-default)] px-3 text-[10px] font-semibold text-[var(--text-primary)] hover:border-red-500/50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50">Replace</button>
-                  <button type="button" disabled={(!!editingId && !can('race.artwork'))} onClick={() => { setRouteGpxUrl(''); setRouteGpxFileName(''); setRouteGpxFile(null); }} className="min-h-10 rounded-lg border border-red-500/30 px-3 text-[10px] font-semibold text-red-600 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50">Remove</button>
+                  <button type="button" disabled={(!!editingId && !can('race.artwork'))} onClick={() => routeGpxInputRef.current?.click()} className="min-h-11 rounded-lg border border-[var(--border-default)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-500/50 hover:text-red-700 dark:hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-50">Replace</button>
+                  <button type="button" disabled={(!!editingId && !can('race.artwork'))} onClick={() => { setRouteGpxUrl(''); setRouteGpxFileName(''); setRouteGpxFile(null); }} className="min-h-11 rounded-lg border border-red-500/30 px-3 text-xs font-semibold text-red-700 dark:text-red-400 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50">Remove</button>
                 </div>
               </div>
             ) : (
-              <button type="button" onClick={() => routeGpxInputRef.current?.click()} disabled={(!!editingId && !can('race.artwork'))} className="mt-4 flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-[12px] border-2 border-dashed border-[var(--border-default)] px-4 text-center text-[var(--text-secondary)] transition hover:border-red-500/50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50">
+              <button type="button" onClick={() => routeGpxInputRef.current?.click()} disabled={(!!editingId && !can('race.artwork'))} className="mt-4 flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-[12px] border-2 border-dashed border-[var(--border-default)] px-4 text-center text-[var(--text-secondary)] transition hover:border-red-500/50 hover:text-red-700 dark:hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-50">
                 <Upload className="h-5 w-5" />
                 <span className="text-xs font-semibold">Upload GPX route</span>
-                <span className="text-[10px] text-[var(--text-muted)]">GPX only, maximum 8 MB</span>
+                <span className="text-xs text-[var(--text-secondary)]">GPX only, maximum 8 MB</span>
               </button>
             )}
           </div>
 
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Default Race Bib Template <span className="normal-case font-normal text-[var(--text-muted)]">(optional)</span></label>
-            <p className="text-[10.5px] text-[var(--text-secondary)] mb-2">Upload a blank horizontal bib layout as the default/fallback. RacePulse automatically adds each runner’s name and bib number after registration.</p>
-            <div className="mb-3 rounded-[14px] border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-[10.5px] leading-relaxed text-[var(--text-secondary)]">
-              <span className="font-black uppercase tracking-wide text-emerald-500">Print standard: </span>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Default Race Bib Template <span className="normal-case font-normal text-[var(--text-secondary)]">(optional)</span></label>
+            <p className="text-xs text-[var(--text-secondary)] mb-2">Upload a blank horizontal bib layout as the default/fallback. RacePulse automatically adds each runner’s name and bib number after registration.</p>
+            <div className="mb-3 rounded-[14px] border border-emerald-500/20 bg-emerald-500/5 px-3 py-3 text-xs leading-relaxed text-[var(--text-secondary)]">
+              <span className="font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">Print standard: </span>
               Design at <strong className="text-[var(--text-primary)]">1200 × 800 px</strong> (landscape, 3:2 ratio). The All Race Bibs PDF prints <strong className="text-[var(--text-primary)]">2 borderless bibs per A4 page</strong>, each one exact half-A4 (210 × 148.5 mm) for one straight centre cut. Keep important artwork at least 40 px from the edges; upload a blank template only (no runner name or bib number).
             </div>
             <input disabled={(!!editingId && !can('race.bibs'))} ref={raceBibInputRef} type="file" accept="image/*" onChange={handleRaceBibTemplateSelected} className="hidden" />
@@ -1060,85 +1061,85 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                   {showRaffleNumber && <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${raffleNumberX}%`, top: `${raffleNumberY}%`, fontSize: `${raffleNumberSize}cqw`, color: raffleNumberColor, fontFamily: raceBibFontFamily(raffleNumberFont, raceBibCustomFont), WebkitTextStroke: `${raffleNumberStrokeWidth}cqw ${raffleNumberStrokeColor}`, paintOrder: 'stroke fill' }}>10-001</span>}
                   <span className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black tracking-wide drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] whitespace-nowrap" style={{ left: `${runnerNameX}%`, top: `${runnerNameY}%`, fontSize: `${runnerNameSize}cqw`, color: runnerNameColor, fontFamily: raceBibFontFamily(runnerNameFont, raceBibCustomFont), WebkitTextStroke: `${runnerNameStrokeWidth}cqw ${runnerNameStrokeColor}`, paintOrder: 'stroke fill' }}>RUNNER NAME</span>
                   {showQrCode && <span className="absolute -translate-x-1/2 -translate-y-1/2 rounded-sm bg-white p-0.5 shadow-md" style={{ left: `${qrCodeX}%`, top: `${qrCodeY}%`, width: `${qrCodeSize}%`, aspectRatio: '1 / 1' }}><QRCodeSVG value={`RPCHIPv1|${editingId || 'race-id'}|10-001`} size={160} level="M" includeMargin className="h-full w-full" /></span>}
-                  <button disabled={(!!editingId && !can('race.bibs'))} type="button" onClick={() => setRaceBibTemplateImage('')} className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center transition" title="Remove race bib template"><X className="w-4 h-4" /></button>
-                  <button disabled={(!!editingId && !can('race.bibs'))} type="button" onClick={() => raceBibInputRef.current?.click()} className="absolute bottom-2 right-2 text-[10px] font-black uppercase tracking-wide px-3 py-1.5 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center gap-1.5 transition"><ImagePlus className="w-3 h-3" /> Change</button>
+                  <button disabled={(!!editingId && !can('race.bibs'))} type="button" onClick={() => setRaceBibTemplateImage('')} className="absolute top-2 right-2 min-h-11 min-w-11 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center justify-center transition" aria-label="Remove race bib template" title="Remove race bib template"><X className="w-4 h-4" aria-hidden="true" /></button>
+                  <button disabled={(!!editingId && !can('race.bibs'))} type="button" onClick={() => raceBibInputRef.current?.click()} className="absolute bottom-2 right-2 min-h-11 text-xs font-semibold uppercase tracking-wide px-3 py-2 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center gap-2 transition"><ImagePlus className="w-3.5 h-3.5" aria-hidden="true" /> Change</button>
                 </div>
                 <div className="glass-inset p-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)] mb-2">Bib number position</p>
-                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)]">X <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="5" max="95" value={bibNumberX} onChange={(e) => setBibNumberX(Number(e.target.value))} className="flex-1 accent-red-600" /> {bibNumberX}%</label>
-                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Y <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="5" max="95" value={bibNumberY} onChange={(e) => setBibNumberY(Number(e.target.value))} className="flex-1 accent-red-600" /> {bibNumberY}%</label>
-                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Size <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="5" max="24" value={bibNumberSize} onChange={(e) => setBibNumberSize(Number(e.target.value))} className="flex-1 accent-red-600" /> {bibNumberSize}</label>
-                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Color <input disabled={(!!editingId && !can('race.bibs'))} type="color" value={bibNumberColor} onChange={(e) => setBibNumberColor(e.target.value)} className="w-7 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" /> <span className="font-mono">{bibNumberColor}</span></label>
-                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Border <input disabled={(!!editingId && !can('race.bibs'))} type="color" value={bibNumberStrokeColor} onChange={(e) => setBibNumberStrokeColor(e.target.value)} className="w-7 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" /> <span className="font-mono">{bibNumberStrokeColor}</span></label>
-                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Border thickness <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="0" max="1.5" step="0.1" value={bibNumberStrokeWidth} onChange={(e) => setBibNumberStrokeWidth(Number(e.target.value))} className="flex-1 accent-red-600" /> {bibNumberStrokeWidth.toFixed(1)}</label>
-                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Font <select disabled={(!!editingId && !can('race.bibs'))} value={bibNumberFont} onChange={(e) => setBibNumberFont(e.target.value as RaceBibFont)} className="flex-1 glass-inset px-2 py-1 text-[10px] font-bold text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-red-500/50"><option value="mono">Timing Mono</option><option value="display">Racing Bold</option><option value="condensed">Condensed</option><option value="sans">Clean Sans</option><option value="custom" disabled={!raceBibCustomFont}>Uploaded Custom Font</option></select></label>
+                    <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)] mb-2">Bib number position</p>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)]">X <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="5" max="95" value={bibNumberX} onChange={(e) => setBibNumberX(Number(e.target.value))} className="flex-1 accent-red-600" /> {bibNumberX}%</label>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Y <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="5" max="95" value={bibNumberY} onChange={(e) => setBibNumberY(Number(e.target.value))} className="flex-1 accent-red-600" /> {bibNumberY}%</label>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Size <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="5" max="24" value={bibNumberSize} onChange={(e) => setBibNumberSize(Number(e.target.value))} className="flex-1 accent-red-600" /> {bibNumberSize}</label>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Color <input disabled={(!!editingId && !can('race.bibs'))} type="color" value={bibNumberColor} onChange={(e) => setBibNumberColor(e.target.value)} className="w-11 h-11 p-1 border border-[var(--border-default)] rounded-lg cursor-pointer bg-transparent" /> <span className="font-mono">{bibNumberColor}</span></label>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Border <input disabled={(!!editingId && !can('race.bibs'))} type="color" value={bibNumberStrokeColor} onChange={(e) => setBibNumberStrokeColor(e.target.value)} className="w-11 h-11 p-1 border border-[var(--border-default)] rounded-lg cursor-pointer bg-transparent" /> <span className="font-mono">{bibNumberStrokeColor}</span></label>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Border thickness <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="0" max="1.5" step="0.1" value={bibNumberStrokeWidth} onChange={(e) => setBibNumberStrokeWidth(Number(e.target.value))} className="flex-1 accent-red-600" /> {bibNumberStrokeWidth.toFixed(1)}</label>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Font <select disabled={(!!editingId && !can('race.bibs'))} value={bibNumberFont} onChange={(e) => setBibNumberFont(e.target.value as RaceBibFont)} className="flex-1 min-h-11 glass-inset px-2 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-red-500/50"><option value="mono">Timing Mono</option><option value="display">Racing Bold</option><option value="condensed">Condensed</option><option value="sans">Clean Sans</option><option value="custom" disabled={!raceBibCustomFont}>Uploaded Custom Font</option></select></label>
                   </div>
                   <div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)] mb-2">Runner name position</p>
-                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)]">X <input type="range" min="5" max="95" value={runnerNameX} onChange={(e) => setRunnerNameX(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameX}%</label>
-                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Y <input type="range" min="5" max="95" value={runnerNameY} onChange={(e) => setRunnerNameY(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameY}%</label>
-                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Size <input type="range" min="3" max="14" value={runnerNameSize} onChange={(e) => setRunnerNameSize(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameSize}</label>
-                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Color <input type="color" value={runnerNameColor} onChange={(e) => setRunnerNameColor(e.target.value)} className="w-7 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" /> <span className="font-mono">{runnerNameColor}</span></label>
-                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Border <input type="color" value={runnerNameStrokeColor} onChange={(e) => setRunnerNameStrokeColor(e.target.value)} className="w-7 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" /> <span className="font-mono">{runnerNameStrokeColor}</span></label>
-                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Border thickness <input type="range" min="0" max="1.5" step="0.1" value={runnerNameStrokeWidth} onChange={(e) => setRunnerNameStrokeWidth(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameStrokeWidth.toFixed(1)}</label>
-                    <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Font <select disabled={(!!editingId && !can('race.bibs'))} value={runnerNameFont} onChange={(e) => setRunnerNameFont(e.target.value as RaceBibFont)} className="flex-1 glass-inset px-2 py-1 text-[10px] font-bold text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-red-500/50"><option value="display">Racing Bold</option><option value="sans">Clean Sans</option><option value="mono">Timing Mono</option><option value="condensed">Condensed</option><option value="custom" disabled={!raceBibCustomFont}>Uploaded Custom Font</option></select></label>
+                    <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)] mb-2">Runner name position</p>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)]">X <input type="range" min="5" max="95" value={runnerNameX} onChange={(e) => setRunnerNameX(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameX}%</label>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Y <input type="range" min="5" max="95" value={runnerNameY} onChange={(e) => setRunnerNameY(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameY}%</label>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Size <input type="range" min="3" max="14" value={runnerNameSize} onChange={(e) => setRunnerNameSize(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameSize}</label>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Color <input type="color" value={runnerNameColor} onChange={(e) => setRunnerNameColor(e.target.value)} className="w-11 h-11 p-1 border border-[var(--border-default)] rounded-lg cursor-pointer bg-transparent" /> <span className="font-mono">{runnerNameColor}</span></label>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Border <input type="color" value={runnerNameStrokeColor} onChange={(e) => setRunnerNameStrokeColor(e.target.value)} className="w-11 h-11 p-1 border border-[var(--border-default)] rounded-lg cursor-pointer bg-transparent" /> <span className="font-mono">{runnerNameStrokeColor}</span></label>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Border thickness <input type="range" min="0" max="1.5" step="0.1" value={runnerNameStrokeWidth} onChange={(e) => setRunnerNameStrokeWidth(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameStrokeWidth.toFixed(1)}</label>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Font <select disabled={(!!editingId && !can('race.bibs'))} value={runnerNameFont} onChange={(e) => setRunnerNameFont(e.target.value as RaceBibFont)} className="flex-1 min-h-11 glass-inset px-2 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-red-500/50"><option value="display">Racing Bold</option><option value="sans">Clean Sans</option><option value="mono">Timing Mono</option><option value="condensed">Condensed</option><option value="custom" disabled={!raceBibCustomFont}>Uploaded Custom Font</option></select></label>
                   </div>
                   <div className="sm:col-span-2 rounded-xl border border-amber-500/25 bg-amber-500/[0.04] p-3">
-                    <label className="flex cursor-pointer items-center gap-2 text-xs font-black uppercase tracking-wide text-[var(--text-primary)]"><input disabled={(!!editingId && !can('race.bibs'))} type="checkbox" checked={showRaffleNumber} onChange={(e) => setShowRaffleNumber(e.target.checked)} className="h-4 w-4 accent-amber-500" /> Print raffle number at the bottom <span className="normal-case font-medium text-[var(--text-secondary)]">(same as bib number)</span></label>
+                    <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-primary)]"><input disabled={(!!editingId && !can('race.bibs'))} type="checkbox" checked={showRaffleNumber} onChange={(e) => setShowRaffleNumber(e.target.checked)} className="rp-checkbox shrink-0" /> Print raffle number at the bottom <span className="normal-case font-medium text-[var(--text-secondary)]">(same as bib number)</span></label>
                     {showRaffleNumber && <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-amber-500 mb-2">Raffle number position</p>
-                        <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)]">X <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="5" max="95" value={raffleNumberX} onChange={(e) => setRaffleNumberX(Number(e.target.value))} className="flex-1 accent-amber-500" /> {raffleNumberX}%</label>
-                        <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Y <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="5" max="95" value={raffleNumberY} onChange={(e) => setRaffleNumberY(Number(e.target.value))} className="flex-1 accent-amber-500" /> {raffleNumberY}%</label>
-                        <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Size <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="3" max="16" step="0.5" value={raffleNumberSize} onChange={(e) => setRaffleNumberSize(Number(e.target.value))} className="flex-1 accent-amber-500" /> {raffleNumberSize}</label>
-                        <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Font <select disabled={(!!editingId && !can('race.bibs'))} value={raffleNumberFont} onChange={(e) => setRaffleNumberFont(e.target.value as RaceBibFont)} className="flex-1 glass-inset px-2 py-1 text-[10px] font-bold text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-amber-500/50"><option value="mono">Timing Mono</option><option value="display">Racing Bold</option><option value="condensed">Condensed</option><option value="sans">Clean Sans</option><option value="custom" disabled={!raceBibCustomFont}>Uploaded Custom Font</option></select></label>
+                        <p className="text-xs font-semibold uppercase tracking-widest text-amber-700 dark:text-amber-400 mb-2">Raffle number position</p>
+                        <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)]">X <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="5" max="95" value={raffleNumberX} onChange={(e) => setRaffleNumberX(Number(e.target.value))} className="flex-1 accent-amber-500" /> {raffleNumberX}%</label>
+                        <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Y <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="5" max="95" value={raffleNumberY} onChange={(e) => setRaffleNumberY(Number(e.target.value))} className="flex-1 accent-amber-500" /> {raffleNumberY}%</label>
+                        <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Size <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="3" max="16" step="0.5" value={raffleNumberSize} onChange={(e) => setRaffleNumberSize(Number(e.target.value))} className="flex-1 accent-amber-500" /> {raffleNumberSize}</label>
+                        <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Font <select disabled={(!!editingId && !can('race.bibs'))} value={raffleNumberFont} onChange={(e) => setRaffleNumberFont(e.target.value as RaceBibFont)} className="flex-1 min-h-11 glass-inset px-2 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-amber-500/50"><option value="mono">Timing Mono</option><option value="display">Racing Bold</option><option value="condensed">Condensed</option><option value="sans">Clean Sans</option><option value="custom" disabled={!raceBibCustomFont}>Uploaded Custom Font</option></select></label>
                       </div>
                       <div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-amber-500 mb-2">Raffle style</p>
-                        <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)]">Color <input disabled={(!!editingId && !can('race.bibs'))} type="color" value={raffleNumberColor} onChange={(e) => setRaffleNumberColor(e.target.value)} className="w-7 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" /> <span className="font-mono">{raffleNumberColor}</span></label>
-                        <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Border <input disabled={(!!editingId && !can('race.bibs'))} type="color" value={raffleNumberStrokeColor} onChange={(e) => setRaffleNumberStrokeColor(e.target.value)} className="w-7 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" /> <span className="font-mono">{raffleNumberStrokeColor}</span></label>
-                        <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Border thickness <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="0" max="1.5" step="0.1" value={raffleNumberStrokeWidth} onChange={(e) => setRaffleNumberStrokeWidth(Number(e.target.value))} className="flex-1 accent-amber-500" /> {raffleNumberStrokeWidth.toFixed(1)}</label>
+                        <p className="text-xs font-semibold uppercase tracking-widest text-amber-700 dark:text-amber-400 mb-2">Raffle style</p>
+                        <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)]">Color <input disabled={(!!editingId && !can('race.bibs'))} type="color" value={raffleNumberColor} onChange={(e) => setRaffleNumberColor(e.target.value)} className="w-11 h-11 p-1 border border-[var(--border-default)] rounded-lg cursor-pointer bg-transparent" /> <span className="font-mono">{raffleNumberColor}</span></label>
+                        <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Border <input disabled={(!!editingId && !can('race.bibs'))} type="color" value={raffleNumberStrokeColor} onChange={(e) => setRaffleNumberStrokeColor(e.target.value)} className="w-11 h-11 p-1 border border-[var(--border-default)] rounded-lg cursor-pointer bg-transparent" /> <span className="font-mono">{raffleNumberStrokeColor}</span></label>
+                        <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Border thickness <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="0" max="1.5" step="0.1" value={raffleNumberStrokeWidth} onChange={(e) => setRaffleNumberStrokeWidth(Number(e.target.value))} className="flex-1 accent-amber-500" /> {raffleNumberStrokeWidth.toFixed(1)}</label>
                       </div>
                     </div>}
                   </div>
                   <div className="sm:col-span-2 rounded-xl border border-violet-500/25 bg-violet-500/[0.04] p-3">
-                    <label className="flex cursor-pointer items-center gap-2 text-xs font-black uppercase tracking-wide text-[var(--text-primary)]"><input disabled={(!!editingId && !can('race.bibs'))} type="checkbox" checked={showQrCode} onChange={(e) => setShowQrCode(e.target.checked)} className="h-4 w-4 accent-violet-500" /> Print check-in QR code <span className="normal-case font-medium text-[var(--text-secondary)]">(staff scans this bib to check in the runner)</span></label>
+                    <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-primary)]"><input disabled={(!!editingId && !can('race.bibs'))} type="checkbox" checked={showQrCode} onChange={(e) => setShowQrCode(e.target.checked)} className="rp-checkbox shrink-0" /> Print check-in QR code <span className="normal-case font-medium text-[var(--text-secondary)]">(staff scans this bib to check in the runner)</span></label>
                     {showQrCode && <div className="mt-3 max-w-xl">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-violet-500 mb-2">QR code position</p>
-                      <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)]">X <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="5" max="95" value={qrCodeX} onChange={(e) => setQrCodeX(Number(e.target.value))} className="flex-1 accent-violet-500" /> {qrCodeX}%</label>
-                      <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Y <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="5" max="95" value={qrCodeY} onChange={(e) => setQrCodeY(Number(e.target.value))} className="flex-1 accent-violet-500" /> {qrCodeY}%</label>
-                      <label className="flex items-center gap-2 text-[10px] font-bold text-[var(--text-secondary)] mt-1.5">Size <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="6" max="30" value={qrCodeSize} onChange={(e) => setQrCodeSize(Number(e.target.value))} className="flex-1 accent-violet-500" /> {qrCodeSize}%</label>
+                      <p className="text-xs font-semibold uppercase tracking-widest text-violet-700 dark:text-violet-400 mb-2">QR code position</p>
+                      <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)]">X <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="5" max="95" value={qrCodeX} onChange={(e) => setQrCodeX(Number(e.target.value))} className="flex-1 accent-violet-500" /> {qrCodeX}%</label>
+                      <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Y <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="5" max="95" value={qrCodeY} onChange={(e) => setQrCodeY(Number(e.target.value))} className="flex-1 accent-violet-500" /> {qrCodeY}%</label>
+                      <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Size <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="6" max="30" value={qrCodeSize} onChange={(e) => setQrCodeSize(Number(e.target.value))} className="flex-1 accent-violet-500" /> {qrCodeSize}%</label>
                     </div>}
                   </div>
                 </div>
                 <div className="border-t border-[var(--border-default)] pt-3">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)] mb-1">Custom font <span className="normal-case font-normal text-[var(--text-muted)]">(optional)</span></p>
-                  <p className="text-[10px] text-[var(--text-muted)] mb-2">Upload one WOFF2, WOFF, TTF, or OTF font (max 1.5 MB), then select “Uploaded Custom Font” above. WOFF2 is recommended.</p>
+                  <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)] mb-1">Custom font <span className="normal-case font-normal text-[var(--text-secondary)]">(optional)</span></p>
+                  <p className="text-xs text-[var(--text-secondary)] mb-2">Upload one WOFF2, WOFF, TTF, or OTF font (max 1.5 MB), then select “Uploaded Custom Font” above. WOFF2 is recommended.</p>
                   <input disabled={(!!editingId && !can('race.bibs'))} ref={raceBibFontInputRef} type="file" accept=".woff2,.woff,.ttf,.otf,font/woff2,font/woff,font/ttf,font/otf" onChange={(e) => void handleRaceBibFontSelected(e)} className="hidden" />
                   {raceBibCustomFont ? (
                     <div className="flex items-center justify-between gap-3 rounded-xl border border-violet-500/25 bg-violet-500/5 px-3 py-2">
-                      <span className="min-w-0 text-[10px] font-bold text-[var(--text-primary)] truncate">{raceBibCustomFont.name}</span>
-                      <span className="flex shrink-0 gap-2"><button type="button" onClick={() => raceBibFontInputRef.current?.click()} disabled={(raceBibFontUploading) || (!!editingId && !can('race.bibs'))} className="text-[9px] font-black uppercase tracking-wide text-violet-500 hover:text-violet-400">Replace</button><button disabled={(!!editingId && !can('race.bibs'))} type="button" onClick={() => { setRaceBibCustomFont(undefined); if (bibNumberFont === 'custom') setBibNumberFont('mono'); if (runnerNameFont === 'custom') setRunnerNameFont('display'); }} className="text-[9px] font-black uppercase tracking-wide text-red-500 hover:text-red-400">Remove</button></span>
+                      <span className="min-w-0 text-xs font-semibold text-[var(--text-primary)] truncate">{raceBibCustomFont.name}</span>
+                      <span className="flex shrink-0 gap-2"><button type="button" onClick={() => raceBibFontInputRef.current?.click()} disabled={(raceBibFontUploading) || (!!editingId && !can('race.bibs'))} className="min-h-11 px-2 text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-400 hover:underline">Replace</button><button disabled={(!!editingId && !can('race.bibs'))} type="button" onClick={() => { setRaceBibCustomFont(undefined); if (bibNumberFont === 'custom') setBibNumberFont('mono'); if (runnerNameFont === 'custom') setRunnerNameFont('display'); }} className="min-h-11 px-2 text-xs font-semibold uppercase tracking-wide text-red-700 dark:text-red-400 hover:underline">Remove</button></span>
                     </div>
                   ) : (
-                    <button type="button" onClick={() => raceBibFontInputRef.current?.click()} disabled={(raceBibFontUploading) || (!!editingId && !can('race.bibs'))} className="w-full rounded-xl border border-dashed border-violet-500/35 px-3 py-2.5 text-[10px] font-black uppercase tracking-wide text-violet-500 hover:bg-violet-500/5 transition disabled:opacity-60">{raceBibFontUploading ? 'Uploading font…' : 'Upload Custom Font'}</button>
+                    <button type="button" onClick={() => raceBibFontInputRef.current?.click()} disabled={(raceBibFontUploading) || (!!editingId && !can('race.bibs'))} className="w-full min-h-11 rounded-xl border border-dashed border-violet-500/35 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-400 hover:bg-violet-500/5 transition disabled:opacity-60">{raceBibFontUploading ? 'Uploading font...' : 'Upload Custom Font'}</button>
                   )}
                 </div>
               </div>
             ) : (
-              <button type="button" onClick={() => raceBibInputRef.current?.click()} disabled={(raceBibUploading) || (!!editingId && !can('race.bibs'))} className="w-full aspect-[3/2] rounded-[16px] border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-2 text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 transition disabled:opacity-60">
+              <button type="button" onClick={() => raceBibInputRef.current?.click()} disabled={(raceBibUploading) || (!!editingId && !can('race.bibs'))} className="w-full aspect-[3/2] rounded-[16px] border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-2 text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 hover:border-red-500/40 transition disabled:opacity-60">
                 {raceBibUploading ? <RefreshCw className="w-6 h-6 animate-spin" /> : <ImagePlus className="w-6 h-6" />}
-                <span className="text-xs font-bold uppercase tracking-wide">{raceBibUploading ? 'Processing...' : 'Upload Bib Layout (1200 × 800 px)'}</span>
+                <span className="text-xs font-semibold uppercase tracking-wide">{raceBibUploading ? 'Processing...' : 'Upload Bib Layout (1200 × 800 px)'}</span>
               </button>
             )}
           </div>
 
           <div className="border-t border-[var(--border-default)] pt-5">
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Different Bib Design Per Distance <span className="normal-case font-normal text-[var(--text-muted)]">(optional)</span></label>
-            <p className="text-[10.5px] text-[var(--text-secondary)] mb-3">Upload a separate blank design for 5K, 12K, 18K, and other distances. RacePulse automatically selects the correct design from the runner’s registered distance. The number/name placement above is shared by these designs.</p>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Different Bib Design Per Distance <span className="normal-case font-normal text-[var(--text-secondary)]">(optional)</span></label>
+            <p className="text-xs text-[var(--text-secondary)] mb-3">Upload a separate blank design for 5K, 12K, 18K, and other distances. RacePulse automatically selects the correct design from the runner’s registered distance. The number/name placement above is shared by these designs.</p>
             {distances.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-[var(--border-default)] px-3 py-3 text-[10.5px] text-[var(--text-muted)]">Add your race distances first, then their individual bib upload boxes will appear here.</p>
+              <p className="rounded-xl border border-dashed border-[var(--border-default)] px-3 py-3 text-xs text-[var(--text-secondary)]">Add your race distances first, then their individual bib upload boxes will appear here.</p>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                 {[...distances].sort((a, b) => a.km - b.km).map((distance) => {
@@ -1147,8 +1148,8 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                   return (
                     <div key={distance.id} className="glass-inset p-3 space-y-2">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs font-black text-[var(--text-primary)]">{label} bib design</p>
-                        {template?.image && <span className="text-[9px] font-black uppercase tracking-wide text-emerald-500">Custom</span>}
+                        <p className="text-xs font-semibold text-[var(--text-primary)]">{label} bib design</p>
+                        {template?.image && <span className="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">Custom</span>}
                       </div>
                       <input disabled={(!!editingId && !can('race.bibs'))}
                         ref={(node) => { raceBibDistanceInputRefs.current[label] = node; }}
@@ -1160,14 +1161,14 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                       {template?.image ? (
                         <div className="relative overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)]">
                           <img src={template.image} alt={`${label} race bib template`} className="w-full aspect-[3/2] object-cover" />
-                          <button disabled={(!!editingId && !can('race.bibs'))} type="button" onClick={() => setRaceBibTemplatesByDistance((current) => { const next = { ...current }; delete next[label]; return next; })} className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center transition" title={`Remove ${label} design`}><X className="w-3.5 h-3.5" /></button>
-                          <button disabled={(!!editingId && !can('race.bibs'))} type="button" onClick={() => raceBibDistanceInputRefs.current[label]?.click()} className="absolute bottom-2 right-2 text-[9px] font-black uppercase tracking-wide px-2.5 py-1.5 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center gap-1 transition"><ImagePlus className="w-3 h-3" /> Change</button>
+                          <button disabled={(!!editingId && !can('race.bibs'))} type="button" onClick={() => setRaceBibTemplatesByDistance((current) => { const next = { ...current }; delete next[label]; return next; })} className="absolute top-2 right-2 min-h-11 min-w-11 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center justify-center transition" aria-label={`Remove ${label} design`} title={`Remove ${label} design`}><X className="w-4 h-4" aria-hidden="true" /></button>
+                          <button disabled={(!!editingId && !can('race.bibs'))} type="button" onClick={() => raceBibDistanceInputRefs.current[label]?.click()} className="absolute bottom-2 right-2 min-h-11 text-xs font-semibold uppercase tracking-wide px-3 py-2 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center gap-1 transition"><ImagePlus className="w-3.5 h-3.5" aria-hidden="true" /> Change</button>
                         </div>
                       ) : (
-                        <button type="button" onClick={() => raceBibDistanceInputRefs.current[label]?.click()} disabled={(raceBibUploading) || (!!editingId && !can('race.bibs'))} className="w-full aspect-[3/2] rounded-xl border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-1.5 text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 transition disabled:opacity-60">
+                        <button type="button" onClick={() => raceBibDistanceInputRefs.current[label]?.click()} disabled={(raceBibUploading) || (!!editingId && !can('race.bibs'))} className="w-full aspect-[3/2] rounded-xl border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-2 text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 hover:border-red-500/40 transition disabled:opacity-60">
                           {raceBibUploading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <ImagePlus className="w-5 h-5" />}
-                          <span className="text-[10px] font-black uppercase tracking-wide">Upload {label} Design</span>
-                          <span className="text-[9px] text-[var(--text-muted)]">Otherwise uses default bib</span>
+                          <span className="text-xs font-semibold uppercase tracking-wide">Upload {label} Design</span>
+                          <span className="text-xs text-[var(--text-secondary)]">Otherwise uses default bib</span>
                         </button>
                       )}
                     </div>
@@ -1178,8 +1179,8 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
           </div>
 
           <div className="border-t border-[var(--border-default)] pt-5">
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Different Bib Design Per Entry Category <span className="normal-case font-normal text-[var(--text-muted)]">(optional)</span></label>
-            <p className="text-[10.5px] text-[var(--text-secondary)] mb-3">Give Solo, Duo, Trio, or Group their own blank bib artwork. A category design has priority over a distance design, then falls back to the default bib. The number/name layout above stays shared.</p>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Different Bib Design Per Entry Category <span className="normal-case font-normal text-[var(--text-secondary)]">(optional)</span></label>
+            <p className="text-xs text-[var(--text-secondary)] mb-3">Give Solo, Duo, Trio, or Group their own blank bib artwork. A category design has priority over a distance design, then falls back to the default bib. The number/name layout above stays shared.</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
               {entryCategories.map((entryCategory) => {
                 const template = raceBibTemplatesByEntryCategory[entryCategory];
@@ -1187,8 +1188,8 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                 return (
                   <div key={entryCategory} className="glass-inset p-3 space-y-2">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs font-black text-[var(--text-primary)]">{label} bib design</p>
-                      {template?.image && <span className="text-[9px] font-black uppercase tracking-wide text-emerald-500">Custom</span>}
+                      <p className="text-xs font-semibold text-[var(--text-primary)]">{label} bib design</p>
+                      {template?.image && <span className="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">Custom</span>}
                     </div>
                     <input
                       disabled={(!!editingId && !can('race.bibs'))}
@@ -1201,14 +1202,14 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                     {template?.image ? (
                       <div className="relative overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)]">
                         <img src={template.image} alt={`${label} race bib template`} className="w-full aspect-[3/2] object-cover" />
-                        <button disabled={(!!editingId && !can('race.bibs'))} type="button" onClick={() => setRaceBibTemplatesByEntryCategory((current) => { const next = { ...current }; delete next[entryCategory]; return next; })} className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center transition" title={`Remove ${label} design`}><X className="w-3.5 h-3.5" /></button>
-                        <button disabled={(!!editingId && !can('race.bibs'))} type="button" onClick={() => raceBibEntryCategoryInputRefs.current[entryCategory]?.click()} className="absolute bottom-2 right-2 text-[9px] font-black uppercase tracking-wide px-2.5 py-1.5 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center gap-1 transition"><ImagePlus className="w-3 h-3" /> Change</button>
+                        <button disabled={(!!editingId && !can('race.bibs'))} type="button" onClick={() => setRaceBibTemplatesByEntryCategory((current) => { const next = { ...current }; delete next[entryCategory]; return next; })} className="absolute top-2 right-2 min-h-11 min-w-11 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center justify-center transition" aria-label={`Remove ${label} design`} title={`Remove ${label} design`}><X className="w-4 h-4" aria-hidden="true" /></button>
+                        <button disabled={(!!editingId && !can('race.bibs'))} type="button" onClick={() => raceBibEntryCategoryInputRefs.current[entryCategory]?.click()} className="absolute bottom-2 right-2 min-h-11 text-xs font-semibold uppercase tracking-wide px-3 py-2 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center gap-1 transition"><ImagePlus className="w-3.5 h-3.5" aria-hidden="true" /> Change</button>
                       </div>
                     ) : (
-                      <button type="button" onClick={() => raceBibEntryCategoryInputRefs.current[entryCategory]?.click()} disabled={(raceBibUploading) || (!!editingId && !can('race.bibs'))} className="w-full aspect-[3/2] rounded-xl border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-1.5 text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 transition disabled:opacity-60">
+                      <button type="button" onClick={() => raceBibEntryCategoryInputRefs.current[entryCategory]?.click()} disabled={(raceBibUploading) || (!!editingId && !can('race.bibs'))} className="w-full aspect-[3/2] rounded-xl border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-2 text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 hover:border-red-500/40 transition disabled:opacity-60">
                         {raceBibUploading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <ImagePlus className="w-5 h-5" />}
-                        <span className="text-[10px] font-black uppercase tracking-wide">Upload {label} Design</span>
-                        <span className="text-[9px] text-[var(--text-muted)]">Overrides distance/default bib</span>
+                        <span className="text-xs font-semibold uppercase tracking-wide">Upload {label} Design</span>
+                        <span className="text-xs text-[var(--text-secondary)]">Overrides distance/default bib</span>
                       </button>
                     )}
                   </div>
@@ -1218,16 +1219,16 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
           </div>
 
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Checkpoints (in order)</label>
-            <p className="text-[10.5px] text-[var(--text-secondary)] mb-2">Check-In is optional and is never used for finish time. Add cutoffs to intermediate stations as minutes after the official gun start.</p>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Checkpoints (in order)</label>
+            <p className="text-xs text-[var(--text-secondary)] mb-2">Check-In is optional and is never used for finish time. Add cutoffs to intermediate stations as minutes after the official gun start.</p>
             <div className="space-y-2">
               {checkpoints.map((cp, idx) => (
-                <div key={cp.id} className="glass-inset p-2.5 flex flex-wrap items-center gap-2">
-                  <span className="text-[10px] font-mono text-[var(--text-muted)] w-5 shrink-0">{idx + 1}.</span>
+                <div key={cp.id} className="glass-inset p-3 flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-mono text-[var(--text-secondary)] w-5 shrink-0">{idx + 1}.</span>
                   <select disabled={(!!editingId && !can('race.categories'))}
                     value={cp.type}
                     onChange={(e) => updateCheckpoint(idx, { type: e.target.value as CheckpointType, cutoffMinutes: e.target.value === 'intermediate' ? cp.cutoffMinutes : '' })}
-                    className="glass-inset px-2.5 py-2 text-[10px] font-bold uppercase tracking-wide text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                    className="min-h-11 glass-inset px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
                     aria-label="Checkpoint type"
                   >
                     <option value="checkin">Check-In</option>
@@ -1241,10 +1242,10 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                     value={cp.label}
                     onChange={(e) => updateCheckpoint(idx, { label: e.target.value })}
                     placeholder={cp.type === 'checkin' ? 'Check-In' : cp.type === 'start' ? 'Start' : cp.type === 'finish' ? 'Finish' : `Checkpoint ${idx}`}
-                    className="min-w-[8rem] flex-1 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                    className="min-w-[8rem] min-h-11 flex-1 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
                   />
                   {cp.type === 'intermediate' && (
-                    <label className="flex items-center gap-1.5 text-[10px] font-bold text-[var(--text-secondary)] shrink-0">
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] shrink-0">
                       Cutoff
                       <input disabled={(!!editingId && !can('race.categories'))}
                         type="number"
@@ -1253,26 +1254,26 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                         value={cp.cutoffMinutes}
                         onChange={(e) => updateCheckpoint(idx, { cutoffMinutes: e.target.value })}
                         placeholder="min"
-                        className="w-16 glass-inset px-2 py-2 text-xs font-mono font-bold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                        className="w-16 min-h-11 glass-inset px-2 py-2 text-xs font-mono font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
                       />
                       min
                     </label>
                   )}
                   {(cp.type === 'checkin' || cp.type === 'intermediate') && (
-                    <button disabled={(!!editingId && !can('race.categories'))} type="button" onClick={() => removeCheckpoint(idx)} className="text-[var(--text-muted)] hover:text-red-500 p-1.5" title="Remove checkpoint">
-                      <Trash2 className="w-3.5 h-3.5" />
+                    <button disabled={(!!editingId && !can('race.categories'))} type="button" onClick={() => removeCheckpoint(idx)} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 p-2" aria-label={`Remove checkpoint ${idx + 1}`} title="Remove checkpoint">
+                      <Trash2 className="w-4 h-4" aria-hidden="true" />
                     </button>
                   )}
                 </div>
               ))}
             </div>
-            <button disabled={(!!editingId && !can('race.categories'))} type="button" onClick={addCheckpoint} className="mt-2 text-xs font-bold text-red-500 hover:text-red-400 flex items-center gap-1.5">
-              <Plus className="w-3.5 h-3.5" /> Add Intermediate Checkpoint
+            <button disabled={(!!editingId && !can('race.categories'))} type="button" onClick={addCheckpoint} className="mt-2 min-h-11 px-2 text-xs font-semibold text-red-700 dark:text-red-400 hover:underline flex items-center gap-2">
+              <Plus className="w-3.5 h-3.5" aria-hidden="true" /> Add Intermediate Checkpoint
             </button>
           </div>
 
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Distances (KM) &amp; Price</label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Distances (KM) &amp; Price</label>
             <div className="space-y-2">
               {distances.map((d, idx) => (
                 <div key={d.id} className="flex items-center gap-2">
@@ -1283,12 +1284,12 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                     step="0.1"
                     value={d.km}
                     onChange={(e) => updateDistanceKm(idx, parseFloat(e.target.value) || 0)}
-                    className="w-16 glass-inset px-2 py-2 text-xs font-semibold text-center text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                    className="w-16 min-h-11 glass-inset px-2 py-2 text-xs font-semibold text-center text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
                     title="Kilometers"
                   />
                   <span className="text-xs text-[var(--text-secondary)] w-10 shrink-0">{draftToDistance(d).label}</span>
                   <div className="relative flex-1">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-red-500 pointer-events-none">₱</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-red-700 dark:text-red-400 pointer-events-none">₱</span>
                     <input disabled={(!!editingId && !can('race.categories'))}
                       type="number"
                       required
@@ -1297,41 +1298,47 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                       value={d.price === 0 ? '' : d.price}
                       onChange={(e) => updateDistancePrice(idx, parseFloat(e.target.value) || 0)}
                       placeholder="0"
-                      className="w-full glass-inset pl-6 pr-2 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                      className="w-full min-h-11 glass-inset pl-6 pr-2 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
                       title="Registration price"
                     />
                   </div>
-                  <button disabled={(!!editingId && !can('race.categories'))} type="button" onClick={() => removeDistance(idx)} className="text-[var(--text-muted)] hover:text-red-500 p-1.5">
-                    <Trash2 className="w-3.5 h-3.5" />
+                  <button disabled={(!!editingId && !can('race.categories'))} type="button" onClick={() => removeDistance(idx)} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 p-2" aria-label={`Remove distance ${draftToDistance(d).label}`}>
+                    <Trash2 className="w-4 h-4" aria-hidden="true" />
                   </button>
                 </div>
               ))}
               {distances.length === 0 && (
-                <p className="text-[10.5px] text-[var(--text-muted)]">No distances yet - add the kilometer options runners can register for (e.g. 5, 10, 21, 42), each with its own price.</p>
+                <p className="text-xs text-[var(--text-secondary)]">No distances yet - add the kilometer options runners can register for (e.g. 5, 10, 21, 42), each with its own price.</p>
               )}
             </div>
-            <button disabled={(!!editingId && !can('race.categories'))} type="button" onClick={addDistance} className="mt-2 text-xs font-bold text-red-500 hover:text-red-400 flex items-center gap-1.5">
-              <Plus className="w-3.5 h-3.5" /> Add Distance
+            <button disabled={(!!editingId && !can('race.categories'))} type="button" onClick={addDistance} className="mt-2 min-h-11 px-2 text-xs font-semibold text-red-700 dark:text-red-400 hover:underline flex items-center gap-2">
+              <Plus className="w-3.5 h-3.5" aria-hidden="true" /> Add Distance
             </button>
           </div>
 
           <div className="glass-inset p-3 space-y-2">
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">Road Run Entry Categories</label>
-              <p className="text-[10.5px] text-[var(--text-muted)] mt-0.5">Duo (2), Trio (3), and Group (4) share one race bib/chip and receive one team result.</p>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Road Run Entry Categories</label>
+              <p className="text-xs text-[var(--text-secondary)] mt-1">Duo (2), Trio (3), and Group (4) share one race bib/chip and receive one team result.</p>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {(['solo', 'duo', 'trio', 'group'] as RaceEntryCategory[]).map((category) => (
-                <label key={category} className={`cursor-pointer rounded-xl border px-2 py-2 text-center text-[10px] font-black uppercase tracking-wide transition ${entryCategories.includes(category) ? 'border-red-500/45 bg-red-500/10 text-red-500' : 'border-[var(--border-default)] text-[var(--text-secondary)]'}`}>
-                  <input disabled={(!!editingId && !can('race.categories'))} type="checkbox" className="sr-only" checked={entryCategories.includes(category)} onChange={(event) => setEntryCategories((current) => event.target.checked ? [...current, category] : current.filter((item) => item !== category))} />
+                <button
+                  key={category}
+                  type="button"
+                  aria-pressed={entryCategories.includes(category)}
+                  disabled={(!!editingId && !can('race.categories'))}
+                  onClick={() => setEntryCategories((current) => current.includes(category) ? current.filter((item) => item !== category) : [...current, category])}
+                  className={`min-h-11 cursor-pointer rounded-xl border px-2 py-2 text-center text-xs font-semibold uppercase tracking-wide transition ${entryCategories.includes(category) ? 'border-red-600/50 bg-red-500/10 text-red-700 dark:text-red-400' : 'border-[var(--border-default)] text-[var(--text-secondary)]'} disabled:opacity-50`}
+                >
                   {entryCategoryLabels[category]}
-                </label>
+                </button>
               ))}
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Inclusions</label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Inclusions</label>
             <div className="space-y-2">
               {inclusions.map((incl, idx) => (
                 <div key={incl.id} className="flex items-center gap-2">
@@ -1341,25 +1348,25 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                     value={incl.text}
                     onChange={(e) => updateInclusionText(idx, e.target.value)}
                     placeholder="EX: Finisher Medal"
-                    className="flex-1 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                    className="flex-1 min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
                   />
-                  <button type="button" onClick={() => removeInclusion(idx)} className="text-[var(--text-muted)] hover:text-red-500 p-1.5">
-                    <Trash2 className="w-3.5 h-3.5" />
+                  <button type="button" onClick={() => removeInclusion(idx)} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 p-2" aria-label={`Remove inclusion ${idx + 1}`}>
+                    <Trash2 className="w-4 h-4" aria-hidden="true" />
                   </button>
                 </div>
               ))}
               {inclusions.length === 0 && (
-                <p className="text-[10.5px] text-[var(--text-muted)]">No inclusions yet - e.g. Finisher Medal, Race Singlet, Race Kit.</p>
+                <p className="text-xs text-[var(--text-secondary)]">No inclusions yet - e.g. Finisher Medal, Race Singlet, Race Kit.</p>
               )}
             </div>
-            <button type="button" onClick={addInclusion} className="mt-2 text-xs font-bold text-red-500 hover:text-red-400 flex items-center gap-1.5">
-              <Plus className="w-3.5 h-3.5" /> Add Inclusion
+            <button type="button" onClick={addInclusion} className="mt-2 min-h-11 px-2 text-xs font-semibold text-red-700 dark:text-red-400 hover:underline flex items-center gap-2">
+              <Plus className="w-3.5 h-3.5" aria-hidden="true" /> Add Inclusion
             </button>
           </div>
 
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Inclusion Design Preview <span className="normal-case font-normal text-[var(--text-muted)]">(optional)</span></label>
-            <p className="text-[10.5px] text-[var(--text-secondary)] mb-2">Upload the shirt, medal, or race-kit design so runners can view it before registering.</p>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Inclusion Design Preview <span className="normal-case font-normal text-[var(--text-secondary)]">(optional)</span></label>
+            <p className="text-xs text-[var(--text-secondary)] mb-2">Upload the shirt, medal, or race-kit design so runners can view it before registering.</p>
             <input disabled={(!!editingId && !can('race.artwork'))} ref={inclusionInputRef} type="file" accept="image/*" onChange={handleInclusionImageSelected} className="hidden" />
             {inclusionImage ? (
               <div className="relative rounded-[16px] overflow-hidden border border-[var(--border-default)] bg-[var(--surface-inset)]">
@@ -1367,17 +1374,18 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                 <button disabled={(!!editingId && !can('race.artwork'))}
                   type="button"
                   onClick={() => setInclusionImage('')}
-                  className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center transition"
+                  className="absolute top-2 right-2 min-h-11 min-w-11 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center justify-center transition"
+                  aria-label="Remove inclusion image"
                   title="Remove inclusion image"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-4 h-4" aria-hidden="true" />
                 </button>
                 <button
                   type="button"
                   onClick={() => inclusionInputRef.current?.click()}
-                  className="absolute bottom-2 right-2 text-[10px] font-black uppercase tracking-wide px-3 py-1.5 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center gap-1.5 transition"
+                  className="absolute bottom-2 right-2 min-h-11 text-xs font-semibold uppercase tracking-wide px-3 py-2 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center gap-2 transition"
                 >
-                  <ImagePlus className="w-3 h-3" /> Change
+                  <ImagePlus className="w-3.5 h-3.5" aria-hidden="true" /> Change
                 </button>
               </div>
             ) : (
@@ -1385,23 +1393,23 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                 type="button"
                 onClick={() => inclusionInputRef.current?.click()}
                 disabled={inclusionUploading}
-                className="w-full aspect-[16/9] rounded-[16px] border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-2 text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 transition disabled:opacity-60"
+                className="w-full aspect-[16/9] rounded-[16px] border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-2 text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 hover:border-red-500/40 transition disabled:opacity-60"
               >
                 {inclusionUploading ? <RefreshCw className="w-6 h-6 animate-spin" /> : <ImagePlus className="w-6 h-6" />}
-                <span className="text-xs font-bold uppercase tracking-wide">{inclusionUploading ? 'Processing...' : 'Upload Shirt / Kit Design'}</span>
+                <span className="text-xs font-semibold uppercase tracking-wide">{inclusionUploading ? 'Processing...' : 'Upload Shirt / Kit Design'}</span>
               </button>
             )}
           </div>
 
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Age Categories (Male / Female)</label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Age Categories (Male / Female)</label>
             <div className="space-y-2">
               {ageCategories.map((cat, idx) => (
                 <div key={cat.id} className="flex items-center gap-2">
                   <select disabled={(!!editingId && !can('race.categories'))}
                     value={cat.gender}
                     onChange={(e) => updateAgeCategory(idx, { gender: e.target.value as Gender })}
-                    className="glass-inset px-2.5 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                    className="min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
                   >
                     <option value="male">Male</option>
                     <option value="female">Female</option>
@@ -1413,9 +1421,9 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                     max={120}
                     value={cat.minAge}
                     onChange={(e) => updateAgeCategory(idx, { minAge: parseInt(e.target.value, 10) || 1 })}
-                    className="w-16 glass-inset px-2 py-2 text-xs font-semibold text-center text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                    className="w-16 min-h-11 glass-inset px-2 py-2 text-xs font-semibold text-center text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
                   />
-                  <span className="text-xs text-[var(--text-muted)]">to</span>
+                  <span className="text-xs text-[var(--text-secondary)]">to</span>
                   <input disabled={(!!editingId && !can('race.categories'))}
                     type="number"
                     required
@@ -1423,46 +1431,46 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                     max={120}
                     value={cat.maxAge}
                     onChange={(e) => updateAgeCategory(idx, { maxAge: parseInt(e.target.value, 10) || 1 })}
-                    className="w-16 glass-inset px-2 py-2 text-xs font-semibold text-center text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                    className="w-16 min-h-11 glass-inset px-2 py-2 text-xs font-semibold text-center text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
                   />
                   <input disabled={(!!editingId && !can('race.categories'))}
                     type="text"
                     value={cat.labelSuffix}
                     onChange={(e) => updateAgeCategory(idx, { labelSuffix: e.target.value })}
-                    className="min-w-0 flex-1 glass-inset px-2 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                    className="min-w-0 min-h-11 flex-1 glass-inset px-2 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
                     placeholder="Label, e.g. 20 & Below"
                     aria-label="Age category label"
                   />
-                  <button disabled={(!!editingId && !can('race.categories'))} type="button" onClick={() => removeAgeCategory(idx)} className="text-[var(--text-muted)] hover:text-red-500 p-1.5">
-                    <Trash2 className="w-3.5 h-3.5" />
+                  <button disabled={(!!editingId && !can('race.categories'))} type="button" onClick={() => removeAgeCategory(idx)} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 p-2" aria-label={`Remove age category ${idx + 1}`}>
+                    <Trash2 className="w-4 h-4" aria-hidden="true" />
                   </button>
                 </div>
               ))}
               {ageCategories.length === 0 && (
-                <p className="text-[10.5px] text-[var(--text-muted)]">No age categories yet - runners will be reported as "Unclassified" until you add some.</p>
+                <p className="text-xs text-[var(--text-secondary)]">No age categories yet - runners will be reported as "Unclassified" until you add some.</p>
               )}
             </div>
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
-              <button disabled={(!!editingId && !can('race.categories'))} type="button" onClick={addAgeCategory} className="text-xs font-bold text-red-500 hover:text-red-400 flex items-center gap-1.5">
-                <Plus className="w-3.5 h-3.5" /> Add Age Category
+              <button disabled={(!!editingId && !can('race.categories'))} type="button" onClick={addAgeCategory} className="min-h-11 px-2 text-xs font-semibold text-red-700 dark:text-red-400 hover:underline flex items-center gap-2">
+                <Plus className="w-3.5 h-3.5" aria-hidden="true" /> Add Age Category
               </button>
-              <button disabled={(!!editingId && !can('race.categories'))} type="button" onClick={() => addAgeCategoryPreset(1, 20, '20 & Below')} className="text-xs font-bold text-red-500 hover:text-red-400">
-                + Add 20 & Below (M/F)
+              <button disabled={(!!editingId && !can('race.categories'))} type="button" onClick={() => addAgeCategoryPreset(1, 20, '20 & Below')} className="min-h-11 px-2 text-xs font-semibold text-red-700 dark:text-red-400 hover:underline">
+                + Add 20 &amp; Below (M/F)
               </button>
-              <button disabled={(!!editingId && !can('race.categories'))} type="button" onClick={() => addAgeCategoryPreset(50, 120, '50 & Above')} className="text-xs font-bold text-red-500 hover:text-red-400">
-                + Add 50 & Above (M/F)
+              <button disabled={(!!editingId && !can('race.categories'))} type="button" onClick={() => addAgeCategoryPreset(50, 120, '50 & Above')} className="min-h-11 px-2 text-xs font-semibold text-red-700 dark:text-red-400 hover:underline">
+                + Add 50 &amp; Above (M/F)
               </button>
             </div>
             <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 space-y-2">
-              <p className="text-[10.5px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Special age awards</p>
-              <p className="text-[10.5px] text-[var(--text-muted)]">Awards one youngest and/or oldest Solo finisher per distance and gender. These do not affect Overall or normal age-category rankings.</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Special age awards</p>
+              <p className="text-xs text-[var(--text-secondary)]">Awards one youngest and/or oldest Solo finisher per distance and gender. These do not affect Overall or normal age-category rankings.</p>
               <div className="flex flex-wrap gap-x-5 gap-y-2">
                 <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-primary)] cursor-pointer">
-                  <input disabled={(!!editingId && !can('race.categories'))} type="checkbox" checked={youngestRunnerAwardEnabled} onChange={(event) => setYoungestRunnerAwardEnabled(event.target.checked)} className="accent-amber-500" />
+                  <input disabled={(!!editingId && !can('race.categories'))} type="checkbox" checked={youngestRunnerAwardEnabled} onChange={(event) => setYoungestRunnerAwardEnabled(event.target.checked)} className="rp-checkbox shrink-0" />
                   Youngest Runner (M/F)
                 </label>
                 <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-primary)] cursor-pointer">
-                  <input disabled={(!!editingId && !can('race.categories'))} type="checkbox" checked={oldestRunnerAwardEnabled} onChange={(event) => setOldestRunnerAwardEnabled(event.target.checked)} className="accent-amber-500" />
+                  <input disabled={(!!editingId && !can('race.categories'))} type="checkbox" checked={oldestRunnerAwardEnabled} onChange={(event) => setOldestRunnerAwardEnabled(event.target.checked)} className="rp-checkbox shrink-0" />
                   Oldest Runner (M/F)
                 </label>
               </div>
@@ -1473,11 +1481,11 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
 
           <div className="flex gap-2">
             <button type="submit" disabled={saving}
-              className="flex-1 text-xs font-black uppercase tracking-widest px-5 py-3 rounded-[var(--radius-control)] text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-900/30 flex items-center justify-center gap-2 transition disabled:opacity-60">
+              className="flex-1 min-h-11 text-xs font-semibold uppercase tracking-widest px-5 py-3 rounded-[var(--radius-control)] text-white bg-red-700 hover:bg-red-600 shadow-lg shadow-red-900/30 flex items-center justify-center gap-2 transition disabled:opacity-60">
               {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} {editingId ? 'Save Changes' : 'Create Race'}
             </button>
             {editingId && (
-              <button type="button" onClick={resetForm} className="text-xs font-bold uppercase tracking-wider px-4 py-3 glass-inset text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-[var(--radius-control)] transition">
+              <button type="button" onClick={resetForm} className="min-h-11 text-xs font-semibold uppercase tracking-wider px-4 py-3 glass-inset text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-[var(--radius-control)] transition">
                 Cancel
               </button>
             )}
@@ -1486,27 +1494,27 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
       </div>
 
       <div className="glass-panel p-5">
-        <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] mb-3">{canSeeAllRaces ? 'All Races' : 'Your Races'}</h3>
+        <h3 className="text-xs font-semibold font-display uppercase tracking-widest text-[var(--text-secondary)] mb-3">{canSeeAllRaces ? 'All Races' : 'Your Races'}</h3>
         <div className="space-y-2">
           {races.length === 0 && <p className="text-xs text-[var(--text-secondary)]">No races yet - create one on the left.</p>}
           {races.map((race) => (
             <div key={race.id} className="glass-inset px-4 py-3 flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-sm font-bold text-[var(--text-primary)] truncate">{race.name}</p>
-                <p className="text-[10px] text-[var(--text-secondary)]">
+                <p className="text-sm font-semibold text-[var(--text-primary)] truncate">{race.name}</p>
+                <p className="text-xs text-[var(--text-secondary)]">
                   {race.date} &bull; {(race.distances || []).length} distances &bull; {race.checkpoints.length} checkpoints &bull; {(race.ageCategories || []).length} age categories
                 </p>
-                <p className="text-[10px] text-[var(--text-secondary)]">
+                <p className="text-xs text-[var(--text-secondary)]">
                   {formatPriceRange(race.distances)} &bull; {(race.inclusions || []).length} inclusions
                 </p>
               </div>
-              <div className="flex flex-wrap justify-end gap-1.5 shrink-0">
+              <div className="flex flex-wrap justify-end gap-2 shrink-0">
                 {canSeeAllRaces && (
                   <button hidden={!can('bibs.export')}
                     type="button"
                     onClick={() => setBibDownloadRace(race)}
                     disabled={(!hasRaceBibTemplate(race) || raceBibPdfBusyRaceId === race.id) || (!!editingId && !can('race.bibs'))}
-                    className="flex items-center gap-1 rounded-lg px-2 py-2 text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)] transition hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-35"
+                    className="min-h-11 flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)] transition hover:text-red-700 dark:hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-35"
                     title={hasRaceBibTemplate(race) ? 'Download personalized race bibs by distance or for all runners (two bibs per A4 page)' : 'Upload a race bib template first'}
                   >
                     {raceBibPdfBusyRaceId === race.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />} BIB PDF
@@ -1515,21 +1523,22 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                 <button hidden={!can('roster.export')}
                   onClick={() => handleGenerateRunnerReport(race)}
                   disabled={reportBusyRaceId === race.id}
-                  className="p-2 text-[var(--text-secondary)] hover:text-emerald-500 transition disabled:opacity-50"
+                  className="min-h-11 min-w-11 flex items-center justify-center rounded-lg p-2 text-[var(--text-secondary)] hover:text-emerald-700 dark:hover:text-emerald-400 transition disabled:opacity-50"
+                  aria-label={`Download runner report PDF for ${race.name}`}
                   title="Download runner roster and shirt-size inventory PDF"
                 >
-                  {reportBusyRaceId === race.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+                  {reportBusyRaceId === race.id ? <RefreshCw className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
                 </button>
-                <button hidden={!can('race.registration')} onClick={() => setQrRace(race)} className="flex items-center gap-1 rounded-lg px-2 py-2 text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)] transition hover:text-violet-500" title="Show downloadable event registration QR code"><QrCode className="w-3.5 h-3.5" /> QR</button>
-                <button hidden={!can('roster.slots')} onClick={() => setFreeSlotRace(race)} className="flex items-center gap-1 rounded-lg px-2 py-2 text-[10px] font-black uppercase tracking-wide text-[var(--text-secondary)] transition hover:text-cyan-500" title="Create anonymous late/on-site runner slots"><Plus className="w-3.5 h-3.5" /> Slots</button>
-                <button hidden={!settingsAllowed} onClick={() => loadForEdit(race)} className="p-2 text-[var(--text-secondary)] hover:text-amber-500 transition" title="Edit race"><Pencil className="w-3.5 h-3.5" /></button>
-                {canDeleteRaces && <button hidden={!authority} onClick={() => handleDelete(race.id)} className="p-2 text-[var(--text-secondary)] hover:text-red-500 transition" title="Delete race"><Trash2 className="w-3.5 h-3.5" /></button>}
+                <button hidden={!can('race.registration')} onClick={() => setQrRace(race)} className="min-h-11 flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)] transition hover:text-violet-700 dark:hover:text-violet-400" title="Show downloadable event registration QR code"><QrCode className="w-3.5 h-3.5" /> QR</button>
+                <button hidden={!can('roster.slots')} onClick={() => setFreeSlotRace(race)} className="min-h-11 flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)] transition hover:text-cyan-800 dark:hover:text-cyan-300" title="Create anonymous late/on-site runner slots"><Plus className="w-3.5 h-3.5" /> Slots</button>
+                <button hidden={!settingsAllowed} onClick={() => loadForEdit(race)} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg p-2 text-[var(--text-secondary)] hover:text-amber-700 dark:hover:text-amber-400 transition" aria-label={`Edit ${race.name}`} title="Edit race"><Pencil className="w-4 h-4" /></button>
+                {canDeleteRaces && <button hidden={!authority} onClick={() => handleDelete(race.id)} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg p-2 text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition" aria-label={`Delete ${race.name}`} title="Delete race"><Trash2 className="w-4 h-4" /></button>}
               </div>
             </div>
           ))}
         </div>
-        <div className="mt-4 pt-4 border-t border-[var(--border-subtle)] flex items-start gap-2 text-[10.5px] text-[var(--text-muted)]">
-          <Users2 className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+        <div className="mt-4 pt-4 border-t border-[var(--border-subtle)] flex items-start gap-2 text-xs text-[var(--text-secondary)]">
+          <Users2 className="w-3.5 h-3.5 shrink-0 mt-1" />
           The PDF starts with runner totals per distance and shirt size, then lists every runner by distance and age category.
         </div>
       </div>
@@ -1541,8 +1550,8 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
         >
           <div className="flex items-start justify-between gap-3 text-left">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-widest text-violet-700 dark:text-violet-400">Event registration QR</p>
-              <h3 id="registration-qr-title" className="mt-1 text-base font-semibold uppercase tracking-tight text-[var(--text-primary)]">{qrRace.name}</h3>
+              <h3 id="registration-qr-title" className="text-base font-semibold uppercase tracking-tight text-[var(--text-primary)]">{qrRace.name}</h3>
+              <p className="mt-1 text-xs font-semibold uppercase tracking-widest text-violet-700 dark:text-violet-400">Event registration QR</p>
               <p className="mt-1 text-xs text-[var(--text-secondary)]">Scan to open this event registration form.</p>
             </div>
             <button hidden={!can('race.registration')} type="button" onClick={() => setQrRace(null)} className="min-h-11 min-w-11 flex items-center justify-center rounded-full text-[var(--text-secondary)] transition hover:text-red-700 dark:hover:text-red-400" aria-label="Close registration QR"><X className="h-4 w-4" aria-hidden="true" /></button>
@@ -1552,8 +1561,8 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
           </div>
           <p className="mt-3 break-all rounded-xl bg-[var(--surface-inset)] px-3 py-2 font-mono text-xs text-[var(--text-secondary)]">{registrationUrl(qrRace.id)}</p>
           <div className="mt-4 grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => void copyRegistrationUrl()} className="min-h-11 flex items-center justify-center gap-1.5 rounded-[14px] glass-inset px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)] transition hover:text-violet-700 dark:hover:text-violet-400"><Copy className="h-3.5 w-3.5" aria-hidden="true" /> Copy link</button>
-            <button type="button" onClick={downloadRegistrationQr} className="min-h-11 flex items-center justify-center gap-1.5 rounded-[14px] bg-violet-700 px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-violet-600"><Download className="h-3.5 w-3.5" aria-hidden="true" /> Download QR</button>
+            <button type="button" onClick={() => void copyRegistrationUrl()} className="min-h-11 flex items-center justify-center gap-2 rounded-[14px] glass-inset px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)] transition hover:text-violet-700 dark:hover:text-violet-400"><Copy className="h-3.5 w-3.5" aria-hidden="true" /> Copy link</button>
+            <button type="button" onClick={downloadRegistrationQr} className="min-h-11 flex items-center justify-center gap-2 rounded-[14px] bg-violet-700 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-violet-600"><Download className="h-3.5 w-3.5" aria-hidden="true" /> Download QR</button>
           </div>
         </DialogSurface>
       )}
@@ -1698,8 +1707,8 @@ function FreeSlotsDialog({ race, onClose }: FreeSlotsDialogProps) {
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-cyan-800 dark:text-cyan-300">Race-day roster</p>
-          <h3 id="free-slots-title" className="mt-1 text-lg font-display font-semibold text-[var(--text-primary)]">Free Slots</h3>
+          <h3 id="free-slots-title" className="text-lg font-display font-semibold text-[var(--text-primary)]">Free Slots</h3>
+          <p className="mt-1 text-xs font-semibold uppercase tracking-widest text-cyan-800 dark:text-cyan-300">Race-day roster</p>
           <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">Create empty Solo, Duo, Trio, or Group bib slots for late/on-site runners. They show as bib-only in timing and never join age categories.</p>
         </div>
         <button type="button" onClick={onClose} disabled={creating} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg p-2 text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 disabled:opacity-40" aria-label="Close Free Slots"><X className="w-5 h-5" aria-hidden="true" /></button>
@@ -1707,38 +1716,38 @@ function FreeSlotsDialog({ race, onClose }: FreeSlotsDialogProps) {
 
       <div className="mt-5 grid grid-cols-1 sm:grid-cols-[1fr_8rem_7rem] gap-2">
         <label className="block">
-          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Distance</span>
-          <select value={distanceLabel} onChange={(event) => setDistanceLabel(event.target.value)} disabled={(creating) || (!can('roster.slots'))} className="w-full glass-inset px-3 py-3 text-sm font-bold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50">
+          <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Distance</span>
+          <select value={distanceLabel} onChange={(event) => setDistanceLabel(event.target.value)} disabled={(creating) || (!can('roster.slots'))} className="w-full min-h-11 glass-inset px-3 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50">
             {race.distances.map((distance) => <option key={distance.id} value={distance.label}>{distance.label}</option>)}
           </select>
         </label>
         <label className="block">
-          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Entry type</span>
-          <select value={entryCategory} onChange={(event) => setEntryCategory(event.target.value as RaceEntryCategory)} disabled={(creating) || (!can('roster.slots'))} className="w-full glass-inset px-3 py-3 text-sm font-bold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50">
+          <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Entry type</span>
+          <select value={entryCategory} onChange={(event) => setEntryCategory(event.target.value as RaceEntryCategory)} disabled={(creating) || (!can('roster.slots'))} className="w-full min-h-11 glass-inset px-3 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50">
             {supportedCategories.map((category) => <option key={category} value={category}>{entryCategoryLabels[category]}</option>)}
           </select>
         </label>
         <label className="block">
-          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Slots</span>
-          <input type="number" min="1" max="100" step="1" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} disabled={creating} className="w-full glass-inset px-3 py-3 text-sm font-bold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50" />
+          <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Slots</span>
+          <input type="number" min="1" max="100" step="1" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} disabled={creating} className="w-full min-h-11 glass-inset px-3 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50" />
         </label>
       </div>
       <button type="button" onClick={() => void createSlots()} disabled={creating || race.distances.length === 0} className="mt-3 min-h-11 flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-700 px-4 py-3 text-xs font-semibold uppercase tracking-widest text-white transition hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-55">
         {creating ? <RefreshCw className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" /> : <Plus className="h-4 w-4" aria-hidden="true" />} {creating ? 'Creating slots...' : 'Create Free Slots'}
       </button>
-      {message && <p role="status" className={`mt-3 rounded-xl px-3 py-2.5 text-xs font-semibold ${message.startsWith('Could') || message.startsWith('Choose') || message.startsWith('Enter') ? 'bg-red-500/10 text-red-700 dark:text-red-400' : 'bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'}`}>{message}</p>}
+      {message && <p role="status" className={`mt-3 rounded-xl px-3 py-2 text-xs font-semibold ${message.startsWith('Could') || message.startsWith('Choose') || message.startsWith('Enter') ? 'bg-red-500/10 text-red-700 dark:text-red-400' : 'bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'}`}>{message}</p>}
 
       <div className="mt-5 border-t border-[var(--border-subtle)] pt-4">
         <div className="flex items-center justify-between gap-3">
           <h4 className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Created Free Slots</h4>
-          <span className="font-mono text-xs font-bold text-cyan-800 dark:text-cyan-300">{slots.length}</span>
+          <span className="font-mono text-xs font-semibold text-cyan-800 dark:text-cyan-300">{slots.length}</span>
         </div>
-        {slots.length === 0 ? <p className="mt-3 text-xs text-[var(--text-muted)]">No empty slots yet.</p> : (
+        {slots.length === 0 ? <p className="mt-3 text-xs text-[var(--text-secondary)]">No empty slots yet.</p> : (
           <div className="mt-3 max-h-48 space-y-2 overflow-y-auto pr-1">
             {slotsByDivision.map(({ distance, entryCategory: category, slots: distanceSlots }) => (
-              <div key={`${distance.id}_${category}`} className="rounded-xl glass-inset px-3 py-2.5">
+              <div key={`${distance.id}_${category}`} className="rounded-xl glass-inset px-3 py-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">{distance.label} {entryCategoryLabels[category]} &bull; {distanceSlots.length} slots</p>
-                <p className="mt-1 break-words font-mono text-xs font-bold text-[var(--text-primary)]">{distanceSlots.map((slot) => slot.bibNumber).join(' • ')}</p>
+                <p className="mt-1 break-words font-mono text-xs font-semibold text-[var(--text-primary)]">{distanceSlots.map((slot) => slot.bibNumber).join(' • ')}</p>
               </div>
             ))}
           </div>

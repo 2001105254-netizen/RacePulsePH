@@ -8,7 +8,7 @@ import { runnerDivisionLabel, runnerEntryCategory } from '../lib/raceEntry';
 import { getWaveStartTime } from '../lib/timing';
 import { useAndroidBackHandler } from '../lib/capacitorAndroid';
 
-const badge = 'inline-flex items-center rounded-md border px-2.5 py-1 text-xs sm:text-sm font-semibold';
+const badge = 'inline-flex items-center rounded-md border px-3 py-1 text-xs sm:text-sm font-semibold';
 const distanceColor = 'border-red-500/35 bg-red-500/10 text-red-300';
 const divisionColor = 'border-white/15 bg-white/[0.06] text-white/85';
 const ageColor = 'border-white/25 bg-white/[0.08] text-white/80';
@@ -73,7 +73,7 @@ export default function LiveRankingsScreen({ race, results, onClose }: {
   const clockStarts = (category ? category.results.map(waveStart) : Object.values(race.waveStartTimes || {}))
     .filter((value): value is string => !!value && Number.isFinite(Date.parse(value)));
   const clockStart = clockStarts.sort((a, b) => Date.parse(a) - Date.parse(b))[0] || race.gunStartTime;
-  const control = 'inline-flex items-center justify-center rounded-xl border border-white/20 bg-[#19191c] px-3.5 min-h-11 text-sm text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400';
+  const control = 'inline-flex items-center justify-center rounded-xl border border-white/20 bg-[#19191c] px-4 min-h-11 text-sm text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400';
 
   return (
     <div ref={containerRef} className="fixed inset-0 z-[100] bg-[#0a0a0c] text-white flex flex-col pt-[max(1rem,var(--rp-safe-top))] pb-[max(1rem,var(--rp-safe-bottom))] pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pt-[max(2rem,var(--rp-safe-top))] sm:pb-[max(2rem,var(--rp-safe-bottom))] sm:pl-[max(2rem,var(--rp-safe-left))] sm:pr-[max(2rem,var(--rp-safe-right))] lg:pl-[max(2.5rem,var(--rp-safe-left))] lg:pr-[max(2.5rem,var(--rp-safe-right))] overflow-hidden">
@@ -103,7 +103,7 @@ export default function LiveRankingsScreen({ race, results, onClose }: {
         </label>
       </nav>
 
-      <div className="flex flex-wrap gap-2 mt-3 shrink-0" aria-label="Choose a distance">{distanceLabels.map((label) => <button key={label} type="button" onClick={() => changeDistance(label)} aria-pressed={distance === label} className={`inline-flex items-center justify-center rounded-xl border px-3.5 min-h-11 text-xs sm:text-sm font-semibold ${distanceColor} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 ${distance === label ? 'ring-2 ring-red-400' : ''}`}>{label}</button>)}</div>
+      <div className="flex flex-wrap gap-2 mt-3 shrink-0" aria-label="Choose a distance">{distanceLabels.map((label) => <button key={label} type="button" onClick={() => changeDistance(label)} aria-pressed={distance === label} className={`inline-flex items-center justify-center rounded-xl border px-4 min-h-11 text-xs sm:text-sm font-semibold ${distanceColor} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 ${distance === label ? 'ring-2 ring-red-400' : ''}`}>{label}</button>)}</div>
       <p className="mt-2 text-xs text-white/70">Red identifies race categories · 1st, 2nd, and 3rd places use podium colors · Amber: next entry running · Green: next entry finished</p>
       <div className="flex flex-wrap items-baseline justify-between gap-2 mt-4 mb-2 shrink-0">
         <h2 className="text-lg sm:text-2xl font-semibold font-display">{title}</h2>
@@ -121,7 +121,7 @@ export default function LiveRankingsScreen({ race, results, onClose }: {
               <div className="flex-1 min-w-0">
                 <p className="text-base sm:text-xl font-semibold break-words">{name(result)}</p>
                 <p className="text-xs text-white/70 mt-1 tabular-nums">Bib #{result.bibNumber} · Finish scan {formatTime(finishedTimestamp ?? finishedAt)}</p>
-                <div className="flex flex-wrap gap-1.5 mt-2">
+                <div className="flex flex-wrap gap-2 mt-2">
                   <span className={`${badge} ${distanceColor}`}>{distanceLabel}</span>
                   <span className={`${badge} ${divisionColor}`}>{runnerDivisionLabel(result.runnerProfile)} · #{result.overallRank ?? result.rank}</span>
                   {result.categoryRank !== undefined && result.categoryLabel && <span className={`${badge} ${ageColor}`}>{result.categoryLabel} · #{result.categoryRank}</span>}

@@ -78,7 +78,7 @@ export default function RaceList({
                       />
                     ) : (
                       <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-900 p-4 text-center">
-                        <Trophy className="w-8 h-8 text-zinc-400 mb-1.5" aria-hidden="true" />
+                        <Trophy className="w-8 h-8 text-zinc-400 mb-2" aria-hidden="true" />
                         <span className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
                           RacePulse Official Event
                         </span>
@@ -86,9 +86,9 @@ export default function RaceList({
                     )}
 
                     {/* Status Badges Overlay */}
-                    <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5 z-10">
+                    <div className="absolute top-3 left-3 flex flex-wrap gap-2 z-10">
                       {isLive && (
-                        <Badge variant="live" className="gap-1.5 shadow-sm text-xs">
+                        <Badge variant="live" className="gap-2 shadow-sm text-xs">
                           <span className="w-1.5 h-1.5 rounded-full bg-red-600 motion-safe:animate-ping" />
                           Live Timing
                         </Badge>
@@ -109,7 +109,7 @@ export default function RaceList({
                     </div>
 
                     {isSelected && (
-                      <div className="absolute top-2.5 right-2.5 z-10">
+                      <div className="absolute top-3 right-3 z-10">
                         <Badge variant="default" className="gap-1 shadow-sm text-xs font-semibold uppercase">
                           <CheckCircle2 className="w-3 h-3" /> Selected
                         </Badge>
@@ -122,22 +122,22 @@ export default function RaceList({
                       <h3 className="text-base font-semibold tracking-tight text-[var(--text-primary)] group-hover:text-red-700 dark:group-hover:text-red-400 transition-colors">
                         {race.name}
                       </h3>
-                      <p className="text-xs font-normal text-[var(--text-secondary)] mt-1 flex items-center gap-1.5 tabular-nums">
+                      <p className="text-xs font-normal text-[var(--text-secondary)] mt-1 flex items-center gap-2 tabular-nums">
                         <Calendar className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" />
                         <span>{race.date}</span>
                       </p>
                     </div>
 
                     {/* Distances & Prices */}
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="flex flex-wrap gap-2">
                       {(race.distances || []).length === 0 ? (
-                        <span className="text-xs text-[var(--text-muted)]">Distances to be announced</span>
+                        <span className="text-xs text-[var(--text-secondary)]">Distances to be announced</span>
                       ) : (
                         race.distances.map((d) => (
                           <Badge
                             key={d.id}
                             variant="secondary"
-                            className="text-xs py-0.5 px-2 font-semibold border-[var(--border-default)] tabular-nums"
+                            className="text-xs py-1 px-2 font-semibold border-[var(--border-default)] tabular-nums"
                           >
                             {d.label}
                             {d.price > 0 && <span className="text-red-700 dark:text-red-400 ml-1">₱{d.price.toFixed(0)}</span>}
@@ -148,8 +148,8 @@ export default function RaceList({
 
                     {/* Inclusions */}
                     {(race.inclusions || []).length > 0 && (
-                      <div className="flex items-start gap-1.5 text-xs text-[var(--text-secondary)] line-clamp-1">
-                        <Tag className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0 mt-0.5" />
+                      <div className="flex items-start gap-2 text-xs text-[var(--text-secondary)] line-clamp-1">
+                        <Tag className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0 mt-1" />
                         <span className="truncate">Includes: {race.inclusions.join(', ')}</span>
                       </div>
                     )}

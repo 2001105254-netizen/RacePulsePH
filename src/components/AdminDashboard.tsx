@@ -148,14 +148,14 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
           <button
             type="button"
             onClick={() => setShowAccountPrivacy(true)}
-            className="min-h-11 shrink-0 text-xs text-[var(--text-primary)] border border-[var(--border-default)] hover:border-red-500/40 hover:text-red-700 dark:hover:text-red-400 font-semibold px-3 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
+            className="min-h-11 shrink-0 text-xs text-[var(--text-primary)] border border-[var(--border-default)] hover:border-red-500/40 hover:text-red-700 dark:hover:text-red-400 font-semibold px-3 py-2 rounded-[20px] transition flex items-center gap-2 uppercase tracking-wider"
           >
             <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" /> Privacy
           </button>
           <button
             type="button"
             onClick={() => signOutUser()}
-            className="min-h-11 shrink-0 text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)] hover:text-[var(--text-primary)] font-semibold px-3.5 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
+            className="min-h-11 shrink-0 text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)] hover:text-[var(--text-primary)] font-semibold px-4 py-2 rounded-[20px] transition flex items-center gap-2 uppercase tracking-wider"
           >
             <LogOut className="w-3.5 h-3.5" aria-hidden="true" /> Sign Out
           </button>
@@ -244,8 +244,8 @@ function OrganizersPanel({ canManageAccounts, currentUserId }: { canManageAccoun
     <div className="space-y-6">
       <h1 className="sr-only">Organizers</h1>
       <div className="glass-panel p-5">
-        <h2 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2 mb-3">
-          <UserCog className="w-4 h-4 text-red-500" aria-hidden="true" /> Pending Organizer Approvals
+        <h2 className="text-xs font-semibold font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2 mb-3">
+          <UserCog className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> Pending Organizer Approvals
         </h2>
         {pending.length === 0 ? (
           <p className="text-xs text-[var(--text-secondary)]">No pending requests.</p>
@@ -254,11 +254,11 @@ function OrganizersPanel({ canManageAccounts, currentUserId }: { canManageAccoun
             {pending.map((u) => (
               <div key={u.uid} className="glass-inset px-4 py-3 flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-sm font-bold text-[var(--text-primary)] truncate">{u.displayName}</p>
-                  <p className="text-[10px] text-[var(--text-secondary)] truncate">{u.email}</p>
+                  <p className="text-sm font-semibold text-[var(--text-primary)] truncate">{u.displayName}</p>
+                  <p className="text-xs text-[var(--text-secondary)] truncate">{u.email}</p>
                 </div>
-                {canManageAccounts && <button onClick={() => setApproved(u.uid, true)} className="text-xs font-black uppercase tracking-wider px-3.5 py-2 rounded-[16px] bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5 shrink-0">
-                  <CheckCircle className="w-3.5 h-3.5" /> Approve
+                {canManageAccounts && <button type="button" onClick={() => setApproved(u.uid, true)} className="min-h-11 text-xs font-semibold uppercase tracking-wider px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white flex items-center gap-2 shrink-0">
+                  <CheckCircle className="w-3.5 h-3.5" aria-hidden="true" /> Approve
                 </button>}
               </div>
             ))}
@@ -267,7 +267,7 @@ function OrganizersPanel({ canManageAccounts, currentUserId }: { canManageAccoun
       </div>
 
       <div className="glass-panel p-5">
-        <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] mb-3">Active Organizers</h3>
+        <h3 className="text-xs font-semibold font-display uppercase tracking-widest text-[var(--text-secondary)] mb-3">Active Organizers</h3>
         {approvedOrganizers.length === 0 ? (
           <p className="text-xs text-[var(--text-secondary)]">No approved organizers yet.</p>
         ) : (
@@ -275,14 +275,14 @@ function OrganizersPanel({ canManageAccounts, currentUserId }: { canManageAccoun
             {approvedOrganizers.map((u) => (
               <div key={u.uid} className="glass-inset px-4 py-3 flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-sm font-bold text-[var(--text-primary)] truncate">{u.displayName}</p>
-                  <p className="text-[10px] text-[var(--text-secondary)] truncate">{u.email}</p>
+                  <p className="text-sm font-semibold text-[var(--text-primary)] truncate">{u.displayName}</p>
+                  <p className="text-xs text-[var(--text-secondary)] truncate">{u.email}</p>
                 </div>
                 {canManageAccounts && <div className="flex items-center gap-1">
-                  <button onClick={() => setApproved(u.uid, false)} className="text-xs font-bold uppercase tracking-wider px-3.5 py-2 rounded-[16px] glass-inset text-[var(--text-secondary)] hover:text-red-500 flex items-center gap-1.5 shrink-0">
-                    <XCircle className="w-3.5 h-3.5" /> Revoke
+                  <button type="button" onClick={() => setApproved(u.uid, false)} className="min-h-11 text-xs font-semibold uppercase tracking-wider px-4 py-2 rounded-xl glass-inset text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 flex items-center gap-2 shrink-0">
+                    <XCircle className="w-3.5 h-3.5" aria-hidden="true" /> Revoke
                   </button>
-                  <button onClick={() => void deleteAccount(u)} className="p-2 text-[var(--text-secondary)] hover:text-red-500 transition" title="Remove organizer account"><Trash2 className="w-3.5 h-3.5" /></button>
+                  <button type="button" onClick={() => void deleteAccount(u)} aria-label={`Remove organizer account ${u.displayName}`} className="min-h-11 min-w-11 flex items-center justify-center p-2 text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition" title="Remove organizer account"><Trash2 className="w-4 h-4" aria-hidden="true" /></button>
                 </div>}
               </div>
             ))}
@@ -291,30 +291,30 @@ function OrganizersPanel({ canManageAccounts, currentUserId }: { canManageAccoun
       </div>
 
       <div className="glass-panel p-5">
-        <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2 mb-3">
-          <ShieldCheck className="w-4 h-4 text-amber-500" /> Admins
+        <h3 className="text-xs font-semibold font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2 mb-3">
+          <ShieldCheck className="w-4 h-4 text-amber-700 dark:text-amber-300" aria-hidden="true" /> Admins
         </h3>
         <div className="space-y-2">
           {admins.length === 0 && <p className="text-xs text-[var(--text-secondary)]">No admins yet.</p>}
           {admins.map((u) => (
             <div key={u.uid} className="glass-inset px-4 py-3">
-              <p className="text-sm font-bold text-[var(--text-primary)]">{u.displayName}</p>
-              <p className="text-[10px] text-[var(--text-secondary)]">{u.email}</p>
+              <p className="text-sm font-semibold text-[var(--text-primary)]">{u.displayName}</p>
+              <p className="text-xs text-[var(--text-secondary)]">{u.email}</p>
             </div>
           ))}
         </div>
       </div>
 
       <div className="glass-panel p-5">
-        <h3 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2 mb-3">
-          <ShieldCheck className="w-4 h-4 text-amber-500" /> Super Admins
+        <h3 className="text-xs font-semibold font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2 mb-3">
+          <ShieldCheck className="w-4 h-4 text-amber-700 dark:text-amber-300" aria-hidden="true" /> Super Admins
         </h3>
         <div className="space-y-2">
           {superAdmins.length === 0 && <p className="text-xs text-[var(--text-secondary)]">No super admins yet.</p>}
           {superAdmins.map((u) => (
             <div key={u.uid} className="glass-inset px-4 py-3">
-              <p className="text-sm font-bold text-[var(--text-primary)]">{u.displayName}</p>
-              <p className="text-[10px] text-[var(--text-secondary)]">{u.email}</p>
+              <p className="text-sm font-semibold text-[var(--text-primary)]">{u.displayName}</p>
+              <p className="text-xs text-[var(--text-secondary)]">{u.email}</p>
             </div>
           ))}
         </div>
@@ -394,7 +394,7 @@ function RunnersPanel({ canManageAccounts, currentUserId }: { canManageAccounts:
       <h1 className="sr-only">Runners Directory</h1>
       <div className="grid grid-cols-2 gap-4">
         <div className="glass-panel p-5 text-center">
-          <p className="text-3xl font-black font-display text-[var(--text-primary)]">
+          <p className="text-3xl font-semibold font-display text-[var(--text-primary)]">
             <AnimatedMetricValue
               value={allRunners.length}
               loading={!usersLoaded}
@@ -402,10 +402,10 @@ function RunnersPanel({ canManageAccounts, currentUserId }: { canManageAccounts:
               skeletonHeightClass="h-8"
             />
           </p>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] mt-1">Total Runner Accounts</p>
+          <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)] mt-1">Total Runner Accounts</p>
         </div>
         <div className="glass-panel p-5 text-center">
-          <p className="text-3xl font-black font-display text-red-500">
+          <p className="text-3xl font-semibold font-display text-red-700 dark:text-red-400">
             <AnimatedMetricValue
               value={activeRunnerCount}
               loading={!usersLoaded || !registrationsLoaded}
@@ -413,23 +413,23 @@ function RunnersPanel({ canManageAccounts, currentUserId }: { canManageAccounts:
               skeletonHeightClass="h-8"
             />
           </p>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] mt-1">Registered for a Race</p>
+          <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)] mt-1">Registered for a Race</p>
         </div>
       </div>
 
       <div className="glass-panel p-5">
-        <h2 className="text-[11px] font-black font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2 mb-3">
-          <Users className="w-4 h-4 text-red-500" aria-hidden="true" /> All Runners
+        <h2 className="text-xs font-semibold font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-2 mb-3">
+          <Users className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> All Runners
         </h2>
         {allRunners.length > 0 && (
           <div className="relative mb-3">
-            <Search className="w-3.5 h-3.5 text-[var(--text-muted)] absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <Search className="w-3.5 h-3.5 text-[var(--text-secondary)] absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
             <input
               type="text"
               placeholder="SEARCH BY NAME OR EMAIL"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full glass-inset pl-9 pr-4 py-2.5 text-xs font-bold tracking-wide text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+              className="w-full min-h-11 glass-inset pl-9 pr-4 py-2 text-xs font-semibold tracking-wide text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50"
             />
           </div>
         )}
@@ -444,7 +444,7 @@ function RunnersPanel({ canManageAccounts, currentUserId }: { canManageAccounts:
               const count = registrationCounts[u.uid] || 0;
               return (
                 <div key={u.uid} className="flex items-center gap-3 glass-inset px-4 py-3">
-                  <div className="w-9 h-9 rounded-full overflow-hidden glass-inset flex items-center justify-center text-red-500 font-black text-xs shrink-0">
+                  <div className="w-9 h-9 rounded-full overflow-hidden glass-inset flex items-center justify-center text-red-700 dark:text-red-400 font-semibold text-xs shrink-0">
                     {u.photoURL ? (
                       <img src={u.photoURL} alt="" className="w-full h-full object-cover" />
                     ) : (
@@ -452,13 +452,13 @@ function RunnersPanel({ canManageAccounts, currentUserId }: { canManageAccounts:
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-bold text-[var(--text-primary)] truncate">{u.nickname || u.displayName}</p>
-                    <p className="text-[10px] text-[var(--text-secondary)] truncate">{u.email}</p>
+                    <p className="text-sm font-semibold text-[var(--text-primary)] truncate">{u.nickname || u.displayName}</p>
+                    <p className="text-xs text-[var(--text-secondary)] truncate">{u.email}</p>
                   </div>
-                  <span className={`text-[10px] font-black uppercase tracking-wide px-2.5 py-1 rounded-full shrink-0 ${count > 0 ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/25' : 'bg-[var(--surface-inset)] text-[var(--text-muted)] border border-[var(--border-default)]'}`}>
+                  <span className={`text-xs font-semibold uppercase tracking-wide px-3 py-1 rounded-full shrink-0 ${count > 0 ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25' : 'bg-[var(--surface-inset)] text-[var(--text-secondary)] border border-[var(--border-default)]'}`}>
                     {count > 0 ? `${count} race${count > 1 ? 's' : ''}` : 'No races yet'}
                   </span>
-                  {canManageAccounts && <button onClick={() => void deleteAccount(u)} className="p-2 text-[var(--text-secondary)] hover:text-red-500 transition shrink-0" title="Remove runner account"><Trash2 className="w-3.5 h-3.5" /></button>}
+                  {canManageAccounts && <button type="button" onClick={() => void deleteAccount(u)} aria-label={`Remove runner account ${u.displayName}`} className="min-h-11 min-w-11 flex items-center justify-center p-2 text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition shrink-0" title="Remove runner account"><Trash2 className="w-4 h-4" aria-hidden="true" /></button>}
                 </div>
               );
             })}

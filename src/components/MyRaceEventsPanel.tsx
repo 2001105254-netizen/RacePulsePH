@@ -459,7 +459,7 @@ export default function MyRaceEventsPanel({
 
   // Desktop Top Global Header Left Cluster (Portaled into App.tsx header beside brand mark)
   const headerLeftMarkup = (
-    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+    <div className="flex items-center gap-3 min-w-0 flex-1">
       <span className="h-5 w-px bg-white/15 shrink-0" aria-hidden="true" />
       <div className="flex items-center gap-2 shrink-0">
         <CalendarDays className="w-4 h-4 text-red-400 shrink-0" aria-hidden="true" />
@@ -483,14 +483,14 @@ export default function MyRaceEventsPanel({
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           placeholder="Search race, date, or distance... (/)"
-          className="w-full h-9 rounded-lg border border-white/15 bg-white/10 pl-8 pr-8 text-xs font-semibold text-white placeholder-zinc-300 focus:outline-none focus:ring-2 focus:ring-red-400"
+          className="w-full h-9 rounded-lg border border-white/15 bg-white/10 pl-8 pr-9 text-xs font-semibold text-white placeholder-zinc-300 focus:outline-none focus:ring-2 focus:ring-red-400"
         />
         {searchTerm && (
           <button
             type="button"
             onClick={() => setSearchTerm('')}
             aria-label="Clear event search"
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-zinc-300 hover:text-white"
+            className="absolute right-1 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-md text-zinc-300 hover:text-white"
           >
             <X className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
@@ -501,9 +501,9 @@ export default function MyRaceEventsPanel({
 
   // Desktop Top Global Header Right Cluster (Portaled beside Theme Toggle in App.tsx)
   const headerRightMarkup = (
-    <div className="flex items-center gap-1.5" role="toolbar" aria-label="Event filters and creation">
+    <div className="flex items-center gap-2" role="toolbar" aria-label="Event filters and creation">
       <div
-        className="inline-flex rounded-lg border border-white/15 bg-white/10 p-0.5 shrink-0"
+        className="inline-flex rounded-lg border border-white/15 bg-white/10 p-1 shrink-0"
         role="group"
         aria-label="Filter events by status"
       >
@@ -515,7 +515,7 @@ export default function MyRaceEventsPanel({
               type="button"
               onClick={() => setStatusFilter(item.key)}
               aria-pressed={active}
-              className={`h-8 px-2.5 rounded-md text-xs font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 ${
+              className={`h-8 px-3 rounded-md text-xs font-semibold inline-flex items-center gap-2 transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 ${
                 active
                   ? 'bg-red-700 text-white'
                   : 'text-zinc-200 hover:bg-white/10 hover:text-white'
@@ -523,7 +523,7 @@ export default function MyRaceEventsPanel({
             >
               <span>{item.label}</span>
               <span
-                className={`font-mono text-[11px] tabular-nums ${
+                className={`font-mono text-xs tabular-nums ${
                   active ? 'text-white' : 'text-zinc-300'
                 }`}
               >
@@ -538,7 +538,7 @@ export default function MyRaceEventsPanel({
         <button
           type="button"
           onClick={onCreateEvent}
-          className="h-9 px-3 rounded-lg bg-red-700 hover:bg-red-600 text-white border border-red-500/30 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
+          className="h-9 px-3 rounded-lg bg-red-700 hover:bg-red-600 text-white border border-red-500/30 text-xs font-semibold inline-flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
         >
           <Plus className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
           <span>Create Event</span>
@@ -575,12 +575,12 @@ export default function MyRaceEventsPanel({
 
   const renderInlineActions = (race: Race, compactMobile = false) => {
     const btnClass = compactMobile
-      ? 'min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-1.5 transition-colors whitespace-nowrap'
-      : 'h-7 px-2 rounded-md border border-[var(--border-default)] bg-[var(--surface-card)] hover:border-red-600 hover:text-red-700 dark:hover:text-red-400 text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-1 transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400';
+      ? 'min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-2 transition-colors whitespace-nowrap'
+      : 'h-8 px-2 rounded-md border border-[var(--border-default)] bg-[var(--surface-card)] hover:border-red-600 hover:text-red-700 dark:hover:text-red-400 text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-1 transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400';
 
     const timingBtnClass = compactMobile
-      ? 'min-h-11 px-3.5 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap'
-      : 'h-7 px-2 rounded-md bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center gap-1 transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400';
+      ? 'min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center gap-2 transition-colors whitespace-nowrap'
+      : 'h-8 px-2 rounded-md bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center gap-1 transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400';
 
     return (
       <div
@@ -668,7 +668,7 @@ export default function MyRaceEventsPanel({
                 <button
                   type="button"
                   onClick={onCreateEvent}
-                  className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold uppercase tracking-wider inline-flex items-center gap-1.5"
+                  className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold uppercase tracking-wider inline-flex items-center gap-2"
                 >
                   <Plus className="w-4 h-4" aria-hidden="true" /> Create Event
                 </button>
@@ -690,14 +690,14 @@ export default function MyRaceEventsPanel({
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Search name, date, or distance..."
-                className="w-full min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] pl-9 pr-9 text-sm font-semibold text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400"
+                className="w-full min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] pl-9 pr-11 text-sm font-semibold text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400"
               />
               {searchTerm && (
                 <button
                   type="button"
                   onClick={() => setSearchTerm('')}
                   aria-label="Clear event search"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 min-h-11 min-w-11 flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                 >
                   <X className="w-4 h-4" aria-hidden="true" />
                 </button>
@@ -713,7 +713,7 @@ export default function MyRaceEventsPanel({
                     type="button"
                     onClick={() => setStatusFilter(item.key)}
                     aria-pressed={active}
-                    className={`min-h-11 px-3.5 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${
+                    className={`min-h-11 px-4 rounded-xl border text-xs font-semibold inline-flex items-center gap-2 transition-colors ${
                       active
                         ? 'border-red-600 bg-red-700 text-white'
                         : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)]'
@@ -735,7 +735,7 @@ export default function MyRaceEventsPanel({
         aria-label="Portfolio telemetry summary"
         className="shrink-0 border border-[var(--border-default)] lg:border-x-0 lg:border-t-0 rounded-2xl lg:rounded-none bg-[var(--surface-card)] mb-4 lg:mb-0 lg:h-12 px-3 sm:px-4 py-2 lg:py-0 flex flex-wrap lg:flex-nowrap items-center justify-between gap-2 lg:gap-4 lg:overflow-x-auto"
       >
-        <div className="flex flex-wrap lg:flex-nowrap items-center gap-1.5 sm:gap-2 min-w-0">
+        <div className="flex flex-wrap lg:flex-nowrap items-center gap-2 min-w-0">
           {telemetryPills.map((item) => {
             const active = statusFilter === item.key;
             return (
@@ -744,7 +744,7 @@ export default function MyRaceEventsPanel({
                 type="button"
                 onClick={() => setStatusFilter(item.key)}
                 aria-pressed={active}
-                className={`min-h-11 lg:min-h-0 lg:h-8 px-2.5 rounded-lg border text-xs font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+                className={`min-h-11 lg:min-h-0 lg:h-8 px-3 rounded-lg border text-xs font-semibold inline-flex items-center gap-2 transition-colors whitespace-nowrap ${
                   active
                     ? 'border-red-600 bg-red-50 dark:bg-red-950/40 text-[var(--text-primary)]'
                     : 'border-transparent hover:border-[var(--border-subtle)] hover:bg-[var(--surface-hover)] text-[var(--text-secondary)]'
@@ -757,7 +757,7 @@ export default function MyRaceEventsPanel({
                     loading={racesLoading && races.length === 0}
                     format={formatCountPH}
                     skeletonWidthClass="w-6"
-                    skeletonHeightClass="h-3.5"
+                    skeletonHeightClass="h-4"
                   />
                 </span>
               </button>
@@ -769,7 +769,7 @@ export default function MyRaceEventsPanel({
             aria-hidden="true"
           />
 
-          <div className="min-h-11 lg:min-h-0 lg:h-8 px-2.5 rounded-lg bg-[var(--surface-inset)] border border-[var(--border-subtle)] inline-flex items-center gap-1.5 text-xs whitespace-nowrap">
+          <div className="min-h-11 lg:min-h-0 lg:h-8 px-3 rounded-lg bg-[var(--surface-inset)] border border-[var(--border-subtle)] inline-flex items-center gap-2 text-xs whitespace-nowrap">
             <Users2 className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
             <span className="text-[var(--text-secondary)]">Total Runners</span>
             <span className="font-mono font-semibold tabular-nums text-[var(--text-primary)]">
@@ -779,13 +779,13 @@ export default function MyRaceEventsPanel({
                   loading={(racesLoading && races.length === 0) || (runnersLoading && settledRaceIds.size === 0)}
                   format={formatCountPH}
                   skeletonWidthClass="w-10"
-                  skeletonHeightClass="h-3.5"
+                  skeletonHeightClass="h-4"
                 />
               ) : 'Restricted'}
             </span>
           </div>
 
-          <div className="min-h-11 lg:min-h-0 lg:h-8 px-2.5 rounded-lg bg-[var(--surface-inset)] border border-[var(--border-subtle)] inline-flex items-center gap-1.5 text-xs whitespace-nowrap">
+          <div className="min-h-11 lg:min-h-0 lg:h-8 px-3 rounded-lg bg-[var(--surface-inset)] border border-[var(--border-subtle)] inline-flex items-center gap-2 text-xs whitespace-nowrap">
             <Coins className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400 shrink-0" aria-hidden="true" />
             <span className="text-[var(--text-secondary)]">Est. Gross</span>
             <span className="font-mono font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
@@ -795,7 +795,7 @@ export default function MyRaceEventsPanel({
                   loading={(racesLoading && races.length === 0) || (runnersLoading && settledRaceIds.size === 0)}
                   format={formatCurrencyPH}
                   skeletonWidthClass="w-16"
-                  skeletonHeightClass="h-3.5"
+                  skeletonHeightClass="h-4"
                 />
               ) : 'Restricted'}
             </span>
@@ -804,8 +804,8 @@ export default function MyRaceEventsPanel({
 
         <div className="hidden xl:flex items-center gap-3 shrink-0 text-xs text-[var(--text-secondary)]">
           {runnersLoading && canViewRoster && (
-            <span className="inline-flex items-center gap-1.5 font-semibold" role="status" aria-live="polite">
-              <ValueSkeleton widthClass="w-8" heightClass="h-2.5" label="Syncing runner counts" />
+            <span className="inline-flex items-center gap-2 font-semibold" role="status" aria-live="polite">
+              <ValueSkeleton widthClass="w-8" heightClass="h-3" label="Syncing runner counts" />
               <span>Syncing rosters</span>
             </span>
           )}
@@ -835,7 +835,7 @@ export default function MyRaceEventsPanel({
                 {[0, 1, 2, 3].map((rowIndex) => (
                   <div
                     key={rowIndex}
-                    className="flex items-center justify-between gap-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)] px-3.5 py-3"
+                    className="flex items-center justify-between gap-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)] px-4 py-3"
                   >
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                       <ValueSkeleton widthClass="w-10 shrink-0" heightClass="h-10 rounded-lg" />
@@ -881,7 +881,7 @@ export default function MyRaceEventsPanel({
                   <button
                     type="button"
                     onClick={onCreateEvent}
-                    className="mt-4 min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center gap-1.5"
+                    className="mt-4 min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center gap-2"
                   >
                     <Plus className="w-4 h-4" aria-hidden="true" />
                     <span>Create First Event</span>
@@ -950,12 +950,12 @@ export default function MyRaceEventsPanel({
                                 e.stopPropagation();
                                 selectRace(row.race.id);
                               }}
-                              className="text-left text-base font-display font-semibold text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400"
+                              className="min-h-11 py-1 text-left text-base font-display font-semibold text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400"
                             >
                               {row.race.name}
                             </button>
                             <span
-                              className={`shrink-0 px-2 py-0.5 rounded-full border text-xs font-semibold ${
+                              className={`shrink-0 px-2 py-1 rounded-full border text-xs font-semibold ${
                                 row.completed
                                   ? 'bg-[var(--surface-inset)] text-[var(--text-secondary)] border-[var(--border-default)]'
                                   : 'bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700'
@@ -964,7 +964,7 @@ export default function MyRaceEventsPanel({
                               {row.completed ? 'Completed' : 'Upcoming'}
                             </span>
                           </div>
-                          <p className="text-xs font-mono text-[var(--text-secondary)] mt-0.5">
+                          <p className="text-xs font-mono text-[var(--text-secondary)] mt-1">
                             {row.race.date}
                           </p>
                         </div>
@@ -980,7 +980,7 @@ export default function MyRaceEventsPanel({
                                 loading={runnersLoading && !settledRaceIds.has(row.race.id)}
                                 format={formatCountPH}
                                 skeletonWidthClass="w-10"
-                                skeletonHeightClass="h-3.5"
+                                skeletonHeightClass="h-4"
                               />
                             ) : 'Restricted'}
                           </span>
@@ -994,7 +994,7 @@ export default function MyRaceEventsPanel({
                                 loading={runnersLoading && !settledRaceIds.has(row.race.id)}
                                 format={formatCurrencyPH}
                                 skeletonWidthClass="w-16"
-                                skeletonHeightClass="h-3.5"
+                                skeletonHeightClass="h-4"
                               />
                             ) : 'Restricted'}
                           </span>
@@ -1002,11 +1002,11 @@ export default function MyRaceEventsPanel({
                       </div>
 
                       {row.sortedDistances.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
+                        <div className="flex flex-wrap gap-2">
                           {row.sortedDistances.map((d) => (
                             <span
                               key={d.id}
-                              className="px-2 py-0.5 rounded border border-[var(--border-subtle)] bg-[var(--surface-inset)] text-xs font-mono font-semibold text-[var(--text-secondary)]"
+                              className="px-2 py-1 rounded border border-[var(--border-subtle)] bg-[var(--surface-inset)] text-xs font-mono font-semibold text-[var(--text-secondary)]"
                             >
                               {d.label}
                             </span>
@@ -1125,7 +1125,7 @@ export default function MyRaceEventsPanel({
                         }`}
                       >
                         <td className="py-2 pl-3 pr-3 align-middle max-w-[260px]">
-                          <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="flex items-center gap-3 min-w-0">
                             <div className="w-12 h-8 rounded border border-[var(--border-subtle)] bg-[var(--surface-inset)] overflow-hidden shrink-0 flex items-center justify-center">
                               {row.race.posterImage ? (
                                 <img
@@ -1150,11 +1150,11 @@ export default function MyRaceEventsPanel({
                                   selectRace(row.race.id);
                                 }}
                                 aria-pressed={isSelected}
-                                className="block w-full text-left font-display font-semibold text-sm leading-tight text-[var(--text-primary)] truncate hover:text-red-700 dark:hover:text-red-400 focus-visible:outline-none focus-visible:underline"
+                                className="flex items-center min-h-8 w-full text-left font-display font-semibold text-sm leading-tight text-[var(--text-primary)] truncate hover:text-red-700 dark:hover:text-red-400 focus-visible:outline-none focus-visible:underline"
                               >
-                                {row.race.name}
+                                <span className="truncate">{row.race.name}</span>
                               </button>
-                              <div className="text-xs text-[var(--text-secondary)] truncate leading-tight mt-0.5">
+                              <div className="text-xs text-[var(--text-secondary)] truncate leading-tight mt-1">
                                 {distSummary || 'No distances configured'}
                               </div>
                             </div>
@@ -1166,7 +1166,7 @@ export default function MyRaceEventsPanel({
                             {row.race.date}
                           </div>
                           <span
-                            className={`inline-flex items-center mt-0.5 px-1.5 py-px rounded border text-[11px] font-semibold leading-tight ${
+                            className={`inline-flex items-center mt-1 px-2 py-1 rounded border text-xs font-semibold leading-tight ${
                               row.completed
                                 ? 'bg-[var(--surface-inset)] text-[var(--text-secondary)] border-[var(--border-default)]'
                                 : 'bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700'
@@ -1229,7 +1229,7 @@ export default function MyRaceEventsPanel({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded-full border text-xs font-semibold ${
+                      className={`inline-flex items-center px-2 py-1 rounded-full border text-xs font-semibold ${
                         selectedEvent.completed
                           ? 'bg-[var(--surface-card)] text-[var(--text-secondary)] border-[var(--border-default)]'
                           : 'bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700'
@@ -1260,7 +1260,7 @@ export default function MyRaceEventsPanel({
                   >
                     <ChevronLeft className="w-4 h-4" aria-hidden="true" />
                   </button>
-                  <span className="px-1.5 font-mono text-xs font-semibold tabular-nums text-[var(--text-secondary)]">
+                  <span className="px-2 font-mono text-xs font-semibold tabular-nums text-[var(--text-secondary)]">
                     {selectedIndex + 1}/{filteredEvents.length}
                   </span>
                   <button
@@ -1295,7 +1295,7 @@ export default function MyRaceEventsPanel({
                         type="button"
                         onClick={() => setPosterLightboxRace(selectedEvent.race)}
                         aria-label={`Inspect full poster for ${selectedEvent.race.name}`}
-                        className="absolute top-2 right-2 min-h-11 lg:min-h-0 lg:h-8 px-2.5 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)]/95 hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-1 shadow-sm"
+                        className="absolute top-2 right-2 min-h-11 lg:min-h-0 lg:h-8 px-3 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)]/95 hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-1 shadow-sm"
                       >
                         <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />
                         <span>Full View</span>
@@ -1303,7 +1303,7 @@ export default function MyRaceEventsPanel({
                     </>
                   ) : (
                     <div className="text-center px-4">
-                      <Flag className="w-6 h-6 text-[var(--text-secondary)] mx-auto mb-1.5" aria-hidden="true" />
+                      <Flag className="w-6 h-6 text-[var(--text-secondary)] mx-auto mb-2" aria-hidden="true" />
                       <p className="text-xs font-semibold text-[var(--text-secondary)]">
                         No promotional poster uploaded for this event.
                       </p>
@@ -1359,7 +1359,7 @@ export default function MyRaceEventsPanel({
                 </div>
 
                 {/* Distance Category Breakdown */}
-                <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)]/60 p-3 space-y-2.5">
+                <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)]/60 p-3 space-y-3">
                   <div className="flex items-center justify-between">
                     <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                       Distance Category Breakdown
@@ -1391,7 +1391,7 @@ export default function MyRaceEventsPanel({
                                   {item.price > 0 ? formatCurrencyPH(item.price) : 'Free'}
                                 </span>
                               </div>
-                              <div className="flex items-center gap-2.5 font-mono tabular-nums shrink-0">
+                              <div className="flex items-center gap-3 font-mono tabular-nums shrink-0">
                                 <span className="font-semibold text-[var(--text-primary)]">
                                   {canViewRoster
                                     ? `${formatCountPH(item.runnerCount)} ${item.runnerCount === 1 ? 'runner' : 'runners'}`
@@ -1404,9 +1404,9 @@ export default function MyRaceEventsPanel({
                                 )}
                               </div>
                             </div>
-                            <div className="h-1.5 w-full rounded-full bg-[var(--surface-card)] overflow-hidden">
+                            <div className="h-2 w-full rounded-full bg-[var(--surface-card)] overflow-hidden">
                               <div
-                                className="h-full rounded-full bg-red-600 transition-all duration-200"
+                                className="h-full rounded-full bg-red-700 transition-all duration-200"
                                 style={{ width: `${canViewRoster ? pct : 0}%` }}
                               />
                             </div>
@@ -1431,7 +1431,7 @@ export default function MyRaceEventsPanel({
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                     Course &amp; Event Details
                   </h3>
-                  <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                  <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                     <dt className="text-[var(--text-secondary)]">Checkpoints</dt>
                     <dd className="text-right font-mono font-semibold tabular-nums text-[var(--text-primary)]">
                       {(selectedEvent.race.checkpoints || []).length}
@@ -1469,7 +1469,7 @@ export default function MyRaceEventsPanel({
                     <button
                       type="button"
                       onClick={() => handleLaunchTiming(selectedEvent.race.id)}
-                      className="min-h-11 px-3 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors col-span-2"
+                      className="min-h-11 px-3 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 transition-colors col-span-2"
                     >
                       <Timer className="w-4 h-4 shrink-0" aria-hidden="true" />
                       <span>Manage Timing</span>
@@ -1481,7 +1481,7 @@ export default function MyRaceEventsPanel({
                     <button
                       type="button"
                       onClick={() => handleLaunchEngraving(selectedEvent.race.id)}
-                      className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 transition-colors"
+                      className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 transition-colors"
                     >
                       <Award className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
                       <span>Engrave Queue</span>
@@ -1492,7 +1492,7 @@ export default function MyRaceEventsPanel({
                     <button
                       type="button"
                       onClick={() => handleLaunchRunners(selectedEvent.race.id)}
-                      className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 transition-colors"
+                      className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 transition-colors"
                     >
                       <Users className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
                       <span>Runner Roster</span>
@@ -1503,7 +1503,7 @@ export default function MyRaceEventsPanel({
                     <button
                       type="button"
                       onClick={() => handleLaunchSetup(selectedEvent.race.id)}
-                      className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 transition-colors"
+                      className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 transition-colors"
                     >
                       <Settings2 className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
                       <span>Race Setup</span>
@@ -1514,7 +1514,7 @@ export default function MyRaceEventsPanel({
                     <button
                       type="button"
                       onClick={() => handleLaunchLiveHub(selectedEvent.race.id)}
-                      className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 transition-colors"
+                      className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 transition-colors"
                     >
                       <Tv className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
                       <span>Live Hub</span>

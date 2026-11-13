@@ -959,7 +959,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
 
   // Desktop Header Left Context Switcher (Portaled next to RACEPULSEPH logo in App.tsx)
   const headerLeftMarkup = (
-    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+    <div className="flex items-center gap-3 min-w-0 flex-1">
       <span className="h-5 w-px bg-white/15 shrink-0" aria-hidden="true" />
       <div className="flex items-center gap-2 min-w-0">
         <Calendar className="w-3.5 h-3.5 text-red-400 shrink-0" aria-hidden="true" />
@@ -973,7 +973,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
             setSelectedRaceId(event.target.value);
             setRunnerSearch('');
           }}
-          className="h-9 min-w-[160px] max-w-[210px] xl:max-w-[300px] rounded-lg border border-white/15 bg-white/10 px-2.5 text-xs font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 truncate"
+          className="h-9 min-w-[160px] max-w-[210px] xl:max-w-[300px] rounded-lg border border-white/15 bg-white/10 px-3 text-xs font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 truncate"
         >
           <option value="" className="bg-[#141416] text-white">
             All Events (Global Queue)
@@ -990,7 +990,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
             onClick={() => setMasterView((prev) => (prev === 'roster' ? 'queue' : 'roster'))}
             aria-pressed={masterView === 'roster'}
             title={masterView === 'roster' ? 'Return to engraving queue' : 'View selected race roster'}
-            className={`hidden xl:inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-semibold transition-colors whitespace-nowrap ${
+            className={`hidden xl:inline-flex items-center gap-2 h-9 px-3 rounded-lg border text-xs font-semibold transition-colors whitespace-nowrap ${
               masterView === 'roster'
                 ? 'bg-red-700 text-white border-red-500/40'
                 : 'bg-white/10 text-zinc-200 border-white/15 hover:bg-white/15 hover:text-white'
@@ -1004,7 +1004,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
 
       {/* Static telemetry link status (no pulsing loops) */}
       <div
-        className="hidden xl:flex items-center gap-2 px-2.5 h-8 rounded-lg border border-white/10 bg-white/5 text-[11px] font-mono text-zinc-200 shrink-0"
+        className="hidden xl:flex items-center gap-2 px-3 h-8 rounded-lg border border-white/10 bg-white/5 text-xs font-mono text-zinc-200 shrink-0"
         title={
           isOnline
             ? lanConnected
@@ -1028,16 +1028,16 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
 
   // Desktop Header Right Action Cluster (Portaled beside Theme Toggle in App.tsx)
   const headerRightMarkup = (
-    <div className="flex items-center gap-1.5" role="toolbar" aria-label="Engraving command actions">
+    <div className="flex items-center gap-2" role="toolbar" aria-label="Engraving command actions">
       <button
         type="button"
         onClick={openQrModal}
         title="Scan runner QR ticket (Shortcut: Q)"
-        className="h-9 px-2.5 xl:px-3 rounded-lg bg-red-700 hover:bg-red-600 text-white border border-red-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
+        className="h-9 px-3 rounded-lg bg-red-700 hover:bg-red-600 text-white border border-red-500/30 text-xs font-semibold flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
       >
         <QrCode className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
         <span>Scan QR</span>
-        <kbd className="hidden xl:inline-flex items-center justify-center px-1.5 h-4 text-[10px] font-mono bg-black/30 rounded border border-white/20 text-white/90">
+        <kbd className="hidden xl:inline-flex items-center justify-center px-2 h-5 text-xs font-mono bg-black/30 rounded border border-white/20 text-white/90">
           Q
         </kbd>
       </button>
@@ -1047,11 +1047,11 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
         hidden={!can('engraving.export')}
         onClick={handleDownloadCSV}
         title="Export LightBurn Variable-Text CSV (Shortcut: E)"
-        className="h-9 px-2.5 rounded-lg border border-white/15 bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
+        className="h-9 px-3 rounded-lg border border-white/15 bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
       >
         <FileDown className="w-3.5 h-3.5 text-zinc-200 shrink-0" aria-hidden="true" />
         <span>CSV</span>
-        <kbd className="hidden xl:inline-flex items-center justify-center px-1.5 h-4 text-[10px] font-mono bg-black/30 rounded border border-white/15 text-zinc-200">
+        <kbd className="hidden xl:inline-flex items-center justify-center px-2 h-5 text-xs font-mono bg-black/30 rounded border border-white/15 text-zinc-200">
           E
         </kbd>
       </button>
@@ -1061,11 +1061,11 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
         hidden={!can('engraving.export')}
         onClick={openPdfModal}
         title="Generate PDF report (Shortcut: P)"
-        className="h-9 px-2.5 rounded-lg border border-white/15 bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
+        className="h-9 px-3 rounded-lg border border-white/15 bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
       >
         <FileText className="w-3.5 h-3.5 text-red-400 shrink-0" aria-hidden="true" />
         <span>PDF</span>
-        <kbd className="hidden xl:inline-flex items-center justify-center px-1.5 h-4 text-[10px] font-mono bg-black/30 rounded border border-white/15 text-zinc-200">
+        <kbd className="hidden xl:inline-flex items-center justify-center px-2 h-5 text-xs font-mono bg-black/30 rounded border border-white/15 text-zinc-200">
           P
         </kbd>
       </button>
@@ -1075,7 +1075,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
         onClick={toggleBuzzer}
         aria-pressed={soundEnabled}
         title="Toggle new-order buzzer sound (Shortcut: B)"
-        className={`h-9 px-2.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap ${
+        className={`h-9 px-3 rounded-lg border text-xs font-semibold flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap ${
           soundEnabled
             ? 'bg-emerald-700/80 border-emerald-500/40 text-white'
             : 'bg-white/10 border-white/15 text-zinc-200 hover:bg-white/15 hover:text-white'
@@ -1087,7 +1087,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
           <VolumeX className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
         )}
         <span className="hidden xl:inline">{soundEnabled ? 'Buzzer On' : 'Buzzer'}</span>
-        <kbd className="hidden xl:inline-flex items-center justify-center px-1.5 h-4 text-[10px] font-mono bg-black/30 rounded border border-white/15 text-zinc-200">
+        <kbd className="hidden xl:inline-flex items-center justify-center px-2 h-5 text-xs font-mono bg-black/30 rounded border border-white/15 text-zinc-200">
           B
         </kbd>
       </button>
@@ -1097,11 +1097,11 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
         hidden={!can('engraving.backup')}
         onClick={openBackupModal}
         title="Offline JSON backup & dual-laptop sync (Shortcut: O)"
-        className="h-9 px-2.5 rounded-lg border border-white/15 bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
+        className="h-9 px-3 rounded-lg border border-white/15 bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
       >
         <DownloadCloud className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />
         <span className="hidden xl:inline">Offline</span>
-        <kbd className="hidden xl:inline-flex items-center justify-center px-1.5 h-4 text-[10px] font-mono bg-black/30 rounded border border-white/15 text-zinc-200">
+        <kbd className="hidden xl:inline-flex items-center justify-center px-2 h-5 text-xs font-mono bg-black/30 rounded border border-white/15 text-zinc-200">
           O
         </kbd>
       </button>
@@ -1114,7 +1114,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
           aria-expanded={showConfigPopover}
           aria-haspopup="dialog"
           title="Station configuration and medal pricing"
-          className={`h-9 px-2.5 rounded-lg border text-xs font-semibold font-mono flex items-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap ${
+          className={`h-9 px-3 rounded-lg border text-xs font-semibold font-mono flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap ${
             showConfigPopover
               ? 'bg-white/20 border-white/30 text-white'
               : 'bg-white/10 border-white/15 text-zinc-100 hover:bg-white/15'
@@ -1139,7 +1139,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                 type="button"
                 onClick={() => setShowConfigPopover(false)}
                 aria-label="Close station config"
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
+                className="w-11 h-11 lg:w-8 lg:h-8 rounded-lg flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
               >
                 <X className="w-4 h-4" aria-hidden="true" />
               </button>
@@ -1148,11 +1148,11 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
             <div>
               <label
                 htmlFor="pricing_per_medal_input"
-                className="block text-xs font-semibold text-[var(--text-primary)] mb-1.5"
+                className="block text-xs font-semibold text-[var(--text-primary)] mb-2"
               >
                 Setup Pricing (PHP per medal)
               </label>
-              <div className="flex items-center gap-2 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 h-10 focus-within:ring-2 focus-within:ring-red-600 dark:focus-within:ring-red-400">
+              <div className="flex items-center gap-2 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 min-h-11 lg:min-h-10 focus-within:ring-2 focus-within:ring-red-600 dark:focus-within:ring-red-400">
                 <span className="text-sm font-mono font-semibold text-red-700 dark:text-red-400">₱</span>
                 <input
                   id="pricing_per_medal_input"
@@ -1173,15 +1173,15 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
             </div>
 
             {Object.keys(stats.byDistance).length > 0 && (
-              <div className="border-t border-[var(--border-subtle)] pt-3 space-y-1.5">
+              <div className="border-t border-[var(--border-subtle)] pt-3 space-y-2">
                 <span className="block text-xs font-semibold text-[var(--text-secondary)]">
                   Distance Breakdown
                 </span>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="flex flex-wrap gap-2">
                   {Object.entries(stats.byDistance).map(([distName, distCount]) => (
                     <span
                       key={distName}
-                      className="inline-flex items-center gap-1 rounded-md border border-[var(--border-default)] bg-[var(--surface-inset)] px-2 py-0.5 text-xs font-mono text-[var(--text-primary)]"
+                      className="inline-flex items-center gap-1 rounded-md border border-[var(--border-default)] bg-[var(--surface-inset)] px-2 py-1 text-xs font-mono text-[var(--text-primary)]"
                     >
                       <span>{distName}</span>
                       <span className="font-semibold text-red-700 dark:text-red-400">{distCount}</span>
@@ -1199,7 +1199,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                   setShowConfigPopover(false);
                   setShowLightBurnModal(true);
                 }}
-                className="w-full min-h-10 px-3 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] flex items-center justify-between"
+                className="w-full min-h-11 lg:min-h-10 px-3 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] flex items-center justify-between"
               >
                 <span className="flex items-center gap-2">
                   <HelpCircle className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" />
@@ -1212,7 +1212,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                 type="button"
                 hidden={!authority}
                 onClick={handlePurgeDatabase}
-                className="w-full min-h-10 px-3 rounded-lg border border-red-600/30 bg-red-600/10 hover:bg-red-700 hover:text-white text-xs font-semibold text-red-700 dark:text-red-400 flex items-center gap-2 transition-colors"
+                className="w-full min-h-11 lg:min-h-10 px-3 rounded-lg border border-red-600/30 bg-red-600/10 hover:bg-red-700 hover:text-white text-xs font-semibold text-red-700 dark:text-red-400 flex items-center gap-2 transition-colors"
               >
                 <Trash2 className="w-4 h-4 shrink-0" aria-hidden="true" />
                 <span>Purge Queue Database...</span>
@@ -1239,8 +1239,8 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
   const renderPrimaryStatusButton = (order: EngravingOrder, compact = false) => {
     if (!can('engraving.status')) return null;
     const baseClass = compact
-      ? 'h-8 px-2.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-colors whitespace-nowrap'
-      : 'flex-1 min-h-11 px-4 rounded-xl text-xs font-semibold uppercase tracking-wider inline-flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap';
+      ? 'min-h-11 lg:min-h-8 px-3 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-colors whitespace-nowrap'
+      : 'flex-1 min-h-11 px-4 rounded-xl text-xs font-semibold uppercase tracking-wider inline-flex items-center justify-center gap-2 transition-colors whitespace-nowrap';
 
     if (order.status === 'queued') {
       return (
@@ -1367,7 +1367,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
               <button
                 type="button"
                 onClick={openQrModal}
-                className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5"
+                className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold uppercase tracking-wider flex items-center gap-2"
               >
                 <QrCode className="w-4 h-4" aria-hidden="true" /> Scan QR
               </button>
@@ -1403,7 +1403,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                 type="button"
                 hidden={!can('engraving.export')}
                 onClick={handleDownloadCSV}
-                className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)] flex items-center gap-1.5"
+                className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)] flex items-center gap-2"
               >
                 <FileDown className="w-3.5 h-3.5" aria-hidden="true" /> Export CSV
               </button>
@@ -1411,7 +1411,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                 type="button"
                 hidden={!can('engraving.export')}
                 onClick={openPdfModal}
-                className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)] flex items-center gap-1.5"
+                className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)] flex items-center gap-2"
               >
                 <FileText className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" /> PDF
               </button>
@@ -1419,7 +1419,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                 type="button"
                 onClick={toggleBuzzer}
                 aria-pressed={soundEnabled}
-                className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)] flex items-center gap-1.5"
+                className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)] flex items-center gap-2"
               >
                 {soundEnabled ? <Volume2 className="w-3.5 h-3.5" aria-hidden="true" /> : <VolumeX className="w-3.5 h-3.5" aria-hidden="true" />}
                 {soundEnabled ? 'Buzzer On' : 'Buzzer Off'}
@@ -1428,11 +1428,11 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                 type="button"
                 hidden={!can('engraving.backup')}
                 onClick={openBackupModal}
-                className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)] flex items-center gap-1.5"
+                className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)] flex items-center gap-2"
               >
                 <DownloadCloud className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" aria-hidden="true" /> Offline
               </button>
-              <div className="flex items-center gap-1.5 ml-auto">
+              <div className="flex items-center gap-2 ml-auto">
                 <label htmlFor="mobile_price_input" className="text-xs font-semibold text-[var(--text-secondary)]">
                   ₱
                 </label>
@@ -1446,7 +1446,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                     const val = parseFloat(e.target.value);
                     handlePriceChange(Number.isNaN(val) ? 0 : val);
                   }}
-                  className="w-20 min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 text-sm font-mono font-semibold text-[var(--text-primary)]"
+                  className="w-20 min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-sm font-mono font-semibold text-[var(--text-primary)]"
                 />
               </div>
             </div>
@@ -1468,7 +1468,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
             type="button"
             onClick={() => setNewOrderAlert(null)}
             aria-label="Dismiss new order alert"
-            className="p-1 rounded hover:bg-black/20"
+            className="min-h-11 min-w-11 lg:min-h-8 lg:min-w-8 flex items-center justify-center rounded hover:bg-black/20"
           >
             <X className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
@@ -1481,7 +1481,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
         aria-label="Engraving queue telemetry"
         className="shrink-0 border border-[var(--border-default)] lg:border-x-0 lg:border-t-0 rounded-2xl lg:rounded-none bg-[var(--surface-card)] mb-2 lg:mb-0 lg:h-12 px-3 sm:px-4 py-2 lg:py-0 flex flex-wrap lg:flex-nowrap items-center justify-between gap-2 lg:gap-4 lg:overflow-x-auto"
       >
-        <div className="flex flex-wrap lg:flex-nowrap items-center gap-1.5 sm:gap-2 min-w-0">
+        <div className="flex flex-wrap lg:flex-nowrap items-center gap-2 min-w-0">
           {telemetryItems.map((item) => {
             const active = masterView === 'queue' && statusFilter === item.key;
             return (
@@ -1493,7 +1493,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                   setStatusFilter(item.key);
                 }}
                 aria-pressed={active}
-                className={`h-8 px-2.5 rounded-lg border text-xs font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+                className={`min-h-11 lg:min-h-8 lg:h-8 px-3 rounded-lg border text-xs font-semibold inline-flex items-center gap-2 transition-colors whitespace-nowrap ${
                   active
                     ? 'border-red-600 bg-red-50 dark:bg-red-950/40 text-[var(--text-primary)]'
                     : 'border-transparent hover:border-[var(--border-subtle)] hover:bg-[var(--surface-hover)] text-[var(--text-secondary)]'
@@ -1505,7 +1505,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                     value={item.value}
                     loading={loading}
                     skeletonWidthClass="w-6"
-                    skeletonHeightClass="h-3.5"
+                    skeletonHeightClass="h-4"
                   />
                 </span>
               </button>
@@ -1515,7 +1515,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
           <span className="hidden lg:block h-4 w-px bg-[var(--border-subtle)] mx-1 shrink-0" aria-hidden="true" />
 
           {/* Read-only Revenue Summary */}
-          <div className="h-8 px-2.5 rounded-lg bg-[var(--surface-inset)] border border-[var(--border-subtle)] inline-flex items-center gap-2 text-xs whitespace-nowrap">
+          <div className="h-8 px-3 rounded-lg bg-[var(--surface-inset)] border border-[var(--border-subtle)] inline-flex items-center gap-2 text-xs whitespace-nowrap">
             <span className="text-[var(--text-secondary)]">Earned</span>
             <span className="font-mono font-semibold text-emerald-700 dark:text-emerald-400">
               <AnimatedMetricValue
@@ -1523,7 +1523,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                 loading={loading}
                 format={(v) => `₱${v.toLocaleString()}`}
                 skeletonWidthClass="w-14"
-                skeletonHeightClass="h-3.5"
+                skeletonHeightClass="h-4"
               />
             </span>
             <span className="text-[var(--text-secondary)] hidden sm:inline font-mono">
@@ -1532,7 +1532,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                 loading={loading}
                 format={(v) => `₱${v.toLocaleString()} pot.`}
                 skeletonWidthClass="w-16"
-                skeletonHeightClass="h-3.5"
+                skeletonHeightClass="h-4"
               />
             </span>
           </div>
@@ -1542,13 +1542,13 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
         {distanceEntries.length > 0 && (
           <div
             aria-label="Orders by race distance"
-            className="hidden xl:flex items-center gap-1.5 shrink-0 text-xs font-mono text-[var(--text-secondary)]"
+            className="hidden xl:flex items-center gap-2 shrink-0 text-xs font-mono text-[var(--text-secondary)]"
           >
             <BarChart2 className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
             {distanceEntries.slice(0, 4).map(([distName, distCount]) => (
               <span
                 key={distName}
-                className="px-2 py-0.5 rounded border border-[var(--border-subtle)] bg-[var(--surface-inset)] text-[var(--text-primary)]"
+                className="px-2 py-1 rounded border border-[var(--border-subtle)] bg-[var(--surface-inset)] text-[var(--text-primary)]"
               >
                 {distName} {distCount}
               </span>
@@ -1557,7 +1557,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
               <button
                 type="button"
                 onClick={() => setShowConfigPopover(true)}
-                className="px-1.5 py-0.5 rounded hover:bg-[var(--surface-hover)] text-xs font-semibold text-red-700 dark:text-red-400"
+                className="min-h-8 px-2 py-1 rounded hover:bg-[var(--surface-hover)] text-xs font-semibold text-red-700 dark:text-red-400"
               >
                 +{distanceEntries.length - 4}
               </button>
@@ -1574,20 +1574,20 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
           className="flex flex-col min-h-0 lg:h-full bg-[var(--surface-page)] rounded-2xl lg:rounded-none border border-[var(--border-default)] lg:border-y-0 lg:border-l-0 lg:border-r overflow-hidden"
         >
           {/* Compact Queue Toolbar */}
-          <div className="shrink-0 px-3 sm:px-4 py-2.5 border-b border-[var(--border-default)] bg-[var(--surface-card)] flex flex-col xl:flex-row xl:items-center xl:justify-between gap-2.5">
+          <div className="shrink-0 px-3 sm:px-4 py-3 border-b border-[var(--border-default)] bg-[var(--surface-card)] flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 min-w-0 xl:flex-1">
               {/* View Switcher: Order Queue vs Event Roster */}
               <div
                 role="tablist"
                 aria-label="Master list view"
-                className="inline-flex self-start rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] p-0.5 shrink-0"
+                className="inline-flex self-start rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] p-1 shrink-0"
               >
                 <button
                   type="button"
                   role="tab"
                   aria-selected={masterView === 'queue'}
                   onClick={() => setMasterView('queue')}
-                  className={`min-h-11 sm:min-h-9 lg:h-8 px-3 sm:px-2.5 rounded-md text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${
+                  className={`min-h-11 lg:min-h-8 lg:h-8 px-3 rounded-md text-xs font-semibold inline-flex items-center gap-2 transition-colors ${
                     masterView === 'queue'
                       ? 'bg-red-700 text-white'
                       : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
@@ -1601,7 +1601,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                   role="tab"
                   aria-selected={masterView === 'roster'}
                   onClick={() => setMasterView('roster')}
-                  className={`min-h-11 sm:min-h-9 lg:h-8 px-3 sm:px-2.5 rounded-md text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${
+                  className={`min-h-11 lg:min-h-8 lg:h-8 px-3 rounded-md text-xs font-semibold inline-flex items-center gap-2 transition-colors ${
                     masterView === 'roster'
                       ? 'bg-red-700 text-white'
                       : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
@@ -1636,7 +1636,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                       ? setSearchTerm(e.target.value)
                       : setRunnerSearch(e.target.value)
                   }
-                  className="w-full h-11 sm:h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] pl-8 pr-8 text-xs font-semibold text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400"
+                  className="w-full h-11 lg:h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] pl-8 pr-11 text-xs font-semibold text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400"
                 />
                 {(masterView === 'queue' ? searchTerm : runnerSearch) && (
                   <button
@@ -1645,7 +1645,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                       masterView === 'queue' ? setSearchTerm('') : setRunnerSearch('')
                     }
                     aria-label="Clear search"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 w-10 h-10 lg:w-8 lg:h-8 flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                   >
                     <X className="w-3.5 h-3.5" aria-hidden="true" />
                   </button>
@@ -1655,7 +1655,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
 
             {/* Status Filter Pills (Queue Mode) */}
             {masterView === 'queue' && (
-              <div className="flex items-center gap-1.5 overflow-x-auto racepulse-horizontal-scroll touch-pan-x max-w-full shrink-0 py-0.5" role="group" aria-label="Filter queue by status">
+              <div className="flex items-center gap-2 overflow-x-auto racepulse-horizontal-scroll touch-pan-x max-w-full shrink-0 py-1" role="group" aria-label="Filter queue by status">
                 {(['all', 'queued', 'inprogress', 'ready', 'completed'] as const).map((filterOpt) => {
                   const active = statusFilter === filterOpt;
                   const count =
@@ -1677,7 +1677,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                       type="button"
                       onClick={() => setStatusFilter(filterOpt)}
                       aria-pressed={active}
-                      className={`min-h-11 sm:min-h-9 lg:h-8 px-3 sm:px-2.5 rounded-lg border text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
+                      className={`min-h-11 lg:min-h-8 lg:h-8 px-3 rounded-lg border text-xs font-semibold inline-flex items-center gap-2 whitespace-nowrap shrink-0 transition-colors ${
                         active
                           ? 'bg-red-700 border-red-700 text-white'
                           : 'bg-[var(--surface-inset)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
@@ -1685,7 +1685,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                     >
                       <span>{label}</span>
                       <span
-                        className={`font-mono text-[11px] ${
+                        className={`font-mono text-xs ${
                           active ? 'text-white/90' : 'text-[var(--text-primary)]'
                         }`}
                       >
@@ -1693,7 +1693,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                           value={count}
                           loading={loading}
                           skeletonWidthClass="w-5"
-                          skeletonHeightClass="h-3"
+                          skeletonHeightClass="h-4"
                         />
                       </span>
                     </button>
@@ -1717,9 +1717,9 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                   </p>
                 </div>
               ) : eventRunnersLoading ? (
-                <div role="status" aria-label="Loading event roster" className="p-4 space-y-2.5">
+                <div role="status" aria-label="Loading event roster" className="p-4 space-y-3">
                   {[0, 1, 2, 3].map((idx) => (
-                    <div key={idx} className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-2.5">
+                    <div key={idx} className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-3">
                       <ValueSkeleton widthClass="w-40" heightClass="h-4" />
                       <ValueSkeleton widthClass="w-16" heightClass="h-4" />
                     </div>
@@ -1748,7 +1748,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                     <button
                       type="button"
                       onClick={() => setRunnerSearch('')}
-                      className="mt-3 h-9 px-3 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]"
+                      className="mt-3 min-h-11 px-4 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]"
                     >
                       Clear search
                     </button>
@@ -1758,11 +1758,11 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                 <table className="w-full text-left border-collapse">
                   <thead className="sticky top-0 z-10 bg-[var(--surface-inset)] border-b border-[var(--border-default)] text-xs font-semibold text-[var(--text-secondary)]">
                     <tr>
-                      <th className="py-2.5 px-4">Bib #</th>
-                      <th className="py-2.5 px-4">Runner Name</th>
-                      <th className="py-2.5 px-4">Distance</th>
-                      <th className="py-2.5 px-4">Category</th>
-                      <th className="py-2.5 px-4 text-right">Copy</th>
+                      <th className="py-3 px-4">Bib #</th>
+                      <th className="py-3 px-4">Runner Name</th>
+                      <th className="py-3 px-4">Distance</th>
+                      <th className="py-3 px-4">Category</th>
+                      <th className="py-3 px-4 text-right">Copy</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--border-subtle)] text-sm">
@@ -1770,19 +1770,19 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                       const isCopied = copiedStates[`runner_${runner.uid}`];
                       return (
                         <tr key={runner.uid} className="hover:bg-[var(--surface-hover)]/60">
-                          <td className="py-2.5 px-4 font-mono font-semibold text-red-700 dark:text-red-400 whitespace-nowrap">
+                          <td className="py-3 px-4 font-mono font-semibold text-red-700 dark:text-red-400 whitespace-nowrap">
                             #{runner.bibNumber}
                           </td>
-                          <td className="py-2.5 px-4 font-semibold text-[var(--text-primary)]">
+                          <td className="py-3 px-4 font-semibold text-[var(--text-primary)]">
                             {runner.fullName || 'Free runner slot'}
                           </td>
-                          <td className="py-2.5 px-4 text-xs font-semibold text-[var(--text-secondary)] whitespace-nowrap">
+                          <td className="py-3 px-4 text-xs font-semibold text-[var(--text-secondary)] whitespace-nowrap">
                             {runner.distance}
                           </td>
-                          <td className="py-2.5 px-4 text-xs text-[var(--text-secondary)] uppercase">
+                          <td className="py-3 px-4 text-xs text-[var(--text-secondary)] uppercase">
                             {runner.entryCategory || 'solo'}
                           </td>
-                          <td className="py-2.5 px-4 text-right">
+                          <td className="py-3 px-4 text-right">
                             <button
                               type="button"
                               onClick={() =>
@@ -1792,7 +1792,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                                 )
                               }
                               aria-label={`Copy ${runner.fullName} details`}
-                              className="h-8 px-2.5 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-1"
+                              className="min-h-11 lg:min-h-8 px-3 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-1"
                             >
                               {isCopied ? (
                                 <>
@@ -1828,7 +1828,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                 <button
                   type="button"
                   onClick={openQrModal}
-                  className="mt-3 h-9 px-3 rounded-lg bg-red-700 text-white text-xs font-semibold"
+                  className="mt-3 min-h-11 px-4 rounded-lg bg-red-700 text-white text-xs font-semibold"
                 >
                   Scan offline QR ticket
                 </button>
@@ -1851,7 +1851,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                       setSearchTerm('');
                       setStatusFilter('all');
                     }}
-                    className="mt-3 h-9 px-3 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]"
+                    className="mt-3 min-h-11 px-4 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]"
                   >
                     Reset filters
                   </button>
@@ -1880,12 +1880,12 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                             e.stopPropagation();
                             setDoubleCheckCode(order.id);
                           }}
-                          className="font-mono text-sm font-semibold px-2.5 py-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] text-red-700 dark:text-red-400"
+                          className="min-h-11 font-mono text-sm font-semibold px-3 py-2 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] text-red-700 dark:text-red-400"
                         >
                           {order.id}
                         </button>
                         <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-xs font-semibold ${meta.badgeClass}`}
+                          className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border text-xs font-semibold ${meta.badgeClass}`}
                         >
                           <StatusIcon status={order.status} />
                           <span>{meta.label}</span>
@@ -1896,7 +1896,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                         <p className="text-base font-display font-semibold text-[var(--text-primary)]">
                           {order.runnerName}
                         </p>
-                        <p className="text-xs text-[var(--text-secondary)] mt-0.5 font-mono">
+                        <p className="text-xs text-[var(--text-secondary)] mt-1 font-mono">
                           Bib #{order.bibNumber} · {order.distance} · {formatRaceTime(order.finishingTime)}
                         </p>
                         {order.customInscription && (
@@ -1942,12 +1942,12 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
               <table id="orders_cards_list" className="w-full text-left border-collapse">
                 <thead className="sticky top-0 z-10 bg-[var(--surface-inset)] border-b border-[var(--border-default)] text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                   <tr>
-                    <th className="py-2.5 pl-4 pr-2 w-24">Code</th>
-                    <th className="py-2.5 px-3">Runner &amp; Inscription</th>
-                    <th className="py-2.5 px-3 w-36">Bib / Dist</th>
-                    <th className="py-2.5 px-3 w-40">Finish Time</th>
-                    <th className="py-2.5 px-3 w-32">Status</th>
-                    <th className="py-2.5 pl-3 pr-4 text-right w-56">Actions</th>
+                    <th className="py-3 pl-4 pr-2 w-24">Code</th>
+                    <th className="py-3 px-3">Runner &amp; Inscription</th>
+                    <th className="py-3 px-3 w-36">Bib / Dist</th>
+                    <th className="py-3 px-3 w-40">Finish Time</th>
+                    <th className="py-3 px-3 w-32">Status</th>
+                    <th className="py-3 pl-3 pr-4 text-right w-56">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border-subtle)] text-sm">
@@ -1969,7 +1969,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                               }`
                         }`}
                       >
-                        <td className="py-2.5 pl-3 pr-2 align-middle">
+                        <td className="py-3 pl-3 pr-2 align-middle">
                           <button
                             type="button"
                             onClick={(e) => {
@@ -1977,7 +1977,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                               setDoubleCheckCode(order.id);
                             }}
                             aria-label={`Inspect order ${order.id} for ${order.runnerName}`}
-                            className={`px-2 py-1 rounded-md font-mono text-xs font-semibold border transition-colors ${
+                            className={`min-h-8 px-2 py-1 rounded-md font-mono text-xs font-semibold border transition-colors ${
                               isSelected
                                 ? 'bg-red-700 text-white border-red-700'
                                 : 'bg-[var(--surface-card)] text-red-700 dark:text-red-400 border-[var(--border-default)] hover:border-red-600'
@@ -1987,12 +1987,12 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                           </button>
                         </td>
 
-                        <td className="py-2.5 px-3 align-middle max-w-[260px]">
+                        <td className="py-3 px-3 align-middle max-w-[260px]">
                           <div className="font-display font-semibold text-[var(--text-primary)] truncate">
                             {order.runnerName}
                           </div>
                           {(order.customInscription || order.rank) && (
-                            <div className="text-xs text-[var(--text-secondary)] truncate mt-0.5">
+                            <div className="text-xs text-[var(--text-secondary)] truncate mt-1">
                               {order.rank ? `${order.rank}` : ''}
                               {order.rank && order.customInscription ? ' · ' : ''}
                               {order.customInscription ? `"${order.customInscription}"` : ''}
@@ -2000,17 +2000,17 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                           )}
                         </td>
 
-                        <td className="py-2.5 px-3 align-middle whitespace-nowrap">
+                        <td className="py-3 px-3 align-middle whitespace-nowrap">
                           <span className="font-mono font-semibold text-[var(--text-primary)]">
                             #{order.bibNumber}
                           </span>
-                          <span className="text-xs text-[var(--text-secondary)] ml-1.5">
+                          <span className="text-xs text-[var(--text-secondary)] ml-2">
                             {order.distance}
                           </span>
                         </td>
 
-                        <td className="py-2.5 px-3 align-middle whitespace-nowrap">
-                          <div className="inline-flex items-center gap-1.5">
+                        <td className="py-3 px-3 align-middle whitespace-nowrap">
+                          <div className="inline-flex items-center gap-2">
                             <span className="font-mono text-xs font-semibold text-[var(--text-primary)]">
                               {formatRaceTime(order.finishingTime)}
                             </span>
@@ -2022,7 +2022,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                               }}
                               aria-label={`Copy finish time for ${order.runnerName}`}
                               title="Copy finish time"
-                              className="p-1 rounded border border-transparent hover:border-[var(--border-default)] hover:bg-[var(--surface-card)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                              className="w-8 h-8 flex items-center justify-center rounded border border-transparent hover:border-[var(--border-default)] hover:bg-[var(--surface-card)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                             >
                               {isTimeCopied ? (
                                 <Check className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
@@ -2033,17 +2033,17 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                           </div>
                         </td>
 
-                        <td className="py-2.5 px-3 align-middle whitespace-nowrap">
+                        <td className="py-3 px-3 align-middle whitespace-nowrap">
                           <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-semibold ${meta.badgeClass}`}
+                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full border text-xs font-semibold ${meta.badgeClass}`}
                           >
                             <StatusIcon status={order.status} />
                             <span>{meta.label}</span>
                           </span>
                         </td>
 
-                        <td className="py-2.5 pl-3 pr-4 align-middle text-right whitespace-nowrap">
-                          <div className="inline-flex items-center justify-end gap-1.5">
+                        <td className="py-3 pl-3 pr-4 align-middle text-right whitespace-nowrap">
+                          <div className="inline-flex items-center justify-end gap-2">
                             {renderPrimaryStatusButton(order, true)}
 
                             <button
@@ -2099,7 +2099,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
           className="flex flex-col min-h-0 lg:h-full bg-[var(--surface-card)] rounded-2xl lg:rounded-none border lg:border-0 border-[var(--border-default)] overflow-hidden"
         >
           {/* Dock Header + Ref Code Lookup */}
-          <div className="shrink-0 px-4 py-3 border-b border-[var(--border-default)] bg-[var(--surface-inset)]/60 space-y-2.5">
+          <div className="shrink-0 px-4 py-3 border-b border-[var(--border-default)] bg-[var(--surface-inset)]/60 space-y-3">
             <div className="flex items-center justify-between gap-2">
               <div>
                 <h2 className="text-sm font-display font-semibold uppercase tracking-wide text-[var(--text-primary)]">
@@ -2117,7 +2117,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                   disabled={filteredOrders.length === 0}
                   aria-label="Previous queue order"
                   title="Previous order in queue"
-                  className="w-8 h-8 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center disabled:opacity-40"
+                  className="w-11 h-11 lg:w-8 lg:h-8 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center disabled:opacity-40"
                 >
                   <ChevronLeft className="w-4 h-4" aria-hidden="true" />
                 </button>
@@ -2127,7 +2127,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                   disabled={filteredOrders.length === 0}
                   aria-label="Next queue order"
                   title="Next order in queue"
-                  className="w-8 h-8 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center disabled:opacity-40"
+                  className="w-11 h-11 lg:w-8 lg:h-8 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center disabled:opacity-40"
                 >
                   <ChevronRight className="w-4 h-4" aria-hidden="true" />
                 </button>
@@ -2146,14 +2146,14 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                 maxLength={16}
                 value={doubleCheckCode}
                 onChange={(e) => setDoubleCheckCode(e.target.value.toUpperCase())}
-                className="w-full h-10 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3.5 pr-9 text-sm font-mono font-semibold tracking-widest text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400"
+                className="w-full min-h-11 lg:min-h-10 lg:h-10 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-4 pr-11 text-sm font-mono font-semibold tracking-widest text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400"
               />
               {doubleCheckCode && (
                 <button
                   type="button"
                   onClick={() => setDoubleCheckCode('')}
                   aria-label="Clear verification code"
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 w-11 h-11 lg:w-8 lg:h-8 flex items-center justify-center rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                 >
                   <X className="w-4 h-4" aria-hidden="true" />
                 </button>
@@ -2176,7 +2176,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                     </span>
                   </div>
                   <span
-                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold ${
+                    className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-semibold ${
                       STATUS_META[foundDoubleCheckOrder.status].badgeClass
                     }`}
                   >
@@ -2186,7 +2186,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                 </div>
 
                 {/* Grand-Font Verification Fields */}
-                <div className="space-y-2.5">
+                <div className="space-y-3">
                   {/* 1. Runner Full Name (untruncated for spelling verification) */}
                   <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3 flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
@@ -2202,7 +2202,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                       onClick={() => handleCopyText('lookup_name', foundDoubleCheckOrder.runnerName)}
                       aria-label="Copy runner full name"
                       title="Copy Name"
-                      className="shrink-0 w-10 h-10 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center"
+                      className="shrink-0 w-11 h-11 lg:w-10 lg:h-10 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center"
                     >
                       {copiedStates['lookup_name'] ? (
                         <Check className="w-4 h-4 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
@@ -2218,7 +2218,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                       <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                         2. Finishing Time
                       </span>
-                      <p className="text-xl xl:text-2xl font-mono font-semibold text-red-700 dark:text-red-400 mt-0.5 tabular-nums">
+                      <p className="text-xl xl:text-2xl font-mono font-semibold text-red-700 dark:text-red-400 mt-1 tabular-nums">
                         {formatRaceTime(foundDoubleCheckOrder.finishingTime)}
                       </p>
                     </div>
@@ -2232,7 +2232,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                       }
                       aria-label="Copy finishing time"
                       title="Copy Time"
-                      className="shrink-0 w-10 h-10 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center"
+                      className="shrink-0 w-11 h-11 lg:w-10 lg:h-10 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center"
                     >
                       {copiedStates['lookup_time'] ? (
                         <Check className="w-4 h-4 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
@@ -2243,13 +2243,13 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                   </div>
 
                   {/* 3. Bib Number & Distance */}
-                  <div className="grid grid-cols-2 gap-2.5">
+                  <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3 flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                           3. Bib
                         </span>
-                        <p className="text-lg font-mono font-semibold text-[var(--text-primary)] truncate mt-0.5">
+                        <p className="text-lg font-mono font-semibold text-[var(--text-primary)] truncate mt-1">
                           #{foundDoubleCheckOrder.bibNumber}
                         </p>
                       </div>
@@ -2258,7 +2258,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                         onClick={() => handleCopyText('lookup_bib', foundDoubleCheckOrder.bibNumber)}
                         aria-label="Copy bib number"
                         title="Copy Bib"
-                        className="shrink-0 w-9 h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center"
+                        className="shrink-0 w-11 h-11 lg:w-9 lg:h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center"
                       >
                         {copiedStates['lookup_bib'] ? (
                           <Check className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
@@ -2273,7 +2273,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                         <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                           Distance
                         </span>
-                        <p className="text-lg font-display font-semibold text-[var(--text-primary)] truncate mt-0.5">
+                        <p className="text-lg font-display font-semibold text-[var(--text-primary)] truncate mt-1">
                           {foundDoubleCheckOrder.distance}
                         </p>
                       </div>
@@ -2282,7 +2282,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                         onClick={() => handleCopyText('lookup_dist', foundDoubleCheckOrder.distance)}
                         aria-label="Copy distance"
                         title="Copy Distance"
-                        className="shrink-0 w-9 h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center"
+                        className="shrink-0 w-11 h-11 lg:w-9 lg:h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center"
                       >
                         {copiedStates['lookup_dist'] ? (
                           <Check className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
@@ -2299,7 +2299,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                       <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                         4. Official Rank
                       </span>
-                      <p className="text-base font-semibold text-[var(--text-primary)] mt-0.5">
+                      <p className="text-base font-semibold text-[var(--text-primary)] mt-1">
                         {foundDoubleCheckOrder.rank || 'Not ranked'}
                       </p>
                     </div>
@@ -2309,7 +2309,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                         onClick={() => handleCopyText('lookup_rank', foundDoubleCheckOrder.rank!)}
                         aria-label="Copy official rank"
                         title="Copy Rank"
-                        className="shrink-0 w-10 h-10 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center"
+                        className="shrink-0 w-11 h-11 lg:w-10 lg:h-10 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center"
                       >
                         {copiedStates['lookup_rank'] ? (
                           <Check className="w-4 h-4 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
@@ -2326,7 +2326,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                       <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                         5. Custom Inscription
                       </span>
-                      <p className="text-base font-semibold text-[var(--text-primary)] break-words mt-0.5">
+                      <p className="text-base font-semibold text-[var(--text-primary)] break-words mt-1">
                         {foundDoubleCheckOrder.customInscription
                           ? `"${foundDoubleCheckOrder.customInscription}"`
                           : 'No custom inscription'}
@@ -2343,7 +2343,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                         }
                         aria-label="Copy custom inscription"
                         title="Copy Inscription"
-                        className="shrink-0 w-10 h-10 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center"
+                        className="shrink-0 w-11 h-11 lg:w-10 lg:h-10 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] flex items-center justify-center"
                       >
                         {copiedStates['lookup_inscription'] ? (
                           <Check className="w-4 h-4 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
@@ -2369,7 +2369,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                 <button
                   type="button"
                   onClick={() => setDoubleCheckCode('')}
-                  className="h-9 px-3 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]"
+                  className="min-h-11 px-4 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]"
                 >
                   Clear lookup
                 </button>
@@ -2390,7 +2390,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                   <button
                     type="button"
                     onClick={() => setDoubleCheckCode(filteredOrders[0].id)}
-                    className="min-h-10 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold uppercase tracking-wider transition-colors"
+                    className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold uppercase tracking-wider transition-colors"
                   >
                     Load Next Order ({filteredOrders[0].id})
                   </button>
@@ -2406,7 +2406,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                 <button
                   type="button"
                   onClick={() => handleCopyTSVRow(foundDoubleCheckOrder)}
-                  className="flex-1 min-h-11 px-4 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 transition-colors"
+                  className="flex-1 min-h-11 px-4 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] inline-flex items-center justify-center gap-2 transition-colors"
                 >
                   {copiedStates[`${foundDoubleCheckOrder.id}_tsv_all`] ? (
                     <>
@@ -2430,7 +2430,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                   onClick={() =>
                     handleDeleteOrder(foundDoubleCheckOrder.id, foundDoubleCheckOrder.runnerName)
                   }
-                  className="w-full h-9 rounded-lg border border-red-600/25 hover:bg-red-600/10 text-xs font-semibold text-red-700 dark:text-red-400 inline-flex items-center justify-center gap-1.5 transition-colors"
+                  className="w-full min-h-11 lg:min-h-9 rounded-lg border border-red-600/25 hover:bg-red-600/10 text-xs font-semibold text-red-700 dark:text-red-400 inline-flex items-center justify-center gap-2 transition-colors"
                 >
                   <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                   <span>Delete Order</span>
@@ -2449,7 +2449,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
           className="fixed inset-0 m-auto h-fit rounded-2xl w-[calc(100%-2rem)] max-w-2xl max-h-[90dvh] flex flex-col overflow-hidden shadow-2xl"
         >
           <div className="p-5 border-b border-[var(--border-default)] flex items-center justify-between bg-[var(--surface-inset)]">
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-3">
               <Cpu className="w-5 h-5 text-red-700 dark:text-red-400" aria-hidden="true" />
               <div>
                 <h2
@@ -2466,7 +2466,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
             <button
               type="button"
               onClick={() => setShowLightBurnModal(false)}
-              className="min-h-10 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] flex items-center gap-1"
+              className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] flex items-center gap-1"
             >
               <X className="w-3.5 h-3.5" aria-hidden="true" /> Close
             </button>
@@ -2496,7 +2496,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                   <h4 className="text-xs font-semibold uppercase text-[var(--text-primary)]">
                     Export the Data Feed
                   </h4>
-                  <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                  <p className="text-xs text-[var(--text-secondary)] mt-1">
                     Click <strong className="text-[var(--text-primary)]">CSV (E)</strong> in the top
                     header and save <code className="font-mono">racepulse_lightburn_sync.csv</code> on
                     your laser workstation.
@@ -2512,7 +2512,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                   <h4 className="text-xs font-semibold uppercase text-[var(--text-primary)]">
                     Bind %-Index Fields in LightBurn
                   </h4>
-                  <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                  <p className="text-xs text-[var(--text-secondary)] mt-1">
                     Set text objects on your medal template to Merge/CSV Variable Text using these
                     column offsets:
                   </p>
@@ -2547,7 +2547,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                   <h4 className="text-xs font-semibold uppercase text-[var(--text-primary)]">
                     Open Variable Text &amp; Link CSV
                   </h4>
-                  <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                  <p className="text-xs text-[var(--text-secondary)] mt-1">
                     Open <code className="font-mono">Window &rarr; Variable Text</code> in LightBurn,
                     browse to the exported CSV, and step rows with Previous/Next or reload after new
                     queue submissions.
@@ -2562,7 +2562,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
               type="button"
               hidden={!can('engraving.export')}
               onClick={handleDownloadCSV}
-              className="min-h-10 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold uppercase tracking-wider inline-flex items-center gap-1.5"
+              className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold uppercase tracking-wider inline-flex items-center gap-2"
             >
               <FileDown className="w-4 h-4" aria-hidden="true" /> Download Active CSV
             </button>
@@ -2588,7 +2588,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
           className="fixed inset-0 m-auto h-fit rounded-2xl w-[calc(100%-2rem)] max-w-md max-h-[90dvh] overflow-hidden shadow-2xl flex flex-col"
         >
           <div className="p-5 border-b border-[var(--border-default)] flex items-center justify-between bg-[var(--surface-inset)]">
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-3">
               <FileText className="w-5 h-5 text-red-700 dark:text-red-400" aria-hidden="true" />
               <div>
                 <h2
@@ -2606,7 +2606,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
               type="button"
               onClick={() => setShowPdfModal(false)}
               aria-label="Close PDF dialog"
-              className="w-9 h-9 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] flex items-center justify-center"
+              className="w-11 h-11 lg:w-9 lg:h-9 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] flex items-center justify-center"
             >
               <X className="w-4 h-4" aria-hidden="true" />
             </button>
@@ -2616,7 +2616,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
             <div>
               <label
                 htmlFor="pdf_race_name_input"
-                className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] mb-1.5"
+                className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] mb-2"
               >
                 Race / Event Name
               </label>
@@ -2626,12 +2626,12 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                 value={pdfRaceName}
                 onChange={(e) => setPdfRaceName(e.target.value)}
                 placeholder="e.g. Bukidnon 42K Ultra Run"
-                className="w-full min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3.5 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400"
+                className="w-full min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-4 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400"
               />
             </div>
 
             <div>
-              <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] mb-1.5">
+              <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] mb-2">
                 Filter Records to Include
               </span>
               <div className="grid grid-cols-2 gap-2">
@@ -2677,7 +2677,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
             <button
               type="button"
               onClick={() => setShowPdfModal(false)}
-              className="min-h-10 px-4 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] text-xs font-semibold text-[var(--text-primary)]"
+              className="min-h-11 px-4 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] text-xs font-semibold text-[var(--text-primary)]"
             >
               Cancel
             </button>
@@ -2685,7 +2685,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
               type="button"
               hidden={!can('engraving.export')}
               onClick={handleGeneratePdfReport}
-              className="min-h-10 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold uppercase tracking-wider inline-flex items-center gap-1.5"
+              className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold uppercase tracking-wider inline-flex items-center gap-2"
             >
               <FileDown className="w-4 h-4" aria-hidden="true" /> Download PDF
             </button>
@@ -2701,7 +2701,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
           className="fixed inset-0 m-auto h-fit rounded-2xl w-[calc(100%-2rem)] max-w-md max-h-[90dvh] overflow-hidden shadow-2xl flex flex-col"
         >
           <div className="p-5 border-b border-[var(--border-default)] flex items-center justify-between bg-[var(--surface-inset)]">
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-3">
               <DownloadCloud className="w-5 h-5 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
               <div>
                 <h2
@@ -2718,14 +2718,14 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
             <button
               type="button"
               onClick={() => setShowBackupModal(false)}
-              className="min-h-10 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] text-xs font-semibold text-[var(--text-primary)] flex items-center gap-1"
+              className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] text-xs font-semibold text-[var(--text-primary)] flex items-center gap-1"
             >
               <X className="w-3.5 h-3.5" aria-hidden="true" /> Close
             </button>
           </div>
 
           <div className="p-5 space-y-4">
-            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-3.5 text-xs text-[var(--text-secondary)] space-y-1.5">
+            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-4 text-xs text-[var(--text-secondary)] space-y-2">
               <span className="font-semibold uppercase text-emerald-700 dark:text-emerald-400 block">
                 Dual-Laptop Integration
               </span>
@@ -2744,7 +2744,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                 type="button"
                 hidden={!can('engraving.backup')}
                 onClick={handleExportOfflineBackup}
-                className="w-full min-h-11 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold uppercase tracking-wider flex items-center justify-center gap-1.5"
+                className="w-full min-h-11 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold uppercase tracking-wider flex items-center justify-center gap-2"
               >
                 <DownloadCloud className="w-4 h-4" aria-hidden="true" /> Export Queue Backup
               </button>
@@ -2765,7 +2765,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                   const file = e.target.files?.[0];
                   if (file) void handleImportOfflineBackup(file);
                 }}
-                className="w-full text-xs text-[var(--text-secondary)] font-mono file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border file:border-[var(--border-default)] file:text-xs file:font-semibold file:bg-[var(--surface-card)] file:text-[var(--text-primary)]"
+                className="w-full min-h-11 text-xs text-[var(--text-secondary)] font-mono file:min-h-11 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border file:border-[var(--border-default)] file:text-xs file:font-semibold file:bg-[var(--surface-card)] file:text-[var(--text-primary)]"
               />
             </div>
 

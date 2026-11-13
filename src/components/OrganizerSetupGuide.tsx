@@ -89,11 +89,8 @@ export default function OrganizerSetupGuide({ onClose, onNavigate }: OrganizerSe
     >
       <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[var(--border-default)] bg-[var(--surface-page)] px-5 sm:px-7 py-5">
         <div>
-          <div className="inline-flex items-center gap-1.5 rounded-full border border-red-500/25 bg-red-500/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-red-700 dark:text-red-400">
-            <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" /> Organizer guide
-          </div>
-          <h2 id="organizer-guide-title" className="mt-2 font-display text-xl font-semibold uppercase tracking-tight text-[var(--text-primary)]">Set up a race from start to finish</h2>
-          <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">Follow this checklist before opening registration and again on race day.</p>
+          <h2 id="organizer-guide-title" className="font-display text-xl font-semibold uppercase tracking-tight text-[var(--text-primary)]">Set up a race from start to finish</h2>
+          <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">Follow this organizer checklist before opening registration and again on race day.</p>
         </div>
         <button type="button" onClick={onClose} aria-label="Close organizer guide" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full glass-inset text-[var(--text-secondary)] transition hover:text-red-700 dark:hover:text-red-400">
           <X className="h-4 w-4" aria-hidden="true" />
@@ -111,16 +108,16 @@ export default function OrganizerSetupGuide({ onClose, onNavigate }: OrganizerSe
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="font-mono text-xs font-semibold tracking-widest text-red-700 dark:text-red-400">STEP {step.number}</p>
-                  <h3 className="mt-0.5 text-sm font-semibold uppercase tracking-tight text-[var(--text-primary)]">{step.title}</h3>
+                  <h3 className="mt-1 text-sm font-semibold uppercase tracking-tight text-[var(--text-primary)]">{step.title}</h3>
                   <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">{step.description}</p>
-                  <ul className="mt-3 space-y-1.5">
+                  <ul className="mt-3 space-y-2">
                     {step.tips.map((tip) => (
-                      <li key={tip} className="flex gap-1.5 text-xs leading-relaxed text-[var(--text-secondary)]">
-                        <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-700 dark:text-emerald-400" aria-hidden="true" /> <span>{tip}</span>
+                      <li key={tip} className="flex gap-2 text-xs leading-relaxed text-[var(--text-secondary)]">
+                        <CheckCircle2 className="mt-1 h-3.5 w-3.5 shrink-0 text-emerald-700 dark:text-emerald-400" aria-hidden="true" /> <span>{tip}</span>
                       </li>
                     ))}
                   </ul>
-                  <button type="button" onClick={() => goTo(step.destination)} className="mt-3 min-h-11 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-red-700 dark:text-red-400 transition hover:underline">
+                  <button type="button" onClick={() => goTo(step.destination)} className="mt-3 min-h-11 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-red-700 dark:text-red-400 transition hover:underline">
                     {step.action} <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                 </div>

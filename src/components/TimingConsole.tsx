@@ -187,7 +187,7 @@ function LiveClock({ gunStartTime, size = 'compact' }: LiveClockProps) {
   }
 
   return (
-    <div className="flex items-center gap-1.5 shrink-0">
+    <div className="flex items-center gap-2 shrink-0">
       <Timer className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
       {gunStartTime ? (
         <span className="font-mono font-semibold text-sm text-[var(--text-primary)] tabular-nums">{formatClockElapsed(now - new Date(gunStartTime).getTime())}</span>
@@ -1316,7 +1316,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
         <div className="flex items-center gap-2 min-w-0">
           <LiveClock gunStartTime={race.gunStartTime} size="header" />
           <span
-            className={`inline-flex items-center gap-1.5 text-xs font-mono font-semibold px-2.5 min-h-11 rounded-xl border shrink-0 ${
+            className={`inline-flex items-center gap-2 text-xs font-mono font-semibold px-3 min-h-11 rounded-xl border shrink-0 ${
               lanConnected
                 ? 'bg-emerald-500/15 border-emerald-400/35 text-emerald-300'
                 : 'bg-red-500/15 border-red-400/35 text-red-300'
@@ -1325,12 +1325,12 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
             {lanConnected ? <><Wifi className="w-3.5 h-3.5" aria-hidden="true" /> LAN</> : <><WifiOff className="w-3.5 h-3.5" aria-hidden="true" /> Offline</>}
           </span>
           {mode === 'record' && bridgeEndpointReady && (
-            <span className="inline-flex items-center gap-1.5 text-xs font-mono font-semibold px-2.5 min-h-11 rounded-xl border bg-sky-500/15 border-sky-400/35 text-sky-300 shrink-0">
+            <span className="inline-flex items-center gap-2 text-xs font-mono font-semibold px-3 min-h-11 rounded-xl border bg-sky-500/15 border-sky-400/35 text-sky-300 shrink-0">
               <Radio className="w-3.5 h-3.5" aria-hidden="true" /> Bridge
             </span>
           )}
           {pendingScanCount > 0 && (
-            <span className="inline-flex items-center gap-1.5 text-xs font-mono font-semibold px-2.5 min-h-11 rounded-xl border bg-amber-500/15 border-amber-400/35 text-amber-300 tabular-nums shrink-0">
+            <span className="inline-flex items-center gap-2 text-xs font-mono font-semibold px-3 min-h-11 rounded-xl border bg-amber-500/15 border-amber-400/35 text-amber-300 tabular-nums shrink-0">
               <RefreshCw className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> {pendingScanCount}
             </span>
           )}
@@ -1341,7 +1341,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
                 type="button"
                 onClick={() => void republishResults()}
                 disabled={updatingRaceStatus}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-sky-400/35 bg-sky-500/15 px-3 min-h-11 text-xs font-semibold uppercase tracking-wider text-sky-200 hover:bg-sky-500/25 disabled:opacity-50 transition-colors shrink-0"
+                className="inline-flex items-center gap-2 rounded-xl border border-sky-400/35 bg-sky-500/15 px-3 min-h-11 text-xs font-semibold uppercase tracking-wider text-sky-200 hover:bg-sky-500/25 disabled:opacity-50 transition-colors shrink-0"
               >
                 {updatingRaceStatus ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trophy className="w-3.5 h-3.5" />} Republish
               </button>
@@ -1350,7 +1350,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
                 type="button"
                 onClick={() => void reopenTiming()}
                 disabled={updatingRaceStatus}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-400/35 bg-emerald-500/15 px-3 min-h-11 text-xs font-semibold uppercase tracking-wider text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50 transition-colors shrink-0"
+                className="inline-flex items-center gap-2 rounded-xl border border-emerald-400/35 bg-emerald-500/15 px-3 min-h-11 text-xs font-semibold uppercase tracking-wider text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50 transition-colors shrink-0"
               >
                 {updatingRaceStatus ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Reopen
               </button>
@@ -1361,7 +1361,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
               type="button"
               onClick={() => void finishRace()}
               disabled={updatingRaceStatus}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-red-400/40 bg-red-600/20 px-3 min-h-11 text-xs font-semibold uppercase tracking-wider text-red-200 hover:bg-red-700 hover:text-white disabled:opacity-50 transition-colors shrink-0"
+              className="inline-flex items-center gap-2 rounded-xl border border-red-400/40 bg-red-600/20 px-3 min-h-11 text-xs font-semibold uppercase tracking-wider text-red-200 hover:bg-red-700 hover:text-white disabled:opacity-50 transition-colors shrink-0"
             >
               {updatingRaceStatus ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Finish race
             </button>
@@ -1397,16 +1397,16 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
 
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2 min-w-0">
-            <span className={`inline-flex items-center gap-1.5 text-xs font-mono font-semibold px-2.5 py-1 rounded-lg border ${lanConnected ? 'bg-emerald-500/10 border-emerald-700/30 text-emerald-700 dark:text-emerald-400' : 'bg-red-500/10 border-red-700/30 text-red-700 dark:text-red-400'}`}>
+            <span className={`inline-flex items-center gap-2 text-xs font-mono font-semibold px-3 py-1 rounded-lg border ${lanConnected ? 'bg-emerald-500/10 border-emerald-700/30 text-emerald-700 dark:text-emerald-400' : 'bg-red-500/10 border-red-700/30 text-red-700 dark:text-red-400'}`}>
               {lanConnected ? <><Wifi className="w-3.5 h-3.5" aria-hidden="true" /> LAN</> : <><WifiOff className="w-3.5 h-3.5" aria-hidden="true" /> Offline</>}
             </span>
             {mode === 'record' && bridgeEndpointReady && (
-              <span className="inline-flex items-center gap-1.5 text-xs font-mono font-semibold px-2.5 py-1 rounded-lg border bg-sky-500/10 border-sky-700/30 text-sky-700 dark:text-sky-300">
+              <span className="inline-flex items-center gap-2 text-xs font-mono font-semibold px-3 py-1 rounded-lg border bg-sky-500/10 border-sky-700/30 text-sky-700 dark:text-sky-300">
                 <Radio className="w-3.5 h-3.5" aria-hidden="true" /> Bridge
               </span>
             )}
             {pendingScanCount > 0 && (
-              <span className="inline-flex items-center gap-1.5 text-xs font-mono font-semibold px-2.5 py-1 rounded-lg border bg-amber-500/10 border-amber-700/30 text-amber-800 dark:text-amber-300 tabular-nums">
+              <span className="inline-flex items-center gap-2 text-xs font-mono font-semibold px-3 py-1 rounded-lg border bg-amber-500/10 border-amber-700/30 text-amber-800 dark:text-amber-300 tabular-nums">
                 <RefreshCw className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> {pendingScanCount} queued
               </span>
             )}
@@ -1419,7 +1419,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
                   type="button"
                   onClick={() => void republishResults()}
                   disabled={updatingRaceStatus}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-sky-700/30 bg-sky-500/10 px-3 min-h-11 text-xs font-semibold uppercase tracking-wider text-sky-700 dark:text-sky-300 disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-xl border border-sky-700/30 bg-sky-500/10 px-3 min-h-11 text-xs font-semibold uppercase tracking-wider text-sky-700 dark:text-sky-300 disabled:opacity-50"
                 >
                   {updatingRaceStatus ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trophy className="w-3.5 h-3.5" />} Republish
                 </button>
@@ -1428,7 +1428,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
                   type="button"
                   onClick={() => void reopenTiming()}
                   disabled={updatingRaceStatus}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-700/30 bg-emerald-500/10 px-3 min-h-11 text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-xl border border-emerald-700/30 bg-emerald-500/10 px-3 min-h-11 text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 disabled:opacity-50"
                 >
                   {updatingRaceStatus ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Reopen
                 </button>
@@ -1439,7 +1439,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
                 type="button"
                 onClick={() => void finishRace()}
                 disabled={updatingRaceStatus}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-red-600/35 bg-red-600/10 px-3 min-h-11 text-xs font-semibold uppercase tracking-wider text-red-700 dark:text-red-400 hover:bg-red-700 hover:text-white disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-xl border border-red-600/35 bg-red-600/10 px-3 min-h-11 text-xs font-semibold uppercase tracking-wider text-red-700 dark:text-red-400 hover:bg-red-700 hover:text-white disabled:opacity-50"
               >
                 {updatingRaceStatus ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Finish race
               </button>
@@ -1449,9 +1449,9 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
       </div>
 
       {/* Mode navigation + read-only telemetry ribbon */}
-      <div className="glass-panel rounded-2xl px-2.5 py-2 lg:rounded-none lg:border-x-0 lg:border-t-0 lg:border-b lg:border-[var(--border-default)] lg:bg-[var(--surface-card)] lg:shadow-none lg:px-4 lg:py-1.5 flex items-center justify-between gap-3 shrink-0">
+      <div className="glass-panel rounded-2xl px-3 py-2 lg:rounded-none lg:border-x-0 lg:border-t-0 lg:border-b lg:border-[var(--border-default)] lg:bg-[var(--surface-card)] lg:shadow-none lg:px-4 lg:py-2 flex items-center justify-between gap-3 shrink-0">
         <div className="w-full racepulse-horizontal-scroll touch-pan-x md:flex-1 md:min-w-0">
-          <div role="tablist" aria-label="Timing tools" className="grid grid-cols-6 gap-1.5 md:flex md:items-center md:gap-1 md:min-w-max py-0.5">
+          <div role="tablist" aria-label="Timing tools" className="grid grid-cols-6 gap-2 md:flex md:items-center md:gap-1 md:min-w-max py-1">
             {timingModes.map(({ key, label, Icon }) => {
               const active = mode === key;
               return (
@@ -1464,7 +1464,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
                   aria-label={label}
                   title={label}
                   onClick={() => setMode(key)}
-                  className={`flex items-center justify-center md:justify-start gap-1 2xl:gap-1.5 whitespace-nowrap shrink-0 min-h-11 px-2 2xl:px-3 rounded-xl text-xs font-semibold uppercase tracking-normal transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
+                  className={`flex items-center justify-center md:justify-start gap-1 2xl:gap-2 whitespace-nowrap shrink-0 min-h-11 px-2 2xl:px-3 rounded-xl text-xs font-semibold uppercase tracking-normal transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
                     active
                       ? 'bg-red-700 text-white shadow-sm'
                       : 'bg-[var(--surface-inset)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
@@ -1566,13 +1566,13 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
           )}
 
           {/* Top-Right Desktop / Top Mobile: Station & Capture Source Configuration */}
-          <section className="order-1 lg:order-none lg:col-start-2 lg:row-start-1 glass-panel p-3.5 space-y-3 shrink-0">
+          <section className="order-1 lg:order-none lg:col-start-2 lg:row-start-1 glass-panel p-4 space-y-3 shrink-0">
             <div className="flex items-center justify-between gap-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] flex items-center gap-1.5">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] flex items-center gap-2">
                 <Radio className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
                 {selectedCheckpointType === 'checkin' ? 'Runner Check-In' : 'Race Day Station'}
               </h3>
-              <span className={`inline-flex items-center gap-1.5 text-xs font-mono font-semibold px-2.5 py-1 rounded-lg border shrink-0 ${
+              <span className={`inline-flex items-center gap-2 text-xs font-mono font-semibold px-3 py-1 rounded-lg border shrink-0 ${
                 scanSource === 'keyboard' || scannerArmed
                   ? 'bg-emerald-500/10 border-emerald-700/30 text-emerald-700 dark:text-emerald-400'
                   : 'bg-amber-500/10 border-amber-700/30 text-amber-800 dark:text-amber-300'
@@ -1592,14 +1592,14 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
                     key={cp.id}
                     type="button"
                     onClick={() => { setSelectedCheckpointId(cp.id); setScannerArmed(false); setFeedback(null); }}
-                    className={`min-h-11 px-3 py-2 rounded-xl border text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+                    className={`min-h-11 px-3 py-2 rounded-xl border text-xs font-semibold transition-colors flex items-center gap-2 ${
                       selectedCheckpointId === cp.id
                         ? 'bg-red-700 border-red-700 text-white shadow-sm'
                         : 'bg-[var(--surface-inset)] border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                     }`}
                   >
                     <span>{cp.label}</span>
-                    <span className={selectedCheckpointId === cp.id ? 'text-white/80' : 'text-[var(--text-muted)]'}>({phaseLabel})</span>
+                    <span className={selectedCheckpointId === cp.id ? 'text-white/80' : 'text-[var(--text-secondary)]'}>({phaseLabel})</span>
                   </button>
                 );
               })}
@@ -1643,7 +1643,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
             </div>
 
             {scanSource === 'vf787p' && (
-              <div className={`rounded-xl border px-3 py-2.5 flex items-center justify-between gap-3 ${
+              <div className={`rounded-xl border px-3 py-3 flex items-center justify-between gap-3 ${
                 scannerArmed
                   ? 'border-emerald-700/35 bg-emerald-500/10'
                   : 'border-amber-700/35 bg-amber-500/10'
@@ -1655,7 +1655,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
                   type="button"
                   onClick={scannerArmed ? pauseAutomaticScanner : () => { void armAutomaticScanner(); }}
                   disabled={isRaceCompleted}
-                  className={`min-h-11 shrink-0 px-3.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-colors disabled:opacity-50 ${
+                  className={`min-h-11 shrink-0 px-4 rounded-xl text-xs font-semibold uppercase tracking-wider transition-colors disabled:opacity-50 ${
                     scannerArmed
                       ? 'bg-amber-500 hover:bg-amber-400 text-black'
                       : 'bg-emerald-700 hover:bg-emerald-600 text-white'
@@ -1686,7 +1686,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
                 role="tab"
                 aria-selected={mobileRecordPane === 'reads'}
                 onClick={() => setMobileRecordPane('reads')}
-                className={`flex-1 min-h-11 px-3 rounded-xl text-xs font-semibold uppercase tracking-wider border transition-colors flex items-center justify-center gap-1.5 ${
+                className={`flex-1 min-h-11 px-3 rounded-xl text-xs font-semibold uppercase tracking-wider border transition-colors flex items-center justify-center gap-2 ${
                   mobileRecordPane === 'reads'
                     ? 'bg-red-700 border-red-700 text-white'
                     : 'bg-[var(--surface-inset)] border-[var(--border-default)] text-[var(--text-secondary)]'
@@ -1699,7 +1699,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
                 role="tab"
                 aria-selected={mobileRecordPane === 'results'}
                 onClick={() => setMobileRecordPane('results')}
-                className={`flex-1 min-h-11 px-3 rounded-xl text-xs font-semibold uppercase tracking-wider border transition-colors flex items-center justify-center gap-1.5 ${
+                className={`flex-1 min-h-11 px-3 rounded-xl text-xs font-semibold uppercase tracking-wider border transition-colors flex items-center justify-center gap-2 ${
                   mobileRecordPane === 'results'
                     ? 'bg-red-700 border-red-700 text-white'
                     : 'bg-[var(--surface-inset)] border-[var(--border-default)] text-[var(--text-secondary)]'
@@ -1712,20 +1712,20 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
             <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-2 gap-3">
               {/* Recent Reads */}
               <div className={`${mobileRecordPane === 'reads' ? 'flex' : 'hidden'} xl:flex flex-col min-h-0 glass-panel p-4`}>
-                <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-[var(--border-default)] shrink-0">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] flex items-center gap-1.5">
+                <div className="flex items-center justify-between gap-2 pb-3 border-b border-[var(--border-default)] shrink-0">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] flex items-center gap-2">
                     <ScanLine className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> Recent Reads
                   </h3>
                   <span className="text-xs font-mono text-[var(--text-secondary)] tabular-nums">{recentReads.length}</span>
                 </div>
-                <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pt-2.5 pr-1 max-h-80 lg:max-h-none">
+                <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pt-3 pr-1 max-h-80 lg:max-h-none">
                   {recentReads.length === 0 && (
                     <p className="text-xs text-[var(--text-secondary)] py-4">No reads recorded yet.</p>
                   )}
                   {recentReads.map((r) => (
                     <div key={r.id} className="flex items-center justify-between gap-2 glass-inset px-3 py-2 text-xs">
-                      <div className="min-w-0 flex-1 space-y-0.5">
-                        <div className="flex items-center gap-1.5 min-w-0">
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex items-center gap-2 min-w-0">
                           <span className="font-mono font-semibold text-[var(--text-primary)] shrink-0">#{r.bibNumber}</span>
                           {r.source === 'rfid-bridge' && <Cpu className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400 shrink-0" aria-label="RFID scan" />}
                           <span className="text-[var(--text-secondary)] truncate">{checkpointLabel(r.checkpointId)}</span>
@@ -1749,13 +1749,13 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
 
               {/* Live Results */}
               <div className={`${mobileRecordPane === 'results' ? 'flex' : 'hidden'} xl:flex flex-col min-h-0 glass-panel p-4`}>
-                <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-[var(--border-default)] shrink-0">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] flex items-center gap-1.5">
+                <div className="flex items-center justify-between gap-2 pb-3 border-b border-[var(--border-default)] shrink-0">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] flex items-center gap-2">
                     <Trophy className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> Live Results
                   </h3>
                   <span className="text-xs font-mono text-[var(--text-secondary)] tabular-nums">{results.length}</span>
                 </div>
-                <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pt-2.5 pr-1 max-h-80 lg:max-h-none">
+                <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pt-3 pr-1 max-h-80 lg:max-h-none">
                   {results.length === 0 && (
                     <p className="text-xs text-[var(--text-secondary)] py-4">No results yet.</p>
                   )}
@@ -1767,18 +1767,18 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
                     const busy = busyFinisherBib === r.bibNumber;
                     return (
                       <div key={r.bibNumber} className="flex items-center justify-between glass-inset px-3 py-2 text-xs gap-2">
-                        <div className="min-w-0 flex-1 space-y-0.5">
-                          <div className="flex items-baseline gap-1.5 min-w-0">
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex items-baseline gap-2 min-w-0">
                             <span className={`font-mono font-semibold shrink-0 tabular-nums ${r.disqualified ? 'text-rose-700 dark:text-rose-400' : 'text-red-700 dark:text-red-400'}`}>
                               {r.disqualified ? 'DQ' : r.rank ? `#${r.rank}` : '--'}
                             </span>
-                            <span className={`font-semibold truncate ${r.disqualified ? 'line-through text-[var(--text-muted)]' : 'text-[var(--text-primary)]'}`}>
+                            <span className={`font-semibold truncate ${r.disqualified ? 'line-through text-[var(--text-secondary)]' : 'text-[var(--text-primary)]'}`}>
                               {r.runnerProfile?.fullName || `Bib ${r.bibNumber}`}
                             </span>
                           </div>
-                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
                             <span className="text-[var(--text-secondary)] font-mono">#{r.bibNumber}</span>
-                            <span className={`font-mono font-semibold tabular-nums ${r.disqualified ? 'line-through text-[var(--text-muted)]' : r.finishTime ? 'text-[var(--text-primary)]' : 'text-amber-800 dark:text-amber-300'}`}>
+                            <span className={`font-mono font-semibold tabular-nums ${r.disqualified ? 'line-through text-[var(--text-secondary)]' : r.finishTime ? 'text-[var(--text-primary)]' : 'text-amber-800 dark:text-amber-300'}`}>
                               {r.finishTime ? formatRaceTime(r.finishTime) : (missingCheckpoints.length ? `Miss: ${missingCheckpoints.join(', ')}` : 'Review')}
                             </span>
                             {r.disqualified && r.dqReason && (
@@ -1832,13 +1832,13 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
           {/* Bottom-Right Desktop / Sticky Thumb-Dock Mobile: Scan Terminal + Lookup */}
           <section className="order-3 lg:order-none lg:col-start-2 lg:row-start-2 sticky bottom-[76px] lg:static z-30 flex flex-col gap-3 lg:min-h-0 lg:overflow-y-auto">
             {pendingScanCount > 0 && (
-              <div className="px-3.5 py-2.5 rounded-xl border border-amber-700/30 bg-amber-500/10 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2 shrink-0">
-                <WifiOff className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
+              <div className="px-4 py-3 rounded-xl border border-amber-700/30 bg-amber-500/10 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2 shrink-0">
+                <WifiOff className="w-4 h-4 shrink-0 mt-1" aria-hidden="true" />
                 <span><strong>{pendingScanCount} scan{pendingScanCount === 1 ? '' : 's'} saved locally.</strong> Will sync when connection returns.</span>
               </div>
             )}
 
-            <div className="glass-panel p-3.5 space-y-2.5 shadow-2xl lg:shadow-none">
+            <div className="glass-panel p-4 space-y-3 shadow-2xl lg:shadow-none">
               <div className="hidden lg:flex items-center justify-between gap-2 text-xs text-[var(--text-secondary)]">
                 <span className="font-semibold uppercase tracking-wider">Capture Terminal</span>
                 <span className="font-mono">F2 focus &bull; F4 camera</span>
@@ -1856,12 +1856,12 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
                     autoCapitalize="characters"
                     aria-label="RFID chip or runner bib scan input"
                     disabled={scanSource !== 'keyboard' || recording}
-                    className="min-h-12 w-full glass-inset px-4 py-2.5 text-sm sm:text-base font-semibold font-mono tracking-wider text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-600/60 disabled:opacity-50"
+                    className="min-h-12 w-full glass-inset px-4 py-3 text-sm sm:text-base font-semibold font-mono tracking-wider text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600/60 disabled:opacity-50"
                   />
                   {bibSuggestions.length > 0 && !recording && (
                     <div className="absolute z-40 left-0 right-0 bottom-[calc(100%+0.4rem)] lg:bottom-auto lg:top-[calc(100%+0.4rem)] overflow-hidden rounded-xl border border-emerald-700/45 bg-[var(--surface-card)] shadow-2xl">
-                      <p className="border-b border-[var(--border-default)] bg-[var(--surface-inset)] px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Matching runners: tap to fill</p>
-                      <div className="max-h-48 overflow-y-auto p-1.5 space-y-1">
+                      <p className="border-b border-[var(--border-default)] bg-[var(--surface-inset)] px-3 py-2 text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Matching runners: tap to fill</p>
+                      <div className="max-h-48 overflow-y-auto p-2 space-y-1">
                         {bibSuggestions.map((runner) => (
                           <button
                             key={`${runner.uid}_${runner.bibNumber}`}
@@ -1896,7 +1896,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
                     hidden={!can('timing.scan')}
                     type="button"
                     onClick={() => { setFeedback(null); setShowScanModal(true); }}
-                    className="min-h-11 px-3.5 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-inset)] hover:border-red-600 hover:text-red-700 dark:hover:text-red-400 text-[var(--text-primary)] text-xs font-semibold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors"
+                    className="min-h-11 px-4 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-inset)] hover:border-red-600 hover:text-red-700 dark:hover:text-red-400 text-[var(--text-primary)] text-xs font-semibold uppercase tracking-wider flex items-center justify-center gap-2 transition-colors"
                     title="Camera Bib QR Scanner (F4)"
                   >
                     <QrCode className="w-4 h-4" aria-hidden="true" /> Camera QR
@@ -1907,7 +1907,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
               {feedback && (
                 <p
                   role="status"
-                  className={`text-xs font-semibold px-3 py-2.5 rounded-xl border ${
+                  className={`text-xs font-semibold px-3 py-3 rounded-xl border ${
                     feedback.type === 'success'
                       ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border-emerald-700/25'
                       : feedback.type === 'warning'
@@ -1921,7 +1921,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
             </div>
 
             {selectedCheckpointType === 'checkin' && (
-              <div className="hidden lg:block glass-panel p-3.5 space-y-2">
+              <div className="hidden lg:block glass-panel p-4 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <label htmlFor="record-checkin-lookup" className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Check-in lookup</label>
                   <span className="text-xs text-[var(--text-secondary)]">Tap to record</span>
@@ -1932,10 +1932,10 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
                   value={runnerSearch}
                   onChange={(event) => setRunnerSearch(event.target.value)}
                   placeholder="Search name, bib, or chip ID"
-                  className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-mono text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                  className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-mono text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
                 />
                 {runnerSearch.trim() && (
-                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-0.5">
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
                     {searchResults.length === 0 ? (
                       <p className="text-xs text-[var(--text-secondary)] py-1">No runner matches "{runnerSearch}".</p>
                     ) : searchResults.map((runner) => {
@@ -2079,24 +2079,24 @@ function MobileCheckInPanel({
         <div className="px-4 py-3 bg-zinc-950 text-white border-b border-white/10 shrink-0 space-y-2">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wider text-red-400 flex items-center gap-1.5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-red-400 flex items-center gap-2">
                 <Smartphone className="w-4 h-4 shrink-0" aria-hidden="true" /> Attendance Check-In
               </p>
-              <p className="text-xs text-white/75 mt-0.5 truncate">
+              <p className="text-xs text-white/75 mt-1 truncate">
                 {raceName} {checkInCheckpoint ? `• ${checkInCheckpoint.label}` : ''}
               </p>
             </div>
-            <div className="shrink-0 text-right rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 tabular-nums">
+            <div className="shrink-0 text-right rounded-xl border border-white/15 bg-white/5 px-3 py-2 tabular-nums">
               <span className="font-mono font-semibold text-lg text-white">{checkedInCount}</span>
               <span className="text-xs text-white/75 ml-1">/ {runners.length}</span>
             </div>
           </div>
-          <div className="h-1.5 rounded-full bg-white/10 overflow-hidden" aria-hidden="true">
+          <div className="h-2 rounded-full bg-white/10 overflow-hidden" aria-hidden="true">
             <div className="h-full rounded-full bg-red-600 transition-all duration-200" style={{ width: `${progressPct}%` }} />
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto p-3.5 space-y-2 max-h-72 lg:max-h-none">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2 max-h-72 lg:max-h-none">
           <div className="flex items-center justify-between gap-2 pb-1">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
               Recent check-ins
@@ -2106,7 +2106,7 @@ function MobileCheckInPanel({
           {recentCheckIns.length === 0 ? (
             <p className="text-xs text-[var(--text-secondary)] py-3">No runners checked in yet.</p>
           ) : recentCheckIns.map((read) => (
-            <div key={read.id} className="flex items-center gap-3 glass-inset px-3 py-2.5 rounded-xl">
+            <div key={read.id} className="flex items-center gap-3 glass-inset px-3 py-3 rounded-xl">
               <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
               <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--text-primary)]">
                 {runnerTimingName(runnerByBib.get(normalizeScanValue(read.bibNumber)), read.bibNumber)}
@@ -2125,20 +2125,20 @@ function MobileCheckInPanel({
             Add a Check-In checkpoint in Race Setup first. This tool records attendance only and never creates a split time.
           </div>
         ) : (
-          <div className="glass-panel p-3.5 space-y-3 shadow-2xl lg:shadow-none">
+          <div className="glass-panel p-4 space-y-3 shadow-2xl lg:shadow-none">
             <button
               hidden={!can('timing.scan')}
               type="button"
               onClick={() => { setQrScanError(''); setShowQrScanner(true); }}
               disabled={raceCompleted}
-              className="w-full min-h-12 rounded-xl bg-red-700 hover:bg-red-600 disabled:opacity-55 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-white transition-colors flex items-center justify-center gap-2"
+              className="w-full min-h-12 rounded-xl bg-red-700 hover:bg-red-600 disabled:opacity-55 px-4 py-3 text-xs font-semibold uppercase tracking-wider text-white transition-colors flex items-center justify-center gap-2"
             >
               <QrCode className="w-4 h-4" aria-hidden="true" /> Scan race bib QR
             </button>
 
             <div className="relative">
               <label className="sr-only" htmlFor="mobile-checkin-search">Search runner</label>
-              <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" aria-hidden="true" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-secondary)]" aria-hidden="true" />
               <input
                 id="mobile-checkin-search"
                 type="search"
@@ -2147,14 +2147,14 @@ function MobileCheckInPanel({
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search bib number or runner name"
                 autoComplete="off"
-                className="w-full min-h-12 rounded-xl glass-inset pl-10 pr-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-600/60"
+                className="w-full min-h-12 rounded-xl glass-inset pl-10 pr-4 py-3 text-sm font-semibold text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600/60"
               />
             </div>
 
             {feedback && (
               <p
                 role="status"
-                className={`text-xs font-semibold px-3 py-2.5 rounded-xl border ${
+                className={`text-xs font-semibold px-3 py-3 rounded-xl border ${
                   feedback.type === 'success'
                     ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border-emerald-700/25'
                     : feedback.type === 'warning'
@@ -2167,7 +2167,7 @@ function MobileCheckInPanel({
             )}
 
             {search.trim() && (
-              <div className="space-y-2 max-h-56 lg:max-h-80 overflow-y-auto pr-0.5">
+              <div className="space-y-2 max-h-56 lg:max-h-80 overflow-y-auto pr-1">
                 {results.length === 0 ? (
                   <p className="text-center text-xs text-[var(--text-secondary)] py-4">No runner matches "{search}".</p>
                 ) : results.map((runner) => {
@@ -2198,9 +2198,9 @@ function MobileCheckInPanel({
                           type="button"
                           disabled={raceCompleted || !!checkingBib}
                           onClick={() => { void onCheckIn(runner); }}
-                          className="shrink-0 min-h-11 rounded-xl bg-red-700 hover:bg-red-600 disabled:opacity-55 px-3.5 text-xs font-semibold uppercase tracking-wider text-white transition-colors"
+                          className="shrink-0 min-h-11 rounded-xl bg-red-700 hover:bg-red-600 disabled:opacity-55 px-4 text-xs font-semibold uppercase tracking-wider text-white transition-colors"
                         >
-                          {isBusy ? 'Saving...' : <span className="inline-flex items-center gap-1.5"><UserCheck className="w-4 h-4" aria-hidden="true" /> Check in</span>}
+                          {isBusy ? 'Saving...' : <span className="inline-flex items-center gap-2"><UserCheck className="w-4 h-4" aria-hidden="true" /> Check in</span>}
                         </button>
                       )}
                     </div>
@@ -2239,51 +2239,51 @@ function MobileCheckInPanel({
             <div className="space-y-4">
               <div className="flex items-start justify-between gap-3 border-b border-[var(--border-default)] pb-3">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-red-700 dark:text-red-400">Race bib verified</p>
-                  <h3 id="checkin-confirm-title" className="font-display text-xl font-semibold text-[var(--text-primary)] mt-1">Confirm Runner</h3>
-                  <p id="checkin-confirm-desc" className="mt-0.5 text-xs text-[var(--text-secondary)]">Review the details before recording attendance.</p>
+                  <h3 id="checkin-confirm-title" className="font-display text-xl font-semibold text-[var(--text-primary)]">Confirm Runner</h3>
+                  <p className="mt-1 text-xs font-semibold uppercase tracking-wider text-red-700 dark:text-red-400">Race bib verified</p>
+                  <p id="checkin-confirm-desc" className="mt-1 text-xs text-[var(--text-secondary)]">Review the details before recording attendance.</p>
                 </div>
-                <span className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 py-1.5 font-mono text-sm font-semibold text-[var(--text-primary)]">
+                <span className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 py-2 font-mono text-sm font-semibold text-[var(--text-primary)]">
                   #{pendingQrRunner.bibNumber}
                 </span>
               </div>
 
-              <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3.5">
+              <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-4">
                 <p className="text-base font-semibold text-[var(--text-primary)]">{runnerTimingName(pendingQrRunner)}</p>
-                <p className="mt-0.5 text-xs font-semibold uppercase tracking-wider text-red-700 dark:text-red-400">
+                <p className="mt-1 text-xs font-semibold uppercase tracking-wider text-red-700 dark:text-red-400">
                   {pendingQrRunner.distance} &bull; {entryCategoryLabels[entry]}
                 </p>
               </div>
 
               <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
-                <div><dt className="font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Race bib</dt><dd className="mt-0.5 font-mono font-semibold text-[var(--text-primary)]">#{pendingQrRunner.bibNumber}</dd></div>
-                <div><dt className="font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Category</dt><dd className="mt-0.5 font-semibold text-[var(--text-primary)]">{entryCategoryLabels[entry]}</dd></div>
+                <div><dt className="font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Race bib</dt><dd className="mt-1 font-mono font-semibold text-[var(--text-primary)]">#{pendingQrRunner.bibNumber}</dd></div>
+                <div><dt className="font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Category</dt><dd className="mt-1 font-semibold text-[var(--text-primary)]">{entryCategoryLabels[entry]}</dd></div>
                 {!pendingQrRunner.isFreeSlot && (
                   <>
-                    <div><dt className="font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Gender</dt><dd className="mt-0.5 font-semibold capitalize text-[var(--text-primary)]">{pendingQrRunner.gender}</dd></div>
-                    <div><dt className="font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Age</dt><dd className="mt-0.5 font-semibold text-[var(--text-primary)]">{pendingQrRunner.ageNotProvided ? 'Not provided' : pendingQrRunner.age}</dd></div>
+                    <div><dt className="font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Gender</dt><dd className="mt-1 font-semibold capitalize text-[var(--text-primary)]">{pendingQrRunner.gender}</dd></div>
+                    <div><dt className="font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Age</dt><dd className="mt-1 font-semibold text-[var(--text-primary)]">{pendingQrRunner.ageNotProvided ? 'Not provided' : pendingQrRunner.age}</dd></div>
                   </>
                 )}
-                {pendingQrRunner.shirtSize && <div><dt className="font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Shirt size</dt><dd className="mt-0.5 font-semibold text-[var(--text-primary)]">{pendingQrRunner.shirtSize}</dd></div>}
-                {pendingQrRunner.chipId && <div><dt className="font-semibold uppercase tracking-wider text-[var(--text-secondary)]">RFID chip</dt><dd className="mt-0.5 truncate font-mono font-semibold text-[var(--text-primary)]">{pendingQrRunner.chipId}</dd></div>}
+                {pendingQrRunner.shirtSize && <div><dt className="font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Shirt size</dt><dd className="mt-1 font-semibold text-[var(--text-primary)]">{pendingQrRunner.shirtSize}</dd></div>}
+                {pendingQrRunner.chipId && <div><dt className="font-semibold uppercase tracking-wider text-[var(--text-secondary)]">RFID chip</dt><dd className="mt-1 truncate font-mono font-semibold text-[var(--text-primary)]">{pendingQrRunner.chipId}</dd></div>}
               </dl>
 
               {(pendingQrRunner.teamName || (pendingQrRunner.teamMembers?.length || 0) > 1) && (
-                <div className="rounded-xl border border-[var(--border-default)] px-3 py-2.5 text-xs">
+                <div className="rounded-xl border border-[var(--border-default)] px-3 py-3 text-xs">
                   <p className="font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Team / members</p>
                   <p className="mt-1 font-semibold text-[var(--text-primary)]">{pendingQrRunner.teamName || pendingQrRunner.teamMembers?.join(' · ')}</p>
                 </div>
               )}
 
               {emergencyContact && (
-                <div className="rounded-xl border border-amber-700/30 bg-amber-500/10 px-3 py-2.5 text-xs">
+                <div className="rounded-xl border border-amber-700/30 bg-amber-500/10 px-3 py-3 text-xs">
                   <p className="font-semibold uppercase tracking-wider text-amber-800 dark:text-amber-300">Emergency contact</p>
                   <p className="mt-1 font-semibold text-[var(--text-primary)]">{emergencyContact}</p>
                 </div>
               )}
 
               {alreadyCheckedIn && (
-                <p className="rounded-xl border border-amber-700/30 bg-amber-500/10 px-3 py-2.5 text-xs font-semibold text-amber-800 dark:text-amber-300">
+                <p className="rounded-xl border border-amber-700/30 bg-amber-500/10 px-3 py-3 text-xs font-semibold text-amber-800 dark:text-amber-300">
                   This runner is already checked in. No new attendance record will be added.
                 </p>
               )}
@@ -2624,23 +2624,23 @@ function ManualRunnerPanel({ race, runnerProfiles }: ManualRunnerPanelProps) {
   return (
     <div className="space-y-3">
       <div>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] flex items-center gap-1.5">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] flex items-center gap-2">
           <Users2 className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> Add Runner Manually
         </h3>
         <p className="text-xs text-[var(--text-secondary)] mt-1">For late registrations or paper-form entries. Adds a roster record only.</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+      <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <fieldset className="contents" disabled={!can('roster.add')}>
           <div className="sm:col-span-2">
             <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
               {entryCategory === 'solo' ? 'Runner name' : 'Team representative / member 1'}
             </label>
-            <input required value={fullName} onChange={(event) => setFullName(event.target.value.toUpperCase())} placeholder="FULL NAME" className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-600/50" />
+            <input required value={fullName} onChange={(event) => setFullName(event.target.value.toUpperCase())} placeholder="FULL NAME" className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600/50" />
           </div>
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Race bib number</label>
-            <input required value={bibNumber} onChange={(event) => setBibNumber(event.target.value.toUpperCase())} placeholder="EX: 10-001" className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold font-mono text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-600/50" />
+            <input required value={bibNumber} onChange={(event) => setBibNumber(event.target.value.toUpperCase())} placeholder="EX: 10-001" className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold font-mono text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600/50" />
           </div>
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Distance</label>
@@ -2665,23 +2665,23 @@ function ManualRunnerPanel({ race, runnerProfiles }: ManualRunnerPanelProps) {
           </div>
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Age</label>
-            <input required type="number" min="1" max="120" value={age} onChange={(event) => setAge(event.target.value)} placeholder="AGE" className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-600/50" />
+            <input required type="number" min="1" max="120" value={age} onChange={(event) => setAge(event.target.value)} placeholder="AGE" className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600/50" />
           </div>
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Shirt size (optional)</label>
-            <input value={shirtSize} onChange={(event) => setShirtSize(event.target.value.toUpperCase())} placeholder="EX: M, 2XL" className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-600/50" />
+            <input value={shirtSize} onChange={(event) => setShirtSize(event.target.value.toUpperCase())} placeholder="EX: M, 2XL" className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600/50" />
           </div>
 
           {entryCategory !== 'solo' && (
-            <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-2.5 rounded-xl border border-red-600/25 bg-red-600/5 p-3">
+            <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-xl border border-red-600/25 bg-red-600/5 p-3">
               <div className="sm:col-span-2">
                 <label className="block text-xs font-semibold uppercase tracking-wider text-red-700 dark:text-red-400 mb-1">Team name</label>
-                <input required value={teamName} onChange={(event) => setTeamName(event.target.value.toUpperCase())} placeholder="EX: TEAM RACEPULSE" className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-600/50" />
+                <input required value={teamName} onChange={(event) => setTeamName(event.target.value.toUpperCase())} placeholder="EX: TEAM RACEPULSE" className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600/50" />
               </div>
               {Array.from({ length: memberCount - 1 }).map((_, index) => (
                 <div key={index}>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Member {index + 2}</label>
-                  <input required value={teamMembers[index + 1] || ''} onChange={(event) => updateMember(index + 1, event.target.value.toUpperCase())} placeholder={`MEMBER ${index + 2} NAME`} className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-600/50" />
+                  <input required value={teamMembers[index + 1] || ''} onChange={(event) => updateMember(index + 1, event.target.value.toUpperCase())} placeholder={`MEMBER ${index + 2} NAME`} className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600/50" />
                 </div>
               ))}
             </div>
@@ -2811,7 +2811,7 @@ function RosterImportPanel({ race, runnerProfiles }: RosterImportPanelProps) {
     <div className="space-y-3">
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
         <div>
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] flex items-center gap-1.5">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] flex items-center gap-2">
             <FileUp className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> Import Runner Roster
           </h3>
           <p className="text-xs text-[var(--text-secondary)] mt-1">Upload an Excel or CSV bib assignment file.</p>
@@ -2836,13 +2836,13 @@ function RosterImportPanel({ race, runnerProfiles }: RosterImportPanelProps) {
             <span className="text-xs font-mono font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">{preview.runners.length} READY</span>
           </div>
           <div className="grid grid-cols-2 gap-2 text-center tabular-nums">
-            <div className="rounded-lg bg-[var(--surface-hover)] px-2 py-1.5"><p className="text-sm font-semibold text-[var(--text-primary)]">{preview.runners.length}</p><p className="text-xs text-[var(--text-secondary)]">Runners</p></div>
-            <div className="rounded-lg bg-[var(--surface-hover)] px-2 py-1.5"><p className="text-sm font-semibold text-[var(--text-primary)]">{preview.skipped.length}</p><p className="text-xs text-[var(--text-secondary)]">Skipped</p></div>
+            <div className="rounded-lg bg-[var(--surface-hover)] px-2 py-2"><p className="text-sm font-semibold text-[var(--text-primary)]">{preview.runners.length}</p><p className="text-xs text-[var(--text-secondary)]">Runners</p></div>
+            <div className="rounded-lg bg-[var(--surface-hover)] px-2 py-2"><p className="text-sm font-semibold text-[var(--text-primary)]">{preview.skipped.length}</p><p className="text-xs text-[var(--text-secondary)]">Skipped</p></div>
           </div>
           {preview.skipped.length > 0 && <p className="text-xs text-amber-800 dark:text-amber-300">Skipped: {preview.skipped.slice(0, 2).join(' • ')}{preview.skipped.length > 2 ? ` • +${preview.skipped.length - 2} more` : ''}</p>}
           <div className="max-h-32 overflow-y-auto space-y-1 pr-1">
             {preview.runners.slice(0, 8).map((runner) => <div key={`${runner.distance}-${runner.bibNumber}`} className="flex items-center gap-2 text-xs text-[var(--text-secondary)]"><span className="font-mono font-semibold text-[var(--text-primary)] w-16">#{runner.bibNumber}</span><span className="truncate flex-1">{runner.fullName}</span><span>{runner.distance}</span></div>)}
-            {preview.runners.length > 8 && <p className="text-xs text-[var(--text-muted)]">+ {preview.runners.length - 8} more</p>}
+            {preview.runners.length > 8 && <p className="text-xs text-[var(--text-secondary)]">+ {preview.runners.length - 8} more</p>}
           </div>
           <button hidden={!can('roster.import')} type="button" onClick={handleImport} disabled={importing || preview.runners.length === 0} className="w-full min-h-11 text-xs font-semibold uppercase tracking-wider px-4 rounded-xl text-white bg-emerald-700 hover:bg-emerald-600 flex items-center justify-center gap-2 transition-colors disabled:opacity-60">
             {importing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Users2 className="w-4 h-4" />} {importing ? 'Importing roster...' : `Import ${preview.runners.length} runners`}
@@ -3173,7 +3173,7 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
             <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)]">
               Chip Assignment Roster
             </h3>
-            <p className="text-xs text-[var(--text-secondary)] mt-0.5 tabular-nums">
+            <p className="text-xs text-[var(--text-secondary)] mt-1 tabular-nums">
               {kitClaimedCount} kits claimed &bull; {assignedCount} / {runnerProfiles.length} chips assigned ({progressPct}%)
             </p>
           </div>
@@ -3183,7 +3183,7 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
                 key={filter}
                 type="button"
                 onClick={() => setRosterFilter(filter)}
-                className={`min-h-11 text-xs font-semibold uppercase tracking-wider px-3.5 rounded-xl border transition-colors ${
+                className={`min-h-11 text-xs font-semibold uppercase tracking-wider px-4 rounded-xl border transition-colors ${
                   rosterFilter === filter
                     ? 'bg-red-700 border-red-700 text-white'
                     : 'glass-inset border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
@@ -3195,19 +3195,19 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
           </div>
         </div>
 
-        <div className="h-1.5 rounded-full bg-[var(--surface-inset)] overflow-hidden shrink-0" aria-hidden="true">
+        <div className="h-2 rounded-full bg-[var(--surface-inset)] overflow-hidden shrink-0" aria-hidden="true">
           <div className="h-full rounded-full bg-red-600 transition-all duration-200" style={{ width: `${progressPct}%` }} />
         </div>
 
         {runnerProfiles.length > 0 && (
           <div className="relative shrink-0">
-            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" aria-hidden="true" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-secondary)]" aria-hidden="true" />
             <input
               type="search"
               placeholder="Search runner by name or bib"
               value={rosterSearch}
               onChange={(e) => setRosterSearch(e.target.value)}
-              className="w-full min-h-11 glass-inset pl-9 pr-4 py-2 text-xs font-semibold font-mono tracking-wide text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-600/50"
+              className="w-full min-h-11 glass-inset pl-9 pr-4 py-2 text-xs font-semibold font-mono tracking-wide text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600/50"
             />
           </div>
         )}
@@ -3294,7 +3294,7 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
           </div>
         )}
 
-        <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-0.5">
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1">
           {rightTab === 'add' && can('roster.add') && (
             <ManualRunnerPanel race={race} runnerProfiles={runnerProfiles} />
           )}
@@ -3306,7 +3306,7 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
           {rightTab === 'assign' && (
             <div className="space-y-3">
               <div>
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] flex items-center gap-1.5">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] flex items-center gap-2">
                   <Cpu className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> Race Kit Assignment
                 </h3>
                 <p className="text-xs text-[var(--text-secondary)] mt-1">Select a bib, scan one chip with the USB keyboard scanner, then verify before assigning.</p>
@@ -3323,7 +3323,7 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
                         placeholder="TYPE OR SCAN BIB"
                         value={bibInput}
                         onChange={(e) => { setBibInput(e.target.value.toUpperCase()); setFeedback(null); }}
-                        className="min-w-0 flex-1 min-h-11 glass-inset px-3.5 py-2 text-sm font-semibold font-mono tracking-wider text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-600/50"
+                        className="min-w-0 flex-1 min-h-11 glass-inset px-4 py-2 text-sm font-semibold font-mono tracking-wider text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600/50"
                       />
                       <button
                         hidden={!can('roster.chips')}
@@ -3340,7 +3340,7 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
 
                   {bibInput.trim() && (
                     foundRunner ? (
-                      <div className="glass-inset px-3.5 py-3 flex items-center justify-between gap-3">
+                      <div className="glass-inset px-4 py-3 flex items-center justify-between gap-3">
                         <div className="min-w-0">
                           <p className="text-sm font-semibold text-[var(--text-primary)] truncate">{foundRunner.fullName}</p>
                           <p className="text-xs text-[var(--text-secondary)]">{foundRunner.distance} &bull; #{foundRunner.bibNumber} &bull; Shirt {foundRunner.shirtSize || 'unset'}</p>
@@ -3359,7 +3359,7 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
                           )}
                         </div>
                         <div className="flex flex-col items-end gap-1 shrink-0">
-                          <span className={`text-xs font-semibold uppercase tracking-wide px-2.5 py-1 rounded-full ${foundRunner.chipId ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-700/25' : 'bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-700/25'}`}>
+                          <span className={`text-xs font-semibold uppercase tracking-wide px-3 py-1 rounded-full ${foundRunner.chipId ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-700/25' : 'bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-700/25'}`}>
                             {foundRunner.chipId ? `Chip: ${foundRunner.chipId}` : 'No Chip Yet'}
                           </span>
                           <span className={`text-xs font-semibold uppercase tracking-wide ${foundRunner.kitClaimedAt ? 'text-emerald-700 dark:text-emerald-400' : 'text-[var(--text-secondary)]'}`}>
@@ -3391,7 +3391,7 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
                       autoComplete="off"
                       autoCapitalize="characters"
                       disabled={!foundRunner}
-                      className="w-full min-h-11 glass-inset px-3.5 py-2 text-sm font-semibold font-mono tracking-wider text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-600/50 disabled:opacity-50"
+                      className="w-full min-h-11 glass-inset px-4 py-2 text-sm font-semibold font-mono tracking-wider text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600/50 disabled:opacity-50"
                     />
                     <p className="text-xs text-[var(--text-secondary)] mt-1">VF-787P bridge reads are disabled here to prevent nearby chips from mixing.</p>
                   </div>
@@ -3652,23 +3652,23 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
       <section className="order-2 lg:order-1 min-h-0 flex-1 flex flex-col glass-panel p-4 gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] flex items-center gap-1.5">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] flex items-center gap-2">
               <ListChecks className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> Who's In The Race
             </h3>
-            <p className="text-xs text-[var(--text-secondary)] mt-0.5">Runners mark started automatically when crossing the Start mat.</p>
+            <p className="text-xs text-[var(--text-secondary)] mt-1">Runners mark started automatically when crossing the Start mat.</p>
           </div>
           <span className="text-xs font-mono font-semibold text-[var(--text-primary)] tabular-nums shrink-0">{startedCount} / {runnerProfiles.length} started</span>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-2 shrink-0">
           <div className="relative flex-1 min-w-0">
-            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" aria-hidden="true" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-secondary)]" aria-hidden="true" />
             <input
               type="search"
               value={rollCallSearch}
               onChange={(event) => setRollCallSearch(event.target.value)}
               placeholder="Search start checklist by name or bib"
-              className="w-full min-h-11 glass-inset pl-9 pr-3 py-2 text-xs font-mono text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-600/50"
+              className="w-full min-h-11 glass-inset pl-9 pr-3 py-2 text-xs font-mono text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600/50"
             />
           </div>
           {distanceGroups.length > 1 && (
@@ -3702,12 +3702,12 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
                     <h4 className="text-xs font-semibold uppercase tracking-wider text-red-700 dark:text-red-400">{group.distance}</h4>
                     <span className="text-xs font-mono font-semibold text-[var(--text-secondary)] tabular-nums">{groupStarted}/{group.runners.length} started</span>
                   </div>
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     {group.runners.map((r) => {
                       const started = startedBibs.has(r.bibNumber);
                       return (
-                        <div key={r.uid} className={`flex items-center justify-between px-3 py-2.5 text-xs gap-2 rounded-xl border ${started ? 'bg-emerald-500/10 border-emerald-700/25' : 'glass-inset border-transparent'}`}>
-                          {started ? <CheckCircle2 className="w-4 h-4 text-emerald-700 dark:text-emerald-400 shrink-0" aria-hidden="true" /> : <Circle className="w-4 h-4 text-[var(--text-muted)] shrink-0" aria-hidden="true" />}
+                        <div key={r.uid} className={`flex items-center justify-between px-3 py-3 text-xs gap-2 rounded-xl border ${started ? 'bg-emerald-500/10 border-emerald-700/25' : 'glass-inset border-transparent'}`}>
+                          {started ? <CheckCircle2 className="w-4 h-4 text-emerald-700 dark:text-emerald-400 shrink-0" aria-hidden="true" /> : <Circle className="w-4 h-4 text-[var(--text-secondary)] shrink-0" aria-hidden="true" />}
                           <span className="font-mono font-semibold text-[var(--text-primary)] w-16 shrink-0">#{r.bibNumber}</span>
                           <span className="flex-1 truncate text-[var(--text-primary)] font-semibold">{runnerTimingName(r)}</span>
                           <span className={`text-xs font-semibold uppercase tracking-wider shrink-0 ${started ? 'text-emerald-700 dark:text-emerald-400' : 'text-[var(--text-secondary)]'}`}>
@@ -3727,20 +3727,20 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
       {/* Right 36% Desktop / Top Mobile: Distance Wave Start Controls */}
       <section className="order-1 lg:order-2 glass-panel p-4 flex flex-col min-h-0 gap-3 lg:h-full">
         <div className="shrink-0">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] flex items-center gap-1.5">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] flex items-center gap-2">
             <PlayCircle className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> Distance Wave Starts
           </h3>
           <p className="text-xs text-[var(--text-secondary)] mt-1">Fire each wave when runners leave the start line. Free Slots inherit their matching division's gun clock.</p>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-0.5">
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1">
           {distanceGroups.length === 0 && <p className="text-xs text-[var(--text-secondary)]">Wave controls appear once runners are registered.</p>}
           {distanceGroups.map((group) => {
             const waveStartTime = getWaveStartTime(race, group.distance);
             const settingThisWave = settingDistance === group.distance;
             const editingThisWave = editingGunTimeDistance === group.distance;
             return (
-              <div key={group.distance} className="glass-inset px-3.5 py-3 space-y-3">
+              <div key={group.distance} className="glass-inset px-4 py-3 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-semibold font-display text-[var(--text-primary)]">{group.distance}</span>
                   {waveStartTime ? <LiveClock gunStartTime={waveStartTime} /> : <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Not started</span>}
@@ -3767,7 +3767,7 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
                     </div>
                   </div>
                 ) : waveStartTime ? (
-                  <div className="space-y-2.5">
+                  <div className="space-y-3">
                     <p className="text-xs font-mono font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">Gun fired: {formatClockTime(waveStartTime)}</p>
                     <div className="flex flex-wrap gap-2">
                       <button
@@ -3791,7 +3791,7 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
                         type="button"
                         onClick={() => void handleResetWave(group.distance)}
                         disabled={!!settingDistance}
-                        className="min-h-11 px-3 rounded-xl border border-red-600/35 bg-red-600/10 text-xs font-semibold uppercase tracking-wider text-red-700 dark:text-red-400 hover:bg-red-700 hover:text-white disabled:opacity-50 flex items-center gap-1.5 transition-colors"
+                        className="min-h-11 px-3 rounded-xl border border-red-600/35 bg-red-600/10 text-xs font-semibold uppercase tracking-wider text-red-700 dark:text-red-400 hover:bg-red-700 hover:text-white disabled:opacity-50 flex items-center gap-2 transition-colors"
                       >
                         {settingThisWave ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />} Reset
                       </button>
@@ -3861,10 +3861,10 @@ function RunnerRosterPanel({ race, runnerProfiles }: RunnerRosterPanelProps) {
     <div className="glass-panel p-4 flex-1 min-h-0 flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div>
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] flex items-center gap-1.5">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] flex items-center gap-2">
             <Users2 className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> Registered Runners by Distance
           </h3>
-          <p className="text-xs text-[var(--text-secondary)] mt-0.5 tabular-nums">{runnerProfiles.length} total registered</p>
+          <p className="text-xs text-[var(--text-secondary)] mt-1 tabular-nums">{runnerProfiles.length} total registered</p>
         </div>
         <button
           hidden={!can('roster.export')}
@@ -3878,13 +3878,13 @@ function RunnerRosterPanel({ race, runnerProfiles }: RunnerRosterPanelProps) {
 
       <div className="flex flex-col sm:flex-row gap-2 shrink-0">
         <div className="relative flex-1 min-w-0">
-          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" aria-hidden="true" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-secondary)]" aria-hidden="true" />
           <input
             type="search"
             value={rosterSearch}
             onChange={(event) => setRosterSearch(event.target.value)}
             placeholder="Search roster by name or bib"
-            className="w-full min-h-11 glass-inset pl-9 pr-3 py-2 text-xs font-mono text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-600/50"
+            className="w-full min-h-11 glass-inset pl-9 pr-3 py-2 text-xs font-mono text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600/50"
           />
         </div>
         {distanceGroups.length > 1 && (
@@ -3914,9 +3914,9 @@ function RunnerRosterPanel({ race, runnerProfiles }: RunnerRosterPanelProps) {
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-red-700 dark:text-red-400">{group.distance}</h4>
                 <span className="text-xs font-mono font-semibold text-[var(--text-secondary)] tabular-nums">{group.runners.length} runners</span>
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 {group.runners.map((r) => (
-                  <div key={r.uid} className="flex items-center justify-between glass-inset px-3 py-2.5 text-xs gap-2">
+                  <div key={r.uid} className="flex items-center justify-between glass-inset px-3 py-3 text-xs gap-2">
                     <span className="font-mono font-semibold text-[var(--text-primary)] w-16 shrink-0">#{r.bibNumber}</span>
                     <span className="flex-1 truncate text-[var(--text-primary)] font-semibold">{r.fullName}</span>
                     <span className="text-[var(--text-secondary)] shrink-0 tabular-nums">{r.ageNotProvided ? 'Age --' : `${r.gender === 'male' ? 'M' : 'F'} • ${r.age}`}</span>
@@ -4077,7 +4077,7 @@ function RaceRankingsPanel({
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 shrink-0">
               <div className="relative flex-1 min-w-0">
                 <label htmlFor="ranking-search" className="sr-only">Search rankings by name or bib number</label>
-                <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 w-4 h-4 -translate-y-1/2 text-[var(--text-muted)]" />
+                <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 w-4 h-4 -translate-y-1/2 text-[var(--text-secondary)]" />
                 <input
                   id="ranking-search"
                   type="search"
@@ -4091,7 +4091,7 @@ function RaceRankingsPanel({
                     type="button"
                     onClick={() => setRankingSearch('')}
                     aria-label="Clear ranking search"
-                    className="absolute right-0.5 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
                   >
                     <X aria-hidden="true" className="w-4 h-4" />
                   </button>
@@ -4110,7 +4110,7 @@ function RaceRankingsPanel({
                   type="button"
                   aria-pressed={rankingFilter === 'flagged'}
                   onClick={() => setRankingFilter('flagged')}
-                  className={`min-h-11 px-3 rounded-xl text-xs font-semibold border transition-colors flex items-center gap-1.5 ${rankingFilter === 'flagged' ? 'border-amber-500 bg-amber-500 text-black' : flaggedCount > 0 ? 'border-amber-700/35 bg-amber-500/10 text-amber-800 dark:text-amber-300' : 'glass-inset border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                  className={`min-h-11 px-3 rounded-xl text-xs font-semibold border transition-colors flex items-center gap-2 ${rankingFilter === 'flagged' ? 'border-amber-500 bg-amber-500 text-black' : flaggedCount > 0 ? 'border-amber-700/35 bg-amber-500/10 text-amber-800 dark:text-amber-300' : 'glass-inset border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
                 >
                   <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" /> Flagged ({flaggedCount})
                 </button>
@@ -4118,7 +4118,7 @@ function RaceRankingsPanel({
                   type="button"
                   aria-pressed={rankingFilter === 'invalidated'}
                   onClick={() => setRankingFilter('invalidated')}
-                  className={`min-h-11 px-3 rounded-xl text-xs font-semibold border transition-colors flex items-center gap-1.5 ${rankingFilter === 'invalidated' ? 'border-rose-700 bg-rose-700 text-white' : invalidatedCount > 0 ? 'border-rose-700/35 bg-rose-500/10 text-rose-700 dark:text-rose-400' : 'glass-inset border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                  className={`min-h-11 px-3 rounded-xl text-xs font-semibold border transition-colors flex items-center gap-2 ${rankingFilter === 'invalidated' ? 'border-rose-700 bg-rose-700 text-white' : invalidatedCount > 0 ? 'border-rose-700/35 bg-rose-500/10 text-rose-700 dark:text-rose-400' : 'glass-inset border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
                 >
                   <Ban className="w-3.5 h-3.5" aria-hidden="true" /> DQ &amp; Dequeued ({invalidatedCount})
                 </button>
@@ -4152,16 +4152,16 @@ function RaceRankingsPanel({
 
                   {visibleFolders.map((folder) => (
                     <details key={`${rankingFilter}-${isSearching ? rankingSearch : 'browse'}-${folder.distance}`} open={isSearching || rankingFilter === 'flagged' || undefined} className="group/distance glass-inset overflow-hidden">
-                      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 p-3.5 [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-600">
+                      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 p-4 [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-600">
                         <Folder aria-hidden="true" className="w-5 h-5 shrink-0 text-red-700 dark:text-red-400 group-open/distance:hidden" />
                         <FolderOpen aria-hidden="true" className="hidden w-5 h-5 shrink-0 text-red-700 dark:text-red-400 group-open/distance:block" />
                         <span className="min-w-0 flex-1">
                           <span className="block text-sm font-semibold text-[var(--text-primary)]">{folder.distance}</span>
-                          <span className="block mt-0.5 text-xs text-[var(--text-secondary)] tabular-nums">
+                          <span className="block mt-1 text-xs text-[var(--text-secondary)] tabular-nums">
                             {folder.subcategories.length} subcategor{folder.subcategories.length === 1 ? 'y' : 'ies'} &bull; {folder.finisherCount} {isSearching || rankingFilter === 'flagged' ? 'matching' : 'finished'}
                           </span>
                         </span>
-                        <ChevronRight aria-hidden="true" className="w-4 h-4 shrink-0 text-[var(--text-muted)] group-open/distance:rotate-90" />
+                        <ChevronRight aria-hidden="true" className="w-4 h-4 shrink-0 text-[var(--text-secondary)] group-open/distance:rotate-90" />
                       </summary>
                       <div className="border-t border-[var(--border-default)] px-3 pb-3 sm:px-4">
                         {folder.subcategories.map((category) => (
@@ -4173,7 +4173,7 @@ function RaceRankingsPanel({
                               <span className="text-xs text-[var(--text-secondary)] shrink-0 tabular-nums">
                                 {category.results.length} {isSearching || rankingFilter === 'flagged' ? 'matching' : 'finished'}
                               </span>
-                              <ChevronRight aria-hidden="true" className="w-4 h-4 shrink-0 text-[var(--text-muted)] group-open/category:rotate-90" />
+                              <ChevronRight aria-hidden="true" className="w-4 h-4 shrink-0 text-[var(--text-secondary)] group-open/category:rotate-90" />
                             </summary>
                             <ol aria-label={`${folder.distance} ${category.label}`} className="space-y-2 pb-3">
                               {category.results.map((r) => {
@@ -4188,9 +4188,9 @@ function RaceRankingsPanel({
                                         <span className="block truncate font-semibold text-[var(--text-primary)]">{runnerTimingName(r.runnerProfile, r.bibNumber)}</span>
                                         <span className="text-[var(--text-secondary)] font-mono">Bib #{r.bibNumber}</span>
                                         {anomalies.length > 0 && (
-                                          <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                          <div className="flex flex-wrap gap-2 mt-2">
                                             {anomalies.map((label) => (
-                                              <span key={label} className="inline-flex items-center gap-1 rounded-md border border-amber-700/30 bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:text-amber-300">
+                                              <span key={label} className="inline-flex items-center gap-1 rounded-md border border-amber-700/30 bg-amber-500/10 px-2 py-1 text-xs font-semibold text-amber-800 dark:text-amber-300">
                                                 <AlertTriangle className="w-3 h-3 shrink-0" aria-hidden="true" /> {label}
                                               </span>
                                             ))}
@@ -4234,7 +4234,7 @@ function RaceRankingsPanel({
                     <>
                       {filteredDisqualified.length > 0 && (
                         <div className="space-y-2">
-                          <h4 className="text-xs font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-400 flex items-center gap-1.5">
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-400 flex items-center gap-2">
                             <Ban className="w-3.5 h-3.5" aria-hidden="true" /> Disqualified Finishers ({filteredDisqualified.length})
                           </h4>
                           <div className="space-y-2">
@@ -4244,7 +4244,7 @@ function RaceRankingsPanel({
                                 <div key={r.bibNumber} className="glass-inset p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-rose-700/25">
                                   <div className="min-w-0 flex-1 space-y-1">
                                     <div className="flex flex-wrap items-center gap-2">
-                                      <span className="font-mono text-xs font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-400 px-2 py-0.5 rounded bg-rose-500/10">DQ</span>
+                                      <span className="font-mono text-xs font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-400 px-2 py-1 rounded bg-rose-500/10">DQ</span>
                                       <span className="font-semibold text-xs text-[var(--text-primary)] truncate">{runnerTimingName(r.runnerProfile, r.bibNumber)}</span>
                                       <span className="font-mono text-xs text-[var(--text-secondary)]">Bib #{r.bibNumber} &bull; {runnerDivisionLabel(r.runnerProfile)}</span>
                                     </div>
@@ -4286,7 +4286,7 @@ function RaceRankingsPanel({
 
                       {filteredDequeued.length > 0 && (
                         <div className="space-y-2">
-                          <h4 className="text-xs font-semibold uppercase tracking-wider text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-amber-800 dark:text-amber-300 flex items-center gap-2">
                             <Undo2 className="w-3.5 h-3.5" aria-hidden="true" /> Recently Dequeued Finish Scans ({filteredDequeued.length})
                           </h4>
                           <p className="text-xs text-[var(--text-secondary)]">
@@ -4299,7 +4299,7 @@ function RaceRankingsPanel({
                                 <div key={entry.bibNumber} className="glass-inset p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-amber-700/25">
                                   <div className="min-w-0 flex-1 space-y-1">
                                     <div className="flex flex-wrap items-center gap-2">
-                                      <span className="font-mono text-xs font-semibold uppercase tracking-wider text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded bg-amber-500/10">Dequeued</span>
+                                      <span className="font-mono text-xs font-semibold uppercase tracking-wider text-amber-800 dark:text-amber-300 px-2 py-1 rounded bg-amber-500/10">Dequeued</span>
                                       <span className="font-semibold text-xs text-[var(--text-primary)] truncate">{entry.runnerName}</span>
                                       <span className="font-mono text-xs text-[var(--text-secondary)]">Bib #{entry.bibNumber} &bull; {entry.division}</span>
                                     </div>
@@ -4349,10 +4349,10 @@ function RaceRankingsPanel({
       {/* Right 36% Desktop / Top Mobile: Live Presentation & Review Calibration Dock */}
       <section className="order-1 lg:order-2 glass-panel p-4 flex flex-col gap-3 lg:h-full lg:overflow-y-auto shrink-0">
         <div>
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] flex items-center gap-1.5">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] flex items-center gap-2">
             <Trophy className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> Live Rankings Control
           </h3>
-          <p className="text-xs text-[var(--text-secondary)] mt-0.5 tabular-nums">
+          <p className="text-xs text-[var(--text-secondary)] mt-1 tabular-nums">
             {totalFinishers} finisher{totalFinishers === 1 ? '' : 's'} ranked
             {disqualifiedResults.length > 0 ? ` • ${disqualifiedResults.length} DQ excluded` : ''}
           </p>
@@ -4395,7 +4395,7 @@ function RaceRankingsPanel({
         </div>
 
         {(authority || can('timing.correct')) && (
-          <div className="glass-inset p-3.5 space-y-2.5 text-xs">
+          <div className="glass-inset p-4 space-y-3 text-xs">
             <label htmlFor="finish-review-window-ms" className="block font-semibold text-[var(--text-primary)]">
               Calibrated finish review window (ms)
             </label>
@@ -4445,9 +4445,9 @@ function RaceRankingsPanel({
                 {managingFinisher.finishTime ? ` · Recorded ${formatRaceTime(managingFinisher.finishTime)}` : ''}
               </p>
               {finisherAnomalyLabels(managingFinisher).length > 0 && (
-                <div className="flex flex-wrap gap-1.5 pt-2">
+                <div className="flex flex-wrap gap-2 pt-2">
                   {finisherAnomalyLabels(managingFinisher).map((label) => (
-                    <span key={label} className="inline-flex items-center gap-1 rounded-md border border-amber-700/30 bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:text-amber-300">
+                    <span key={label} className="inline-flex items-center gap-1 rounded-md border border-amber-700/30 bg-amber-500/10 px-2 py-1 text-xs font-semibold text-amber-800 dark:text-amber-300">
                       <AlertTriangle className="w-3 h-3 shrink-0" aria-hidden="true" /> {label}
                     </span>
                   ))}

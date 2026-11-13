@@ -45,7 +45,7 @@ export default function EntrySequencePanel({ race, runners, chipReads }: {
           <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)]">
             Consecutive entries
           </h4>
-          <p className="text-xs text-[var(--text-secondary)] mt-0.5 tabular-nums">
+          <p className="text-xs text-[var(--text-secondary)] mt-1 tabular-nums">
             {linked.length} {linked.length === 1 ? 'link configured' : 'links configured'}
           </p>
         </div>
@@ -101,7 +101,7 @@ export default function EntrySequencePanel({ race, runners, chipReads }: {
             <button
               type="submit"
               disabled={saving || !nextBib || !!race.completedAt}
-              className="w-full min-h-11 rounded-xl bg-red-700 hover:bg-red-600 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-white disabled:opacity-50 transition-colors"
+              className="w-full min-h-11 rounded-xl bg-red-700 hover:bg-red-800 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-white disabled:opacity-50 transition-colors"
             >
               {saving ? 'Saving...' : 'Save entry sequence'}
             </button>
