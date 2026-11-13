@@ -19,9 +19,9 @@
   --color-amber-300: #ff8f85;
   --color-amber-400: #ff6259;
   --color-amber-500: #ff3b30; /* Apple System Red */
-  --color-amber-600: #e0362c;
-  --color-amber-700: #c22e25;
-  --color-amber-800: #9e2019;
+  --color-amber-600: #cc251c; /* >= 5.28:1 WCAG AA with white/#fffafa */
+  --color-amber-700: #b01e16;
+  --color-amber-800: #8f1812;
   --color-amber-900: #6b1512;
   --color-amber-950: #3d0b09;
   --color-amber-505: #ff6259;
@@ -33,9 +33,9 @@
   --color-red-300: #ff8f85;
   --color-red-400: #ff6259;
   --color-red-500: #ff3b30; /* Apple System Red */
-  --color-red-600: #e0362c;
-  --color-red-700: #c22e25;
-  --color-red-800: #9e2019;
+  --color-red-600: #cc251c; /* >= 5.28:1 WCAG AA with white/#fffafa */
+  --color-red-700: #b01e16;
+  --color-red-800: #8f1812;
   --color-red-900: #6b1512;
   --color-red-950: #3d0b09;
 
@@ -47,9 +47,8 @@
   --animate-fadeIn: fadeIn 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* Mathematical Root Baseline & Relative Sizing */
+/* Browser owns root font-size when <meta name="text-scale" content="scale"> is set. */
 html {
-  font-size: 100%; /* Strictly 16px root baseline */
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }
@@ -277,6 +276,9 @@ video {
    Draws full-bleed behind the Android status bar while padding inner controls below safe-area insets. */
 .brand-nav,
 .glass-nav {
+  /* Override light-mode :root red text token because the header surface stays charcoal (#141416) in both themes (6.26:1 contrast). */
+  --color-red-500: #ff6259;
+  --color-amber-500: #ff6259;
   background: #141416;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3);
@@ -318,20 +320,16 @@ video {
   border-radius: var(--radius-control);
 }
 
-/* Static "floating" heading treatment: elevation is implied through layered
-   shadow and glow, not motion - the text should look suspended while staying
-   completely still. Dark mode gets a brushed-metal embossed fill (light mode
-   stays solid text - a silver gradient has no contrast on a white page). */
+/* Static "floating" heading treatment: elevation is implied through subtle shadow
+   while keeping solid foreground color so contrast samplers and forced colors read true fill. */
 .heading-float {
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
   color: var(--text-primary);
 }
 
 .dark .heading-float {
-  background: linear-gradient(180deg, #ffffff 0%, #f4f4f5 55%, #e4e4e7 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: #ffffff;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
 }
 
 /* Athletic finish-line focal accent: calibrated >= 5.14:1 WCAG AA in both themes */
@@ -637,6 +635,15 @@ video {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
   .animate-fadeIn,
   .pulse-ring,
   .rp-shimmer-sweep,
@@ -645,12 +652,59 @@ video {
   .auth-glow,
   .auth-beam,
   .auth-pulse {
-    animation: none;
+    animation: none !important;
   }
   .auth-pulse,
   .rp-shimmer-sweep {
     opacity: 0;
   }
+}
+
+/* Accessible 44x44px hit-area checkbox with crisp 20x20 visual indicator */
+.rp-checkbox {
+  appearance: none;
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  flex-shrink: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.rp-checkbox::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 2px solid var(--border-strong);
+  background: var(--surface-card);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.rp-checkbox:checked::before {
+  background: var(--color-red-600);
+  border-color: var(--color-red-600);
+}
+
+.rp-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  top: 16px;
+  left: 19px;
+  width: 6px;
+  height: 10px;
+  border-right: 2px solid #ffffff;
+  border-bottom: 2px solid #ffffff;
+  transform: rotate(40deg);
 }
 
 /* Tactile button definition: in light mode, interactive buttons have a distinct dark border */

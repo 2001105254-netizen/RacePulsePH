@@ -8,7 +8,7 @@ import { cn } from '../../lib/utils';
  * Features a top edge-bevel highlight, sub-surface hardware rim, and responsive mechanical click.
  */
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full text-xs font-semibold uppercase tracking-wider transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-page)] disabled:pointer-events-none disabled:opacity-50 select-none motion-safe:active:scale-[0.97] motion-safe:active:translate-y-[0.5px]',
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full text-xs font-semibold uppercase tracking-wider transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-page)] disabled:pointer-events-none disabled:opacity-50 select-none motion-safe:active:scale-[0.97]',
   {
     variants: {
       variant: {
@@ -26,10 +26,10 @@ const buttonVariants = cva(
           'text-red-700 dark:text-red-400 underline-offset-4 hover:underline normal-case tracking-normal font-normal',
       },
       size: {
-        default: 'h-10 px-5 py-2',
-        sm: 'h-8 px-3.5 text-[11px] rounded-full',
+        default: 'min-h-11 px-5 py-2',
+        sm: 'min-h-11 sm:min-h-9 px-4 text-xs rounded-full',
         lg: 'h-12 px-7 text-sm tracking-wide rounded-full',
-        icon: 'h-10 w-10 p-0 rounded-full',
+        icon: 'h-11 w-11 p-0 rounded-full',
       },
     },
     defaultVariants: {

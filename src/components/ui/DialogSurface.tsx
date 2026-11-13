@@ -37,7 +37,7 @@ export default function DialogSurface({ children, className = '', titleId, descr
   }, []);
   if (typeof document === 'undefined') return null;
   return createPortal(
-    <dialog ref={ref} className={`rp-dialog ${className}`} role={alert ? 'alertdialog' : 'dialog'} aria-labelledby={titleId} aria-describedby={descriptionId} onCancel={event => { event.preventDefault(); onRequestClose(); }}>
+    <dialog ref={ref} className={`rp-dialog ${className}`} role={alert ? 'alertdialog' : undefined} aria-labelledby={titleId} aria-describedby={descriptionId} onCancel={event => { event.preventDefault(); onRequestClose(); }}>
       {children}
     </dialog>, document.body,
   );
