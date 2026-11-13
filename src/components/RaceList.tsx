@@ -53,7 +53,7 @@ export default function RaceList({
           </p>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-4">
           {races.map((race) => {
             const isSelected = race.id === selectedRaceId;
             const regOpen = isRaceRegistrationOpen(race);
@@ -63,18 +63,18 @@ export default function RaceList({
             return (
               <Card
                 key={race.id}
-                className={`group overflow-hidden text-left transition-[border-color,transform] duration-150 border-[var(--border-default)] hover:border-red-600/60 flex flex-col justify-between ${
+                className={`group overflow-hidden min-w-0 text-left transition-[border-color,transform] duration-150 border-[var(--border-default)] hover:border-red-600/60 flex flex-col justify-between ${
                   isSelected ? 'ring-2 ring-red-600 border-red-600' : ''
                 }`}
               >
-                <div>
+                <div className="min-w-0">
                   {/* Compact Poster or Fallback Banner */}
                   <div className="relative h-32 sm:h-36 w-full overflow-hidden bg-zinc-900 border-b border-[var(--border-default)]">
                     {race.posterImage ? (
                       <img
                         src={race.posterImage}
                         alt={race.name}
-                        className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+                        className="w-full h-full object-cover"
                       />
                     ) : (
                       <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-900 p-4 text-center">
@@ -86,7 +86,7 @@ export default function RaceList({
                     )}
 
                     {/* Status Badges Overlay */}
-                    <div className="absolute top-3 left-3 flex flex-wrap gap-2 z-10">
+                    <div className="absolute top-3 left-3 right-3 flex flex-wrap gap-2 z-10">
                       {isLive && (
                         <Badge variant="live" className="gap-2 shadow-sm text-xs">
                           <span className="w-1.5 h-1.5 rounded-full bg-red-600 motion-safe:animate-ping" />

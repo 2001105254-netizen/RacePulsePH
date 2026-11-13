@@ -544,7 +544,7 @@ function AppContent() {
       <MotionConfig reducedMotion="user">
         <div
           id="app_root"
-          className={`min-h-screen min-h-dvh bg-[var(--surface-page)] text-[var(--text-primary)] flex flex-col ${
+          className={`min-h-screen min-h-dvh bg-[var(--surface-page)] text-[var(--text-primary)] flex flex-col ${!authUser && guestScreen === 'landing' ? 'public-entry-shell' : ''} ${
             desktopLocked && !signedInUtilityView ? 'lg:h-screen lg:h-dvh lg:overflow-hidden' : ''
           }`}
         >
@@ -556,17 +556,17 @@ function AppContent() {
               Dark mode: dramatic red light-ray beaming in from top-left. */}
           <div className="ambient-glow fixed inset-0 -z-10 overflow-hidden pointer-events-none" />
 
-          {/* Global Navigation - persistent charcoal brand bar on every page */}
-          <nav className="sticky top-0 z-40 brand-nav shrink-0" aria-label="Primary navigation">
-            <div className={`${isWorkspaceShell ? 'w-full px-3 sm:px-4 xl:px-6' : 'w-full max-w-[1600px] mx-auto pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))]'} min-w-0 min-h-16 py-2 flex flex-wrap items-center justify-between gap-2 sm:gap-3`}>
-              <div className="flex min-w-0 flex-1 items-center gap-2">
+          {/* Global Navigation - persistent charcoal brand bar on desktop; flows naturally on phone & short landscape screens */}
+          <nav className="z-40 brand-nav shrink-0" aria-label="Primary navigation">
+            <div className={`${isWorkspaceShell ? 'w-full px-3 sm:px-4 xl:px-6' : 'w-full max-w-[1600px] mx-auto pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))]'} min-w-0 min-h-[64px] py-[8px] flex flex-wrap items-center justify-between gap-[8px] sm:gap-[12px]`}>
+              <div className={`flex items-center gap-[8px] ${isWorkspaceShell ? 'min-w-0 flex-1' : 'shrink-0'}`}>
                 {showBackButton && (
                   <button
                     type="button"
                     onClick={handleBack}
                     title="Back"
                     aria-label="Go back"
-                    className="w-11 h-11 shrink-0 rounded-full border border-white/15 bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] flex items-center justify-center text-white/90 hover:text-red-400 hover:border-red-500/50 transition-all duration-150 motion-safe:active:scale-95"
+                    className="w-[44px] h-[44px] shrink-0 rounded-full border border-white/15 bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] flex items-center justify-center text-white/90 hover:text-red-400 hover:border-red-500/50 transition-all duration-150 motion-safe:active:scale-95"
                   >
                     <ArrowLeft className="w-4 h-4" aria-hidden="true" />
                   </button>
@@ -574,10 +574,10 @@ function AppContent() {
                 <button
                   type="button"
                   onClick={() => (!authUser ? navigateGuest('landing') : handleBack())}
-                  className="flex items-center gap-2 min-w-0 shrink min-h-11 justify-start rounded-xl py-1 px-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                  className="flex items-center justify-center min-[560px]:justify-start gap-[8px] min-w-[44px] shrink-0 min-h-[44px] rounded-xl p-[4px] min-[560px]:px-[8px] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
                   aria-label="RacePulsePH home"
                 >
-                  <div className="w-9 h-9 rounded-[10px] border border-white/15 bg-transparent flex items-center justify-center p-1 transition-colors shrink-0">
+                  <div className="w-[36px] h-[36px] rounded-[10px] border border-white/15 bg-transparent flex items-center justify-center p-[4px] transition-colors shrink-0">
                     <img
                       src="/assets/racepulse-mark-192.png"
                       alt="RacePulsePH"
@@ -601,12 +601,12 @@ function AppContent() {
                 )}
               </div>
 
-              <div className={`flex flex-wrap items-center justify-end gap-2 ${isWorkspaceShell ? 'min-w-0 shrink' : 'shrink-0 max-w-full'}`}>
+              <div className={`flex flex-wrap items-center justify-end gap-[8px] ${isWorkspaceShell ? 'min-w-0 shrink' : 'shrink-0 max-w-full'}`}>
                 {isWorkspaceShell && (
                   <div
                     ref={setRightSlotEl}
                     id="workspace_header_right_slot"
-                    className="hidden lg:flex items-center gap-2 min-w-0 overflow-x-auto racepulse-horizontal-scroll"
+                    className="hidden lg:flex items-center gap-[8px] min-w-0 overflow-x-auto racepulse-horizontal-scroll"
                   />
                 )}
                 {!authUser && guestScreen === 'landing' && (
@@ -621,7 +621,7 @@ function AppContent() {
                       }}
                       onClick={() => navigateGuest('login')}
                       aria-label="Log in to your account"
-                      className="min-h-11 px-3 sm:px-4 rounded-full border border-white/15 bg-white/10 text-xs font-semibold uppercase tracking-wider text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:border-red-500/50 hover:text-red-400 transition-all duration-150 flex items-center justify-center gap-2 motion-safe:active:scale-[0.97]"
+                      className="min-h-[44px] px-[8px] min-[380px]:px-[12px] sm:px-[16px] rounded-full border border-white/15 bg-white/10 text-xs font-semibold uppercase tracking-wider text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:border-red-500/50 hover:text-red-400 transition-all duration-150 flex items-center justify-center gap-[4px] min-[380px]:gap-[8px] motion-safe:active:scale-[0.97]"
                     >
                       <LogIn className="w-4 h-4 shrink-0" aria-hidden="true" /> <span>Log in</span>
                     </button>
@@ -635,7 +635,7 @@ function AppContent() {
                       }}
                       onClick={() => navigateGuest('signup')}
                       aria-label="Create a RacePulsePH account"
-                      className="min-h-11 px-3 sm:px-4 rounded-full bg-red-700 hover:bg-red-600 text-white text-xs font-semibold uppercase tracking-wider border border-red-500/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.35)] transition-all duration-150 flex items-center justify-center gap-2 motion-safe:active:scale-[0.97]"
+                      className="min-h-[44px] px-[8px] min-[380px]:px-[12px] sm:px-[16px] rounded-full bg-red-700 hover:bg-red-600 text-white text-xs font-semibold uppercase tracking-wider border border-red-500/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.35)] transition-all duration-150 flex items-center justify-center gap-[4px] min-[380px]:gap-[8px] motion-safe:active:scale-[0.97]"
                     >
                       <UserPlus className="w-4 h-4 shrink-0" aria-hidden="true" /> <span>Register</span>
                     </button>
@@ -646,7 +646,7 @@ function AppContent() {
                   onClick={toggleTheme}
                   title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
                   aria-label="Toggle color theme"
-                  className="w-11 h-11 rounded-full border border-white/15 bg-white/10 text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:text-red-400 hover:border-red-500/50 transition-all duration-150 flex items-center justify-center motion-safe:active:scale-95 overflow-hidden"
+                  className="w-[44px] h-[44px] rounded-full border border-white/15 bg-white/10 text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:text-red-400 hover:border-red-500/50 transition-all duration-150 flex items-center justify-center motion-safe:active:scale-95 overflow-hidden"
                 >
                   <AnimatePresence mode="wait" initial={false}>
                     {theme === 'dark' ? (

@@ -73,7 +73,7 @@ export default function PublicRaceResults({ race, onRegister }: PublicRaceResult
   const registrationOpen = isRaceRegistrationOpen(race);
 
   return (
-    <section className="glass-panel overflow-x-clip scroll-mt-40 animate-fadeIn" aria-label={`${race.name} official results`}>
+    <section className="glass-panel overflow-hidden scroll-mt-[84px] animate-fadeIn" aria-label={`${race.name} official results`}>
       <div className="relative p-4 sm:p-6 border-b border-[var(--border-default)] hero-glow overflow-x-clip">
         {race.posterImage && <img src={race.posterImage} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover opacity-[0.1]" />}
         <div className="absolute inset-0 bg-gradient-to-r from-red-950/35 to-[var(--surface-card)]/90" />

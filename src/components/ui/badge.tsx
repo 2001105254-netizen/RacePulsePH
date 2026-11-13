@@ -4,7 +4,7 @@ import { cn } from '../../lib/utils';
 
 // Contrast: every text/background pair below measured >= 4.5:1 (see contrast-check.py).
 const badgeVariants = cva(
-  'inline-flex items-center gap-2 rounded-full border px-2 py-1 text-xs font-semibold',
+  'inline-flex flex-wrap max-w-full items-center gap-2 rounded-full border px-2 py-1 text-xs font-semibold',
   {
     variants: {
       variant: {

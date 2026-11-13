@@ -48,7 +48,7 @@ const TabsList = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      'inline-flex min-h-11 items-center justify-center gap-1 rounded-full bg-[var(--surface-inset)] dark:bg-[#0f0f12] p-1 text-[var(--text-secondary)] border border-[var(--border-default)] shadow-[inset_0_1px_2px_rgba(0,0,0,0.25)]',
+      'inline-flex flex-wrap max-w-full min-h-11 items-center justify-center gap-1 rounded-full bg-[var(--surface-inset)] dark:bg-[#0f0f12] p-1 text-[var(--text-secondary)] border border-[var(--border-default)] shadow-[inset_0_1px_2px_rgba(0,0,0,0.25)]',
       className
     )}
     {...props}
@@ -75,7 +75,7 @@ const TabsTrigger = React.forwardRef<HTMLButtonElement, TabsTriggerProps>(
         aria-selected={isSelected}
         onClick={() => context.onValueChange(value)}
         className={cn(
-          'relative inline-flex items-center justify-center whitespace-nowrap rounded-full border px-4 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-700 dark:focus-visible:ring-red-400 disabled:pointer-events-none disabled:opacity-50 select-none motion-safe:active:scale-[0.97]',
+          'relative inline-flex items-center justify-center whitespace-normal text-center leading-tight min-w-0 rounded-full border px-4 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-700 dark:focus-visible:ring-red-400 disabled:pointer-events-none disabled:opacity-50 select-none motion-safe:active:scale-[0.97]',
           isSelected
             ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-400 shadow-sm'
             : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]',

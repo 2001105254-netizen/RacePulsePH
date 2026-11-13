@@ -1,0 +1,622 @@
+@theme static {
+  --spacing-landing-gutter: 1.5rem;
+  --spacing-landing-section: 2rem;
+  --text-landing-hero: clamp(2.5rem, 1.5rem + 3.5vw, 4.5rem);
+  --text-landing-heading: clamp(1.5rem, 1.2rem + 0.8vw, 2rem);
+  --text-landing-body: 1rem;
+  --text-landing-caption: 0.75rem;
+  /* Existing public entry palette, expressed in OKLCH for consistent mixing. */
+  --color-entry-red: oklch(65.42% 0.2321 28.66);
+  --color-entry-coral: oklch(69.74% 0.1931 26.57);
+  --color-entry-warm-light: oklch(94.76% 0.0270 37.63);
+  --color-entry-action: oklch(48.92% 0.1817 29.05);
+  --color-entry-action-hover: oklch(54.64% 0.2025 29);
+  --color-entry-action-text: oklch(98.89% 0.0053 17.25);
+}
+
+.public-entry-shell { --surface-page: oklch(97% 0.012 35); }
+.dark .public-entry-shell { --surface-page: oklch(17% 0.006 28); }
+
+/* Scoped to the public page so existing workspace styling stays independent.
+   Direction: athletic and welcoming; energy 3, rhythm 2, motion 3.
+   Neutral surfaces keep race information prominent; red identifies actions and live telemetry. */
+.public-landing :is(.landing-intro, .landing-lookup) {
+  --surface-card: oklch(99% 0.004 30);
+  --surface-inset: oklch(95% 0.006 30);
+  --border-default: oklch(84% 0.008 30);
+  --border-button: oklch(60% 0.008 30);
+  --text-primary: oklch(22% 0.008 30);
+  --text-secondary: oklch(43% 0.012 30);
+  --landing-accent: oklch(48% 0.18 28);
+  --landing-track-surface: oklch(92% 0.035 28);
+  --landing-track-line: oklch(80% 0.07 28);
+  color: var(--text-primary);
+  font-size: var(--text-landing-body);
+}
+
+.public-landing {
+  position: relative;
+  width: 100%;
+  max-width: 1360px;
+  margin-inline: auto;
+  padding: 24px max(16px, var(--rp-safe-right)) 32px max(16px, var(--rp-safe-left));
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-landing-section);
+}
+
+.dark .public-landing :is(.landing-intro, .landing-lookup) {
+  --surface-card: oklch(19% 0.006 30);
+  --surface-inset: oklch(23% 0.006 30);
+  --border-default: oklch(34% 0.008 30);
+  --border-button: oklch(56% 0.008 30);
+  --text-primary: oklch(97% 0.004 30);
+  --text-secondary: oklch(77% 0.008 30);
+  --landing-accent: oklch(73% 0.16 28);
+  --landing-track-surface: oklch(26% 0.035 28);
+  --landing-track-line: oklch(40% 0.07 28);
+}
+
+.public-landing :is(.landing-intro, .landing-lookup) :is(button, input) {
+  border-radius: 12px;
+  box-shadow: none;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  transition-property: transform, opacity;
+  transition-duration: 160ms;
+  min-height: 44px;
+}
+
+.landing-lookup input { font-size: var(--text-landing-body); border-color: var(--border-button); }
+.public-landing :is(.landing-intro, .landing-lookup) button { cursor: pointer; }
+.public-landing :is(.landing-intro, .landing-lookup) button:disabled { cursor: not-allowed; }
+.public-landing :is(.landing-intro, .landing-lookup) button:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 4px; }
+.public-landing :is(.landing-intro, .landing-lookup) :is(button, input, a):focus-visible {
+  outline: 2px solid var(--landing-accent);
+  outline-offset: 4px;
+}
+.public-landing :is(.landing-intro, .landing-lookup) p { font-size: var(--text-landing-body); line-height: 1.6; }
+.landing-lookup .landing-field-label { font-size: var(--text-landing-caption); }
+
+/* 1. Hero Section: Kinetic Typography, Odometer & 4-Layer Cutout Stage */
+.landing-intro { display: grid; gap: 24px; align-items: center; position: relative; z-index: 10; }
+.landing-intro-copy { min-width: 0; }
+.landing-intro h1 {
+  font: 600 var(--text-landing-hero)/1.04 var(--font-display);
+  letter-spacing: -0.055em;
+  margin: 0;
+}
+
+.landing-hero-line {
+  display: block;
+}
+
+.landing-intro h1 .landing-finish-phrase {
+  position: relative;
+  display: inline-block;
+  color: var(--landing-accent);
+  font-style: italic;
+}
+
+.landing-intro h1 .landing-finish-phrase::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 -8px 0;
+  height: 4px;
+  background: linear-gradient(90deg in oklch, var(--landing-accent), var(--color-entry-coral));
+  transform: skewX(-24deg);
+  transform-origin: left;
+}
+
+.landing-intro h1 .landing-finish-phrase::before {
+  content: '';
+  position: absolute;
+  inset: -4px -12px;
+  border-radius: 16px;
+  background: radial-gradient(ellipse at center, oklch(65% 0.23 28 / 0.28), transparent 72%);
+  opacity: 0;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.landing-intro-copy > p { max-width: 440px; margin-top: 20px; color: var(--text-secondary); }
+.landing-intro-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+.landing-intro-actions button { min-height: 48px; padding-inline: 20px; font-size: var(--text-landing-body); }
+.public-landing .landing-primary:not(:disabled) {
+  background-color: var(--color-entry-action);
+  color: var(--color-entry-action-text);
+}
+.public-landing .landing-primary:hover:not(:disabled) { background-color: var(--color-entry-action-hover); }
+
+.landing-race-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  margin-top: 24px;
+  font-size: var(--text-landing-caption);
+  color: var(--text-secondary);
+  border-left: 4px solid var(--landing-track-line);
+  padding-left: 16px;
+}
+.landing-race-summary strong {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: baseline;
+}
+.landing-live-count { color: var(--landing-accent); font-weight: 600; }
+
+/* Odometer roll-up digit styling */
+.landing-odometer {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--text-primary);
+  will-change: transform, opacity;
+}
+
+/* 4-Layer 3D Multi-Plane Cutout Parallax Stage */
+.landing-runners {
+  position: relative;
+  min-width: 0;
+  margin: 0;
+  align-self: end;
+  isolation: isolate;
+  --tilt-x: 0;
+  --tilt-y: 0;
+}
+
+.landing-runners-stage {
+  position: relative;
+  width: 100%;
+  max-width: 560px;
+  aspect-ratio: 888 / 571;
+  margin-inline: auto;
+  overflow: visible;
+  transform-style: preserve-3d;
+}
+
+.landing-parallax-layer {
+  will-change: transform;
+  backface-visibility: hidden;
+}
+
+/* Layer 1: Rounded red/orange track card + Animated GPX Pace Lines */
+.landing-track {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+}
+
+.landing-track-card-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
+}
+
+.landing-gpx-lines {
+  position: absolute;
+  inset: 12% 0 7.7%;
+  width: 100%;
+  height: 80.3%;
+  border-radius: 24px 96px 24px 24px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.landing-gpx-base {
+  stroke: color-mix(in oklch, var(--color-entry-warm-light) 34%, var(--color-entry-coral));
+  stroke-width: 1.5;
+  fill: none;
+  opacity: 0.45;
+}
+
+.landing-gpx-pace {
+  stroke: oklch(96% 0.04 28);
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  fill: none;
+  stroke-dasharray: 180 260;
+  stroke-dashoffset: 440;
+  filter: drop-shadow(0 0 6px oklch(65% 0.23 28 / 0.85));
+}
+
+.landing-gpx-pace-2 {
+  stroke: oklch(86% 0.14 28);
+  stroke-dasharray: 140 300;
+  stroke-dashoffset: 440;
+}
+
+.landing-gpx-pace-3 {
+  stroke: oklch(98% 0.02 28);
+  stroke-dasharray: 110 330;
+  stroke-dashoffset: 440;
+}
+
+/* Layers 2, 3, 4: Runner cutouts */
+.landing-runner-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+}
+
+.landing-layer-back {
+  z-index: 2;
+}
+
+.landing-layer-mid {
+  z-index: 3;
+}
+
+.landing-layer-front {
+  position: relative;
+  z-index: 4;
+}
+
+.landing-runners figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font-size: var(--text-landing-caption);
+}
+
+.landing-caption-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.landing-finish-mark {
+  width: 24px;
+  height: 12px;
+  border-inline: 4px solid var(--landing-accent);
+  transform: skewX(-24deg);
+}
+
+.landing-motion-toggle {
+  min-height: 44px;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  border: 1px solid var(--border-button, var(--border-default));
+  background: var(--surface-card);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.landing-motion-toggle:hover {
+  color: var(--text-primary);
+  border-color: var(--landing-accent);
+}
+
+/* 2. Finisher Lookup: ECG Perimeter & Spotlight */
+/* Finisher Spotlight Focus Scrim */
+.landing-spotlight-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgba(12, 12, 16, 0.36);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 220ms var(--ease-out-quart);
+}
+
+.dark .landing-spotlight-scrim {
+  background: rgba(4, 4, 6, 0.68);
+}
+
+.landing-spotlight-scrim.is-active {
+  opacity: 1;
+}
+
+/* Results Bar with Animated ECG Heartbeat Perimeter */
+.landing-lookup {
+  position: relative;
+  z-index: 25;
+  display: grid;
+  gap: 20px;
+  padding: 24px;
+  border: 1px solid var(--border-default);
+  border-radius: 20px;
+  background: var(--surface-card);
+  overflow: visible;
+  transition: transform 200ms var(--ease-out-quart), border-color 200ms var(--ease-out-quart);
+}
+
+.landing-lookup::before {
+  content: '';
+  position: absolute;
+  inset: -20px -24px;
+  border-radius: 32px;
+  background: radial-gradient(
+    ellipse 75% 90% at 55% 50%,
+    oklch(62% 0.23 28 / 0.26),
+    oklch(68% 0.19 36 / 0.12) 48%,
+    transparent 76%
+  );
+  opacity: 0;
+  pointer-events: none;
+  z-index: -1;
+  transition: opacity 220ms var(--ease-out-quart);
+}
+
+.dark .landing-lookup::before {
+  background: radial-gradient(
+    ellipse 75% 90% at 55% 50%,
+    oklch(62% 0.24 28 / 0.42),
+    oklch(68% 0.20 34 / 0.18) 48%,
+    transparent 78%
+  );
+}
+
+.landing-lookup.is-spotlight-active {
+  border-color: var(--landing-accent);
+}
+
+.landing-lookup.is-spotlight-active::before {
+  opacity: 1;
+}
+
+.landing-ecg-perimeter {
+  position: absolute;
+  inset: -1px;
+  width: calc(100% + 2px);
+  height: calc(100% + 2px);
+  pointer-events: none;
+  z-index: 2;
+  overflow: visible;
+}
+
+.landing-ecg-track {
+  fill: none;
+  stroke: color-mix(in oklch, var(--landing-accent) 28%, transparent);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.landing-ecg-pulse {
+  fill: none;
+  stroke: var(--landing-accent);
+  stroke-width: 2.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 180 820;
+  stroke-dashoffset: 1000;
+  filter: drop-shadow(0 0 6px oklch(65% 0.23 28 / 0.75));
+}
+
+.landing-lookup h2 { font: 600 var(--text-landing-body)/1.5 var(--font-display); }
+.landing-lookup-copy p { margin-top: 4px; color: var(--text-secondary); }
+.landing-lookup-form { min-width: 0; position: relative; z-index: 3; }
+.landing-field-label { display: block; margin-bottom: 8px; color: var(--text-secondary); }
+.landing-lookup-matches { grid-column: 1 / -1; position: relative; z-index: 3; }
+.landing-lookup-matches, #hero-bib-search { scroll-margin-top: 88px; }
+.landing-lookup-matches:focus-visible { outline: 2px solid var(--landing-accent); outline-offset: 4px; }
+.landing-lookup .landing-empty { padding: 32px; border: 1px dashed var(--border-default); border-radius: 20px; }
+.landing-lookup .landing-empty p { margin-top: 8px; color: var(--text-secondary); }
+
+.landing-distance {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 8px 16px;
+  border-radius: 9999px;
+  border: 1px solid var(--border-button, var(--border-default));
+  background: var(--surface-card);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.25;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-shrink: 0;
+  cursor: pointer;
+  user-select: none;
+  transition: transform 150ms var(--ease-out-quart), opacity 150ms var(--ease-out-quart);
+}
+.landing-distance:hover {
+  border-color: var(--color-entry-action);
+}
+.landing-distance:focus-visible {
+  outline: 2px solid var(--color-entry-action);
+  outline-offset: 4px;
+}
+.dark .landing-distance:focus-visible {
+  outline-color: oklch(73% 0.16 28);
+}
+.landing-distance.is-active {
+  background-color: var(--color-entry-action);
+  color: var(--color-entry-action-text);
+  border-color: var(--color-entry-action);
+}
+
+@media (min-width: 640px) {
+  .public-landing { padding-inline: max(24px, var(--rp-safe-left)); }
+  .landing-intro { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+@media (min-width: 960px) {
+  .public-landing { padding: 40px 40px 48px; gap: 40px; }
+  .landing-intro { grid-template-columns: 1fr 1.1fr; gap: 32px; }
+  .landing-intro-copy { padding-block: 16px; }
+  .landing-lookup { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); align-items: center; gap: 32px; }
+}
+
+/* Hardware-Accelerated Motion & Scroll-Driven Timelines */
+@media (prefers-reduced-motion: no-preference) {
+  /* Kinetic Typography Staggered Clip-Path Reveal (< 300ms) */
+  .landing-hero-line-1 {
+    animation: landing-clip-slide 240ms var(--ease-out-quart) both;
+  }
+  .landing-hero-line-2 {
+    animation: landing-clip-slide 260ms 35ms var(--ease-out-quart) both;
+  }
+  .landing-intro h1 .landing-finish-phrase::after {
+    animation: landing-line-arrive 240ms 60ms var(--ease-out-quart) both;
+  }
+  .landing-intro h1 .landing-finish-phrase::before {
+    animation: landing-finish-neon 2.8s var(--ease-out-quart) infinite;
+  }
+
+  .landing-runners {
+    animation: landing-runners-arrive 240ms 40ms var(--ease-out-quart) both;
+  }
+
+  /* 3D Multi-Layer Cursor & Gyroscope Tilt (via single rAF custom properties) */
+  .landing-track {
+    transform: translate3d(
+      calc(var(--tilt-x, 0) * -5px),
+      calc(var(--tilt-y, 0) * -4px + var(--scroll-shift-1, 0px)),
+      0
+    );
+  }
+  .landing-layer-back {
+    transform: translate3d(
+      calc(var(--tilt-x, 0) * 5px),
+      calc(var(--tilt-y, 0) * 4px + var(--scroll-shift-2, 0px)),
+      0
+    );
+  }
+  .landing-layer-mid {
+    transform: translate3d(
+      calc(var(--tilt-x, 0) * 11px),
+      calc(var(--tilt-y, 0) * 8px + var(--scroll-shift-3, 0px)),
+      0
+    );
+  }
+  .landing-layer-front {
+    transform: translate3d(
+      calc(var(--tilt-x, 0) * 18px),
+      calc(var(--tilt-y, 0) * 12px + var(--scroll-shift-4, 0px)),
+      0
+    );
+  }
+
+  /* Animated GPX Pace Lines inside Hero Track Card */
+  .landing-gpx-pace-1 {
+    animation: landing-gpx-dash 3.2s linear infinite;
+  }
+  .landing-gpx-pace-2 {
+    animation: landing-gpx-dash 3.8s 0.6s linear infinite;
+  }
+  .landing-gpx-pace-3 {
+    animation: landing-gpx-dash 4.4s 1.2s linear infinite;
+  }
+
+  /* Animated ECG Heartbeat Pulse on Results Lookup Bar */
+  .landing-ecg-pulse {
+    animation: landing-ecg-sweep 3.6s linear infinite;
+  }
+
+  .landing-distance:active {
+    transform: scale(0.96);
+  }
+
+  .landing-primary svg { transition: transform 160ms var(--ease-out-quart); }
+  .landing-primary:is(:hover, :focus-visible) svg { transform: translateX(4px); }
+  .public-landing .landing-intro-actions button:active { transform: translateY(2px); }
+  @media (hover: hover) {
+    .public-landing .landing-intro-actions button:hover { transform: translateY(-2px); text-decoration: none; }
+  }
+
+  /* Pause continuous animations when user toggles Pause motion (R-39) */
+  .public-landing[data-motion-paused="true"] .landing-gpx-pace,
+  .public-landing[data-motion-paused="true"] .landing-ecg-pulse,
+  .public-landing[data-motion-paused="true"] .landing-intro h1 .landing-finish-phrase::before {
+    animation-play-state: paused !important;
+  }
+}
+
+/* Native CSS View-Timeline Scroll Parallax on Hero Layers (modern-web-guidance: parallax-scroll-effects) */
+@media (prefers-reduced-motion: no-preference) {
+  @supports ((animation-timeline: view()) and (animation-range: entry)) {
+    @keyframes landing-view-parallax {
+      from { translate: 0 14px; }
+      to { translate: 0 -14px; }
+    }
+
+    .landing-runners-stage {
+      view-timeline: --hero-stage-view;
+    }
+
+    .landing-parallax-layer {
+      animation: landing-view-parallax linear both;
+      animation-timeline: --hero-stage-view;
+      animation-range: entry 25% exit calc(100% / sibling-count() * sibling-index());
+    }
+  }
+}
+
+@keyframes landing-clip-slide {
+  from {
+    opacity: 0;
+    clip-path: inset(0 -10% 100% -10%);
+    transform: translate3d(0, 18px, 0);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(-15% -15% -30% -15%);
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes landing-finish-neon {
+  0%, 100% { opacity: 0.25; transform: scale3d(0.98, 0.98, 1); }
+  50% { opacity: 0.85; transform: scale3d(1.04, 1.04, 1); }
+}
+
+@keyframes landing-gpx-dash {
+  from { stroke-dashoffset: 440; }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes landing-ecg-sweep {
+  from { stroke-dashoffset: 1000; }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes landing-runners-arrive {
+  from { opacity: 0; transform: translate3d(16px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes landing-line-arrive {
+  from { opacity: 0; transform: skewX(-24deg) scaleX(0.3); }
+  to { opacity: 1; transform: skewX(-24deg) scaleX(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .public-landing :is(.landing-intro, .landing-lookup) *,
+  .public-landing :is(.landing-intro, .landing-lookup) *::before,
+  .public-landing :is(.landing-intro, .landing-lookup) *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

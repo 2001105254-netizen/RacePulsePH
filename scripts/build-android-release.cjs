@@ -42,6 +42,17 @@ function run(cmd, args, cwd = ROOT, extraEnv = {}) {
   }
 }
 
+function loadLocalKeystoreFile() {
+  const file = path.join(ROOT, 'signing', 'keystore.txt');
+  if (!fs.existsSync(file)) return;
+  for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+    const match = /^\s*(KEYSTORE_[A-Z_]+)\s*=\s*(.*?)\s*$/.exec(line);
+    if (!match || process.env[match[1]]) continue;
+    process.env[match[1]] = match[1] === 'KEYSTORE_PATH' ? path.resolve(ROOT, match[2]) : match[2];
+  }
+}
+loadLocalKeystoreFile();
+
 function readGradleProp(key) {
   const userProps = path.join(process.env.USERPROFILE || process.env.HOME || '', '.gradle', 'gradle.properties');
   const projectProps = path.join(ROOT, 'android', 'gradle.properties');

@@ -128,7 +128,7 @@ export default function BottomNav({ items, navLabel = 'Workspace navigation' }: 
                   onClick={item.onClick}
                   aria-label={item.label}
                   aria-current={item.active ? 'page' : undefined}
-                  className={`relative flex min-w-fit min-h-11 shrink-0 flex-1 flex-col items-center justify-center gap-1 px-3 py-2 sm:px-4 rounded-[14px] sm:rounded-[16px] transition-colors duration-150 motion-safe:active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
+                  className={`relative flex min-w-fit min-h-11 shrink-0 flex-1 flex-col items-center justify-center gap-1 px-2 py-2 sm:px-4 rounded-[14px] sm:rounded-[16px] transition-colors duration-150 motion-safe:active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
                     item.active
                       ? 'bg-red-700 text-white shadow-lg shadow-red-900/30'
                       : 'text-zinc-700 dark:text-zinc-300 hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'

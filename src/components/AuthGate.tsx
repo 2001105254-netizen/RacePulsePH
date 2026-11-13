@@ -464,7 +464,8 @@ export default function AuthGate({
             <span className="flex-1 h-px bg-[var(--border-default)]" />
           </div>
 
-          <div className="relative overflow-x-clip">
+          {/* Keep the form transition clipped with room for the focus rings. */}
+          <div className="relative -mx-1 overflow-x-clip px-1">
             <AnimatePresence mode="popLayout" initial={false} custom={(mode === 'signup' ? 'forward' : 'back') satisfies NavDirection}>
               {mode === 'login' ? (
                 <m.form
@@ -820,7 +821,7 @@ function SignupConsentFields({
       </div>
 
       <div className="space-y-3 glass-inset p-4 rounded-[var(--radius-control)]">
-        <label htmlFor={`${idPrefix}-terms`} className="flex items-start gap-2 cursor-pointer min-h-11">
+        <div className="flex items-start gap-2">
           <input
             id={`${idPrefix}-terms`}
             type="checkbox"
@@ -828,49 +829,50 @@ function SignupConsentFields({
             onChange={(e) => onAcceptedTermsChange(e.target.checked)}
             className="rp-checkbox shrink-0"
           />
-          <span className="pt-2 text-xs text-[var(--text-primary)] leading-relaxed">
-            I agree to the{' '}
-            {onOpenLegal ? (
-              <>
+          <div className="pt-2 text-xs text-[var(--text-primary)] leading-relaxed space-y-1">
+            <label htmlFor={`${idPrefix}-terms`} className="cursor-pointer block">
+              I agree to the Terms of Service, Privacy Policy, and Refund Policy.
+            </label>
+            {onOpenLegal && (
+              <p className="text-[var(--text-secondary)]">
+                Read:{' '}
                 <a
                   href="/terms-of-service"
                   onClick={(e) => {
                     e.preventDefault();
                     onOpenLegal('terms');
                   }}
-                  className="inline-flex items-center min-h-6 font-semibold underline underline-offset-2 text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400"
+                  className="font-semibold underline underline-offset-2 text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400"
                 >
                   Terms of Service
                 </a>
-                ,{' '}
+                {', '}
                 <a
                   href="/privacy-policy"
                   onClick={(e) => {
                     e.preventDefault();
                     onOpenLegal('privacy');
                   }}
-                  className="inline-flex items-center min-h-6 font-semibold underline underline-offset-2 text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400"
+                  className="font-semibold underline underline-offset-2 text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400"
                 >
                   Privacy Policy
                 </a>
-                , and{' '}
+                {', and '}
                 <a
                   href="/refund-policy"
                   onClick={(e) => {
                     e.preventDefault();
                     onOpenLegal('refund');
                   }}
-                  className="inline-flex items-center min-h-6 font-semibold underline underline-offset-2 text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400"
+                  className="font-semibold underline underline-offset-2 text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400"
                 >
                   Refund Policy
                 </a>
-              </>
-            ) : (
-              'Terms of Service, Privacy Policy, and Refund Policy'
+                .
+              </p>
             )}
-            .
-          </span>
-        </label>
+          </div>
+        </div>
 
         <label htmlFor={`${idPrefix}-marketing`} className="flex items-start gap-2 cursor-pointer min-h-11">
           <input

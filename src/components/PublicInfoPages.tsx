@@ -20,7 +20,7 @@ interface PublicLegalPageProps {
 const sectionCardClass = 'rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-4 sm:p-6 space-y-3';
 const headingClass = 'font-display text-base sm:text-lg font-semibold text-[var(--text-primary)]';
 const bodyClass = 'text-sm text-[var(--text-secondary)] leading-relaxed';
-const accentLinkClass = 'inline-flex items-center min-h-6 font-semibold text-red-700 dark:text-red-400 underline underline-offset-4 hover:opacity-85 break-all';
+const accentLinkClass = 'font-semibold text-red-700 dark:text-red-400 underline underline-offset-4 hover:opacity-85 break-all';
 
 export function PublicLegalPage({
   doc,
@@ -121,28 +121,32 @@ export function PublicLegalPage({
                 <span className="font-semibold text-[var(--text-primary)]">Delete My Account &amp; Data</span>, which purges your profile, runner entries, friend links, username index, and authentication record, and anonymizes payment ledger references.
               </li>
               <li>
-                <strong className="font-semibold text-[var(--text-primary)]">Web deletion request without signing in:</strong> If you cannot open the app, email{' '}
-                <a
-                  href={`mailto:${LEGAL_CONFIG.supportEmail}?subject=Account%20and%20Data%20Deletion%20Request`}
-                  className={accentLinkClass}
-                >
-                  {LEGAL_CONFIG.supportEmail}
-                </a>{' '}
-                from your registered address to request permanent deletion of your account, profile, friend links, and registration contact data (anonymized payment ledger references and published official finisher standings remain as disclosed above).
+                <p>
+                  <strong className="font-semibold text-[var(--text-primary)]">Web deletion request without signing in:</strong> If you cannot open the app, email{' '}
+                  <a
+                    href={`mailto:${LEGAL_CONFIG.supportEmail}?subject=Account%20and%20Data%20Deletion%20Request`}
+                    className={accentLinkClass}
+                  >
+                    {LEGAL_CONFIG.supportEmail}
+                  </a>{' '}
+                  from your registered address to request permanent deletion of your account, profile, friend links, and registration contact data (anonymized payment ledger references and published official finisher standings remain as disclosed above).
+                </p>
               </li>
               <li>
-                <strong className="font-semibold text-[var(--text-primary)]">One-click email opt-out:</strong> Unsubscribe anytime without logging in using the{' '}
-                <a
-                  href="/unsubscribe"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    onOpenUnsubscribe();
-                  }}
-                  className={accentLinkClass}
-                >
-                  Unsubscribe page
-                </a>
-                .
+                <p>
+                  <strong className="font-semibold text-[var(--text-primary)]">One-click email opt-out:</strong> Unsubscribe anytime without logging in using the{' '}
+                  <a
+                    href="/unsubscribe"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      onOpenUnsubscribe();
+                    }}
+                    className={accentLinkClass}
+                  >
+                    Unsubscribe page
+                  </a>
+                  .
+                </p>
               </li>
               <li>
                 <strong className="font-semibold text-[var(--text-primary)]">Cookie &amp; script preferences:</strong>{' '}

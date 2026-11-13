@@ -15,6 +15,8 @@ import {
   Link2,
   Check,
   RefreshCw,
+  Pause,
+  Play,
 } from 'lucide-react';
 import { db } from '../firebase';
 import { PublicLeaderboardEntry, PublicLiveResults, Race, RunnerResult } from '../types';
@@ -28,7 +30,6 @@ import { formatRaceTime } from '../lib/preciseTime';
 import {
   CardSkeletonLoader,
   EMIL_EASE,
-  QUINT_EASE,
   RaceCardSkeletonGrid,
   ResultsSkeletonList,
 } from './ui/MotionPrimitives';
@@ -51,13 +52,16 @@ interface FinisherBibMatch {
 // Accent text clears 4.5:1 WCAG AA on both surfaces: red-700 on light, red-400 on dark.
 const accentText = 'text-red-700 dark:text-red-400';
 
-// Tactile Stopwatch Chip Tokens (Sports Watch Hardware Language, >= 44px tap height)
-const chipBase =
-  'min-h-11 text-xs font-semibold px-4 py-2 rounded-full border transition-all duration-150 motion-safe:active:scale-[0.96] select-none shrink-0 inline-flex items-center justify-center gap-2 font-mono';
-const chipIdle =
-  'border border-[var(--border-button)] bg-[var(--surface-card)] dark:bg-[#141416] text-[var(--text-secondary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.25)] hover:border-red-600 hover:text-[var(--text-primary)]';
-const chipActive =
-  'bg-red-700 text-white border border-[#3d0b09] dark:border-red-500/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.35)]';
+const chipBase = 'landing-distance';
+const chipIdle = '';
+const chipActive = 'is-active';
+
+function scrollToSection(id: string) {
+  document.getElementById(id)?.scrollIntoView({
+    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+    block: 'start',
+  });
+}
 
 function initialRaceIdFromUrl(): string {
   if (typeof window === 'undefined') return '';
@@ -132,28 +136,80 @@ function toRunnerResult(entry: PublicLeaderboardEntry): RunnerResult {
   };
 }
 
+function OdometerStat({ value, paused }: { value: number; paused: boolean }) {
+  const [displayValue, setDisplayValue] = useState(value);
+
+  useEffect(() => {
+    const reduceMotion =
+      paused ||
+      (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    if (reduceMotion || value <= 0) {
+      setDisplayValue(value);
+      return;
+    }
+
+    let rafId = 0;
+    const durationMs = 260;
+    const startTime = performance.now();
+    setDisplayValue(0);
+
+    const step = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(1, elapsed / durationMs);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplayValue(Math.round(eased * value));
+      if (progress < 1) {
+        rafId = requestAnimationFrame(step);
+      } else {
+        setDisplayValue(value);
+      }
+    };
+
+    rafId = requestAnimationFrame(step);
+    const fallbackTimer = window.setTimeout(() => {
+      setDisplayValue(value);
+    }, durationMs + 60);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.clearTimeout(fallbackTimer);
+    };
+  }, [value, paused]);
+
+  return (
+    <span className="landing-odometer" aria-label={String(value)}>
+      {displayValue}
+    </span>
+  );
+}
+
 export default function PublicRaceLanding({
   onRegister,
   onLoadState,
-  revealed = true,
   onActiveRaceTitle,
 }: PublicRaceLandingProps) {
   const [races, setRaces] = useState<Race[]>([]);
   const [resultsByRaceId, setResultsByRaceId] = useState<Record<string, PublicLiveResults>>({});
+  const [resultsLoadState, setResultsLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [selectedRaceId, setSelectedRaceId] = useState<string>(() => initialRaceIdFromUrl());
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [activeTab, setActiveTab] = useState<'upcoming' | 'completed'>('upcoming');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDistanceFilter, setSelectedDistanceFilter] = useState<string>('all');
   const [bibQuery, setBibQuery] = useState('');
+  const [isBibSearchFocused, setIsBibSearchFocused] = useState(false);
   const [copiedRaceId, setCopiedRaceId] = useState<string | null>(null);
   const [downloadingBibKey, setDownloadingBibKey] = useState<string | null>(null);
   const [downloadedBibKey, setDownloadedBibKey] = useState<string | null>(null);
   const [certificateNotice, setCertificateNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
   const [heroOutOfView, setHeroOutOfView] = useState(false);
+  const [motionPaused, setMotionPaused] = useState(false);
+
   const searchInputRef = useRef<HTMLInputElement>(null);
   const bibInputRef = useRef<HTMLInputElement>(null);
   const heroSectionRef = useRef<HTMLElement>(null);
+  const runnersFigureRef = useRef<HTMLElement>(null);
+  const runnersStageRef = useRef<HTMLDivElement>(null);
   const didInitialUrlScrollRef = useRef(false);
 
   useEffect(() => {
@@ -172,6 +228,127 @@ export default function PublicRaceLanding({
     observer.observe(heroEl);
     return () => observer.disconnect();
   }, []);
+
+  // Single requestAnimationFrame listener for Hero 3D Cursor & Gyroscope Tilt + Scroll Parallax Fallback
+  useEffect(() => {
+    const figureEl = runnersFigureRef.current;
+    const stageEl = runnersStageRef.current;
+    const heroEl = heroSectionRef.current;
+    if (!figureEl || !stageEl || !heroEl || typeof window === 'undefined') return;
+
+    const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    if (reducedMotionQuery.matches || motionPaused) {
+      figureEl.style.setProperty('--tilt-x', '0');
+      figureEl.style.setProperty('--tilt-y', '0');
+      return;
+    }
+
+    let targetX = 0;
+    let targetY = 0;
+    let currentX = 0;
+    let currentY = 0;
+    let rafId = 0;
+
+    const scheduleFrame = () => {
+      if (rafId !== 0) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        currentX += (targetX - currentX) * 0.18;
+        currentY += (targetY - currentY) * 0.18;
+        figureEl.style.setProperty('--tilt-x', currentX.toFixed(4));
+        figureEl.style.setProperty('--tilt-y', currentY.toFixed(4));
+        if (Math.abs(targetX - currentX) > 0.002 || Math.abs(targetY - currentY) > 0.002) {
+          scheduleFrame();
+        }
+      });
+    };
+
+    const canHoverFine = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+    const isCoarseTouch = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') return;
+      const rect = heroEl.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const nx = ((e.clientX - rect.left) / rect.width - 0.5) * 2;
+      const ny = ((e.clientY - rect.top) / rect.height - 0.5) * 2;
+      targetX = Math.max(-1, Math.min(1, nx));
+      targetY = Math.max(-1, Math.min(1, ny));
+      scheduleFrame();
+    };
+
+    const onPointerLeave = () => {
+      targetX = 0;
+      targetY = 0;
+      scheduleFrame();
+    };
+
+    const onDeviceOrientation = (e: DeviceOrientationEvent) => {
+      if (e.gamma == null || e.beta == null) return;
+      const gx = Math.max(-1, Math.min(1, e.gamma / 28));
+      const by = Math.max(-1, Math.min(1, (e.beta - 45) / 28));
+      targetX = gx * 0.65;
+      targetY = by * 0.65;
+      scheduleFrame();
+    };
+
+    if (canHoverFine) {
+      heroEl.addEventListener('pointermove', onPointerMove, { passive: true });
+      heroEl.addEventListener('pointerleave', onPointerLeave, { passive: true });
+    } else if (isCoarseTouch && 'DeviceOrientationEvent' in window) {
+      window.addEventListener('deviceorientation', onDeviceOrientation, { passive: true });
+    }
+
+    // Fallback for browsers that don't support view() scroll-driven animations (modern-web-guidance: parallax-scroll-effects)
+    let viewObserver: IntersectionObserver | null = null;
+    const supportsViewTimeline =
+      typeof CSS !== 'undefined' &&
+      typeof CSS.supports === 'function' &&
+      CSS.supports('(animation-timeline: view()) and (animation-range: entry)');
+
+    const onScrollParallaxFallback = () => {
+      const scrollY = window.scrollY;
+      const rect = stageEl.getBoundingClientRect();
+      const wrapperTop = rect.top + scrollY;
+      const wrapperHeight = rect.height;
+      const windowHeight = window.innerHeight;
+      if (scrollY >= wrapperTop - windowHeight && scrollY <= wrapperTop + wrapperHeight) {
+        const scrollPercent = (scrollY - (wrapperTop - windowHeight)) / Math.max(1, wrapperHeight + windowHeight);
+        const layers = stageEl.querySelectorAll<HTMLElement>('.landing-parallax-layer');
+        layers.forEach((layer, index) => {
+          const initialTranslateY = 6 * (index + 1);
+          const translateY = initialTranslateY * (1 - scrollPercent);
+          layer.style.setProperty(`--scroll-shift-${index + 1}`, `${translateY.toFixed(2)}px`);
+        });
+      }
+    };
+
+    if (!supportsViewTimeline && typeof IntersectionObserver !== 'undefined') {
+      viewObserver = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              window.addEventListener('scroll', onScrollParallaxFallback, { passive: true });
+              onScrollParallaxFallback();
+            } else {
+              window.removeEventListener('scroll', onScrollParallaxFallback);
+            }
+          });
+        },
+        { threshold: 0 }
+      );
+      viewObserver.observe(stageEl);
+    }
+
+    return () => {
+      if (rafId !== 0) cancelAnimationFrame(rafId);
+      heroEl.removeEventListener('pointermove', onPointerMove);
+      heroEl.removeEventListener('pointerleave', onPointerLeave);
+      window.removeEventListener('deviceorientation', onDeviceOrientation);
+      window.removeEventListener('scroll', onScrollParallaxFallback);
+      viewObserver?.disconnect();
+    };
+  }, [motionPaused]);
 
   useEffect(() => {
     return subscribeSharedRaces((rawList, loaded, err) => {
@@ -198,9 +375,11 @@ export default function PublicRaceLanding({
           map[docSnap.id] = data;
         });
         setResultsByRaceId(map);
+        setResultsLoadState('ready');
       },
       (err) => {
         console.warn('Public liveResults listener failed:', err.message);
+        setResultsLoadState('error');
       }
     );
     return () => unsubscribe();
@@ -294,7 +473,8 @@ export default function PublicRaceLanding({
         setActiveTab('completed');
       }
       requestAnimationFrame(() => {
-        document.getElementById('public-race-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const reduceMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        document.getElementById('public-race-results')?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
       });
     }
   }, [loadState, selectedRace, today]);
@@ -304,7 +484,8 @@ export default function PublicRaceLanding({
     setSelectedRaceId(raceId);
     syncRaceIdToUrl(raceId);
     requestAnimationFrame(() => {
-      document.getElementById('public-race-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const reduceMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      document.getElementById('public-race-results')?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
     });
   };
 
@@ -317,9 +498,11 @@ export default function PublicRaceLanding({
     syncRaceIdToUrl(raceId);
     const shareUrl = window.location.href;
     try {
-      await navigator.clipboard?.writeText(shareUrl);
+      if (!navigator.clipboard) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(shareUrl);
     } catch {
-      // Fallback if clipboard permission is restricted
+      setCertificateNotice({ kind: 'error', text: 'Could not copy the link. You can copy this race link from your browser address bar.' });
+      return;
     }
     setCopiedRaceId(raceId);
     window.setTimeout(() => {
@@ -358,11 +541,13 @@ export default function PublicRaceLanding({
 
   const handleSwitchToCompletedAndSearch = () => {
     setActiveTab('completed');
+    setSearchQuery('');
+    setSelectedDistanceFilter('all');
     setSelectedRaceId('');
     syncRaceIdToUrl('');
     requestAnimationFrame(() => {
-      document.getElementById('events-catalog')?.scrollIntoView({ behavior: 'smooth' });
-      searchInputRef.current?.focus();
+      scrollToSection('events-catalog');
+      searchInputRef.current?.focus({ preventScroll: true });
     });
   };
 
@@ -372,7 +557,18 @@ export default function PublicRaceLanding({
   };
 
   return (
-    <main id="main-content" tabIndex={-1} className="w-full max-w-[1600px] mx-auto pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))] py-4 sm:py-5 pb-8 space-y-5 focus:outline-none">
+    <main
+      id="main-content"
+      tabIndex={-1}
+      data-motion-paused={motionPaused ? 'true' : 'false'}
+      className="public-landing focus:outline-none"
+    >
+      {/* Finisher Spotlight Focus Backdrop Scrim */}
+      <div
+        aria-hidden="true"
+        className={`landing-spotlight-scrim ${isBibSearchFocused ? 'is-active' : ''}`}
+      />
+
       {/* Network or Data Load Error Banner */}
       {loadState === 'error' && (
         <Card className="border-red-700 dark:border-red-400 p-4 text-center">
@@ -383,7 +579,7 @@ export default function PublicRaceLanding({
               onClick={() => window.location.reload()}
               className={`underline font-semibold ${accentText}`}
             >
-              Try again
+              Retry
             </button>
           </p>
         </Card>
@@ -421,10 +617,11 @@ export default function PublicRaceLanding({
             transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
             role={certificateNotice.kind === 'error' ? 'alert' : 'status'}
             aria-live="polite"
-            className={`rounded-2xl border px-4 py-3 flex items-center justify-between gap-3 text-xs sm:text-sm ${certificateNotice.kind === 'error'
+            className={`rounded-2xl border px-4 py-3 flex items-center justify-between gap-3 text-xs sm:text-sm ${
+              certificateNotice.kind === 'error'
                 ? 'border-red-600/35 bg-red-50 dark:bg-red-950/35 text-red-700 dark:text-red-300'
                 : 'border-emerald-600/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
-              }`}
+            }`}
           >
             <span className="flex items-center gap-2 font-medium">
               <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" />
@@ -442,296 +639,374 @@ export default function PublicRaceLanding({
         )}
       </AnimatePresence>
 
-      {/* Hero Banner: Theme-native surface in light and dark mode with transparent Philippine runners cutout */}
+      {/* 1. Hero Section: Kinetic Typography, Odometer Live Counter & 4-Layer Cutout Parallax Stage */}
       <section
         ref={heroSectionRef}
         aria-label="RacePulsePH overview"
-        className="glass-panel relative overflow-x-clip"
+        className="landing-intro"
       >
-        {/* Luminous light red gradient backdrop consistent with dashboard panel headers */}
-        <div aria-hidden="true" className="hero-glow hero-banner-glow pointer-events-none absolute inset-0" />
-
-        <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 items-center lg:items-end gap-3">
-          {/* Left Copy, Instant Bib Lookup & Action Column */}
-          <div className="lg:col-span-7 p-4 sm:p-5 lg:p-6 space-y-3">
-            <m.h1
-              initial={{ opacity: 0, y: 12 }}
-              animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 }}
-              transition={{ duration: 0.24, delay: 0.02, ease: QUINT_EASE }}
-              className="type-hero uppercase tracking-tight"
-            >
-              <span className="heading-float block">Find your next</span>
-              <span className="inline-flex flex-col items-start mt-1">
-                <span className="hero-finish-accent italic tracking-tight">finish line</span>
-                <span aria-hidden="true" className="hero-finish-tape w-full mt-2" />
-              </span>
-            </m.h1>
-            <m.p
-              initial={{ opacity: 0, y: 10 }}
-              animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
-              transition={{ duration: 0.22, delay: 0.06, ease: QUINT_EASE }}
-              className="type-lead max-w-xl text-[var(--text-secondary)] dark:text-white"
-            >
-              Browse upcoming{' '}
-              <span className="font-semibold text-[var(--text-primary)] dark:text-white">RacePulsePH</span> events, compare distances
-              and fees, then create an account to secure your spot.
-            </m.p>
-
-            {/* Instant Finisher & Bib Lookup Form */}
-            <m.form
-              initial={{ opacity: 0, y: 10 }}
-              animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
-              transition={{ duration: 0.24, delay: 0.1, ease: QUINT_EASE }}
-              role="search"
-              aria-label="Finisher result and certificate lookup"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!bibQuery.trim()) {
-                  handleSwitchToCompletedAndSearch();
-                }
-              }}
-              className="space-y-2 pt-1 max-w-xl"
-            >
-              <label
-                htmlFor="hero-bib-search"
-                className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] dark:text-white font-mono"
-              >
-                Instant finisher &amp; certificate lookup
-              </label>
-              <div className="flex flex-row items-center gap-2">
-                <div className="relative flex-1 min-w-0">
-                  <Search
-                    className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] pointer-events-none"
-                    aria-hidden="true"
-                  />
-                  <Input
-                    ref={bibInputRef}
-                    id="hero-bib-search"
-                    type="search"
-                    value={bibQuery}
-                    onChange={(e) => setBibQuery(e.target.value)}
-                    placeholder="Bib or name"
-                    className={`h-11 pl-9 ${bibQuery ? 'pr-9' : 'pr-3'} text-xs sm:text-sm [&::-webkit-search-cancel-button]:hidden`}
-                  />
-                  {bibQuery && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setBibQuery('');
-                        bibInputRef.current?.focus();
-                      }}
-                      className="absolute right-0 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                      aria-label="Clear bib search"
-                    >
-                      <X className="w-4 h-4" aria-hidden="true" />
-                    </button>
-                  )}
-                </div>
-                <Button type="submit" size="default" className="h-11 px-4 sm:px-5 shrink-0 text-xs">
-                  <Trophy className="w-4 h-4" aria-hidden="true" />
-                  <span>Find result</span>
-                </Button>
-              </div>
-            </m.form>
-
-            {/* Instant Race Bib Result Matches */}
-            {bibQuery.trim().length > 0 && (
-              <div
-                role="region"
-                aria-live="polite"
-                aria-label="Matching finisher results"
-                className="space-y-3 pt-1 max-w-xl"
-              >
-                {matchingBibResults.length === 0 ? (
-                  <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <p className="text-xs text-[var(--text-secondary)]">
-                      No published finisher matches <strong className="text-[var(--text-primary)]">"{bibQuery}"</strong>.
-                    </p>
-                    <Button type="button" variant="outline" size="sm" className="h-11 px-4" onClick={handleSwitchToCompletedAndSearch}>
-                      Browse completed races
-                    </Button>
-                  </div>
-                ) : (
-                  <ul className="space-y-3">
-                    {matchingBibResults.map(({ race, entry }) => {
-                      const key = `${race.id}_${entry.bibNumber}_${entry.distance}`;
-                      const isDownloading = downloadingBibKey === key;
-                      const displayName = entry.isFreeSlot ? `Bib ${entry.bibNumber}` : entry.fullName;
-
-                      return (
-                        <li
-                          key={key}
-                          className="min-w-0 rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)] shadow-sm"
-                        >
-                          {/* Physical Race Bib Header Strip */}
-                          <div className="rounded-t-2xl overflow-hidden bg-red-700 text-white px-4 py-2 flex items-center justify-between gap-2 text-xs font-mono font-semibold">
-                            <span className="flex items-center gap-2 min-w-0 truncate">
-                              <span className="w-2 h-2 rounded-full bg-white/75 shrink-0" aria-hidden="true" />
-                              <span className="truncate">{race.name}</span>
-                            </span>
-                            <span className="flex items-center gap-2 shrink-0">
-                              <span>{entry.distance}</span>
-                              <span className="w-2 h-2 rounded-full bg-white/75 shrink-0" aria-hidden="true" />
-                            </span>
-                          </div>
-
-                          {/* Race Bib Body */}
-                          <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="px-3 py-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] text-center shrink-0">
-                                <span className="block text-xs font-mono text-[var(--text-secondary)]">
-                                  Bib
-                                </span>
-                                <span className="block font-mono text-base sm:text-lg font-semibold text-[var(--text-primary)] leading-tight">
-                                  {entry.bibNumber}
-                                </span>
-                              </div>
-                              <div className="min-w-0">
-                                <p className="font-display font-semibold text-sm sm:text-base text-[var(--text-primary)] truncate">
-                                  {displayName}
-                                </p>
-                                <p className="text-xs font-mono text-[var(--text-secondary)] flex flex-wrap items-center gap-x-2 gap-y-1">
-                                  <span className={accentText}>#{entry.overallRank ?? entry.rank} Overall</span>
-                                  {entry.categoryRank && (
-                                    <span>
-                                      &bull; {entry.categoryLabel || 'Division'} #{entry.categoryRank}
-                                    </span>
-                                  )}
-                                  <span className="font-semibold text-emerald-700 dark:text-emerald-400">
-                                    &bull; {formatRaceTime(entry.finishTime)}
-                                  </span>
-                                </p>
-                              </div>
-                            </div>
-
-                            <div className="flex flex-wrap items-center gap-2 shrink-0">
-                              <Button
-                                type="button"
-                                size="sm"
-                                className="h-11 px-4"
-                                disabled={isDownloading}
-                                onClick={() => handleDownloadCertificate(race, entry)}
-                              >
-                                {isDownloading ? (
-                                  <RefreshCw className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
-                                ) : downloadedBibKey === `${race.id}_${entry.bibNumber}_${entry.distance}` ? (
-                                  <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
-                                ) : (
-                                  <FileDown className="w-3.5 h-3.5" aria-hidden="true" />
-                                )}
-                                <span>
-                                  {downloadedBibKey === `${race.id}_${entry.bibNumber}_${entry.distance}`
-                                    ? 'Saved'
-                                    : 'Certificate'}
-                                </span>
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-11 px-4"
-                                onClick={() => handleSelectRace(race.id)}
-                              >
-                                <span>Leaderboard</span>
-                              </Button>
-                            </div>
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-            )}
-
-            {/* Compact Action Button Strip: single wrapping row across phone, tablet, and desktop */}
-            <m.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
-              transition={{ duration: 0.22, delay: 0.14, ease: QUINT_EASE }}
-              className="flex flex-wrap items-center gap-2 pt-1"
-            >
-              <Button
-                size="default"
-                className="group h-11 px-4 text-xs tracking-normal sm:tracking-wider"
-                onClick={() => document.getElementById('events-catalog')?.scrollIntoView({ behavior: 'smooth' })}
-              >
-                <span>Browse races</span>
-                <ArrowRight
-                  className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 transition-transform duration-150 group-hover:translate-x-0.5"
-                  aria-hidden="true"
-                />
-              </Button>
-
-              <Button
-                size="default"
-                variant="outline"
-                className="h-11 gap-2 px-4 text-xs tracking-normal sm:tracking-wider"
-                onClick={() => onRegister()}
-              >
-                <UserPlus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" aria-hidden="true" />
-                <span>Create account</span>
-              </Button>
-
-              <Button
-                size="default"
-                variant="outline"
-                className="h-11 gap-2 px-4 text-xs tracking-normal sm:tracking-wider text-[var(--text-primary)]"
-                onClick={handleSwitchToCompletedAndSearch}
-              >
-                <Trophy className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" />
-                <span>Certificates</span>
-              </Button>
-            </m.div>
-
-            {/* Single-Line Real Data Counter Ticker */}
-            {loadState === 'ready' && (
-              <m.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }}
-                transition={{ duration: 0.22, delay: 0.18, ease: QUINT_EASE }}
-                className="pt-1 flex flex-wrap items-center gap-x-4 gap-y-1 type-caption text-[var(--text-secondary)] dark:text-white font-mono"
-              >
-                <span className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-600 dark:bg-emerald-400" aria-hidden="true" />
-                  <strong className="text-[var(--text-primary)] font-semibold">{activeRaces.length}</strong> upcoming
+        <div className="landing-intro-copy">
+          <h1>
+            <span className="landing-hero-line landing-hero-line-1">Your next</span>
+            <span className="landing-hero-line landing-hero-line-2">
+              <span className="landing-finish-phrase">finish line.</span>
+            </span>
+          </h1>
+          <p>Find your race. Choose your distance. Make it to the start with RacePulsePH.</p>
+          <div className="landing-intro-actions">
+            <Button className="landing-primary" onClick={() => scrollToSection('events-catalog')}>
+              Browse races <ArrowRight className="w-4 h-4" aria-hidden="true" />
+            </Button>
+            <Button variant="outline" onClick={() => onRegister()}>
+              Create account
+            </Button>
+          </div>
+          <div className="landing-race-summary" aria-live="polite">
+            {loadState === 'ready' ? (
+              <>
+                <span>
+                  <strong>
+                    <OdometerStat value={activeRaces.length} paused={motionPaused} />
+                  </strong>{' '}
+                  upcoming {activeRaces.length === 1 ? 'race' : 'races'}
                 </span>
-
+                <span>
+                  <strong>
+                    <OdometerStat value={doneRaces.length} paused={motionPaused} />
+                  </strong>{' '}
+                  completed
+                </span>
                 {liveRaces.length > 0 && (
-                  <span className="flex items-center gap-2 text-red-700 dark:text-red-400 font-semibold">
-                    <span className="inline-flex rounded-full h-2 w-2 bg-red-700 dark:bg-red-400" aria-hidden="true" />
-                    <strong className="text-red-700 dark:text-red-400">{liveRaces.length}</strong> live now
+                  <span className="landing-live-count">
+                    <OdometerStat value={liveRaces.length} paused={motionPaused} /> live now
                   </span>
                 )}
-
-                <span className="flex items-center gap-2">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-[var(--text-secondary)] dark:text-white" aria-hidden="true" />
-                  <strong className="text-[var(--text-primary)] font-semibold">{doneRaces.length}</strong> completed
-                </span>
-              </m.div>
+              </>
+            ) : (
+              <span>
+                {loadState === 'loading' ? 'Loading the race calendar...' : 'Race calendar temporarily unavailable'}
+              </span>
             )}
           </div>
+        </div>
 
-          {/* Right Runner Cutout Column: LCP-safe translate-only glide docked flush to banner bottom */}
-          <m.div
-            initial={{ y: 8 }}
-            animate={revealed ? { y: 0 } : { y: 8 }}
-            transition={{ duration: 0.26, ease: QUINT_EASE }}
-            className="lg:col-span-5 flex items-end justify-center lg:justify-end px-4 sm:px-6 lg:px-0 lg:pr-6 pt-0 self-end"
-          >
+        <figure ref={runnersFigureRef} className="landing-runners">
+          <div ref={runnersStageRef} className="landing-runners-stage">
+            {/* Layer 1: Rounded red/orange background card (.webp) + inline SVG Animated GPX Pace Lines */}
+            <div className="landing-track landing-parallax-layer" data-depth="1" aria-hidden="true">
+              <img
+                src="/assets/hero-layer-1-track.webp"
+                alt=""
+                width={888}
+                height={571}
+                decoding="async"
+                className="landing-track-card-img"
+              />
+              <svg
+                className="landing-gpx-lines"
+                viewBox="0 0 560 360"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
+                <path
+                  className="landing-gpx-base"
+                  d="M -40 245 C 110 150, 290 110, 600 135"
+                />
+                <path
+                  className="landing-gpx-base"
+                  d="M -40 290 C 125 190, 310 148, 600 175"
+                />
+                <path
+                  className="landing-gpx-base"
+                  d="M -40 332 C 140 232, 330 190, 600 218"
+                />
+                <path
+                  className="landing-gpx-pace landing-gpx-pace-1"
+                  d="M -40 245 C 110 150, 290 110, 600 135"
+                />
+                <path
+                  className="landing-gpx-pace landing-gpx-pace-2"
+                  d="M -40 290 C 125 190, 310 148, 600 175"
+                />
+                <path
+                  className="landing-gpx-pace landing-gpx-pace-3"
+                  d="M -40 332 C 140 232, 330 190, 600 218"
+                />
+              </svg>
+            </div>
+
+            {/* Layer 2: Back-row runners (.webp) */}
             <img
-              src="/assets/hero-runners.webp"
+              src="/assets/hero-layer-2-back.webp"
+              alt=""
+              aria-hidden="true"
+              width={888}
+              height={571}
+              fetchPriority="high"
+              decoding="async"
+              className="landing-runner-layer landing-layer-back landing-parallax-layer"
+              data-depth="2"
+            />
+
+            {/* Layer 3: Middle row featuring the "SUGAKOD" banner (.webp) */}
+            <img
+              src="/assets/hero-layer-3-mid.webp"
+              alt=""
+              aria-hidden="true"
+              width={888}
+              height={571}
+              fetchPriority="high"
+              decoding="async"
+              className="landing-runner-layer landing-layer-mid landing-parallax-layer"
+              data-depth="3"
+            />
+
+            {/* Layer 4: Front-row runners in white, pink, and orange singlets (.webp) */}
+            <img
+              src="/assets/hero-layer-4-front.webp"
               alt="Philippine road and trail runners in race singlets and numbered bibs"
               width={888}
               height={571}
               fetchPriority="high"
               decoding="async"
-              className="w-auto max-w-full max-h-40 sm:max-h-52 lg:max-h-[280px] h-auto object-contain object-bottom block select-none pointer-events-none drop-shadow-[0_14px_24px_rgba(0,0,0,0.14)] dark:drop-shadow-[0_18px_36px_rgba(0,0,0,0.65)]"
+              className="landing-runner-layer landing-layer-front landing-parallax-layer"
+              data-depth="4"
             />
-          </m.div>
-        </div>
+          </div>
 
-        <div className="track-ticks-rule relative z-10 w-full" aria-hidden="true" />
+          <figcaption>
+            <button
+              type="button"
+              aria-pressed={motionPaused}
+              onClick={() => setMotionPaused((prev) => !prev)}
+              className="landing-motion-toggle"
+            >
+              {motionPaused ? (
+                <>
+                  <Play className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>Resume motion</span>
+                </>
+              ) : (
+                <>
+                  <Pause className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>Pause motion</span>
+                </>
+              )}
+            </button>
+            <span className="landing-caption-brand">
+              <span className="landing-finish-mark" aria-hidden="true" />
+              <span>Happy running ka Racepulse!</span>
+            </span>
+          </figcaption>
+        </figure>
+      </section>
+
+      {/* 2. Finisher Lookup Bar with Animated ECG Heartbeat Perimeter & Podium Spotlight Focus */}
+      <section
+        className={`landing-lookup ${isBibSearchFocused ? 'is-spotlight-active' : ''}`}
+        aria-labelledby="lookup-heading"
+      >
+        {/* Animated ECG Heartbeat Perimeter SVG */}
+        <svg
+          className="landing-ecg-perimeter"
+          viewBox="0 0 800 180"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          <path
+            className="landing-ecg-track"
+            pathLength={1000}
+            d="M 20 2 L 780 2 Q 798 2 798 20 L 798 160 Q 798 178 780 178 L 20 178 Q 2 178 2 160 L 2 126 L 2 110 L 8 104 L 2 98 L -8 90 L 18 78 L -10 66 L 10 56 L 2 48 L 2 20 Q 2 2 20 2 Z"
+          />
+          <path
+            className="landing-ecg-pulse"
+            pathLength={1000}
+            d="M 20 2 L 780 2 Q 798 2 798 20 L 798 160 Q 798 178 780 178 L 20 178 Q 2 178 2 160 L 2 126 L 2 110 L 8 104 L 2 98 L -8 90 L 18 78 L -10 66 L 10 56 L 2 48 L 2 20 Q 2 2 20 2 Z"
+          />
+        </svg>
+
+        <div className="landing-lookup-copy">
+          <h2 id="lookup-heading">Already crossed the line?</h2>
+          <p>Find your finish time and finisher certificate.</p>
+        </div>
+        <form
+          role="search"
+          aria-label="Finisher result and certificate lookup"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!bibQuery.trim()) {
+              handleSwitchToCompletedAndSearch();
+            } else {
+              document.getElementById('finisher-matches')?.focus({ preventScroll: true });
+              scrollToSection('finisher-matches');
+            }
+          }}
+          className="landing-lookup-form"
+        >
+          <label htmlFor="hero-bib-search" className="landing-field-label">
+            Bib number, runner name or race
+          </label>
+          <div className="flex flex-row items-center gap-2">
+            <div className="relative flex-1 min-w-0">
+              <Search
+                className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] pointer-events-none"
+                aria-hidden="true"
+              />
+              <Input
+                ref={bibInputRef}
+                id="hero-bib-search"
+                type="search"
+                value={bibQuery}
+                onFocus={() => setIsBibSearchFocused(true)}
+                onBlur={() => setIsBibSearchFocused(false)}
+                onChange={(e) => setBibQuery(e.target.value)}
+                placeholder="Bib or name"
+                className={`h-11 pl-9 ${bibQuery ? 'pr-9' : 'pr-3'} text-xs sm:text-sm [&::-webkit-search-cancel-button]:hidden`}
+              />
+              {bibQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBibQuery('');
+                    bibInputRef.current?.focus();
+                  }}
+                  className="absolute right-0 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                  aria-label="Clear bib search"
+                >
+                  <X className="w-4 h-4" aria-hidden="true" />
+                </button>
+              )}
+            </div>
+            <Button type="submit" size="default" className="h-11 px-4 sm:px-5 shrink-0 text-xs">
+              <span>Find result</span>
+            </Button>
+          </div>
+        </form>
+
+        {/* Instant Race Bib Result Matches */}
+        {bibQuery.trim().length > 0 && (
+          <div
+            role="region"
+            id="finisher-matches"
+            tabIndex={-1}
+            aria-live="polite"
+            aria-label="Matching finisher results"
+            className="landing-lookup-matches space-y-3"
+          >
+            {loadState === 'error' || resultsLoadState === 'error' ? (
+              <div className="landing-empty" role="status">
+                <p>Finisher results are temporarily unavailable. Reload the page to try again.</p>
+                <Button variant="outline" onClick={() => window.location.reload()}>
+                  Reload results
+                </Button>
+              </div>
+            ) : loadState === 'loading' || resultsLoadState === 'loading' ? (
+              <ResultsSkeletonList rows={2} />
+            ) : matchingBibResults.length === 0 ? (
+              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <p className="text-xs text-[var(--text-secondary)]">
+                  No published finisher matches <strong className="text-[var(--text-primary)]">"{bibQuery}"</strong>.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-11 px-4"
+                  onClick={handleSwitchToCompletedAndSearch}
+                >
+                  Browse completed races
+                </Button>
+              </div>
+            ) : (
+              <ul className="space-y-3">
+                {matchingBibResults.map(({ race, entry }) => {
+                  const key = `${race.id}_${entry.bibNumber}_${entry.distance}`;
+                  const isDownloading = downloadingBibKey === key;
+                  const displayName = entry.isFreeSlot ? `Bib ${entry.bibNumber}` : entry.fullName;
+
+                  return (
+                    <li
+                      key={key}
+                      className="min-w-0 rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)] shadow-sm"
+                    >
+                      {/* Physical Race Bib Header Strip */}
+                      <div className="rounded-t-2xl overflow-hidden bg-red-700 text-white px-4 py-2 flex items-center justify-between gap-2 text-xs font-mono font-semibold">
+                        <span className="flex items-center gap-2 min-w-0 truncate">
+                          <span className="w-2 h-2 rounded-full bg-white/75 shrink-0" aria-hidden="true" />
+                          <span className="truncate">{race.name}</span>
+                        </span>
+                        <span className="flex items-center gap-2 shrink-0">
+                          <span>{entry.distance}</span>
+                          <span className="w-2 h-2 rounded-full bg-white/75 shrink-0" aria-hidden="true" />
+                        </span>
+                      </div>
+
+                      {/* Race Bib Body */}
+                      <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="px-3 py-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] text-center shrink-0">
+                            <span className="block text-xs font-mono text-[var(--text-secondary)]">Bib</span>
+                            <span className="block font-mono text-base sm:text-lg font-semibold text-[var(--text-primary)] leading-tight">
+                              {entry.bibNumber}
+                            </span>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-display font-semibold text-base text-[var(--text-primary)] break-words">
+                              {displayName}
+                            </p>
+                            <p className="text-xs font-mono text-[var(--text-secondary)] flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <span className={accentText}>#{entry.overallRank ?? entry.rank} Overall</span>
+                              {entry.categoryRank && (
+                                <span>
+                                  &bull; {entry.categoryLabel || 'Division'} #{entry.categoryRank}
+                                </span>
+                              )}
+                              <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                                &bull; {formatRaceTime(entry.finishTime)}
+                              </span>
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 shrink-0">
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-11 px-4"
+                            disabled={isDownloading}
+                            onClick={() => handleDownloadCertificate(race, entry)}
+                          >
+                            {isDownloading ? (
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                            ) : downloadedBibKey === `${race.id}_${entry.bibNumber}_${entry.distance}` ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+                            ) : (
+                              <FileDown className="w-3.5 h-3.5" aria-hidden="true" />
+                            )}
+                            <span>
+                              {downloadedBibKey === `${race.id}_${entry.bibNumber}_${entry.distance}`
+                                ? 'Saved'
+                                : 'Certificate'}
+                            </span>
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-11 px-4"
+                            onClick={() => handleSelectRace(race.id)}
+                          >
+                            <span>Leaderboard</span>
+                          </Button>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        )}
       </section>
 
       {/* Live Timing Feed Spotlight (Conditional on active broadcast) */}
@@ -868,10 +1143,11 @@ export default function PublicRaceLanding({
           </Card>
         ) : (
           <ul
-            className={`grid gap-4 ${filteredRaces.length <= 2
+            className={`grid gap-4 ${
+              filteredRaces.length <= 2
                 ? 'grid-cols-1 md:grid-cols-2'
                 : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
-              }`}
+            }`}
           >
             {filteredRaces.map((race) => {
               const isSelected = race.id === selectedRaceId;
@@ -887,8 +1163,9 @@ export default function PublicRaceLanding({
                   className="flex min-w-0"
                 >
                   <Card
-                    className={`group w-full min-w-0 flex flex-col justify-between transition-[transform,box-shadow] duration-200 hover:-translate-y-1 hover:shadow-lg ${isSelected ? 'ring-2 ring-red-700 dark:ring-red-400' : ''
-                      }`}
+                    className={`group w-full min-w-0 flex flex-col justify-between transition-[transform,box-shadow] duration-200 hover:-translate-y-1 hover:shadow-lg ${
+                      isSelected ? 'ring-2 ring-red-700 dark:ring-red-400' : ''
+                    }`}
                   >
                     <div>
                       {/* Poster Art with Status Badges matching Dashboard RaceList height */}
@@ -951,7 +1228,7 @@ export default function PublicRaceLanding({
                             race.distances.map((d) => (
                               <span
                                 key={d.id}
-                                className="inline-flex flex-wrap items-center max-w-full rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] font-mono text-xs font-semibold"
+                                className="inline-flex flex-wrap items-center max-w-full overflow-hidden rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] font-mono text-xs font-semibold"
                               >
                                 <span className="px-3 py-1 bg-red-700/10 dark:bg-red-500/15 text-red-700 dark:text-red-400 border-r border-[var(--border-default)]">
                                   {d.label}
@@ -1015,7 +1292,7 @@ export default function PublicRaceLanding({
             animate={{ opacity: 1, y: 0, transitionEnd: { transform: 'none' } }}
             exit={{ opacity: 0, y: -4, transition: { duration: 0.12, ease: EMIL_EASE } }}
             transition={{ duration: 0.2, ease: EMIL_EASE }}
-            className="scroll-mt-40 space-y-4 [backface-visibility:hidden]"
+            className="scroll-mt-[84px] space-y-4 [backface-visibility:hidden]"
             aria-labelledby="selected-heading"
           >
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-default)] pb-4">
@@ -1089,10 +1366,11 @@ export default function PublicRaceLanding({
           </div>
 
           <ul
-            className={`grid gap-4 ${featuredBibFinishers.length <= 2
+            className={`grid gap-4 ${
+              featuredBibFinishers.length <= 2
                 ? 'grid-cols-1 md:grid-cols-2'
                 : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
-              }`}
+            }`}
           >
             {featuredBibFinishers.map(({ race, entry }) => {
               const bibKey = `${race.id}_${entry.bibNumber}_${entry.distance}`;
@@ -1191,8 +1469,8 @@ export default function PublicRaceLanding({
               variant="outline"
               className="h-11 text-xs font-semibold gap-2"
               onClick={() => {
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-                window.setTimeout(() => bibInputRef.current?.focus(), 220);
+                bibInputRef.current?.focus({ preventScroll: true });
+                scrollToSection('hero-bib-search');
               }}
             >
               <Search className="w-3.5 h-3.5" aria-hidden="true" />

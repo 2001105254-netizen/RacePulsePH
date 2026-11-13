@@ -1574,8 +1574,8 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
           className="flex flex-col min-h-0 lg:h-full bg-[var(--surface-page)] rounded-2xl lg:rounded-none border border-[var(--border-default)] lg:border-y-0 lg:border-l-0 lg:border-r overflow-hidden"
         >
           {/* Compact Queue Toolbar */}
-          <div className="shrink-0 px-3 sm:px-4 py-3 border-b border-[var(--border-default)] bg-[var(--surface-card)] flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 min-w-0 xl:flex-1">
+          <div className="shrink-0 px-3 sm:px-4 py-3 border-b border-[var(--border-default)] bg-[var(--surface-card)] flex flex-col gap-3">
+            <div className="flex w-full flex-col sm:flex-row sm:items-center gap-2 min-w-0">
               {/* View Switcher: Order Queue vs Event Roster */}
               <div
                 role="tablist"
@@ -1613,7 +1613,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
               </div>
 
               {/* Search Input */}
-              <div className="relative w-full sm:flex-1 sm:min-w-[180px] xl:max-w-sm">
+              <div className="relative w-full min-w-0 sm:flex-1">
                 <Search
                   className="w-3.5 h-3.5 text-[var(--text-secondary)] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
                   aria-hidden="true"

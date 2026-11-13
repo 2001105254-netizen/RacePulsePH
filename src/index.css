@@ -1,6 +1,8 @@
 /* Fonts loaded non-blocking via <link> in index.html */
 @import "tailwindcss";
 @import './access-ui.css';
+@import './components/public-landing.css';
+@import './components/timing-console.css';
 
 /* Toggle-driven (not OS-preference-driven) dark mode: .dark class on <html> */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -254,16 +256,6 @@ video {
   input, textarea, select {
     font-size: 16px !important;
   }
-
-  /* Keep panels and dialogs comfortably inside narrow phone screens while
-     preserving the more spacious desktop visual treatment. */
-  .glass-panel {
-    border-radius: 20px;
-  }
-
-  .glass-inset {
-    border-radius: 16px;
-  }
 }
 
 /* ============================================================
@@ -287,37 +279,57 @@ video {
   padding-right: var(--rp-safe-right);
 }
 
-.glass-panel {
-  background: var(--surface-card);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-panel);
-  box-shadow: 0 1px 2px oklch(20% 0.02 25 / 0.06), 0 12px 32px -16px oklch(20% 0.02 25 / 0.18);
+/* Keep header sticky on tablet/desktop viewports with ample height; scroll naturally on phones & short landscape windows */
+@media (min-width: 768px) and (min-height: 520px) {
+  .brand-nav {
+    position: sticky;
+    top: 0;
+  }
 }
 
-.dark .glass-panel {
-  background: color-mix(in srgb, var(--surface-card) 94%, #000000);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  border: 1px solid color-mix(in srgb, var(--border-default) 85%, transparent);
-  box-shadow: 0 18px 44px -16px rgba(0, 0, 0, 0.55), 0 1px 0 0 rgba(255, 255, 255, 0.04) inset;
-}
+@layer components {
+  .glass-panel {
+    background: var(--surface-card);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-panel);
+    box-shadow: 0 1px 2px oklch(20% 0.02 25 / 0.06), 0 12px 32px -16px oklch(20% 0.02 25 / 0.18);
+  }
 
-.glass-inset {
-  background: var(--surface-inset);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-control);
-}
+  .dark .glass-panel {
+    background: color-mix(in srgb, var(--surface-card) 94%, #000000);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 1px solid color-mix(in srgb, var(--border-default) 85%, transparent);
+    box-shadow: 0 18px 44px -16px rgba(0, 0, 0, 0.55), 0 1px 0 0 rgba(255, 255, 255, 0.04) inset;
+  }
 
-.dark .glass-inset {
-  background: color-mix(in srgb, var(--surface-inset) 92%, #000000);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-control);
+  .glass-inset {
+    background: var(--surface-inset);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-control);
+  }
+
+  .dark .glass-inset {
+    background: color-mix(in srgb, var(--surface-inset) 92%, #000000);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-control);
+  }
+
+  @media (max-width: 767px) {
+    .glass-panel {
+      border-radius: 20px;
+    }
+
+    .glass-inset {
+      border-radius: 16px;
+    }
+  }
 }
 
 /* Static "floating" heading treatment: elevation is implied through subtle shadow
@@ -744,9 +756,9 @@ input[type="submit"], input[type="button"], input[type="reset"], input[type="ran
 @media (min-width: 1024px) {
   .desktop-workspace-sidebar {
     position: sticky;
-    top: calc(4rem + 1px + var(--rp-safe-top));
-    height: calc(100vh - 4rem - 1px - var(--rp-safe-top));
-    height: calc(100dvh - 4rem - 1px - var(--rp-safe-top));
+    top: calc(64px + 1px + var(--rp-safe-top));
+    height: calc(100vh - 64px - 1px - var(--rp-safe-top));
+    height: calc(100dvh - 64px - 1px - var(--rp-safe-top));
   }
 
   /* Locked workspace panels clip inside an overflow-hidden row below .brand-nav,

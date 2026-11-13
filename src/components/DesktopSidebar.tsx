@@ -152,7 +152,7 @@ export default function DesktopSidebar({
     <aside
       aria-label={`${spaceTitle} navigation`}
       className={`hidden lg:flex lg:flex-col lg:self-start desktop-workspace-sidebar lg:z-30 shrink-0 border-r border-[var(--border-default)] bg-[var(--surface-card)] ${
-        collapsed ? 'w-20' : 'w-60'
+        collapsed ? 'w-[clamp(72px,5rem,96px)]' : 'w-[clamp(224px,15rem,288px)]'
       }`}
     >
       <div className="p-3 border-b border-[var(--border-subtle)] space-y-2 shrink-0">

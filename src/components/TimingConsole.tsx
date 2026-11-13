@@ -1285,7 +1285,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
   ];
 
   return (
-    <div className="w-full flex-1 min-h-0 flex flex-col lg:overflow-hidden">
+    <div className="w-full flex-1 min-h-0 flex flex-col gap-4 lg:gap-0 lg:overflow-hidden">
       {headerCtx?.leftSlotEl && createPortal(
         <div className="flex items-center gap-2 min-w-0">
           <button
@@ -1299,9 +1299,10 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
           </button>
           <select
             aria-label="Active race event"
+            name="active-race-desktop"
             value={race.id}
             onChange={(event) => onSelectRace(event.target.value)}
-            className="min-h-11 max-w-[260px] truncate rounded-xl border border-white/20 bg-zinc-900 px-3 text-xs font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+            className="timing-race-select timing-race-select--header min-h-11 w-[260px] min-w-0 rounded-xl border border-white/20 bg-zinc-900 px-3 text-xs font-semibold text-white focus-visible:ring-2 focus-visible:ring-red-400"
           >
             {races.map((item) => (
               <option key={item.id} value={item.id}>{item.name}</option>
@@ -1371,8 +1372,8 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
       )}
 
       {/* Mobile-only compact race switcher & telemetry card */}
-      <div className="lg:hidden glass-panel rounded-2xl p-3 space-y-2 shrink-0">
-        <div className="flex items-center gap-2">
+      <div className="timing-mobile-header lg:hidden glass-panel rounded-2xl p-4 space-y-4 shrink-0">
+        <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => onSelectRace('')}
@@ -1383,20 +1384,21 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
           </button>
           <select
             aria-label="Active race event"
+            name="active-race-mobile"
             value={race.id}
             onChange={(event) => onSelectRace(event.target.value)}
-            className="min-w-0 flex-1 min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-xs font-semibold text-[var(--text-primary)] truncate focus:outline-none focus:ring-2 focus:ring-red-500/50"
+            className="timing-race-select min-w-0 w-0 flex-1 min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-xs font-semibold text-[var(--text-primary)] focus:ring-2 focus:ring-red-500/50"
           >
             {races.map((item) => (
               <option key={item.id} value={item.id}>{item.name}</option>
             ))}
             <option value="">All race events...</option>
           </select>
-          <LiveClock gunStartTime={race.gunStartTime} />
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2 min-w-0">
+        <div className="grid grid-cols-1 min-[480px]:grid-cols-[1fr_auto] items-center gap-4">
+          <div className="flex flex-wrap items-center gap-3 min-w-0">
+            <LiveClock gunStartTime={race.gunStartTime} />
             <span className={`inline-flex items-center gap-2 text-xs font-mono font-semibold px-3 py-1 rounded-lg border ${lanConnected ? 'bg-emerald-500/10 border-emerald-700/30 text-emerald-700 dark:text-emerald-400' : 'bg-red-500/10 border-red-700/30 text-red-700 dark:text-red-400'}`}>
               {lanConnected ? <><Wifi className="w-3.5 h-3.5" aria-hidden="true" /> LAN</> : <><WifiOff className="w-3.5 h-3.5" aria-hidden="true" /> Offline</>}
             </span>
@@ -1411,7 +1413,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
               </span>
             )}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-3 [&>button]:flex-1">
             {isRaceCompleted ? (
               <>
                 <button
@@ -3245,9 +3247,9 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
       </section>
 
       {/* Right 36% Desktop / Top Mobile: Sub-Mode Tabs + Kit Pairing Terminal */}
-      <section className="order-1 lg:order-2 flex flex-col min-h-0 glass-panel p-4 gap-3 lg:h-full">
+      <section className="timing-kit-panel order-1 lg:order-2 flex flex-col min-h-0 glass-panel lg:h-full">
         {(can('roster.add') || can('roster.import')) && (
-          <div className="flex flex-wrap gap-2 shrink-0" role="tablist" aria-label="Chip and roster actions">
+          <div className="timing-kit-tabs shrink-0" role="tablist" aria-label="Chip and roster actions">
             <button
               type="button"
               role="tab"
@@ -3304,20 +3306,21 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
           )}
 
           {rightTab === 'assign' && (
-            <div className="space-y-3">
+            <div className="space-y-6">
               <div>
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] flex items-center gap-2">
                   <Cpu className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> Race Kit Assignment
                 </h3>
-                <p className="text-xs text-[var(--text-secondary)] mt-1">Select a bib, scan one chip with the USB keyboard scanner, then verify before assigning.</p>
+                <p className="text-xs text-[var(--text-secondary)] mt-2 leading-relaxed">Select a bib, scan one chip with the USB keyboard scanner, then verify before assigning.</p>
               </div>
 
               <form onSubmit={handleAssign} className="space-y-3">
-                <fieldset className="contents" disabled={!can('roster.chips')}>
+                <fieldset className="timing-kit-fields" disabled={!can('roster.chips')}>
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Bib Number</label>
+                    <label htmlFor="timing-kit-bib" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Bib Number</label>
                     <div className="flex gap-2">
                       <input
+                        id="timing-kit-bib"
                         ref={bibInputRef}
                         type="text"
                         placeholder="TYPE OR SCAN BIB"
@@ -3373,11 +3376,12 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
                   )}
 
                   <div>
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Chip ID</label>
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                      <label htmlFor="timing-kit-chip" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Chip ID</label>
                       <span className="text-xs font-semibold flex items-center gap-1 text-emerald-700 dark:text-emerald-400"><Keyboard className="w-3.5 h-3.5" aria-hidden="true" /> Keyboard only</span>
                     </div>
                     <input
+                      id="timing-kit-chip"
                       ref={chipInputRef}
                       type="text"
                       placeholder="SCAN CHIP WITH KEYBOARD"
@@ -3393,7 +3397,7 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
                       disabled={!foundRunner}
                       className="w-full min-h-11 glass-inset px-4 py-2 text-sm font-semibold font-mono tracking-wider text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600/50 disabled:opacity-50"
                     />
-                    <p className="text-xs text-[var(--text-secondary)] mt-1">VF-787P bridge reads are disabled here to prevent nearby chips from mixing.</p>
+                    <p className="text-xs text-[var(--text-secondary)] mt-3 leading-relaxed">VF-787P bridge reads are disabled here to prevent nearby chips from mixing.</p>
                   </div>
 
                   <button

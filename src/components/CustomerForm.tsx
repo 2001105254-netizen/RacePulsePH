@@ -283,16 +283,16 @@ export default function CustomerForm({
 
       {/* Header Bar - frosted glass pill */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between glass-panel hero-glow px-4 sm:px-6 py-4 sm:py-5 mb-8 gap-4 animate-fadeIn">
-        <div className="text-left min-w-0">
-          <h1 className="heading-float text-2xl sm:text-3xl font-semibold tracking-tight font-display text-[var(--text-primary)]">MEDAL PERSONALIZATION BOOTH</h1>
+        <div className="text-left min-w-0 w-full">
+          <h1 className="heading-float text-2xl sm:text-3xl font-semibold tracking-tight font-display text-[var(--text-primary)] break-words [overflow-wrap:anywhere]">MEDAL PERSONALIZATION BOOTH</h1>
           <div className="flex flex-wrap items-center gap-2 mt-1">
             <p className="text-xs sm:text-sm text-[var(--text-secondary)]">Enter your race details carefully before confirming. Entries sync with the on-site laser station.</p>
             {lanConnected !== null && (
-              <span className={`inline-flex items-center gap-2 text-xs font-mono font-semibold tracking-wider uppercase px-3 py-1 rounded-full border ${
+              <span className={`inline-flex max-w-full flex-wrap items-center gap-2 text-xs font-mono font-semibold tracking-wider uppercase px-3 py-1 rounded-full border ${
                 lanConnected
                   ? 'bg-emerald-500/10 border-emerald-600/30 text-emerald-700 dark:text-emerald-400'
                   : 'bg-red-500/10 border-red-600/30 text-red-700 dark:text-red-400'
-              } w-max`}>
+              }`}>
                 <span className={`w-2 h-2 rounded-full ${lanConnected ? 'bg-emerald-600 dark:bg-emerald-400 motion-safe:animate-pulse' : 'bg-red-600 dark:bg-red-400 motion-safe:animate-ping'}`} aria-hidden="true"></span>
                 {lanConnected ? (
                   <>
@@ -317,18 +317,18 @@ export default function CustomerForm({
       </div>
 
       {viewState === 'form' ? (
-        <div id="order_form_panel" className="grid grid-cols-1 lg:grid-cols-12 gap-8 sm:gap-10 items-start">
+        <div id="order_form_panel" className="grid grid-cols-1 lg:grid-cols-[minmax(0,7fr)_minmax(0,4fr)] gap-6 lg:gap-8 items-start">
 
-          <div className="lg:col-span-7 relative animate-fadeIn">
+          <div className="min-w-0 relative animate-fadeIn">
             <div className="glass-panel p-4 sm:p-8 space-y-6">
-              <div className="heading-float-chip flex items-center gap-3 bg-gradient-to-br from-red-700 via-red-800 to-black text-white px-4 py-3 rounded-[20px] border border-white/10">
+              <div className="heading-float-chip flex flex-wrap items-center gap-3 bg-gradient-to-br from-red-700 via-red-800 to-black text-white px-4 py-3 rounded-[20px] border border-white/10">
                 <span className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
                   <Award className="w-5 h-5" aria-hidden="true" />
                 </span>
-                <span className="min-w-0">
-                  <h2 className="heading-float block font-display font-semibold uppercase tracking-widest text-xs sm:text-sm leading-tight">Personalization Form</h2>
-                  <p className="block text-xs text-red-100/90 font-normal mt-1">Laser-engraved exactly as typed - double check spelling</p>
-                </span>
+                <div className="min-w-0 flex-1">
+                  <h2 className="font-display font-semibold uppercase tracking-wider text-xs sm:text-sm leading-tight text-white break-words [overflow-wrap:anywhere]">Personalization Form</h2>
+                  <p className="text-xs text-red-100/90 font-normal mt-1 break-words">Laser-engraved exactly as typed - double check spelling</p>
+                </div>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-8" noValidate>
@@ -437,9 +437,9 @@ export default function CustomerForm({
                       Official Finishing Time <span className="text-red-700 dark:text-red-400">*</span>
                     </label>
 
-                    <div className="flex items-center gap-2 glass-inset p-3">
+                    <div className="flex flex-wrap items-center gap-2 glass-inset p-3">
                       {/* Hours */}
-                      <div className="flex-1 min-w-0">
+                      <div className="flex-1 min-w-12">
                         <label htmlFor="timeHour" className="block text-xs uppercase tracking-wider font-semibold text-[var(--text-secondary)] text-center mb-1">Hours</label>
                         <select
                           id="timeHour"
@@ -453,10 +453,10 @@ export default function CustomerForm({
                         </select>
                       </div>
 
-                      <span className="text-lg font-semibold text-[var(--text-secondary)] self-end mb-2" aria-hidden="true">:</span>
+                      <span className="text-lg font-semibold text-[var(--text-secondary)] self-end mb-2 shrink-0" aria-hidden="true">:</span>
 
                       {/* Minutes */}
-                      <div className="flex-1 min-w-0">
+                      <div className="flex-1 min-w-12">
                         <label htmlFor="timeMin" className="block text-xs uppercase tracking-wider font-semibold text-[var(--text-secondary)] text-center mb-1">Mins</label>
                         <select
                           id="timeMin"
@@ -470,10 +470,10 @@ export default function CustomerForm({
                         </select>
                       </div>
 
-                      <span className="text-lg font-semibold text-[var(--text-secondary)] self-end mb-2" aria-hidden="true">:</span>
+                      <span className="text-lg font-semibold text-[var(--text-secondary)] self-end mb-2 shrink-0" aria-hidden="true">:</span>
 
                       {/* Seconds */}
-                      <div className="flex-1 min-w-0">
+                      <div className="flex-1 min-w-12">
                         <label htmlFor="timeSec" className="block text-xs uppercase tracking-wider font-semibold text-[var(--text-secondary)] text-center mb-1">Secs</label>
                         <select
                           id="timeSec"
@@ -487,8 +487,9 @@ export default function CustomerForm({
                         </select>
                       </div>
                     </div>
-                    <label htmlFor="timeFraction" className="block text-xs mt-2">Fractional seconds (five digits)
-                      <input id="timeFraction" inputMode="numeric" pattern="[0-9]{1,5}" maxLength={5} value={timeFraction} onChange={event => setTimeFraction(event.target.value.replace(/[^0-9]/g, '').slice(0, 5))} className="ml-2 w-24 min-h-11 glass-inset p-2 font-mono" />
+                    <label htmlFor="timeFraction" className="flex flex-wrap items-center gap-2 text-xs mt-2">
+                      <span>Fractional seconds (five digits)</span>
+                      <input id="timeFraction" inputMode="numeric" pattern="[0-9]{1,5}" maxLength={5} value={timeFraction} onChange={event => setTimeFraction(event.target.value.replace(/[^0-9]/g, '').slice(0, 5))} className="w-24 max-w-full min-h-11 glass-inset p-2 font-mono" />
                     </label>
                     <p className="text-xs text-[var(--text-secondary)] mt-2">Time preview: {timeHour}:{timeMin}:{timeSec}{timeFraction.padEnd(5, '0')}</p>
                   </div>
@@ -576,9 +577,8 @@ export default function CustomerForm({
           </div>
 
           {/* Real-time Preview Side */}
-          <div className="lg:col-span-1" />
-          <div className="lg:col-span-4 lg:sticky lg:top-6 flex flex-col items-center animate-fadeIn">
-            <div className="w-full glass-panel p-5 text-left">
+          <div className="min-w-0 lg:sticky lg:top-6 flex flex-col items-center animate-fadeIn">
+            <div className="w-full min-w-0 glass-panel p-5 text-left">
               <h3 className="text-xs font-semibold font-display uppercase tracking-widest text-[var(--text-secondary)] border-b border-[var(--border-default)] pb-3 mb-4 flex items-center gap-2">
                 <Clock className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
                 Live Engraving Queue Status

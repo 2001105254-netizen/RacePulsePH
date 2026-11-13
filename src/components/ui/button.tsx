@@ -8,7 +8,7 @@ import { cn } from '../../lib/utils';
  * Features a top edge-bevel highlight, sub-surface hardware rim, and responsive mechanical click.
  */
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full text-xs font-semibold uppercase tracking-wider transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-page)] disabled:pointer-events-none disabled:opacity-50 select-none motion-safe:active:scale-[0.97]',
+  'inline-flex items-center justify-center gap-2 whitespace-normal text-center leading-tight rounded-full text-xs font-semibold uppercase tracking-wider transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-page)] disabled:pointer-events-none disabled:opacity-50 select-none motion-safe:active:scale-[0.97]',
   {
     variants: {
       variant: {

@@ -1,6 +1,8 @@
 /* Viewport-level workspaces and feedback. Use semantic theme tokens in both themes. */
-.rp-dialog { box-sizing: border-box; color: var(--text-primary); background: var(--surface-card); font-family: var(--font-sans); border: 1px solid var(--border-default); padding: 0; overscroll-behavior: contain; }
-dialog.rp-dialog:modal:not(.access-workspace) { position: fixed; inset: 0; margin: auto; max-height: calc(100dvh - 2rem); overflow-y: auto; }
+@layer components {
+  .rp-dialog { box-sizing: border-box; color: var(--text-primary); background: var(--surface-card); font-family: var(--font-sans); border: 1px solid var(--border-default); padding: 0; overscroll-behavior: contain; }
+  dialog.rp-dialog:modal:not(.access-workspace) { position: fixed; inset: 0; margin: auto; max-height: calc(100dvh - 2rem); overflow-y: auto; }
+}
 .rp-dialog::backdrop { background: rgb(8 8 12 / 72%); overflow: hidden; overscroll-behavior: contain; }
 .rp-button { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 48px; min-width: 44px; padding: .75rem 1.25rem; border-radius: 12px; border: 1px solid transparent; font: inherit; font-size: .9375rem; font-weight: 600; line-height: 1.4; cursor: pointer; transition: background-color .15s ease, border-color .15s ease; }
 .rp-button svg, .rp-icon-button svg { flex: 0 0 auto; }

@@ -422,8 +422,8 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
       onOpenProfile={() => setShowProfile(true)}
     >
       <div className="flex flex-col md:flex-row md:items-center justify-between glass-panel hero-glow px-4 sm:px-6 py-5 gap-4 animate-fadeIn">
-        <div>
-          <h1 className="heading-float text-2xl font-semibold tracking-tight font-display text-[var(--text-primary)] uppercase">Welcome, {profile.displayName}</h1>
+        <div className="min-w-0">
+          <h1 className="heading-float text-2xl font-semibold tracking-tight font-display text-[var(--text-primary)] uppercase break-words">Welcome, {profile.displayName}</h1>
           <p className="text-xs text-[var(--text-secondary)] mt-1">Register for races, track your splits, and personalize your finisher medal.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start">
@@ -439,7 +439,7 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
             onClick={() => setShowProfile(true)}
             title="My Profile"
             aria-label="Open my profile"
-            className="w-11 h-11 rounded-full overflow-hidden glass-inset flex items-center justify-center text-red-700 dark:text-red-400 font-semibold text-sm hover:border-red-500/40 transition shrink-0"
+            className="w-11 h-11 rounded-full overflow-hidden bg-red-700 text-white border border-red-800 dark:border-red-400/40 flex items-center justify-center font-semibold text-sm hover:bg-red-600 transition shrink-0"
           >
             {profile.photoURL ? (
               <img src={profile.photoURL} alt="" width={44} height={44} className="w-full h-full object-cover" />
@@ -1063,10 +1063,10 @@ function RegistrationProgress({ currentStep }: { currentStep: 1 | 2 | 3 }) {
         const complete = step < currentStep;
         const active = step === currentStep;
         return (
-          <li key={label} className={`rounded-xl border px-2 py-2 text-center transition ${complete || active ? 'border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400' : 'border-[var(--border-default)] bg-[var(--surface-inset)]/40 text-[var(--text-secondary)]'}`}>
-            <span className="flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-wide">
+          <li key={label} className={`min-w-0 rounded-xl border px-2 py-2 text-center transition ${complete || active ? 'border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400' : 'border-[var(--border-default)] bg-[var(--surface-inset)]/40 text-[var(--text-secondary)]'}`}>
+            <span className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs font-semibold uppercase tracking-wide min-w-0">
               {complete ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> : <span className={`w-5 h-5 rounded-full border flex items-center justify-center text-xs shrink-0 ${active ? 'border-red-700 dark:border-red-400' : 'border-current'}`}>{step}</span>}
-              <span className="hidden sm:inline">{label}</span><span className="sm:hidden">{step === 1 ? 'Race' : step === 2 ? 'Details' : 'Done'}</span>
+              <span className="hidden sm:inline break-words">{label}</span><span className="sm:hidden">{step === 1 ? 'Race' : step === 2 ? 'Details' : 'Done'}</span>
             </span>
           </li>
         );
@@ -1783,7 +1783,7 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
           )}
 
           <div className="glass-inset p-4 space-y-3 rounded-[var(--radius-control)]">
-            <label htmlFor="reg-terms-consent" className="min-h-11 flex items-start gap-2 cursor-pointer">
+            <div className="flex items-start gap-2">
               <input
                 id="reg-terms-consent"
                 type="checkbox"
@@ -1791,14 +1791,20 @@ function RaceRegistrationForm({ uid, friendIdentity, runnerProfiles, initialShir
                 onChange={(e) => setAcceptedRegistrationTerms(e.target.checked)}
                 className="rp-checkbox shrink-0"
               />
-              <span className="text-xs text-[var(--text-primary)] leading-relaxed">
-                I accept the{' '}
-                <a href="#legal-terms" onClick={(e) => { e.preventDefault(); openLegalDoc('terms'); }} className="inline-flex items-center min-h-6 font-semibold underline underline-offset-2 text-red-700 dark:text-red-400">Terms of Service</a>,{' '}
-                <a href="#legal-privacy" onClick={(e) => { e.preventDefault(); openLegalDoc('privacy'); }} className="inline-flex items-center min-h-6 font-semibold underline underline-offset-2 text-red-700 dark:text-red-400">Privacy Policy</a>, and{' '}
-                <a href="#legal-refund" onClick={(e) => { e.preventDefault(); openLegalDoc('refund'); }} className="inline-flex items-center min-h-6 font-semibold underline underline-offset-2 text-red-700 dark:text-red-400">Refund Policy</a>{' '}
-                for this event registration, including official timing and public leaderboard publication.
-              </span>
-            </label>
+              <div className="pt-2 text-xs text-[var(--text-primary)] leading-relaxed space-y-1">
+                <label htmlFor="reg-terms-consent" className="cursor-pointer block">
+                  I accept the Terms of Service, Privacy Policy, and Refund Policy for this event registration, including official timing and public leaderboard publication.
+                </label>
+                <p className="text-[var(--text-secondary)]">
+                  Review:{' '}
+                  <a href="#legal-terms" onClick={(e) => { e.preventDefault(); openLegalDoc('terms'); }} className="font-semibold underline underline-offset-2 text-red-700 dark:text-red-400">Terms of Service</a>
+                  {', '}
+                  <a href="#legal-privacy" onClick={(e) => { e.preventDefault(); openLegalDoc('privacy'); }} className="font-semibold underline underline-offset-2 text-red-700 dark:text-red-400">Privacy Policy</a>
+                  {', and '}
+                  <a href="#legal-refund" onClick={(e) => { e.preventDefault(); openLegalDoc('refund'); }} className="font-semibold underline underline-offset-2 text-red-700 dark:text-red-400">Refund Policy</a>.
+                </p>
+              </div>
+            </div>
             <label htmlFor="reg-marketing-optin" className="min-h-11 flex items-start gap-2 cursor-pointer">
               <input
                 id="reg-marketing-optin"
@@ -2352,7 +2358,7 @@ function ProfileModal({ profile, runnerProfiles, onClose }: ProfileModalProps) {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="relative w-24 h-24 rounded-full overflow-hidden glass-inset flex items-center justify-center text-red-700 dark:text-red-400 font-semibold text-3xl group"
+            className="relative w-24 h-24 rounded-full overflow-hidden bg-red-700 text-white border border-red-800 dark:border-red-400/40 flex items-center justify-center font-semibold text-3xl group"
             aria-label="Change profile photo"
             title="Change profile picture"
           >

@@ -29,3 +29,8 @@ screenshots/
 *.evidence.png
 screenshot*.png
 evidence*.png
+
+# Release signing material
+signing/
+*.jks
+*.keystore

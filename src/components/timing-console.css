@@ -1,0 +1,63 @@
+.timing-race-select {
+  --race-picker-surface: var(--surface-card);
+  --race-picker-text: var(--text-primary);
+  --race-picker-border: oklch(58% 0.006 270);
+  --race-picker-accent: oklch(48% 0.18 28);
+  cursor: pointer;
+}
+.dark .timing-race-select { --race-picker-accent: oklch(73% 0.16 28); }
+.timing-race-select--header {
+  --race-picker-surface: oklch(19% 0.004 270);
+  --race-picker-text: oklch(97% 0.002 270);
+  --race-picker-accent: oklch(73% 0.16 28);
+}
+.timing-race-select:focus-visible { outline: 2px solid var(--race-picker-accent); outline-offset: 4px; }
+
+/* The native fallback keeps platform selection and keyboard support. */
+@supports (appearance: base-select) {
+  .timing-race-select,
+  .timing-race-select::picker(select) { appearance: base-select; }
+  .timing-race-select { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .timing-race-select::picker(select) {
+    margin-block: 8px;
+    padding: 8px;
+    max-block-size: min(360px, 60dvh);
+    overflow-y: auto;
+    border: 1px solid var(--race-picker-border);
+    border-radius: 16px;
+    background: var(--race-picker-surface);
+    color: var(--race-picker-text);
+    font: 400 0.875rem/1.5 var(--font-sans);
+    box-shadow: 0 8px 24px oklch(10% 0.004 270 / 0.2);
+  }
+  .timing-race-select::picker-icon { color: var(--race-picker-accent); flex-shrink: 0; }
+  .timing-race-select option {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-block-size: 44px;
+    padding: 12px;
+    border-radius: 8px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+  }
+  .timing-race-select option:checked {
+    background: color-mix(in oklch, var(--race-picker-accent) 12%, var(--race-picker-surface));
+    color: var(--race-picker-accent);
+    font-weight: 600;
+  }
+  .timing-race-select option:is(:hover, :focus-visible) {
+    background: color-mix(in oklch, var(--race-picker-accent) 8%, var(--race-picker-surface));
+    outline: 2px solid var(--race-picker-accent);
+    outline-offset: -2px;
+  }
+  .timing-race-select option::checkmark { color: var(--race-picker-accent); }
+}
+.timing-kit-panel { padding: 24px; gap: 24px; }
+.timing-kit-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.timing-kit-tabs button { min-width: 0; min-height: 48px; padding: 12px 8px; letter-spacing: normal; line-height: 1.4; }
+.timing-kit-fields { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+.timing-kit-fields input { min-height: 48px; }
+.timing-kit-fields button[type="submit"] { min-height: 48px; margin-top: 8px; }
+@media (max-width: 479px) { .timing-kit-panel { padding: 16px; } }
