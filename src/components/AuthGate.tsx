@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useId } from 'react';
+import React, { useState, useEffect } from 'react';
 import { doc, getDoc, runTransaction } from 'firebase/firestore';
-import { AnimatePresence, LayoutGroup, m } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import { directionalTabVariants, type NavDirection } from './ui/MotionPrimitives';
 import { db, signUpWithEmail, signInWithEmail, signInWithGoogle, signOutUser } from '../firebase';
 import { clearSignupDraft, getSignupDraft, saveSignupDraft } from '../lib/accountSecurity';
@@ -30,19 +30,19 @@ const USERNAME_PATTERN = /^[a-z0-9][a-z0-9_.-]{2,23}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const accentText = 'text-red-700 dark:text-red-400';
-const labelClass = 'block text-xs font-semibold text-[var(--text-secondary)] mb-1.5';
-const hintClass = 'mt-1.5 text-xs text-[var(--text-secondary)]';
-const errorHintClass = 'mt-1.5 text-xs font-semibold text-red-700 dark:text-red-400';
+const labelClass = 'block text-xs font-semibold text-[var(--text-secondary)] mb-2';
+const hintClass = 'mt-2 text-xs text-[var(--text-secondary)]';
+const errorHintClass = 'mt-2 text-xs font-semibold text-red-700 dark:text-red-400';
 const inputBaseClass =
   'w-full glass-inset h-11 text-sm sm:text-base font-normal text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-700 dark:focus:ring-red-400 transition-colors';
-const iconClass = 'w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] pointer-events-none';
+const iconClass = 'w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] pointer-events-none';
 const focusRing =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-700 dark:focus-visible:ring-red-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-page)]';
 const buttonBase = `w-full h-11 px-5 rounded-[var(--radius-control)] text-sm sm:text-base font-semibold flex items-center justify-center gap-2 transition-all duration-150 motion-safe:active:scale-[0.99] ${focusRing}`;
 const primaryButton = (busy: boolean) =>
   `${buttonBase} ${
     busy
-      ? 'bg-[var(--surface-hover)] text-[var(--text-secondary)] cursor-not-allowed'
+      ? 'bg-[var(--surface-inset)] border border-[var(--border-default)] text-[var(--text-secondary)] cursor-not-allowed'
       : 'bg-red-700 hover:bg-red-800 text-white shadow-sm'
   }`;
 
@@ -96,7 +96,7 @@ function GoogleIcon({ className }: { className?: string }) {
 // Centered stage with subtle GPU-composited backdrop glow.
 function AuthStage({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative isolate flex-grow flex items-center justify-center overflow-hidden py-6 sm:py-10 px-4">
+    <div className="relative isolate flex-grow flex items-center justify-center overflow-x-clip py-6 sm:py-10 px-4">
       <div className="auth-backdrop" aria-hidden="true">
         <span className="auth-glow" />
         <span className="auth-beam" />
@@ -206,7 +206,6 @@ export default function AuthGate({
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [resettingPassword, setResettingPassword] = useState(false);
-  const authModeGroupId = useId();
 
   useEffect(() => {
     setMode(initialMode);
@@ -394,7 +393,7 @@ export default function AuthGate({
       className={`animate-error-nudge text-xs font-semibold flex items-start gap-2 rounded-xl border border-red-600/30 bg-red-50 dark:bg-red-950/35 px-3 py-2 ${accentText}`}
       role="alert"
     >
-      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" /> <span>{error}</span>
+      <AlertTriangle className="w-4 h-4 shrink-0 mt-1" aria-hidden="true" /> <span>{error}</span>
     </p>
   );
 
@@ -403,7 +402,7 @@ export default function AuthGate({
       <div className="w-full max-w-md space-y-5">
         {/* Compact charcoal brand emblem + clear heading */}
         <div className="flex flex-col items-center text-center space-y-3">
-          <div className="w-36 rounded-2xl border border-zinc-800 dark:border-zinc-700/80 bg-[#141416] px-3.5 py-2.5 flex items-center justify-center shadow-sm">
+          <div className="w-36 rounded-2xl border border-zinc-800 dark:border-zinc-700/80 bg-[#141416] px-4 py-3 flex items-center justify-center shadow-sm">
             <img
               src="/assets/racepulse-logo.png"
               alt="RacePulsePH"
@@ -419,54 +418,36 @@ export default function AuthGate({
 
         {/* Focused auth card with only essential controls */}
         <div className="glass-panel p-6 sm:p-7 text-left space-y-5">
-          <LayoutGroup id={authModeGroupId}>
-            <div
-              className="grid grid-cols-2 glass-inset p-1 gap-1"
-              role="group"
-              aria-label="Sign in or create an account"
+          <div
+            className="grid grid-cols-2 glass-inset p-1 gap-1"
+            role="group"
+            aria-label="Sign in or create an account"
+          >
+            <button
+              type="button"
+              aria-pressed={mode === 'login'}
+              onClick={() => switchMode('login')}
+              className={`min-h-11 px-3 text-sm font-semibold rounded-[12px] transition-colors ${focusRing} ${
+                mode === 'login'
+                  ? 'bg-red-700 text-white shadow-sm'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
             >
-              <button
-                type="button"
-                aria-pressed={mode === 'login'}
-                onClick={() => switchMode('login')}
-                className={`relative isolate text-sm font-semibold h-10 rounded-[12px] transition-colors ${focusRing} ${
-                  mode === 'login'
-                    ? 'text-white'
-                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                }`}
-              >
-                {mode === 'login' && (
-                  <m.span
-                    layoutId={`auth-mode-pill-${authModeGroupId}`}
-                    aria-hidden="true"
-                    transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-                    className="pointer-events-none absolute inset-0 -z-10 rounded-[12px] bg-red-700 shadow-sm"
-                  />
-                )}
-                Sign in
-              </button>
-              <button
-                type="button"
-                aria-pressed={mode === 'signup'}
-                onClick={() => switchMode('signup')}
-                className={`relative isolate text-sm font-semibold h-10 rounded-[12px] transition-colors ${focusRing} ${
-                  mode === 'signup'
-                    ? 'text-white'
-                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                }`}
-              >
-                {mode === 'signup' && (
-                  <m.span
-                    layoutId={`auth-mode-pill-${authModeGroupId}`}
-                    aria-hidden="true"
-                    transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-                    className="pointer-events-none absolute inset-0 -z-10 rounded-[12px] bg-red-700 shadow-sm"
-                  />
-                )}
-                Create account
-              </button>
-            </div>
-          </LayoutGroup>
+              Sign in
+            </button>
+            <button
+              type="button"
+              aria-pressed={mode === 'signup'}
+              onClick={() => switchMode('signup')}
+              className={`min-h-11 px-3 text-sm font-semibold rounded-[12px] transition-colors ${focusRing} ${
+                mode === 'signup'
+                  ? 'bg-red-700 text-white shadow-sm'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              Create account
+            </button>
+          </div>
 
           <button
             type="button"
@@ -527,7 +508,7 @@ export default function AuthGate({
                 </div>
 
                 <div>
-                  <div className="flex items-center justify-between gap-4 mb-1.5">
+                  <div className="flex items-center justify-between gap-4 mb-2">
                     <label htmlFor="loginPassword" className="block text-xs font-semibold text-[var(--text-secondary)]">
                       Password
                     </label>
@@ -535,7 +516,7 @@ export default function AuthGate({
                       type="button"
                       onClick={handleForgotPassword}
                       disabled={submitting}
-                      className={`text-xs font-semibold rounded-md px-2 py-2 -my-2 ${accentText} hover:underline disabled:opacity-50 ${focusRing}`}
+                      className={`min-h-11 inline-flex items-center text-xs font-semibold rounded-md px-3 -my-2 ${accentText} hover:underline disabled:opacity-50 ${focusRing}`}
                     >
                       Forgot password?
                     </button>
@@ -730,7 +711,7 @@ export default function AuthGate({
                 </div>
 
                 {signupRoleLocked ? (
-                  <p className="text-xs text-[var(--text-secondary)] glass-inset px-3.5 py-2.5">
+                  <p className="text-xs text-[var(--text-secondary)] glass-inset px-4 py-3">
                     Runner account for race registration.
                   </p>
                 ) : (
@@ -838,42 +819,51 @@ function SignupConsentFields({
         )}
       </div>
 
-      <div className="space-y-2.5 glass-inset p-3.5 rounded-[var(--radius-control)]">
-        <label htmlFor={`${idPrefix}-terms`} className="flex items-start gap-2.5 cursor-pointer min-h-[28px]">
+      <div className="space-y-3 glass-inset p-4 rounded-[var(--radius-control)]">
+        <label htmlFor={`${idPrefix}-terms`} className="flex items-start gap-2 cursor-pointer min-h-11">
           <input
             id={`${idPrefix}-terms`}
             type="checkbox"
             checked={acceptedTerms}
             onChange={(e) => onAcceptedTermsChange(e.target.checked)}
-            className={`mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--border-default)] accent-[var(--color-red-500)] ${focusRing}`}
+            className="rp-checkbox shrink-0"
           />
-          <span className="text-xs text-[var(--text-primary)] leading-relaxed">
+          <span className="pt-2 text-xs text-[var(--text-primary)] leading-relaxed">
             I agree to the{' '}
             {onOpenLegal ? (
               <>
-                <button
-                  type="button"
-                  onClick={() => onOpenLegal('terms')}
-                  className="font-semibold underline underline-offset-2 text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400"
+                <a
+                  href="/terms-of-service"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onOpenLegal('terms');
+                  }}
+                  className="inline-flex items-center min-h-6 font-semibold underline underline-offset-2 text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400"
                 >
                   Terms of Service
-                </button>
+                </a>
                 ,{' '}
-                <button
-                  type="button"
-                  onClick={() => onOpenLegal('privacy')}
-                  className="font-semibold underline underline-offset-2 text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400"
+                <a
+                  href="/privacy-policy"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onOpenLegal('privacy');
+                  }}
+                  className="inline-flex items-center min-h-6 font-semibold underline underline-offset-2 text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400"
                 >
                   Privacy Policy
-                </button>
+                </a>
                 , and{' '}
-                <button
-                  type="button"
-                  onClick={() => onOpenLegal('refund')}
-                  className="font-semibold underline underline-offset-2 text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400"
+                <a
+                  href="/refund-policy"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onOpenLegal('refund');
+                  }}
+                  className="inline-flex items-center min-h-6 font-semibold underline underline-offset-2 text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400"
                 >
                   Refund Policy
-                </button>
+                </a>
               </>
             ) : (
               'Terms of Service, Privacy Policy, and Refund Policy'
@@ -882,15 +872,15 @@ function SignupConsentFields({
           </span>
         </label>
 
-        <label htmlFor={`${idPrefix}-marketing`} className="flex items-start gap-2.5 cursor-pointer min-h-[28px]">
+        <label htmlFor={`${idPrefix}-marketing`} className="flex items-start gap-2 cursor-pointer min-h-11">
           <input
             id={`${idPrefix}-marketing`}
             type="checkbox"
             checked={marketingOptIn}
             onChange={(e) => onMarketingOptInChange(e.target.checked)}
-            className={`mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--border-default)] accent-[var(--color-red-500)] ${focusRing}`}
+            className="rp-checkbox shrink-0"
           />
-          <span className="text-xs text-[var(--text-secondary)] leading-relaxed">
+          <span className="pt-2 text-xs text-[var(--text-secondary)] leading-relaxed">
             Send me optional race announcements and post-event result alerts (you can unsubscribe anytime).
           </span>
         </label>
@@ -1019,14 +1009,14 @@ function CompleteProfileForm({
     <AuthStage>
       <div className="w-full max-w-md space-y-6">
         <div className="flex flex-col items-center text-center space-y-4">
-          <div className="w-20 h-20 rounded-[22px] border border-zinc-800 bg-[#141416] p-2.5 flex items-center justify-center shadow-sm">
+          <div className="w-20 h-20 rounded-[22px] border border-zinc-800 bg-[#141416] p-3 flex items-center justify-center shadow-sm">
             <img
               src="/assets/racepulse-mark-192.png"
               alt="RacePulsePH"
               className="w-full h-full object-contain"
             />
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <h1 className="font-display text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--text-primary)]">
               Finish profile
             </h1>
@@ -1078,7 +1068,7 @@ function CompleteProfileForm({
           </div>
 
           {signupRoleLocked ? (
-            <p className="text-xs text-[var(--text-secondary)] glass-inset px-3.5 py-2.5">
+            <p className="text-xs text-[var(--text-secondary)] glass-inset px-4 py-3">
               Runner account for race registration.
             </p>
           ) : (

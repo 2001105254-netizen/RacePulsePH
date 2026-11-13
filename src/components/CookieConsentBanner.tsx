@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { Cookie, ShieldCheck, X } from 'lucide-react';
+import { Cookie, X } from 'lucide-react';
 import DialogSurface from './ui/DialogSurface';
 import {
   readConsentState,
@@ -75,60 +75,62 @@ export default function CookieConsentBanner({
   return (
     <>
       {!consent && !showPreferences && (
-        <section
-          role="region"
-          aria-label="Cookie and storage preferences"
-          className="fixed bottom-3 left-4 right-4 sm:left-6 sm:right-6 z-40 mx-auto max-w-[1552px] rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-3.5 sm:px-5 sm:py-3.5 shadow-xl"
-        >
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-            <div className="space-y-1 min-w-0">
-              <div className="flex items-center gap-2 text-red-700 dark:text-red-400">
-                <Cookie className="w-4 h-4 shrink-0" aria-hidden="true" />
-                <h2 className="text-sm font-semibold text-[var(--text-primary)]">
-                  Cookie and local storage preferences
-                </h2>
+        <div className="shrink-0 w-full max-w-[1600px] mx-auto pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))] pb-3 pt-2">
+          <section
+            role="region"
+            aria-label="Cookie and storage preferences"
+            className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-4 sm:px-5 sm:py-4 shadow-md"
+          >
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-2 text-red-700 dark:text-red-400">
+                  <Cookie className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+                    Cookie and local storage preferences
+                  </h2>
+                </div>
+                <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                  RacePulsePH uses strictly necessary browser storage for sign-in sessions, theme settings, and race-day offline timing queues. Optional analytics and marketing scripts remain blocked unless you opt in.{' '}
+                  <a
+                    href="/cookie-policy"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      onOpenCookiePolicy();
+                    }}
+                    className="inline-flex items-center min-h-6 font-semibold text-red-700 dark:text-red-400 underline underline-offset-4 hover:opacity-80"
+                  >
+                    Read Cookie Policy
+                  </a>
+                  .
+                </p>
               </div>
-              <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                RacePulsePH uses strictly necessary browser storage for sign-in sessions, theme settings, and race-day offline timing queues. Optional analytics and marketing scripts remain blocked unless you opt in.{' '}
-                <a
-                  href="/cookie-policy"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    onOpenCookiePolicy();
-                  }}
-                  className="font-semibold text-red-700 dark:text-red-400 underline underline-offset-4 hover:opacity-80"
-                >
-                  Read Cookie Policy
-                </a>
-                .
-              </p>
-            </div>
 
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => setShowPreferences(true)}
-                className="min-h-11 px-3.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] transition-colors"
-              >
-                Manage Preferences
-              </button>
-              <button
-                type="button"
-                onClick={handleRejectNonEssential}
-                className="min-h-11 px-3.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] transition-colors"
-              >
-                Reject Non-Essential
-              </button>
-              <button
-                type="button"
-                onClick={handleAcceptAll}
-                className="min-h-11 px-3.5 rounded-xl bg-red-700 hover:bg-red-800 text-white text-xs font-semibold transition-colors"
-              >
-                Accept All
-              </button>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowPreferences(true)}
+                  className="min-h-11 px-4 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] transition-colors"
+                >
+                  Manage Preferences
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRejectNonEssential}
+                  className="min-h-11 px-4 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] transition-colors"
+                >
+                  Reject Non-Essential
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAcceptAll}
+                  className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-800 text-white text-xs font-semibold transition-colors"
+                >
+                  Accept All
+                </button>
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+        </div>
       )}
 
       {showPreferences && (
@@ -140,15 +142,9 @@ export default function CookieConsentBanner({
           className="fixed inset-0 m-auto h-fit w-[calc(100%-2rem)] max-w-lg max-h-[90dvh] overflow-y-auto rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-6 text-[var(--text-primary)] shadow-2xl"
         >
           <div className="flex items-start justify-between gap-4 border-b border-[var(--border-subtle)] pb-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 text-red-700 dark:text-red-400 text-xs font-semibold">
-                <ShieldCheck className="w-4 h-4 shrink-0" aria-hidden="true" />
-                <span>Privacy Controls</span>
-              </div>
-              <h2 id={`${dialogId}-title`} className="font-display text-lg font-semibold text-[var(--text-primary)]">
-                Manage Cookie Preferences
-              </h2>
-            </div>
+            <h2 id={`${dialogId}-title`} className="font-display text-lg font-semibold text-[var(--text-primary)]">
+              Manage Cookie Preferences
+            </h2>
             <button
               ref={initialFocusRef}
               type="button"
@@ -192,7 +188,7 @@ export default function CookieConsentBanner({
                 type="checkbox"
                 checked={analyticsOptIn}
                 onChange={(event) => setAnalyticsOptIn(event.target.checked)}
-                className="mt-1 h-5 w-5 shrink-0 accent-red-700 rounded cursor-pointer"
+                className="rp-checkbox shrink-0"
               />
             </label>
 
@@ -211,7 +207,7 @@ export default function CookieConsentBanner({
                 type="checkbox"
                 checked={marketingOptIn}
                 onChange={(event) => setMarketingOptIn(event.target.checked)}
-                className="mt-1 h-5 w-5 shrink-0 accent-red-700 rounded cursor-pointer"
+                className="rp-checkbox shrink-0"
               />
             </label>
           </div>

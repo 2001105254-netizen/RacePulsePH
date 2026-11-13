@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, CheckCircle2, MailX, RefreshCw } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, RefreshCw } from 'lucide-react';
 import { submitUnsubscribe } from '../lib/accountSecurity';
 import { LEGAL_CONFIG } from '../lib/legalConfig';
 
@@ -93,13 +93,9 @@ export default function UnsubscribePage({ onBack }: UnsubscribePageProps) {
   return (
     <section
       aria-labelledby="unsubscribe-heading"
-      className="max-w-lg mx-auto my-8 glass-panel p-6 sm:p-8 space-y-6"
+      className="max-w-lg w-full min-w-0 mx-auto my-8 glass-panel p-4 sm:p-8 space-y-6"
     >
       <div className="space-y-2">
-        <div className="flex items-center gap-2 text-red-700 dark:text-red-400 text-xs font-semibold">
-          <MailX className="w-4 h-4 shrink-0" aria-hidden="true" />
-          <span>Communication Preferences</span>
-        </div>
         <h1 id="unsubscribe-heading" className="font-display text-2xl font-semibold text-[var(--text-primary)]">
           Unsubscribe from optional emails
         </h1>
@@ -120,8 +116,8 @@ export default function UnsubscribePage({ onBack }: UnsubscribePageProps) {
           role="status"
           className="rounded-xl border border-emerald-700 bg-emerald-50 text-emerald-950 dark:border-emerald-400 dark:bg-emerald-950/40 dark:text-emerald-200 p-4 space-y-3"
         >
-          <div className="flex items-start gap-2.5">
-            <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" aria-hidden="true" />
+          <div className="flex items-start gap-2">
+            <CheckCircle2 className="w-5 h-5 shrink-0 mt-1" aria-hidden="true" />
             <p className="text-sm font-semibold">{message}</p>
           </div>
           <button
@@ -193,7 +189,7 @@ export default function UnsubscribePage({ onBack }: UnsubscribePageProps) {
 
         <a
           href={`mailto:${LEGAL_CONFIG.supportEmail}`}
-          className="min-h-11 inline-flex items-center text-xs font-semibold text-red-700 dark:text-red-400 underline underline-offset-4"
+          className="min-h-11 inline-flex items-center text-xs font-semibold text-red-700 dark:text-red-400 underline underline-offset-4 break-all"
         >
           {LEGAL_CONFIG.supportEmail}
         </a>

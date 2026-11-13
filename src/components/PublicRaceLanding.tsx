@@ -53,7 +53,7 @@ const accentText = 'text-red-700 dark:text-red-400';
 
 // Tactile Stopwatch Chip Tokens (Sports Watch Hardware Language, >= 44px tap height)
 const chipBase =
-  'min-h-11 text-xs font-semibold px-4 py-2 rounded-full border transition-all duration-150 motion-safe:active:scale-[0.96] select-none shrink-0 inline-flex items-center justify-center gap-1.5 font-mono';
+  'min-h-11 text-xs font-semibold px-4 py-2 rounded-full border transition-all duration-150 motion-safe:active:scale-[0.96] select-none shrink-0 inline-flex items-center justify-center gap-2 font-mono';
 const chipIdle =
   'border border-[var(--border-button)] bg-[var(--surface-card)] dark:bg-[#141416] text-[var(--text-secondary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.25)] hover:border-red-600 hover:text-[var(--text-primary)]';
 const chipActive =
@@ -372,7 +372,7 @@ export default function PublicRaceLanding({
   };
 
   return (
-    <main id="main-content" tabIndex={-1} className="w-full max-w-[1600px] mx-auto pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))] py-4 sm:py-5 pb-[calc(6.5rem+var(--rp-safe-bottom))] md:pb-8 space-y-5 focus:outline-none">
+    <main id="main-content" tabIndex={-1} className="w-full max-w-[1600px] mx-auto pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))] py-4 sm:py-5 pb-8 space-y-5 focus:outline-none">
       {/* Network or Data Load Error Banner */}
       {loadState === 'error' && (
         <Card className="border-red-700 dark:border-red-400 p-4 text-center">
@@ -446,7 +446,7 @@ export default function PublicRaceLanding({
       <section
         ref={heroSectionRef}
         aria-label="RacePulsePH overview"
-        className="glass-panel relative overflow-hidden"
+        className="glass-panel relative overflow-x-clip"
       >
         {/* Luminous light red gradient backdrop consistent with dashboard panel headers */}
         <div aria-hidden="true" className="hero-glow hero-banner-glow pointer-events-none absolute inset-0" />
@@ -463,7 +463,7 @@ export default function PublicRaceLanding({
               <span className="heading-float block">Find your next</span>
               <span className="inline-flex flex-col items-start mt-1">
                 <span className="hero-finish-accent italic tracking-tight">finish line</span>
-                <span aria-hidden="true" className="hero-finish-tape w-full mt-1.5" />
+                <span aria-hidden="true" className="hero-finish-tape w-full mt-2" />
               </span>
             </m.h1>
             <m.p
@@ -501,7 +501,7 @@ export default function PublicRaceLanding({
               <div className="flex flex-row items-center gap-2">
                 <div className="relative flex-1 min-w-0">
                   <Search
-                    className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] pointer-events-none"
+                    className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] pointer-events-none"
                     aria-hidden="true"
                   />
                   <Input
@@ -540,7 +540,7 @@ export default function PublicRaceLanding({
                 role="region"
                 aria-live="polite"
                 aria-label="Matching finisher results"
-                className="space-y-2.5 pt-1 max-w-xl"
+                className="space-y-3 pt-1 max-w-xl"
               >
                 {matchingBibResults.length === 0 ? (
                   <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -552,7 +552,7 @@ export default function PublicRaceLanding({
                     </Button>
                   </div>
                 ) : (
-                  <ul className="space-y-2.5">
+                  <ul className="space-y-3">
                     {matchingBibResults.map(({ race, entry }) => {
                       const key = `${race.id}_${entry.bibNumber}_${entry.distance}`;
                       const isDownloading = downloadingBibKey === key;
@@ -561,10 +561,10 @@ export default function PublicRaceLanding({
                       return (
                         <li
                           key={key}
-                          className="overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)] shadow-sm"
+                          className="min-w-0 rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)] shadow-sm"
                         >
                           {/* Physical Race Bib Header Strip */}
-                          <div className="bg-red-700 text-white px-3.5 py-1.5 flex items-center justify-between gap-2 text-xs font-mono font-semibold">
+                          <div className="rounded-t-2xl overflow-hidden bg-red-700 text-white px-4 py-2 flex items-center justify-between gap-2 text-xs font-mono font-semibold">
                             <span className="flex items-center gap-2 min-w-0 truncate">
                               <span className="w-2 h-2 rounded-full bg-white/75 shrink-0" aria-hidden="true" />
                               <span className="truncate">{race.name}</span>
@@ -576,9 +576,9 @@ export default function PublicRaceLanding({
                           </div>
 
                           {/* Race Bib Body */}
-                          <div className="p-3.5 sm:px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                             <div className="flex items-center gap-3 min-w-0">
-                              <div className="px-3 py-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] text-center shrink-0">
+                              <div className="px-3 py-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] text-center shrink-0">
                                 <span className="block text-xs font-mono text-[var(--text-secondary)]">
                                   Bib
                                 </span>
@@ -590,7 +590,7 @@ export default function PublicRaceLanding({
                                 <p className="font-display font-semibold text-sm sm:text-base text-[var(--text-primary)] truncate">
                                   {displayName}
                                 </p>
-                                <p className="text-xs font-mono text-[var(--text-secondary)] flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                <p className="text-xs font-mono text-[var(--text-secondary)] flex flex-wrap items-center gap-x-2 gap-y-1">
                                   <span className={accentText}>#{entry.overallRank ?? entry.rank} Overall</span>
                                   {entry.categoryRank && (
                                     <span>
@@ -604,11 +604,11 @@ export default function PublicRaceLanding({
                               </div>
                             </div>
 
-                            <div className="flex items-center gap-2 shrink-0">
+                            <div className="flex flex-wrap items-center gap-2 shrink-0">
                               <Button
                                 type="button"
                                 size="sm"
-                                className="h-11 px-3.5"
+                                className="h-11 px-4"
                                 disabled={isDownloading}
                                 onClick={() => handleDownloadCertificate(race, entry)}
                               >
@@ -629,7 +629,7 @@ export default function PublicRaceLanding({
                                 type="button"
                                 variant="outline"
                                 size="sm"
-                                className="h-11 px-3.5"
+                                className="h-11 px-4"
                                 onClick={() => handleSelectRace(race.id)}
                               >
                                 <span>Leaderboard</span>
@@ -649,7 +649,7 @@ export default function PublicRaceLanding({
               initial={{ opacity: 0, y: 10 }}
               animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
               transition={{ duration: 0.22, delay: 0.14, ease: QUINT_EASE }}
-              className="flex flex-wrap items-center gap-2 pt-0.5"
+              className="flex flex-wrap items-center gap-2 pt-1"
             >
               <Button
                 size="default"
@@ -666,7 +666,7 @@ export default function PublicRaceLanding({
               <Button
                 size="default"
                 variant="outline"
-                className="h-11 gap-2 px-3.5 sm:px-4 text-xs tracking-normal sm:tracking-wider"
+                className="h-11 gap-2 px-4 text-xs tracking-normal sm:tracking-wider"
                 onClick={() => onRegister()}
               >
                 <UserPlus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" aria-hidden="true" />
@@ -676,7 +676,7 @@ export default function PublicRaceLanding({
               <Button
                 size="default"
                 variant="outline"
-                className="h-11 gap-2 px-3.5 sm:px-4 text-xs tracking-normal sm:tracking-wider text-[var(--text-primary)]"
+                className="h-11 gap-2 px-4 text-xs tracking-normal sm:tracking-wider text-[var(--text-primary)]"
                 onClick={handleSwitchToCompletedAndSearch}
               >
                 <Trophy className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" />
@@ -690,21 +690,21 @@ export default function PublicRaceLanding({
                 initial={{ opacity: 0, y: 8 }}
                 animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }}
                 transition={{ duration: 0.22, delay: 0.18, ease: QUINT_EASE }}
-                className="pt-0.5 flex flex-wrap items-center gap-x-4 gap-y-1 type-caption text-[var(--text-secondary)] dark:text-white font-mono"
+                className="pt-1 flex flex-wrap items-center gap-x-4 gap-y-1 type-caption text-[var(--text-secondary)] dark:text-white font-mono"
               >
-                <span className="flex items-center gap-1.5">
+                <span className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-600 dark:bg-emerald-400" aria-hidden="true" />
                   <strong className="text-[var(--text-primary)] font-semibold">{activeRaces.length}</strong> upcoming
                 </span>
 
                 {liveRaces.length > 0 && (
-                  <span className="flex items-center gap-1.5 text-red-700 dark:text-red-400 font-semibold">
+                  <span className="flex items-center gap-2 text-red-700 dark:text-red-400 font-semibold">
                     <span className="inline-flex rounded-full h-2 w-2 bg-red-700 dark:bg-red-400" aria-hidden="true" />
                     <strong className="text-red-700 dark:text-red-400">{liveRaces.length}</strong> live now
                   </span>
                 )}
 
-                <span className="flex items-center gap-1.5">
+                <span className="flex items-center gap-2">
                   <CheckCircle2 className="w-3.5 h-3.5 text-[var(--text-secondary)] dark:text-white" aria-hidden="true" />
                   <strong className="text-[var(--text-primary)] font-semibold">{doneRaces.length}</strong> completed
                 </span>
@@ -815,7 +815,7 @@ export default function PublicRaceLanding({
 
           {availableDistances.length > 0 && (
             <div
-              className="racepulse-horizontal-scroll flex items-center gap-2 overflow-x-auto py-1"
+              className="flex flex-wrap items-center gap-2 py-1"
               role="group"
               aria-label="Filter by distance"
             >
@@ -884,15 +884,15 @@ export default function PublicRaceLanding({
               return (
                 <li
                   key={race.id}
-                  className="flex"
+                  className="flex min-w-0"
                 >
                   <Card
-                    className={`group w-full overflow-hidden flex flex-col justify-between transition-[transform,box-shadow] duration-200 hover:-translate-y-1 hover:shadow-lg ${isSelected ? 'ring-2 ring-red-700 dark:ring-red-400' : ''
+                    className={`group w-full min-w-0 flex flex-col justify-between transition-[transform,box-shadow] duration-200 hover:-translate-y-1 hover:shadow-lg ${isSelected ? 'ring-2 ring-red-700 dark:ring-red-400' : ''
                       }`}
                   >
                     <div>
                       {/* Poster Art with Status Badges matching Dashboard RaceList height */}
-                      <div className="relative h-36 sm:h-40 w-full overflow-hidden bg-[var(--surface-inset)] border-b border-[var(--border-default)]">
+                      <div className="relative h-36 sm:h-40 w-full rounded-t-2xl overflow-hidden bg-[var(--surface-inset)] border-b border-[var(--border-default)]">
                         {race.posterImage ? (
                           <img
                             src={race.posterImage}
@@ -908,7 +908,7 @@ export default function PublicRaceLanding({
                           </div>
                         )}
 
-                        <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+                        <div className="absolute top-3 left-3 flex flex-wrap gap-2">
                           {isLive && <Badge variant="live">Live timing</Badge>}
                           {isCompleted ? (
                             <Badge variant="secondary">
@@ -922,13 +922,13 @@ export default function PublicRaceLanding({
                         </div>
                       </div>
 
-                      <CardContent className="p-4 sm:p-5 space-y-3">
-                        <div className="space-y-1.5">
+                      <CardContent className="p-4 sm:p-5 space-y-3 min-w-0">
+                        <div className="space-y-2 min-w-0">
                           <h3 className="font-display font-semibold text-lg sm:text-xl tracking-tight text-[var(--text-primary)] line-clamp-2">
                             {race.name}
                           </h3>
-                          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 type-caption text-[var(--text-secondary)] font-mono">
-                            <span className="flex items-center gap-1.5">
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 type-caption text-[var(--text-secondary)] font-mono">
+                            <span className="flex items-center gap-2">
                               <Calendar
                                 className="w-3.5 h-3.5 shrink-0 text-red-700 dark:text-red-400"
                                 aria-hidden="true"
@@ -951,12 +951,12 @@ export default function PublicRaceLanding({
                             race.distances.map((d) => (
                               <span
                                 key={d.id}
-                                className="inline-flex items-center overflow-hidden rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] font-mono text-xs font-semibold"
+                                className="inline-flex flex-wrap items-center max-w-full rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] font-mono text-xs font-semibold"
                               >
-                                <span className="px-2.5 py-1 bg-red-700/10 dark:bg-red-500/15 text-red-700 dark:text-red-400 border-r border-[var(--border-default)]">
+                                <span className="px-3 py-1 bg-red-700/10 dark:bg-red-500/15 text-red-700 dark:text-red-400 border-r border-[var(--border-default)]">
                                   {d.label}
                                 </span>
-                                <span className="px-2.5 py-1 text-[var(--text-primary)]">
+                                <span className="px-3 py-1 text-[var(--text-primary)]">
                                   {d.price > 0 ? `₱${d.price.toLocaleString('en-PH')}` : 'Free'}
                                 </span>
                               </span>
@@ -974,7 +974,7 @@ export default function PublicRaceLanding({
                     </div>
 
                     {/* Action Footer (>= 44px tap targets) */}
-                    <div className="px-4 sm:px-5 pb-4 sm:pb-5 flex gap-2">
+                    <div className="px-4 sm:px-5 pb-4 sm:pb-5 flex flex-wrap gap-2">
                       <Button
                         type="button"
                         variant={isSelected ? 'default' : 'secondary'}
@@ -1015,7 +1015,7 @@ export default function PublicRaceLanding({
             animate={{ opacity: 1, y: 0, transitionEnd: { transform: 'none' } }}
             exit={{ opacity: 0, y: -4, transition: { duration: 0.12, ease: EMIL_EASE } }}
             transition={{ duration: 0.2, ease: EMIL_EASE }}
-            className="scroll-mt-24 space-y-4 [backface-visibility:hidden]"
+            className="scroll-mt-40 space-y-4 [backface-visibility:hidden]"
             aria-labelledby="selected-heading"
           >
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-default)] pb-4">
@@ -1104,12 +1104,12 @@ export default function PublicRaceLanding({
               return (
                 <li
                   key={key}
-                  className="flex"
+                  className="flex min-w-0"
                 >
-                  <div className="w-full overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] shadow-sm transition-[transform,box-shadow] duration-200 hover:-translate-y-1 hover:shadow-md flex flex-col justify-between">
-                    <div>
+                  <div className="w-full min-w-0 rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] shadow-sm transition-[transform,box-shadow] duration-200 hover:-translate-y-1 hover:shadow-md flex flex-col justify-between">
+                    <div className="min-w-0">
                       {/* Authentic Race Bib Top Header */}
-                      <div className="bg-red-700 text-white px-4 py-2 flex items-center justify-between gap-2 font-mono text-xs font-semibold">
+                      <div className="rounded-t-2xl overflow-hidden bg-red-700 text-white px-4 py-2 flex items-center justify-between gap-2 font-mono text-xs font-semibold">
                         <span className="flex items-center gap-2 min-w-0 truncate">
                           <span className="w-2.5 h-2.5 rounded-full bg-black/35 border border-white/40 shrink-0" aria-hidden="true" />
                           <span className="truncate">{race.name}</span>
@@ -1121,17 +1121,17 @@ export default function PublicRaceLanding({
                       </div>
 
                       {/* Race Bib Number & Runner Plate */}
-                      <div className="p-4 sm:p-5 space-y-3">
-                        <div className="flex items-baseline justify-between gap-2 border-b border-dashed border-[var(--border-default)] pb-3">
+                      <div className="p-4 sm:p-5 space-y-3 min-w-0">
+                        <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-dashed border-[var(--border-default)] pb-3">
                           <span className="font-mono text-3xl sm:text-4xl font-semibold tracking-tight text-[var(--text-primary)]">
                             {entry.bibNumber}
                           </span>
-                          <span className="font-mono text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-600/25">
+                          <span className="font-mono text-xs font-semibold px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-600/25 max-w-full break-words">
                             {formatRaceTime(entry.finishTime)}
                           </span>
                         </div>
 
-                        <div className="space-y-1">
+                        <div className="space-y-1 min-w-0">
                           <h3 className="font-display font-semibold text-base text-[var(--text-primary)] truncate">
                             {displayName}
                           </h3>
@@ -1146,7 +1146,7 @@ export default function PublicRaceLanding({
                     </div>
 
                     {/* Bib Bottom Tear-Off Stub Actions */}
-                    <div className="px-4 sm:px-5 py-3 bg-[var(--surface-inset)] border-t border-dashed border-[var(--border-default)] flex items-center justify-between gap-2">
+                    <div className="rounded-b-2xl px-4 sm:px-5 py-3 bg-[var(--surface-inset)] border-t border-dashed border-[var(--border-default)] flex flex-wrap items-center justify-between gap-2">
                       <Button
                         type="button"
                         variant="ghost"
@@ -1160,7 +1160,7 @@ export default function PublicRaceLanding({
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="h-11 px-3.5 text-xs"
+                        className="h-11 px-4 text-xs"
                         disabled={isDownloading}
                         onClick={() => handleDownloadCertificate(race, entry)}
                       >
@@ -1182,41 +1182,33 @@ export default function PublicRaceLanding({
         </section>
       )}
 
-      {/* Smart Sticky Mobile Bottom CTA Bar (matches dashboard BottomNav floating glass-panel dock when scrolled past hero) */}
-      <AnimatePresence>
-        {heroOutOfView && (
-          <m.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-            className="md:hidden fixed bottom-3 inset-x-3 z-30 glass-panel px-3 py-2.5 mb-[var(--rp-safe-bottom)] shadow-[0_12px_32px_rgba(0,0,0,0.22)]"
-          >
-            <div className="max-w-md mx-auto grid grid-cols-2 gap-2.5">
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 text-xs font-semibold gap-1.5"
-                onClick={() => {
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                  window.setTimeout(() => bibInputRef.current?.focus(), 220);
-                }}
-              >
-                <Search className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>Find bib</span>
-              </Button>
-              <Button
-                type="button"
-                className="h-11 text-xs font-semibold gap-1.5"
-                onClick={() => onRegister()}
-              >
-                <UserPlus className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>Register</span>
-              </Button>
-            </div>
-          </m.div>
-        )}
-      </AnimatePresence>
+      {/* Mobile In-Flow Quick Actions Card (non-overlapping replacement for fixed mobile bottom dock) */}
+      {heroOutOfView && (
+        <div className="md:hidden glass-panel p-4">
+          <div className="max-w-md mx-auto grid grid-cols-2 gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 text-xs font-semibold gap-2"
+              onClick={() => {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                window.setTimeout(() => bibInputRef.current?.focus(), 220);
+              }}
+            >
+              <Search className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Find bib</span>
+            </Button>
+            <Button
+              type="button"
+              className="h-11 text-xs font-semibold gap-2"
+              onClick={() => onRegister()}
+            >
+              <UserPlus className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Register</span>
+            </Button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

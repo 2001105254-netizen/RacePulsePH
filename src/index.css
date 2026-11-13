@@ -707,6 +707,22 @@ video {
   transform: rotate(40deg);
 }
 
+@media (forced-colors: active) {
+  .rp-checkbox::before {
+    border-color: CanvasText;
+    background: Canvas;
+  }
+
+  .rp-checkbox:checked::before {
+    background: Highlight;
+    border-color: Highlight;
+  }
+
+  .rp-checkbox:checked::after {
+    border-color: HighlightText;
+  }
+}
+
 /* Tactile button definition: in light mode, interactive buttons have a distinct dark border */
 :root:not(.dark) button.border-\[var\(--border-default\)\] {
   border-color: var(--border-button);
@@ -871,5 +887,66 @@ html::-webkit-scrollbar-thumb:active,
   [tabindex]:focus-visible {
     outline: 2px solid var(--color-red-500);
     outline-offset: 2px;
+  }
+}
+
+/* Container-aware responsive tables: avoid cramped/clipped columns across viewports and 200% text scaling */
+.rp-table-wrapper {
+  container-type: inline-size;
+  max-inline-size: 100%;
+  overflow-x: auto;
+}
+
+.rp-responsive-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.rp-responsive-table th,
+.rp-responsive-table td {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+@container (inline-size < 38rem) {
+  .rp-responsive-table,
+  .rp-responsive-table thead,
+  .rp-responsive-table tbody,
+  .rp-responsive-table tr,
+  .rp-responsive-table th,
+  .rp-responsive-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .rp-responsive-table thead {
+    display: none;
+  }
+
+  .rp-responsive-table tbody tr {
+    margin-block-end: 0.75rem;
+    padding: 0.75rem;
+    border-radius: 0.75rem;
+    border: 1px solid var(--border-default);
+    background: var(--surface-card);
+  }
+
+  .rp-responsive-table tbody td {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .rp-responsive-table tbody td:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+  }
+
+  .rp-responsive-table tbody td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.25rem;
+    font-weight: 600;
+    color: var(--text-secondary);
   }
 }

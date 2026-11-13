@@ -20,7 +20,7 @@ interface PublicLegalPageProps {
 const sectionCardClass = 'rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-4 sm:p-6 space-y-3';
 const headingClass = 'font-display text-base sm:text-lg font-semibold text-[var(--text-primary)]';
 const bodyClass = 'text-sm text-[var(--text-secondary)] leading-relaxed';
-const accentLinkClass = 'font-semibold text-red-700 dark:text-red-400 underline underline-offset-4 hover:opacity-85';
+const accentLinkClass = 'inline-flex items-center min-h-6 font-semibold text-red-700 dark:text-red-400 underline underline-offset-4 hover:opacity-85 break-all';
 
 export function PublicLegalPage({
   doc,
@@ -81,25 +81,26 @@ export function PublicLegalPage({
             <p className={bodyClass}>
               RacePulsePH runs zero advertising pixels or hidden telemetry SDKs. Every integrated third-party SDK and backend processor audited from our codebase is listed below:
             </p>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
+            <div tabIndex={0} role="region" aria-labelledby="priv-sdks" className="rp-table-wrapper">
+              <table className="rp-responsive-table text-left text-xs">
+                <caption className="sr-only">Third-party SDKs, service providers, and consent gating</caption>
                 <thead>
                   <tr className="border-b border-[var(--border-default)] text-[var(--text-primary)]">
-                    <th className="py-2 pr-3 font-semibold">Provider / SDK</th>
-                    <th className="py-2 pr-3 font-semibold">Category</th>
-                    <th className="py-2 pr-3 font-semibold">Data Shared &amp; Purpose</th>
-                    <th className="py-2 font-semibold">Opt-In Gate</th>
+                    <th scope="col" className="py-2 pr-3 font-semibold">Provider / SDK</th>
+                    <th scope="col" className="py-2 pr-3 font-semibold">Category</th>
+                    <th scope="col" className="py-2 pr-3 font-semibold">Data Shared &amp; Purpose</th>
+                    <th scope="col" className="py-2 font-semibold">Opt-In Gate</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border-subtle)] text-[var(--text-secondary)]">
                   {THIRD_PARTY_SDK_MANIFEST.map((sdk) => (
                     <tr key={sdk.name}>
-                      <td className="py-2.5 pr-3 font-semibold text-[var(--text-primary)] align-top">{sdk.name}</td>
-                      <td className="py-2.5 pr-3 align-top whitespace-nowrap">{sdk.category}</td>
-                      <td className="py-2.5 pr-3 align-top">
+                      <td data-label="Provider / SDK" className="py-3 pr-3 font-semibold text-[var(--text-primary)] align-top">{sdk.name}</td>
+                      <td data-label="Category" className="py-3 pr-3 align-top">{sdk.category}</td>
+                      <td data-label="Data Shared & Purpose" className="py-3 pr-3 align-top">
                         {sdk.dataCollected} {sdk.purpose}
                       </td>
-                      <td className="py-2.5 align-top whitespace-nowrap">
+                      <td data-label="Opt-In Gate" className="py-3 align-top">
                         {sdk.consentRequired ? 'Blocked until opt-in' : 'Core service'}
                       </td>
                     </tr>
@@ -145,7 +146,11 @@ export function PublicLegalPage({
               </li>
               <li>
                 <strong className="font-semibold text-[var(--text-primary)]">Cookie &amp; script preferences:</strong>{' '}
-                <button type="button" onClick={onOpenCookiePreferences} className={accentLinkClass}>
+                <button
+                  type="button"
+                  onClick={onOpenCookiePreferences}
+                  className="inline-flex items-center min-h-11 font-semibold text-red-700 dark:text-red-400 underline underline-offset-4 hover:opacity-85"
+                >
                   Manage Cookie Preferences
                 </button>
                 .
@@ -255,25 +260,26 @@ export function PublicLegalPage({
 
         <section className={sectionCardClass} aria-labelledby="cookie-manifest">
           <h2 id="cookie-manifest" className={headingClass}>Categorized browser storage and cookie manifest</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
+          <div tabIndex={0} role="region" aria-labelledby="cookie-manifest" className="rp-table-wrapper">
+            <table className="rp-responsive-table text-left text-xs">
+              <caption className="sr-only">Categorized browser storage and cookie manifest</caption>
               <thead>
                 <tr className="border-b border-[var(--border-default)] text-[var(--text-primary)]">
-                  <th className="py-2 pr-3 font-semibold">Category</th>
-                  <th className="py-2 pr-3 font-semibold">Key / Store</th>
-                  <th className="py-2 pr-3 font-semibold">Retention</th>
-                  <th className="py-2 font-semibold">Purpose</th>
+                  <th scope="col" className="py-2 pr-3 font-semibold">Category</th>
+                  <th scope="col" className="py-2 pr-3 font-semibold">Key / Store</th>
+                  <th scope="col" className="py-2 pr-3 font-semibold">Retention</th>
+                  <th scope="col" className="py-2 font-semibold">Purpose</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--border-subtle)] text-[var(--text-secondary)]">
                 {BROWSER_STORAGE_MANIFEST.map((entry) => (
                   <tr key={entry.key}>
-                    <td className="py-2.5 pr-3 font-semibold text-[var(--text-primary)] align-top whitespace-nowrap">
+                    <td data-label="Category" className="py-3 pr-3 font-semibold text-[var(--text-primary)] align-top">
                       {entry.category}
                     </td>
-                    <td className="py-2.5 pr-3 font-mono align-top">{entry.key} ({entry.store})</td>
-                    <td className="py-2.5 pr-3 align-top">{entry.retention}</td>
-                    <td className="py-2.5 align-top">{entry.purpose}</td>
+                    <td data-label="Key / Store" className="py-3 pr-3 font-mono align-top">{entry.key} ({entry.store})</td>
+                    <td data-label="Retention" className="py-3 pr-3 align-top">{entry.retention}</td>
+                    <td data-label="Purpose" className="py-3 align-top">{entry.purpose}</td>
                   </tr>
                 ))}
               </tbody>
@@ -317,7 +323,7 @@ export function PublicLegalPage({
                   event.preventDefault();
                   onSwitchDoc(item.key);
                 }}
-                className={`min-h-11 px-3.5 rounded-xl border text-xs font-semibold inline-flex items-center transition-colors ${
+                className={`min-h-11 px-4 rounded-xl border text-xs font-semibold inline-flex items-center transition-colors ${
                   active
                     ? 'border-red-700 bg-red-700 text-white'
                     : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
@@ -331,13 +337,13 @@ export function PublicLegalPage({
       </div>
 
       <header className="space-y-2 border-b border-[var(--border-subtle)] pb-5">
-        <div className="flex items-center gap-2 text-red-700 dark:text-red-400 text-xs font-semibold">
-          <DocIcon className="w-4 h-4 shrink-0" aria-hidden="true" />
-          <span>Effective {LEGAL_CONFIG.effectiveDate}</span>
-        </div>
         <h1 className="font-display text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--text-primary)]">
           {activeMeta.label}
         </h1>
+        <p className="flex items-center gap-2 text-red-700 dark:text-red-400 text-xs font-semibold">
+          <DocIcon className="w-4 h-4 shrink-0" aria-hidden="true" />
+          <span>Effective {LEGAL_CONFIG.effectiveDate}</span>
+        </p>
       </header>
 
       {renderBody()}
@@ -367,7 +373,7 @@ export function PublicLegalPage({
 
         <a
           href={`mailto:${LEGAL_CONFIG.supportEmail}`}
-          className="min-h-11 inline-flex items-center gap-2 text-xs font-semibold text-red-700 dark:text-red-400 underline underline-offset-4"
+          className="min-h-11 inline-flex items-center gap-2 text-xs font-semibold text-red-700 dark:text-red-400 underline underline-offset-4 break-all"
         >
           <Mail className="w-4 h-4" aria-hidden="true" />
           <span>{LEGAL_CONFIG.supportEmail}</span>

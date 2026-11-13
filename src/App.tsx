@@ -558,8 +558,8 @@ function AppContent() {
 
           {/* Global Navigation - persistent charcoal brand bar on every page */}
           <nav className="sticky top-0 z-40 brand-nav shrink-0" aria-label="Primary navigation">
-            <div className={`${isWorkspaceShell ? 'w-full px-3 sm:px-4 xl:px-6' : 'w-full max-w-[1600px] mx-auto pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))]'} min-w-0 h-[4.5rem] sm:h-16 flex items-center justify-between gap-2 sm:gap-3`}>
-              <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-2.5">
+            <div className={`${isWorkspaceShell ? 'w-full px-3 sm:px-4 xl:px-6' : 'w-full max-w-[1600px] mx-auto pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))]'} min-w-0 min-h-16 py-2 flex flex-wrap items-center justify-between gap-2 sm:gap-3`}>
+              <div className="flex min-w-0 flex-1 items-center gap-2">
                 {showBackButton && (
                   <button
                     type="button"
@@ -574,7 +574,7 @@ function AppContent() {
                 <button
                   type="button"
                   onClick={() => (!authUser ? navigateGuest('landing') : handleBack())}
-                  className="flex items-center gap-2 sm:gap-2.5 shrink-0 min-w-11 min-h-11 justify-center rounded-xl py-1 px-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                  className="flex items-center gap-2 min-w-0 shrink min-h-11 justify-start rounded-xl py-1 px-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
                   aria-label="RacePulsePH home"
                 >
                   <div className="w-9 h-9 rounded-[10px] border border-white/15 bg-transparent flex items-center justify-center p-1 transition-colors shrink-0">
@@ -601,12 +601,12 @@ function AppContent() {
                 )}
               </div>
 
-              <div className={`flex items-center gap-1.5 sm:gap-2 ${isWorkspaceShell ? 'min-w-0 shrink' : 'shrink-0'}`}>
+              <div className={`flex flex-wrap items-center justify-end gap-2 ${isWorkspaceShell ? 'min-w-0 shrink' : 'shrink-0 max-w-full'}`}>
                 {isWorkspaceShell && (
                   <div
                     ref={setRightSlotEl}
                     id="workspace_header_right_slot"
-                    className="hidden lg:flex items-center gap-1.5 min-w-0 overflow-x-auto racepulse-horizontal-scroll"
+                    className="hidden lg:flex items-center gap-2 min-w-0 overflow-x-auto racepulse-horizontal-scroll"
                   />
                 )}
                 {!authUser && guestScreen === 'landing' && (
@@ -621,9 +621,9 @@ function AppContent() {
                       }}
                       onClick={() => navigateGuest('login')}
                       aria-label="Log in to your account"
-                      className="h-11 px-4 rounded-full border border-white/15 bg-white/10 text-xs font-semibold uppercase tracking-wider text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:border-red-500/50 hover:text-red-400 transition-all duration-150 flex items-center justify-center gap-2 motion-safe:active:scale-[0.97]"
+                      className="min-h-11 px-3 sm:px-4 rounded-full border border-white/15 bg-white/10 text-xs font-semibold uppercase tracking-wider text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:border-red-500/50 hover:text-red-400 transition-all duration-150 flex items-center justify-center gap-2 motion-safe:active:scale-[0.97]"
                     >
-                      <LogIn className="w-3.5 h-3.5" aria-hidden="true" /> <span>Log in</span>
+                      <LogIn className="w-4 h-4 shrink-0" aria-hidden="true" /> <span>Log in</span>
                     </button>
                     <button
                       type="button"
@@ -635,9 +635,9 @@ function AppContent() {
                       }}
                       onClick={() => navigateGuest('signup')}
                       aria-label="Create a RacePulsePH account"
-                      className="h-11 px-4 rounded-full bg-red-700 hover:bg-red-600 text-white text-xs font-semibold uppercase tracking-wider border border-red-500/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.35)] transition-all duration-150 flex items-center justify-center gap-2 motion-safe:active:scale-[0.97]"
+                      className="min-h-11 px-3 sm:px-4 rounded-full bg-red-700 hover:bg-red-600 text-white text-xs font-semibold uppercase tracking-wider border border-red-500/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.35)] transition-all duration-150 flex items-center justify-center gap-2 motion-safe:active:scale-[0.97]"
                     >
-                      <UserPlus className="w-3.5 h-3.5" aria-hidden="true" /> <span>Register</span>
+                      <UserPlus className="w-4 h-4 shrink-0" aria-hidden="true" /> <span>Register</span>
                     </button>
                   </>
                 )}
@@ -658,7 +658,7 @@ function AppContent() {
                         transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
                         className="flex items-center justify-center"
                       >
-                        <Sun className="w-4.5 h-4.5" aria-hidden="true" />
+                        <Sun className="w-5 h-5" aria-hidden="true" />
                       </m.span>
                     ) : (
                       <m.span
@@ -669,7 +669,7 @@ function AppContent() {
                         transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
                         className="flex items-center justify-center"
                       >
-                        <Moon className="w-4.5 h-4.5" aria-hidden="true" />
+                        <Moon className="w-5 h-5" aria-hidden="true" />
                       </m.span>
                     )}
                   </AnimatePresence>
@@ -694,8 +694,13 @@ function AppContent() {
             </m.div>
           </div>
 
+          <CookieConsentBanner
+            preferencesRequestNonce={cookiePreferencesNonce}
+            onOpenCookiePolicy={() => openUtilityView('cookies')}
+          />
+
           {/* Global Footer: verifiable business identity, 4 required legal routes, consent controls, and email unsubscribe */}
-          <footer className={`border-t border-[var(--border-default)] bg-[var(--surface-card)] mt-auto text-xs text-[var(--text-secondary)] ${isWorkspaceShell ? 'pb-24 lg:pb-0' : 'pb-24 md:pb-[var(--rp-safe-bottom)]'} ${desktopLocked && !signedInUtilityView ? 'lg:hidden' : ''}`}>
+          <footer className={`border-t border-[var(--border-default)] bg-[var(--surface-card)] mt-auto text-xs text-[var(--text-secondary)] ${isWorkspaceShell ? 'pb-24 lg:pb-0' : 'pb-[calc(1rem+var(--rp-safe-bottom))] md:pb-[var(--rp-safe-bottom)]'} ${desktopLocked && !signedInUtilityView ? 'lg:hidden' : ''}`}>
             <div className={`${isWorkspaceShell ? 'w-full pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))]' : 'w-full max-w-[1600px] mx-auto pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))]'} py-4 space-y-3`}>
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div className="space-y-1 text-center lg:text-left">
@@ -714,7 +719,7 @@ function AppContent() {
                       e.preventDefault();
                       openUtilityView('privacy');
                     }}
-                    className="min-h-11 px-1.5 inline-flex items-center font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
+                    className="min-h-11 px-2 inline-flex items-center font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
                   >
                     Privacy Policy
                   </a>
@@ -724,7 +729,7 @@ function AppContent() {
                       e.preventDefault();
                       openUtilityView('terms');
                     }}
-                    className="min-h-11 px-1.5 inline-flex items-center font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
+                    className="min-h-11 px-2 inline-flex items-center font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
                   >
                     Terms of Service
                   </a>
@@ -734,7 +739,7 @@ function AppContent() {
                       e.preventDefault();
                       openUtilityView('refund');
                     }}
-                    className="min-h-11 px-1.5 inline-flex items-center font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
+                    className="min-h-11 px-2 inline-flex items-center font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
                   >
                     Refund Policy
                   </a>
@@ -744,14 +749,14 @@ function AppContent() {
                       e.preventDefault();
                       openUtilityView('cookies');
                     }}
-                    className="min-h-11 px-1.5 inline-flex items-center font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
+                    className="min-h-11 px-2 inline-flex items-center font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
                   >
                     Cookie Policy
                   </a>
                   <button
                     type="button"
                     onClick={() => setCookiePreferencesNonce((n) => n + 1)}
-                    className="min-h-11 px-1.5 font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
+                    className="min-h-11 px-2 font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
                   >
                     Cookie Preferences
                   </button>
@@ -761,33 +766,28 @@ function AppContent() {
                       e.preventDefault();
                       openUtilityView('unsubscribe');
                     }}
-                    className="min-h-11 px-1.5 inline-flex items-center font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
+                    className="min-h-11 px-2 inline-flex items-center font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
                   >
                     Unsubscribe
                   </a>
                   <a
                     href={`mailto:${LEGAL_CONFIG.supportEmail}`}
-                    className="min-h-11 px-1.5 inline-flex items-center font-mono text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
+                    className="min-h-11 px-2 inline-flex items-center font-mono break-all text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition-colors"
                   >
                     {LEGAL_CONFIG.supportEmail}
                   </a>
                   <button
                     type="button"
                     onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                    className="h-11 px-4 rounded-full border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50 hover:text-red-700 dark:hover:text-red-400 transition-colors flex items-center gap-1.5"
+                    className="min-h-11 px-4 rounded-full border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50 hover:text-red-700 dark:hover:text-red-400 transition-colors flex items-center gap-2"
                   >
                     <span>Back to top</span>
-                    <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" />
+                    <ChevronUp className="w-4 h-4" aria-hidden="true" />
                   </button>
                 </nav>
               </div>
             </div>
           </footer>
-
-          <CookieConsentBanner
-            preferencesRequestNonce={cookiePreferencesNonce}
-            onOpenCookiePolicy={() => openUtilityView('cookies')}
-          />
         </div>
       </MotionConfig>
     </LazyMotion>
@@ -796,10 +796,10 @@ function AppContent() {
 
 function PendingApprovalScreen({ displayName }: { displayName: string }) {
   return (
-    <div className="hero-glow flex-grow flex items-center justify-center py-14 px-4 animate-fadeIn">
+    <div className="hero-glow flex-grow flex items-center justify-center py-12 px-4 animate-fadeIn">
       <div className="max-w-md w-full glass-panel p-8 text-center space-y-4">
-        <Clock3 className="w-10 h-10 text-amber-500 mx-auto" />
-        <h2 className="heading-float text-lg font-black font-display uppercase tracking-tight text-[var(--text-primary)]">
+        <Clock3 className="w-10 h-10 text-amber-500 mx-auto" aria-hidden="true" />
+        <h2 className="heading-float text-lg font-semibold font-display uppercase tracking-tight text-[var(--text-primary)]">
           Awaiting Admin Approval
         </h2>
         <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
@@ -807,10 +807,11 @@ function PendingApprovalScreen({ displayName }: { displayName: string }) {
           you can record timing splits. Check back shortly.
         </p>
         <button
+          type="button"
           onClick={() => signOutUser()}
-          className="text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)] hover:text-[var(--text-primary)] font-bold px-4 py-2.5 rounded-[20px] transition-colors flex items-center justify-center gap-1.5 uppercase tracking-wider mx-auto"
+          className="min-h-11 text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)] hover:text-[var(--text-primary)] font-semibold px-4 py-3 rounded-[20px] transition-colors flex items-center justify-center gap-2 uppercase tracking-wider mx-auto"
         >
-          <LogOut className="w-3.5 h-3.5" /> Sign Out
+          <LogOut className="w-4 h-4" aria-hidden="true" /> Sign Out
         </button>
       </div>
     </div>
@@ -837,10 +838,10 @@ function SuperAdminClaimScreen({ profile }: { profile: UserProfile }) {
   };
 
   return (
-    <div className="hero-glow flex-grow flex items-center justify-center py-14 px-4 animate-fadeIn">
+    <div className="hero-glow flex-grow flex items-center justify-center py-12 px-4 animate-fadeIn">
       <div className="max-w-md w-full glass-panel p-8 text-center space-y-4">
-        <ShieldCheck className="w-10 h-10 text-amber-500 mx-auto" />
-        <h2 className="heading-float text-lg font-black font-display uppercase tracking-tight text-[var(--text-primary)]">
+        <ShieldCheck className="w-10 h-10 text-amber-500 mx-auto" aria-hidden="true" />
+        <h2 className="heading-float text-lg font-semibold font-display uppercase tracking-tight text-[var(--text-primary)]">
           Claim Super Admin
         </h2>
         <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
@@ -851,12 +852,12 @@ function SuperAdminClaimScreen({ profile }: { profile: UserProfile }) {
           type="button"
           onClick={claim}
           disabled={claiming}
-          className="min-h-11 w-full py-3.5 px-6 rounded-[var(--radius-control)] font-display font-semibold uppercase text-xs tracking-widest text-white bg-gradient-to-r from-amber-700 to-amber-800 hover:from-amber-600 hover:to-amber-700 shadow-xl shadow-amber-900/30 disabled:opacity-60 flex items-center justify-center gap-2"
+          className="min-h-11 w-full py-3 px-6 rounded-[var(--radius-control)] font-display font-semibold uppercase text-xs tracking-widest text-white bg-gradient-to-r from-amber-700 to-amber-800 hover:from-amber-600 hover:to-amber-700 shadow-xl shadow-amber-900/30 disabled:opacity-60 flex items-center justify-center gap-2"
         >
           {claiming ? <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <ShieldCheck className="w-4 h-4" aria-hidden="true" />} Claim Super
           Admin Access
         </button>
-        <button type="button" onClick={() => signOutUser()} className="min-h-11 px-4 text-xs text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 font-bold">
+        <button type="button" onClick={() => signOutUser()} className="min-h-11 px-4 text-xs text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 font-semibold">
           Sign out
         </button>
       </div>
