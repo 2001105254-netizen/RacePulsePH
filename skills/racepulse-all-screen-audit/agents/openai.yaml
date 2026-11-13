@@ -1,0 +1,4 @@
+interface:
+  display_name: "RacePulse All-Screen Audit"
+  short_description: "Strict spacing and layout checks for every app screen"
+  default_prompt: "Use $racepulse-all-screen-audit to audit every RacePulsePH screen and reachable state for spacing and layout defects, with complete screenshot and interaction evidence and no skipped screens."

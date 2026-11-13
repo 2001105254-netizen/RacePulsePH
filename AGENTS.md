@@ -51,6 +51,7 @@ Before declaring any task complete or delivering output, you MUST execute an obj
 ---
 
 ## 2. Rule Files & Skills Directory
+- For app-wide UI reviews, awkward spacing, cramped layouts or a request to check every screen, read [RacePulse all-screen audit](skills/racepulse-all-screen-audit/SKILL.md). Require its complete source-backed inventory, viewport/theme/state matrix and evidence gate. Untested or blocked screens must remain visible and cannot receive a PASS.
 - Full Frontend Rule: [.agents/rules/frontend.md](.agents/rules/frontend.md)
 - Antislop Skill Suite: [.agents/skills/](.agents/skills/)
   - `antislop`: Core filter and rules engine
