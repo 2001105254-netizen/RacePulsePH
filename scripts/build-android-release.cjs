@@ -95,6 +95,16 @@ function findApksigner(sdkRoot) {
   return null;
 }
 
+function findJarsigner() {
+  const exe = isWin ? 'jarsigner.exe' : 'jarsigner';
+  const homes = [process.env.JAVA_HOME, 'C:\\Program Files\\Android\\Android Studio\\jbr'].filter(Boolean);
+  for (const home of homes) {
+    const bin = path.join(home, 'bin', exe);
+    if (fs.existsSync(bin)) return bin;
+  }
+  return 'jarsigner';
+}
+
 function sha256File(filePath) {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
@@ -141,7 +151,7 @@ function main() {
       throw new Error('apksigner not found under ANDROID_HOME/build-tools to verify release APK signature.');
     }
     run(apksigner, ['verify', '--verbose', '--print-certs', apkFile]);
-    const jarVerify = spawnSync('jarsigner', ['-verify', aabFile], { encoding: 'utf8' });
+    const jarVerify = spawnSync(findJarsigner(), ['-verify', aabFile], { encoding: 'utf8' });
     process.stdout.write(jarVerify.stdout || '');
     process.stderr.write(jarVerify.stderr || '');
     if (jarVerify.status !== 0 || /jar is unsigned/i.test(`${jarVerify.stdout}\n${jarVerify.stderr}`)) {
