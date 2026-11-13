@@ -120,6 +120,16 @@ export function PublicLegalPage({
                 <span className="font-semibold text-[var(--text-primary)]">Delete My Account &amp; Data</span>, which purges your profile, runner entries, friend links, username index, and authentication record, and anonymizes payment ledger references.
               </li>
               <li>
+                <strong className="font-semibold text-[var(--text-primary)]">Web deletion request without signing in:</strong> If you cannot open the app, email{' '}
+                <a
+                  href={`mailto:${LEGAL_CONFIG.supportEmail}?subject=Account%20and%20Data%20Deletion%20Request`}
+                  className={accentLinkClass}
+                >
+                  {LEGAL_CONFIG.supportEmail}
+                </a>{' '}
+                from your registered address to request permanent deletion of your account, profile, friend links, and registration contact data (anonymized payment ledger references and published official finisher standings remain as disclosed above).
+              </li>
+              <li>
                 <strong className="font-semibold text-[var(--text-primary)]">One-click email opt-out:</strong> Unsubscribe anytime without logging in using the{' '}
                 <a
                   href="/unsubscribe"

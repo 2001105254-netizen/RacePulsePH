@@ -418,8 +418,7 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
     >
       <div className="flex flex-col md:flex-row md:items-center justify-between glass-panel hero-glow px-4 sm:px-6 py-5 gap-4 animate-fadeIn">
         <div>
-          <span className="text-[10px] tracking-widest font-extrabold text-red-500 font-display bg-red-500/10 px-2.5 py-1 rounded-full uppercase border border-red-500/20">Runner Portal</span>
-          <h1 className="heading-float text-2xl font-black tracking-tight font-display text-[var(--text-primary)] mt-1.5 uppercase">Welcome, {profile.displayName}</h1>
+          <h1 className="heading-float text-2xl font-black tracking-tight font-display text-[var(--text-primary)] uppercase">Welcome, {profile.displayName}</h1>
           <p className="text-xs text-[var(--text-secondary)] mt-1">Register for races, track your splits, and personalize your finisher medal.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start">

@@ -25,7 +25,9 @@
     "ignore": [
       "firebase.json",
       "**/.*",
-      "**/node_modules/**"
+      "**/node_modules/**",
+      "server.cjs",
+      "server.cjs.map"
     ],
     "headers": [
       {

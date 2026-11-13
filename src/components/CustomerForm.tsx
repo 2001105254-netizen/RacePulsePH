@@ -270,8 +270,9 @@ export default function CustomerForm({
       {/* Header Bar - frosted glass pill */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between glass-panel hero-glow px-4 sm:px-6 py-4 sm:py-5 mb-8 gap-4 animate-fadeIn">
         <div className="text-left">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-1.5 justify-start">
-            <span className="text-[10px] tracking-widest font-extrabold text-red-500 font-display bg-red-500/10 border border-red-500/20 px-3 py-1 rounded-full uppercase w-max">RacePulsePH by Loud & Clear</span>
+          <h1 className="heading-float text-2xl sm:text-3xl font-black tracking-tight font-display text-[var(--text-primary)]">MEDAL PERSONALIZATION BOOTH</h1>
+          <div className="flex flex-wrap items-center gap-2 mt-1">
+            <p className="text-xs sm:text-sm text-[var(--text-secondary)]">Enter your race details carefully before confirming. Entries sync with the on-site laser station.</p>
             {lanConnected !== null && (
               <span className={`inline-flex items-center gap-1.5 text-[9px] font-mono font-bold tracking-wider uppercase px-2.5 py-1 rounded-full border ${
                 lanConnected
@@ -291,8 +292,6 @@ export default function CustomerForm({
               </span>
             )}
           </div>
-          <h1 className="heading-float text-2xl sm:text-3xl font-black tracking-tight font-display text-[var(--text-primary)] mt-1">MEDAL PERSONALIZATION BOOTH</h1>
-          <p className="text-xs sm:text-sm text-[var(--text-secondary)] mt-1">Enter your race details carefully before confirming. Entries sync with the on-site laser station.</p>
         </div>
         <button
           onClick={onBackToRoleSelection}

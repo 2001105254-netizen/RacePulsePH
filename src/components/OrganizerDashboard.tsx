@@ -103,13 +103,11 @@ export default function OrganizerDashboard({ profile }: OrganizerDashboardProps)
         }`}
       >
         <div className="min-w-0">
-          <span className={`tracking-wider font-semibold text-red-700 dark:text-red-400 font-display uppercase ${
-            tab === 'timing'
-              ? 'text-xs block truncate'
-              : 'text-xs bg-red-500/10 px-2.5 py-1 rounded-full border border-red-500/20 inline-block'
-          }`}>Organizer Console</span>
+          {tab === 'timing' && (
+            <span className="text-xs tracking-wider font-semibold text-red-700 dark:text-red-400 font-display uppercase block truncate">Organizer Console</span>
+          )}
           <h1 className={`heading-float font-semibold tracking-tight font-display text-[var(--text-primary)] truncate ${
-            tab === 'timing' ? 'text-sm' : 'text-2xl mt-1.5 uppercase'
+            tab === 'timing' ? 'text-sm' : 'text-2xl uppercase'
           }`}>{tab === 'timing' ? profile.displayName : `Welcome, ${profile.displayName}`}</h1>
           {tab !== 'timing' && <p className="text-xs text-[var(--text-secondary)] mt-1">Set up races and record checkpoint splits.</p>}
         </div>

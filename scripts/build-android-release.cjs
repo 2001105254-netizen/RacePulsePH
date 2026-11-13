@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
+const { cleanAndroidWebAssets } = require('./clean-android-web-assets.cjs');
 
 const ROOT = process.cwd();
 const isWin = process.platform === 'win32';
@@ -103,6 +104,7 @@ function main() {
   if (!skipWebSync) {
     run('npm', ['run', 'android:sync']);
   }
+  cleanAndroidWebAssets();
 
   const sdkRoot = resolveAndroidSdk();
   const gradleEnv = sdkRoot ? { ANDROID_HOME: sdkRoot, ANDROID_SDK_ROOT: sdkRoot } : {};

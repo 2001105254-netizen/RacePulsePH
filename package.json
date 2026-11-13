@@ -1,7 +1,7 @@
 {
   "name": "racepulseph",
   "private": true,
-  "version": "1.0.7",
+  "version": "1.0.8",
   "type": "module",
   "scripts": {
     "prepare": "node scripts/setup-git-hooks.cjs",
@@ -16,7 +16,7 @@
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
-    "android:sync": "npm run build && npx cap sync android",
+    "android:sync": "npm run build && npx cap sync android && node scripts/clean-android-web-assets.cjs",
     "android:open": "npx cap open android",
     "release:android": "node scripts/build-android-release.cjs",
     "clean": "rm -rf dist local_orders.json",
@@ -56,6 +56,7 @@
     "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
+    "playwright": "^1.65.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
