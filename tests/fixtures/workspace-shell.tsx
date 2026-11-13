@@ -65,7 +65,7 @@ function WorkspaceFixture() {
       <div className="ambient-glow fixed inset-0 -z-10 overflow-hidden pointer-events-none" />
       <nav className="sticky top-0 z-40 brand-nav" aria-label="Primary navigation">
         <div className="w-full min-w-0 px-3 sm:px-6 h-[4.5rem] sm:h-16 flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             <button
               type="button"
               onClick={() => (space === 'operations' ? setAdminTab('engraving') : setRunnerTab('events'))}

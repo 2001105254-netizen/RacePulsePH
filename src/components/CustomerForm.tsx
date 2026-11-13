@@ -58,21 +58,36 @@ export default function CustomerForm({
   useAndroidBackHandler(isQrMaximized, () => setIsQrMaximized(false));
   useAndroidBackHandler(showCancelConfirm, () => setShowCancelConfirm(false));
 
-  // Firestore Snapshot for live order status update
+  // Firestore Snapshot for live order status update (runners query only own orders per firestore.rules)
+  const canViewAllOrders = can('engraving.view');
+  const canViewOwnOrders = Boolean(ownerUid) && can('personal.engraving');
+
   useEffect(() => {
-    // Listen to running queue sizes to dynamic wait estimates
-    const q = query(
-      collection(db, 'orders'),
-      where('status', 'in', ['queued', 'inprogress'])
-    );
+    if (!canViewAllOrders && !canViewOwnOrders) {
+      setActiveQueueCount(0);
+      return;
+    }
+
+    const q = canViewAllOrders
+      ? query(collection(db, 'orders'), where('status', 'in', ['queued', 'inprogress']))
+      : query(collection(db, 'orders'), where('ownerUid', '==', ownerUid!));
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setActiveQueueCount(snapshot.size);
+      if (canViewAllOrders) {
+        setActiveQueueCount(snapshot.size);
+      } else {
+        const count = snapshot.docs.filter((d) => {
+          const status = d.data().status;
+          return status === 'queued' || status === 'inprogress';
+        }).length;
+        setActiveQueueCount(count);
+      }
     }, (error) => {
       console.error("Queue query failed: ", error);
       handleFirestoreError(error, OperationType.LIST, 'orders');
     });
     return () => unsubscribe();
-  }, []);
+  }, [canViewAllOrders, canViewOwnOrders, ownerUid]);
 
   // Listen to live updates of the submitted order when active
   useEffect(() => {
@@ -153,9 +168,8 @@ export default function CustomerForm({
       // Determine a unique document ID
       let orderCode = generateShortCode();
 
-      // Perform a fail-fast, non-blocking single attempt check for online uniqueness
-      // If offline or on local LAN with no WAN, proceed instantly with orderCode
-      if (typeof navigator !== 'undefined' && navigator.onLine) {
+      // Perform a fail-fast collision check only when authorized to query collection/orders
+      if (canViewAllOrders && typeof navigator !== 'undefined' && navigator.onLine) {
         try {
           const checkQuery = query(collection(db, 'orders'), where('__name__', '==', orderCode));
           const snapshotPromise = getDocs(checkQuery);

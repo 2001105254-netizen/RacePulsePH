@@ -403,7 +403,12 @@ export default function RunnerDashboard({ profile, initialRaceId, onInitialRaceH
     { key: 'myraces', icon: <ClipboardList className="w-4 h-4" />, label: 'My Races', active: tab === 'myraces', onClick: () => selectTab('myraces') },
     { key: 'friends', icon: <Users2 className="w-4 h-4" />, label: 'Friends', active: tab === 'friends', onClick: () => selectTab('friends') },
     { key: 'engraving', icon: <Award className="w-4 h-4" />, label: 'Engraving', active: tab === 'engraving', onClick: () => selectTab('engraving') },
-  ].filter(item => item.key === 'myraces' || can(({ events: 'personal.register', friends: 'personal.friends', engraving: 'personal.engraving' })[item.key]));
+  ].filter(item =>
+    item.key === 'myraces' ||
+    (item.key === 'allraces'
+      ? can('personal.results') || can('personal.register')
+      : can(({ events: 'personal.register', friends: 'personal.friends', engraving: 'personal.engraving' })[item.key]))
+  );
 
   return (
     <WorkspaceShell

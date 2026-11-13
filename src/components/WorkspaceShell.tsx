@@ -1,9 +1,7 @@
-import React, { useId } from 'react';
-import { LayoutGroup, m } from 'motion/react';
+import React from 'react';
 import { UserProfile } from '../types';
 import BottomNav, { WorkspaceNavItem } from './BottomNav';
 import DesktopSidebar, { WorkspaceSwitchProps } from './DesktopSidebar';
-import { TAB_PILL_SPRING } from './ui/MotionPrimitives';
 
 interface WorkspaceShellProps {
   spaceTitle: string;
@@ -32,7 +30,6 @@ export default function WorkspaceShell({
   onOpenProfile,
   children,
 }: WorkspaceShellProps) {
-  const switchGroupId = useId();
   return (
     <div
       data-desktop-locked={desktopLocked ? 'true' : undefined}
@@ -59,7 +56,6 @@ export default function WorkspaceShell({
       >
         {workspaceSwitch && (
           <div className="lg:hidden px-4 pt-4">
-            <LayoutGroup id={switchGroupId}>
               <div
                 role="group"
                 aria-label="Workspace mode"
@@ -69,44 +65,27 @@ export default function WorkspaceShell({
                   type="button"
                   onClick={() => workspaceSwitch.onSelect('operations')}
                   aria-pressed={workspaceSwitch.current === 'operations'}
-                  className={`relative isolate min-h-11 px-3 py-2 rounded-xl text-sm font-semibold transition-colors duration-150 motion-safe:active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
+                  className={`relative min-h-11 px-3 py-2 rounded-xl text-sm font-semibold transition-colors duration-150 motion-safe:active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
                     workspaceSwitch.current === 'operations'
-                      ? 'text-white'
-                      : 'text-zinc-600 dark:text-zinc-300 hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]'
+                      ? 'bg-red-700 text-white shadow-sm'
+                      : 'text-zinc-700 dark:text-zinc-300 hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]'
                   }`}
                 >
-                  {workspaceSwitch.current === 'operations' && (
-                    <m.span
-                      layoutId={`mobile-workspace-pill-${switchGroupId}`}
-                      aria-hidden="true"
-                      transition={TAB_PILL_SPRING}
-                      className="pointer-events-none absolute inset-0 -z-10 rounded-xl bg-red-700 shadow-sm"
-                    />
-                  )}
                   Operations
                 </button>
                 <button
                   type="button"
                   onClick={() => workspaceSwitch.onSelect('personal')}
                   aria-pressed={workspaceSwitch.current === 'personal'}
-                  className={`relative isolate min-h-11 px-3 py-2 rounded-xl text-sm font-semibold transition-colors duration-150 motion-safe:active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
+                  className={`relative min-h-11 px-3 py-2 rounded-xl text-sm font-semibold transition-colors duration-150 motion-safe:active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
                     workspaceSwitch.current === 'personal'
-                      ? 'text-white'
-                      : 'text-zinc-600 dark:text-zinc-300 hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]'
+                      ? 'bg-red-700 text-white shadow-sm'
+                      : 'text-zinc-700 dark:text-zinc-300 hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]'
                   }`}
                 >
-                  {workspaceSwitch.current === 'personal' && (
-                    <m.span
-                      layoutId={`mobile-workspace-pill-${switchGroupId}`}
-                      aria-hidden="true"
-                      transition={TAB_PILL_SPRING}
-                      className="pointer-events-none absolute inset-0 -z-10 rounded-xl bg-red-700 shadow-sm"
-                    />
-                  )}
                   My participation
                 </button>
               </div>
-            </LayoutGroup>
           </div>
         )}
 

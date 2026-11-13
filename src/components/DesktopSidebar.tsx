@@ -1,11 +1,11 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AnimatePresence, LayoutGroup, m } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import { LogOut, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, User } from 'lucide-react';
 import { signOutUser } from '../firebase';
 import { UserProfile } from '../types';
 import type { WorkspaceNavItem } from './BottomNav';
-import { EMIL_EASE, TAB_PILL_SPRING } from './ui/MotionPrimitives';
+import { EMIL_EASE } from './ui/MotionPrimitives';
 
 export interface WorkspaceSwitchProps {
   current: 'operations' | 'personal';
@@ -56,7 +56,6 @@ export default function DesktopSidebar({
   workspaceSwitch,
   onOpenProfile,
 }: DesktopSidebarProps) {
-  const sidebarGroupId = useId();
   const [collapsed, setCollapsed] = useState<boolean>(readInitialCollapsed);
   const [identityPinned, setIdentityPinned] = useState(false);
   const [identityHovered, setIdentityHovered] = useState(false);
@@ -141,7 +140,7 @@ export default function DesktopSidebar({
       {!collapsed && (
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-[var(--text-primary)] truncate leading-tight">{shortName}</p>
-          <p className="text-xs font-normal text-zinc-700 dark:text-zinc-300 truncate mt-0.5">
+          <p className="text-xs font-normal text-zinc-700 dark:text-zinc-300 truncate mt-1">
             {roleLabel}
           </p>
         </div>
@@ -156,7 +155,7 @@ export default function DesktopSidebar({
         collapsed ? 'w-20' : 'w-60'
       }`}
     >
-      <div className="px-2.5 py-2.5 border-b border-[var(--border-subtle)] space-y-2.5 shrink-0">
+      <div className="p-3 border-b border-[var(--border-subtle)] space-y-2 shrink-0">
         <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between gap-2'}`}>
           {!collapsed && (
             <span className="px-2 text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 truncate">
@@ -180,7 +179,6 @@ export default function DesktopSidebar({
         </div>
 
         {workspaceSwitch && (
-          <LayoutGroup id={`${sidebarGroupId}-switch`}>
             <div
               role="group"
               aria-label="Workspace mode"
@@ -192,22 +190,14 @@ export default function DesktopSidebar({
                 aria-pressed={workspaceSwitch.current === 'operations'}
                 aria-label="Operations workspace"
                 title={collapsed ? 'Operations' : undefined}
-                className={`relative isolate min-h-11 rounded-lg flex items-center transition-colors duration-150 motion-safe:active:scale-[0.98] ${focusRing} ${
-                  collapsed ? 'w-full py-1.5 px-1 flex-col justify-center gap-0.5 text-[10px] font-semibold' : 'w-full px-3 py-2 gap-2.5 text-left text-sm font-semibold'
+                className={`relative min-h-11 rounded-lg flex items-center transition-colors duration-150 motion-safe:active:scale-[0.98] ${focusRing} ${
+                  collapsed ? 'w-full py-2 px-1 flex-col justify-center gap-1 text-xs font-semibold' : 'w-full px-3 py-2 gap-2 text-left text-sm font-semibold'
                 } ${
                   workspaceSwitch.current === 'operations'
-                    ? 'text-white'
+                    ? 'bg-red-700 text-white shadow-sm'
                     : 'text-zinc-700 dark:text-zinc-300 hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
                 }`}
               >
-                {workspaceSwitch.current === 'operations' && (
-                  <m.span
-                    layoutId={`sidebar-switch-${sidebarGroupId}`}
-                    aria-hidden="true"
-                    transition={TAB_PILL_SPRING}
-                    className="pointer-events-none absolute inset-0 -z-10 rounded-lg bg-red-700 shadow-sm"
-                  />
-                )}
                 <SlidersHorizontal className="w-4 h-4 shrink-0" aria-hidden="true" />
                 <span className="truncate max-w-full">{collapsed ? 'Ops' : 'Operations'}</span>
               </button>
@@ -217,35 +207,25 @@ export default function DesktopSidebar({
                 aria-pressed={workspaceSwitch.current === 'personal'}
                 aria-label="My participation workspace"
                 title={collapsed ? 'My participation' : undefined}
-                className={`relative isolate min-h-11 rounded-lg flex items-center transition-colors duration-150 motion-safe:active:scale-[0.98] ${focusRing} ${
-                  collapsed ? 'w-full py-1.5 px-1 flex-col justify-center gap-0.5 text-[10px] font-semibold' : 'w-full px-3 py-2 gap-2.5 text-left text-sm font-semibold'
+                className={`relative min-h-11 rounded-lg flex items-center transition-colors duration-150 motion-safe:active:scale-[0.98] ${focusRing} ${
+                  collapsed ? 'w-full py-2 px-1 flex-col justify-center gap-1 text-xs font-semibold' : 'w-full px-3 py-2 gap-2 text-left text-sm font-semibold'
                 } ${
                   workspaceSwitch.current === 'personal'
-                    ? 'text-white'
+                    ? 'bg-red-700 text-white shadow-sm'
                     : 'text-zinc-700 dark:text-zinc-300 hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
                 }`}
               >
-                {workspaceSwitch.current === 'personal' && (
-                  <m.span
-                    layoutId={`sidebar-switch-${sidebarGroupId}`}
-                    aria-hidden="true"
-                    transition={TAB_PILL_SPRING}
-                    className="pointer-events-none absolute inset-0 -z-10 rounded-lg bg-red-700 shadow-sm"
-                  />
-                )}
                 <User className="w-4 h-4 shrink-0" aria-hidden="true" />
                 <span className="truncate max-w-full">{collapsed ? 'Runner' : 'My participation'}</span>
               </button>
             </div>
-          </LayoutGroup>
         )}
       </div>
 
-      <LayoutGroup id={`${sidebarGroupId}-nav`}>
         <nav
           aria-label={navLabel}
           data-workspace-nav="desktop"
-          className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain px-2.5 py-2 space-y-1"
+          className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain px-3 py-2 space-y-1"
         >
           {items.map((item) => (
             <button
@@ -255,25 +235,17 @@ export default function DesktopSidebar({
               aria-label={item.label}
               aria-current={item.active ? 'page' : undefined}
               title={item.label}
-              className={`relative isolate min-h-11 rounded-xl flex items-center transition-colors duration-150 motion-safe:active:scale-[0.98] ${focusRing} ${
+              className={`relative min-h-11 rounded-xl flex items-center transition-colors duration-150 motion-safe:active:scale-[0.98] ${focusRing} ${
                 collapsed
-                  ? 'w-full py-1.5 px-1 flex-col justify-center gap-1 text-[10px] leading-tight font-semibold'
+                  ? 'w-full py-2 px-1 flex-col justify-center gap-1 text-xs leading-tight font-semibold'
                   : 'w-full px-3 py-2 gap-3 text-left text-sm font-semibold'
               } ${
                 item.active
-                  ? 'text-white'
+                  ? 'bg-red-700 text-white shadow-sm'
                   : 'text-zinc-700 dark:text-zinc-300 hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
               }`}
             >
-              {item.active && (
-                <m.span
-                  layoutId={`sidebar-nav-${sidebarGroupId}`}
-                  aria-hidden="true"
-                  transition={TAB_PILL_SPRING}
-                  className="pointer-events-none absolute inset-0 -z-10 rounded-xl bg-red-700 shadow-sm"
-                />
-              )}
-              <span className="shrink-0 flex items-center justify-center [&>svg]:w-[18px] [&>svg]:h-[18px]" aria-hidden="true">
+              <span className="shrink-0 flex items-center justify-center [&>svg]:w-4 [&>svg]:h-4" aria-hidden="true">
                 {item.icon}
               </span>
               <span className={collapsed ? 'truncate max-w-full text-center' : 'truncate'}>
@@ -282,9 +254,8 @@ export default function DesktopSidebar({
             </button>
           ))}
         </nav>
-      </LayoutGroup>
 
-      <div className="px-2.5 py-2.5 border-t border-[var(--border-subtle)] space-y-2 shrink-0">
+      <div className="p-3 border-t border-[var(--border-subtle)] space-y-2 shrink-0">
         <div
           ref={identityWrapRef}
           className="relative"
@@ -332,10 +303,10 @@ export default function DesktopSidebar({
                     style={{ left: `${tooltipPos.left}px`, bottom: `${tooltipPos.bottom}px` }}
                     className="fixed z-[45] max-w-[min(20rem,calc(100vw-6rem))] min-w-[15rem] rounded-xl border border-white/15 bg-[#141416] text-white p-3 shadow-2xl pointer-events-none"
                   >
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-red-400">{roleLabel}</p>
-                    <p className="text-sm font-semibold text-white break-words mt-0.5">{displayName}</p>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-red-400">{roleLabel}</p>
+                    <p className="text-sm font-semibold text-white break-words mt-1">{displayName}</p>
                     {profile.email && (
-                      <p className="text-xs text-zinc-300 break-all mt-0.5">{profile.email}</p>
+                      <p className="text-xs text-zinc-300 break-all mt-1">{profile.email}</p>
                     )}
                   </m.div>
                 )}
@@ -350,7 +321,7 @@ export default function DesktopSidebar({
           aria-label="Sign out"
           title="Sign Out"
           className={`min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] font-semibold uppercase tracking-wider text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400 hover:border-red-600/50 hover:bg-[var(--surface-hover)] flex items-center justify-center transition-colors duration-150 ${focusRing} ${
-            collapsed ? 'w-full py-1.5 px-1 flex-col gap-0.5 text-[10px]' : 'w-full px-3 py-2 gap-2 text-xs'
+            collapsed ? 'w-full py-2 px-1 flex-col gap-1 text-xs' : 'w-full px-3 py-2 gap-2 text-xs'
           }`}
         >
           <LogOut className="w-4 h-4 shrink-0" aria-hidden="true" />
