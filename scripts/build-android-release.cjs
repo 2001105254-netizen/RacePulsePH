@@ -105,6 +105,19 @@ function findJarsigner() {
   return 'jarsigner';
 }
 
+const PLAY_UPLOAD_SHA1 = '0F:9E:41:87:5A:37:C3:41:8E:24:23:9A:56:53:EF:F7:FC:C1:4D:07';
+
+function assertPlayUploadKey(aabFile) {
+  const jarsigner = findJarsigner();
+  const keytool = path.join(path.dirname(jarsigner), isWin ? 'keytool.exe' : 'keytool');
+  const res = spawnSync(fs.existsSync(keytool) ? keytool : 'keytool', ['-printcert', '-jarfile', aabFile], { encoding: 'utf8' });
+  const match = /SHA1:\s*([0-9A-F:]{59})/i.exec(`${res.stdout}\n${res.stderr}`);
+  if (!match || match[1].toUpperCase() !== PLAY_UPLOAD_SHA1) {
+    throw new Error(`AAB certificate SHA1 ${match ? match[1] : 'unreadable'} does not match the Play upload key ${PLAY_UPLOAD_SHA1}. Do not upload it.`);
+  }
+  process.stdout.write(`PASS: AAB certificate SHA1 matches the Play upload key (${PLAY_UPLOAD_SHA1}).\n`);
+}
+
 function sha256File(filePath) {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
@@ -160,6 +173,7 @@ function main() {
   }
 
   const stageDir = path.join(ROOT, 'release', 'android');
+  assertPlayUploadKey(aabFile);
   fs.mkdirSync(stageDir, { recursive: true });
   const stagedApk = path.join(stageDir, 'RacePulsePH.apk');
   const stagedAab = path.join(stageDir, 'RacePulsePH.aab');

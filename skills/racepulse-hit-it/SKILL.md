@@ -18,7 +18,7 @@ Load with: `racepulse-github-release-cicd`. Rules upheld: `C-2`, `C-5`, `R-35`. 
 | Commit on the current branch. The `.githooks/pre-commit` hook bumps SemVer and `versionCode` | Play Store rejects an AAB whose `versionCode` repeats | `npm run version:check` exit `0` after commit |
 | Merge into `main` (fast-forward when possible) and `git push origin main`; also push the source branch | CI publishes only from `main` and `QA` pushes | `git log origin/main -1` matches local `main` |
 | Watch the run with `gh run list --limit 1` and `gh run watch`. It builds, signs with the GitHub secrets, and publishes `vX.Y.Z` | GitHub Release is the public download source | `gh release view vX.Y.Z` lists `RacePulsePH.apk` and `RacePulsePH.aab` |
-| Build the Play Store bundle locally with `npm run release:android -- --require-signed` | `scripts/build-android-release.cjs` reads `signing/keystore.txt` for the upload key | Exit `0`, then `release/android/RacePulsePH.aab` and `SHA256SUMS.txt` exist |
+| Build the Play Store bundle locally with `npm run release:android -- --require-signed` | `scripts/build-android-release.cjs` reads `signing/keystore.txt` for the upload key | Exit `0`, output shows `PASS: AAB certificate SHA1 matches the Play upload key`, and `release/android/RacePulsePH.aab` exists |
 | Print the AAB path, `versionName`, `versionCode` and SHA-256 | The user uploads this file in Play Console | Values copied from the build output |
 
 ## Stack mapping
@@ -31,7 +31,7 @@ Load with: `racepulse-github-release-cicd`. Rules upheld: `C-2`, `C-5`, `R-35`. 
 ## Not covered
 
 - Uploading to Play Console is manual. The agent only produces the signed AAB.
-- Rotating GitHub signing secrets belongs to `racepulse-github-release-cicd`. Do not overwrite them unless the user asks.
+- Changing, regenerating or replacing the keystore or the GitHub signing secrets. The Play upload key stays fixed unless the user asks.
 - Firestore rules, Functions, and Hosting deploys belong to `racepulse-release-engineering`.
 
 ## Verify
