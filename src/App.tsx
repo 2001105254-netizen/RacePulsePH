@@ -678,6 +678,11 @@ function AppContent() {
             </div>
           </nav>
 
+          <CookieConsentBanner
+            preferencesRequestNonce={cookiePreferencesNonce}
+            onOpenCookiePolicy={() => openUtilityView('cookies')}
+          />
+
           <div className={`relative flex-grow flex flex-col overflow-x-clip ${desktopLocked && !signedInUtilityView ? 'lg:min-h-0 lg:overflow-hidden' : ''}`}>
             <m.div
               key={viewKey}
@@ -693,11 +698,6 @@ function AppContent() {
               {content}
             </m.div>
           </div>
-
-          <CookieConsentBanner
-            preferencesRequestNonce={cookiePreferencesNonce}
-            onOpenCookiePolicy={() => openUtilityView('cookies')}
-          />
 
           {/* Global Footer: verifiable business identity, 4 required legal routes, consent controls, and email unsubscribe */}
           <footer className={`border-t border-[var(--border-default)] bg-[var(--surface-card)] mt-auto text-xs text-[var(--text-secondary)] ${isWorkspaceShell ? 'pb-24 lg:pb-0' : 'pb-[calc(1rem+var(--rp-safe-bottom))] md:pb-[var(--rp-safe-bottom)]'} ${desktopLocked && !signedInUtilityView ? 'lg:hidden' : ''}`}>

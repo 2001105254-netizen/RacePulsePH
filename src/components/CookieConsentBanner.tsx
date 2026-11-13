@@ -75,7 +75,7 @@ export default function CookieConsentBanner({
   return (
     <>
       {!consent && !showPreferences && (
-        <div className="shrink-0 w-full max-w-[1600px] mx-auto pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))] pb-3 pt-2">
+        <div className="shrink-0 w-full max-w-[1600px] mx-auto pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))] pt-3 pb-2">
           <section
             role="region"
             aria-label="Cookie and storage preferences"
