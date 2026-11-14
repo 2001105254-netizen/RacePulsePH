@@ -52,3 +52,17 @@ export function formatDateTime(value: string | number | Date): string {
   const date = new Date(value);
   return Number.isFinite(date.getTime()) ? `${date.toLocaleDateString()} ${formatClockTime(value)}` : '—';
 }
+
+/** Parse HH:MM:SS[fffff | .fffffff] duration strings into total seconds for sorting and medians. */
+export function parseRaceDurationSeconds(value: string | undefined | null): number | null {
+  if (!value) return null;
+  const match = /^(\d{2,}):([0-5]\d):([0-5]\d)(?:\.(\d{1,7})|(\d{5}))?$/.exec(value.trim());
+  if (!match) return null;
+  const hrs = Number(match[1]);
+  const mins = Number(match[2]);
+  const secs = Number(match[3]);
+  const fracRaw = (match[4] || match[5] || '').padEnd(7, '0').slice(0, 7);
+  const frac = fracRaw ? Number(fracRaw) / 10000000 : 0;
+  const total = hrs * 3600 + mins * 60 + secs + frac;
+  return Number.isFinite(total) && total > 0 ? total : null;
+}

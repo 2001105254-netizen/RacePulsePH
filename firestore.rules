@@ -166,6 +166,13 @@ service cloud.firestore {
     function hasSafeProfileDetails(data) {
       return (!data.keys().hasAny(['nickname']) || (data.nickname is string && data.nickname.size() <= 30))
         && (!data.keys().hasAny(['photoURL']) || (data.photoURL is string && data.photoURL.size() <= 100000))
+        && (!data.keys().hasAny(['coverURL']) || (data.coverURL is string && data.coverURL.size() <= 150000))
+        && (!data.keys().hasAny(['coverPreset']) || (data.coverPreset is string && data.coverPreset.size() <= 40))
+        && (!data.keys().hasAny(['bio']) || (data.bio is string && data.bio.size() <= 160))
+        && (!data.keys().hasAny(['location']) || (data.location is string && data.location.size() <= 80))
+        && (!data.keys().hasAny(['runClub']) || (data.runClub is string && data.runClub.size() <= 80))
+        && (!data.keys().hasAny(['favoriteDistance']) || (data.favoriteDistance is string && data.favoriteDistance.size() <= 30))
+        && (!data.keys().hasAny(['socialLink']) || (data.socialLink is string && data.socialLink.size() <= 160))
         && (!data.keys().hasAny(['emergencyContactName']) || (data.emergencyContactName is string && data.emergencyContactName.size() <= 100))
         && (!data.keys().hasAny(['emergencyContactPhone']) || (data.emergencyContactPhone is string && data.emergencyContactPhone.size() <= 30))
         && (!data.keys().hasAny(['shirtSize']) || (data.shirtSize is string && data.shirtSize.size() <= 20))
@@ -588,12 +595,21 @@ service cloud.firestore {
         && data.raceName is string && data.raceName.size() >= 1 && data.raceName.size() <= 100
         && data.raceDate is string && data.raceDate.size() >= 1 && data.raceDate.size() <= 30
         && data.photoUrl is string && data.photoUrl.size() >= 1 && data.photoUrl.size() <= 900000
-        && data.borderPreset in ['liquid-gold', 'cyber-hud', 'sonic-wave', 'holo-foil', 'carbon-minimal']
-        && data.cornerGeometry in ['rounded', 'sharp', 'tactical']
+        && data.borderPreset in [
+          'liquid-gold', 'cyber-hud', 'sonic-wave', 'holo-foil', 'carbon-minimal',
+          'neon-circuit', 'obsidian-chrome', 'crimson-inferno', 'aurora-borealis',
+          'vintage-prestige', 'titanium-blade', 'emerald-matrix'
+        ]
+        && data.cornerGeometry in ['rounded', 'sharp', 'tactical', 'hex-crest', 'ticket-notch']
         && data.accentColor is string && data.accentColor.size() >= 4 && data.accentColor.size() <= 20
         && data.glowIntensity is number && data.glowIntensity >= 0 && data.glowIntensity <= 100
-        && data.surfaceFinish in ['matte', 'glossy', 'topo']
+        && data.surfaceFinish in ['matte', 'glossy', 'topo', 'carbon-weave', 'halftone']
         && data.createdAt is string && data.updatedAt is string
+        && (!data.keys().hasAny(['secondaryAccentColor']) || (data.secondaryAccentColor is string && data.secondaryAccentColor.size() >= 4 && data.secondaryAccentColor.size() <= 20))
+        && (!data.keys().hasAny(['cardEffect']) || data.cardEffect in ['sheen-sweep', 'prism-glint', 'ember-rise', 'radar-scan', 'pulse-aura', 'none'])
+        && (!data.keys().hasAny(['headerStyle']) || data.headerStyle in ['crown-bezel', 'floating-notch', 'bottom-dock'])
+        && (!data.keys().hasAny(['borderWidthPx']) || (data.borderWidthPx is number && data.borderWidthPx >= 2 && data.borderWidthPx <= 6))
+        && (!data.keys().hasAny(['scrimStrength']) || (data.scrimStrength is number && data.scrimStrength >= 30 && data.scrimStrength <= 95))
         && (!data.keys().hasAny(['partnerName']) || (data.partnerName is string && data.partnerName.size() <= 80))
         && (!data.keys().hasAny(['partnerBibNumber']) || (data.partnerBibNumber is string && data.partnerBibNumber.size() <= 24))
         && (!data.keys().hasAny(['partnerPhotoUrl']) || (data.partnerPhotoUrl is string && data.partnerPhotoUrl.size() <= 900000))

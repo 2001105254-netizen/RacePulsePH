@@ -151,9 +151,18 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
           <button
             type="button"
             onClick={() => setShowAccountPrivacy(true)}
+            aria-label="Open profile settings"
+            title="Profile and Account Settings"
             className="min-h-11 shrink-0 text-xs text-[var(--text-primary)] border border-[var(--border-default)] hover:border-red-500/40 hover:text-red-700 dark:hover:text-red-400 font-semibold px-3 py-2 rounded-[20px] transition flex items-center gap-2 uppercase tracking-wider"
           >
-            <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" /> Privacy
+            <span className="w-5 h-5 rounded-full overflow-hidden bg-red-700 text-white flex items-center justify-center text-xs font-semibold shrink-0" aria-hidden="true">
+              {profile.photoURL ? (
+                <img src={profile.photoURL} alt="" width={20} height={20} className="w-full h-full object-cover" />
+              ) : (
+                (profile.nickname || profile.displayName || 'R').charAt(0).toUpperCase()
+              )}
+            </span>
+            <span>Profile</span>
           </button>
           <button
             type="button"

@@ -1,4 +1,4 @@
-import { formatDateTime, formatRaceTime } from '../lib/preciseTime';
+import { formatDateTime, formatRaceTime, parseRaceDurationSeconds } from '../lib/preciseTime';
 import { useEffect, useMemo, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { Calendar, FileDown, Medal, Search, Trophy, UserPlus } from 'lucide-react';
@@ -39,11 +39,13 @@ export default function PublicRaceResults({ race, onRegister }: PublicRaceResult
   const [summary, setSummary] = useState<PublicLiveResults | null | undefined>(undefined);
   const [search, setSearch] = useState('');
   const [distance, setDistance] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
 
   useEffect(() => {
     setSummary(undefined);
     setSearch('');
     setDistance('all');
+    setCategoryFilter('all');
     const unsubscribe = onSnapshot(doc(db, 'liveResults', race.id), (snapshot) => {
       setSummary(snapshot.exists() ? (snapshot.data() as PublicLiveResults) : null);
     }, (error) => {
@@ -62,14 +64,67 @@ export default function PublicRaceResults({ race, onRegister }: PublicRaceResult
     ? (summary?.officialResults || []).filter((entry) => entry.distance !== 'Unknown')
     : [];
   const distances = useMemo(() => [...new Set(officialResults.map((entry) => entry.distance))], [officialResults]);
+
+  const categories = useMemo(() => {
+    const counts = new Map<string, { label: string; count: number; fastestSecs: number | null; fastestRaw: string }>();
+    for (const entry of officialResults) {
+      if (distance !== 'all' && entry.distance !== distance) continue;
+      const label = entry.categoryLabel?.trim();
+      if (!label) continue;
+      const secs = parseRaceDurationSeconds(entry.finishTime);
+      const prev = counts.get(label);
+      if (!prev) {
+        counts.set(label, { label, count: 1, fastestSecs: secs, fastestRaw: entry.finishTime });
+      } else {
+        prev.count += 1;
+        if (secs !== null && (prev.fastestSecs === null || secs < prev.fastestSecs)) {
+          prev.fastestSecs = secs;
+          prev.fastestRaw = entry.finishTime;
+        }
+      }
+    }
+    return [...counts.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  }, [distance, officialResults]);
+
+  useEffect(() => {
+    if (categoryFilter !== 'all' && !categories.some((cat) => cat.label === categoryFilter)) {
+      setCategoryFilter('all');
+    }
+  }, [categories, categoryFilter]);
+
+  const raceStats = useMemo(() => {
+    if (officialResults.length === 0) return null;
+    const sortedTimes = officialResults
+      .map((entry) => ({ secs: parseRaceDurationSeconds(entry.finishTime), raw: entry.finishTime }))
+      .filter((item): item is { secs: number; raw: string } => item.secs !== null)
+      .sort((a, b) => a.secs - b.secs);
+    const chipCount = officialResults.filter((entry) => entry.timingMethod !== 'gun').length;
+    const gunCount = officialResults.length - chipCount;
+    const specialAwardsCount = officialResults.filter((entry) => (entry.specialAgeAwards?.length ?? 0) > 0).length;
+    const registered = summary?.totalRegistered ?? 0;
+    const finishRatePct = registered > 0 ? Math.min(100, Math.round((officialResults.length / registered) * 100)) : null;
+
+    return {
+      finished: officialResults.length,
+      registered,
+      finishRatePct,
+      fastestTime: sortedTimes[0]?.raw ?? '',
+      medianTime: sortedTimes.length > 0 ? sortedTimes[Math.floor(sortedTimes.length / 2)].raw : '',
+      chipCount,
+      gunCount,
+      specialAwardsCount,
+    };
+  }, [officialResults, summary?.totalRegistered]);
+
   const filteredResults = useMemo(() => {
     const term = search.trim().toLowerCase();
     return officialResults.filter((entry) => {
       const matchesDistance = distance === 'all' || entry.distance === distance;
+      const matchesCategory = categoryFilter === 'all' || entry.categoryLabel === categoryFilter;
       const matchesSearch = !term || entry.fullName.toLowerCase().includes(term) || entry.bibNumber.toLowerCase().includes(term);
-      return matchesDistance && matchesSearch;
+      return matchesDistance && matchesCategory && matchesSearch;
     });
-  }, [distance, officialResults, search]);
+  }, [categoryFilter, distance, officialResults, search]);
   const registrationOpen = isRaceRegistrationOpen(race);
 
   return (
@@ -116,10 +171,42 @@ export default function PublicRaceResults({ race, onRegister }: PublicRaceResult
             <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
               <div>
                 <h3 className="text-sm font-semibold text-[var(--text-primary)]">Official ranking</h3>
-                <p className="mt-1 text-xs text-[var(--text-secondary)]">{officialResults.length} official finishers. Search your name or bib, then download your certificate. Free Slots are identified by bib only.</p>
+                <p className="mt-1 text-xs text-[var(--text-secondary)]">{officialResults.length} official finishers. Search your name or bib, filter by age division, then download your certificate. Free Slots are identified by bib only.</p>
               </div>
               {summary.updatedAt && <span className="text-xs text-[var(--text-secondary)]">Updated {formatDateTime(summary.updatedAt)}</span>}
             </div>
+
+            {raceStats && (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2" aria-label="Race finish statistics">
+                <div className="glass-inset px-3 py-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Finishers</div>
+                  <div className="mt-1 font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">
+                    {raceStats.finished}{raceStats.registered > 0 ? ` / ${raceStats.registered}` : ''}
+                    {raceStats.finishRatePct !== null && (
+                      <span className="ml-2 text-xs text-emerald-700 dark:text-emerald-400">({raceStats.finishRatePct}%)</span>
+                    )}
+                  </div>
+                </div>
+                <div className="glass-inset px-3 py-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Fastest Finish</div>
+                  <div className="mt-1 font-mono text-sm font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
+                    {raceStats.fastestTime ? formatRaceTime(raceStats.fastestTime) : '--:--:--'}
+                  </div>
+                </div>
+                <div className="glass-inset px-3 py-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Median Finish</div>
+                  <div className="mt-1 font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">
+                    {raceStats.medianTime ? formatRaceTime(raceStats.medianTime) : '--:--:--'}
+                  </div>
+                </div>
+                <div className="glass-inset px-3 py-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Chip / Special Age</div>
+                  <div className="mt-1 font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">
+                    {raceStats.chipCount} chip{raceStats.specialAwardsCount > 0 ? ` / ${raceStats.specialAwardsCount} award${raceStats.specialAwardsCount === 1 ? '' : 's'}` : ''}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
               <label className="relative block">
@@ -129,6 +216,39 @@ export default function PublicRaceResults({ race, onRegister }: PublicRaceResult
               </label>
               {distances.length > 1 && <select aria-label="Filter results by distance" value={distance} onChange={(event) => setDistance(event.target.value)} className="min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700 dark:focus:ring-red-400"><option value="all">All distances</option>{distances.map((item) => <option key={item} value={item}>{item}</option>)}</select>}
             </div>
+
+            {categories.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter results by age division">
+                <button
+                  type="button"
+                  onClick={() => setCategoryFilter('all')}
+                  aria-pressed={categoryFilter === 'all'}
+                  className={`min-h-11 px-3 py-2 rounded-full border text-xs font-semibold transition-colors ${
+                    categoryFilter === 'all'
+                      ? 'border-red-600 bg-red-700 text-white'
+                      : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600'
+                  }`}
+                >
+                  All divisions ({distance === 'all' ? officialResults.length : officialResults.filter((e) => e.distance === distance).length})
+                </button>
+                {categories.map((cat) => (
+                  <button
+                    key={cat.label}
+                    type="button"
+                    onClick={() => setCategoryFilter(cat.label)}
+                    aria-pressed={categoryFilter === cat.label}
+                    className={`min-h-11 px-3 py-2 rounded-full border text-xs font-semibold transition-colors inline-flex items-center gap-1.5 ${
+                      categoryFilter === cat.label
+                        ? 'border-red-600 bg-red-700 text-white'
+                        : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600'
+                    }`}
+                  >
+                    <span>{cat.label}</span>
+                    <span className="font-mono text-[11px] opacity-85">({cat.count})</span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             {filteredResults.length === 0 ? (
               <p className="glass-inset px-4 py-6 text-center text-xs text-[var(--text-secondary)]">No official result matches &ldquo;{search}&rdquo;.</p>

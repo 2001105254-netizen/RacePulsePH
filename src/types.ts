@@ -38,6 +38,13 @@ export interface UserProfile {
   username?: string;
   nickname?: string;
   photoURL?: string; // small base64 data URI, resized client-side before saving
+  coverURL?: string; // small base64 cover banner URI, resized client-side before saving
+  coverPreset?: string; // preset banner theme key ('crimson-track', 'midnight-elevation', etc.)
+  bio?: string;
+  location?: string;
+  runClub?: string;
+  favoriteDistance?: string;
+  socialLink?: string;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
   shirtSize?: string;
@@ -409,11 +416,41 @@ export type HighlightBorderPreset =
   | 'cyber-hud'
   | 'sonic-wave'
   | 'holo-foil'
-  | 'carbon-minimal';
+  | 'carbon-minimal'
+  | 'neon-circuit'
+  | 'obsidian-chrome'
+  | 'crimson-inferno'
+  | 'aurora-borealis'
+  | 'vintage-prestige'
+  | 'titanium-blade'
+  | 'emerald-matrix';
 
-export type HighlightCornerGeometry = 'rounded' | 'sharp' | 'tactical';
+export type HighlightCornerGeometry =
+  | 'rounded'
+  | 'sharp'
+  | 'tactical'
+  | 'hex-crest'
+  | 'ticket-notch';
 
-export type HighlightSurfaceFinish = 'matte' | 'glossy' | 'topo';
+export type HighlightSurfaceFinish =
+  | 'matte'
+  | 'glossy'
+  | 'topo'
+  | 'carbon-weave'
+  | 'halftone';
+
+export type HighlightCardEffect =
+  | 'sheen-sweep'
+  | 'prism-glint'
+  | 'ember-rise'
+  | 'radar-scan'
+  | 'pulse-aura'
+  | 'none';
+
+export type HighlightHeaderStyle =
+  | 'crown-bezel'
+  | 'floating-notch'
+  | 'bottom-dock';
 
 export type HighlightCardLayoutMode = 'card' | 'pill';
 
@@ -447,8 +484,13 @@ export interface RunnerHighlight {
   borderPreset: HighlightBorderPreset;
   cornerGeometry: HighlightCornerGeometry;
   accentColor: string;
+  secondaryAccentColor?: string;
   glowIntensity: number;
   surfaceFinish: HighlightSurfaceFinish;
+  cardEffect?: HighlightCardEffect;
+  headerStyle?: HighlightHeaderStyle;
+  borderWidthPx?: number;
+  scrimStrength?: number;
   badgeStamp?: string;
   pinned?: boolean;
   expiresAt?: string;

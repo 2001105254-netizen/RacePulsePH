@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Award, Pause, Play, RefreshCw } from 'lucide-react';
 import {
   applyPlaylistRules,
@@ -16,6 +16,39 @@ interface PodiumPulseReelProps {
   overrideHighlights?: RunnerHighlight[];
   overrideConfig?: HighlightsMarqueeConfig;
   instanceId?: string;
+}
+
+type ReelSlot =
+  | { kind: 'highlight'; item: RunnerHighlight; slotKey: string; index: number }
+  | { kind: 'placeholder'; slotKey: string; index: number };
+
+function PodiumPulsePlaceholder({ layoutMode }: { layoutMode: 'card' | 'pill' }) {
+  return (
+    <div
+      className={`pp-card-slot ${layoutMode === 'pill' ? 'mode-pill' : 'mode-card'}`}
+      aria-hidden="true"
+      data-testid="podium-placeholder-slot"
+    >
+      <div className="pp-card-placeholder">
+        <div className="flex items-center justify-between gap-2">
+          <span className="px-2 py-0.5 rounded text-[11px] font-mono text-[var(--text-secondary)] border border-[var(--border-default)] bg-[var(--surface-card)]">
+            OPEN SLOT
+          </span>
+          <span className="text-[11px] font-mono text-[var(--text-secondary)]">
+            PODIUM
+          </span>
+        </div>
+        <div className="space-y-1.5">
+          <div className="h-2.5 w-24 rounded bg-[var(--border-subtle)]" />
+          <div className="h-4 w-36 rounded bg-[var(--border-subtle)]" />
+          <div className="pt-1 flex items-center justify-between text-[11px] font-mono text-[var(--text-secondary)]">
+            <span>--:--:--</span>
+            <span>--:-- /km</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function PodiumPulseReel({
@@ -40,39 +73,36 @@ export default function PodiumPulseReel({
   const headingId = instanceId ? `podium-highlights-heading-${instanceId}` : 'podium-highlights-heading';
 
   const [manualPaused, setManualPaused] = useState(false);
-  const [spotlightId, setSpotlightId] = useState<string | null>(null);
+  const [spotlightKey, setSpotlightKey] = useState<string | null>(null);
   const [selectedHighlight, setSelectedHighlight] = useState<RunnerHighlight | null>(null);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [viewportWidth, setViewportWidth] = useState<number>(() =>
     typeof window !== 'undefined' ? window.innerWidth : 1280,
   );
 
+  const sectionRef = useRef<HTMLElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
-  const setARef = useRef<HTMLDivElement | null>(null);
-  const cardRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
   const offsetRef = useRef(0);
   const velocityRef = useRef(0);
+  const rafIdRef = useRef(0);
+  const lastTimeRef = useRef(0);
+  const isInViewportRef = useRef(true);
+  const isPageVisibleRef = useRef(typeof document === 'undefined' ? true : document.visibilityState === 'visible');
+  const isContentSkippedRef = useRef(false);
+
   const configRef = useRef(config);
   configRef.current = config;
 
   const stateRef = useRef({
     manualPaused: false,
-    spotlightId: null as string | null,
+    spotlightKey: null as string | null,
     searchFocused: false,
     modalOpen: false,
     reducedMotion: false,
-    viewportWidth: 1280,
+    setWidth: 0,
   });
-  stateRef.current = {
-    manualPaused,
-    spotlightId,
-    searchFocused,
-    modalOpen: Boolean(selectedHighlight),
-    reducedMotion,
-    viewportWidth,
-  };
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return;
@@ -127,119 +157,212 @@ export default function PodiumPulseReel({
     [rawHighlights, config],
   );
 
-  // Repeat items enough times inside Set A so Set A always exceeds the viewport width.
+  // Fill Set A beyond viewport width with blank placeholder slots instead of duplicating published highlights.
   const unitWidth = (config.layoutMode === 'pill' ? 376 : 276) + config.cardGapPx;
-  const repeatCount = useMemo(() => {
-    if (highlights.length === 0) return 1;
-    const oneSetWidth = highlights.length * unitWidth;
-    return Math.max(1, Math.ceil((Math.max(viewportWidth, 1280) + 320) / oneSetWidth));
-  }, [highlights.length, unitWidth, viewportWidth]);
+  const minSlots = Math.max(5, Math.ceil((Math.max(viewportWidth, 1280) + unitWidth) / unitWidth));
 
-  const repeatedItems = useMemo(() => {
+  const setASlots = useMemo<ReelSlot[]>(() => {
     if (highlights.length === 0) return [];
-    const list: Array<{ item: RunnerHighlight; key: string; index: number }> = [];
-    for (let r = 0; r < repeatCount; r += 1) {
-      for (let i = 0; i < highlights.length; i += 1) {
-        list.push({
-          item: highlights[i],
-          key: `r${r}_${highlights[i].id}_${i}`,
-          index: r * highlights.length + i,
-        });
-      }
+    const slots: ReelSlot[] = highlights.map((item, idx) => ({
+      kind: 'highlight',
+      item,
+      slotKey: `hl_${item.id}_${idx}`,
+      index: idx,
+    }));
+    for (let i = highlights.length; i < minSlots; i += 1) {
+      slots.push({
+        kind: 'placeholder',
+        slotKey: `ph_${i}`,
+        index: i,
+      });
     }
-    return list;
-  }, [highlights, repeatCount]);
+    return slots;
+  }, [highlights, minSlots]);
 
-  // Reset offset safely when card count or layout mode changes
+  const setWidth = setASlots.length * unitWidth;
+  stateRef.current = {
+    manualPaused,
+    spotlightKey,
+    searchFocused,
+    modalOpen: Boolean(selectedHighlight),
+    reducedMotion,
+    setWidth,
+  };
+
+  // Reset offset safely when published card count, slot count, or layout mode changes
   useEffect(() => {
     offsetRef.current = 0;
     if (trackRef.current) {
       trackRef.current.style.transform = 'translate3d(0px, 0, 0)';
     }
-  }, [highlights.length, config.layoutMode, repeatCount]);
+  }, [highlights.length, config.layoutMode, setASlots.length]);
 
-  // State B: RequestAnimationFrame velocity-interpolated marquee loop
+  const startTickerRef = useRef<() => void>(() => {});
+
+  // Sub-1ms rAF marquee loop: pauses automatically when off-screen, hidden tab, reduced motion, or stopped on hover.
   useEffect(() => {
-    if (repeatedItems.length === 0) return;
+    if (setASlots.length === 0) {
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = 0;
+      }
+      velocityRef.current = 0;
+      return;
+    }
 
-    let rafId = 0;
-    let lastTime = performance.now();
-
-    const step = (now: number) => {
-      const dt = Math.min(0.05, Math.max(0.001, (now - lastTime) / 1000));
-      lastTime = now;
-
-      const { manualPaused: paused, spotlightId: spot, searchFocused: focused, modalOpen, reducedMotion: rm, viewportWidth: vw } =
-        stateRef.current;
+    const computeTargetVelocity = () => {
+      const s = stateRef.current;
       const cfg = configRef.current;
-      const setWidth = setARef.current?.offsetWidth || repeatedItems.length * ((cfg.layoutMode === 'pill' ? 376 : 276) + cfg.cardGapPx);
-
+      if (
+        !isInViewportRef.current ||
+        !isPageVisibleRef.current ||
+        isContentSkippedRef.current ||
+        s.reducedMotion ||
+        s.manualPaused ||
+        s.modalOpen
+      ) {
+        return 0;
+      }
       let multiplier = 1;
-      if (paused || rm || modalOpen) {
-        multiplier = 0;
-      } else if (spot) {
-        if (cfg.hoverBehavior === 'stop') multiplier = 0;
-        else if (cfg.hoverBehavior === 'slow') multiplier = 0.2;
-        else multiplier = 1;
-      } else if (focused) {
-        // State A Search Focus Ambient Low-Power Mode (25% speed)
+      if (s.spotlightKey) {
+        if (cfg.hoverBehavior === 'stop') return 0;
+        multiplier = cfg.hoverBehavior === 'slow' ? 0.2 : 1;
+      } else if (s.searchFocused) {
+        // State A Search Focus Ambient Mode (25% speed)
         multiplier = 0.25;
       }
-
       const dirSign = cfg.direction === 'right' ? 1 : -1;
-      const targetVelocity = cfg.speedPxPerSec * multiplier * dirSign;
+      return cfg.speedPxPerSec * multiplier * dirSign;
+    };
 
-      // Flywheel inertia interpolation
+    const step = (now: number) => {
+      rafIdRef.current = 0;
+      if (
+        !isInViewportRef.current ||
+        !isPageVisibleRef.current ||
+        isContentSkippedRef.current ||
+        stateRef.current.reducedMotion
+      ) {
+        velocityRef.current = 0;
+        return;
+      }
+
+      const dt = Math.min(0.05, Math.max(0.001, (now - lastTimeRef.current) / 1000));
+      lastTimeRef.current = now;
+
+      const targetVelocity = computeTargetVelocity();
       const lerpAlpha = Math.min(1, dt * 6.5);
       velocityRef.current += (targetVelocity - velocityRef.current) * lerpAlpha;
-      if (Math.abs(velocityRef.current) < 0.08 && targetVelocity === 0) {
+      if (targetVelocity === 0 && Math.abs(velocityRef.current) < 0.08) {
         velocityRef.current = 0;
       }
 
-      if (setWidth > 0) {
-        let nextOffset = offsetRef.current + velocityRef.current * dt;
-        // Wrap seamlessly around [-setWidth, 0]
-        nextOffset = ((nextOffset % setWidth) - setWidth) % setWidth;
+      const activeSetWidth = stateRef.current.setWidth;
+      if (activeSetWidth > 0 && velocityRef.current !== 0) {
+        const nextOffset = (((offsetRef.current + velocityRef.current * dt) % activeSetWidth) - activeSetWidth) % activeSetWidth;
         offsetRef.current = nextOffset;
-
         if (trackRef.current) {
           trackRef.current.style.transform = `translate3d(${nextOffset.toFixed(2)}px, 0, 0)`;
         }
-
-        // Dynamic position-driven Prismatic Holo-Foil hue shift (no layout reads!)
-        const slotSpan = (cfg.layoutMode === 'pill' ? 376 : 276) + cfg.cardGapPx;
-        const viewSpan = Math.max(vw, 640);
-        cardRefs.current.forEach((btn, key) => {
-          const idxStr = key.split('::')[1];
-          const idx = Number(idxStr);
-          if (Number.isNaN(idx)) return;
-          const xInTrack = idx * slotSpan + nextOffset + slotSpan * 0.5;
-          const ratio = Math.max(0, Math.min(1, xInTrack / viewSpan));
-          // Left (~cyan/violet 200deg) -> Center (~gold/magenta 315deg) -> Right (~cyan 185deg)
-          const hue = 190 + ratio * 155;
-          btn.style.setProperty('--holo-hue', `${Math.round(hue)}deg`);
-        });
       }
 
-      rafId = requestAnimationFrame(step);
+      if (targetVelocity !== 0 || velocityRef.current !== 0) {
+        rafIdRef.current = requestAnimationFrame(step);
+      }
     };
 
-    rafId = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(rafId);
-  }, [repeatedItems.length]);
+    const ensureLoopRunning = () => {
+      if (rafIdRef.current) return;
+      const targetVelocity = computeTargetVelocity();
+      if (targetVelocity !== 0 || velocityRef.current !== 0) {
+        lastTimeRef.current = performance.now();
+        rafIdRef.current = requestAnimationFrame(step);
+      }
+    };
 
-  const registerCardRef = (refKey: string) => (el: HTMLButtonElement | null) => {
-    if (el) {
-      cardRefs.current.set(refKey, el);
-    } else {
-      cardRefs.current.delete(refKey);
-    }
-  };
+    startTickerRef.current = ensureLoopRunning;
+    ensureLoopRunning();
+
+    return () => {
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = 0;
+      }
+    };
+  }, [setASlots.length]);
+
+  // Wake marquee when interaction or speed controls change while preserving continuity.
+  useEffect(() => {
+    startTickerRef.current();
+  }, [
+    manualPaused,
+    spotlightKey,
+    searchFocused,
+    selectedHighlight,
+    reducedMotion,
+    config.speedPxPerSec,
+    config.hoverBehavior,
+    config.direction,
+    config.layoutMode,
+    config.cardGapPx,
+  ]);
+
+  // Pause background rAF completely when off-screen, tab-hidden, or skipped by content-visibility.
+  useEffect(() => {
+    const vpEl = viewportRef.current;
+    const secEl = sectionRef.current;
+
+    const io =
+      vpEl && typeof IntersectionObserver !== 'undefined'
+        ? new IntersectionObserver(
+            ([entry]) => {
+              isInViewportRef.current = Boolean(entry?.isIntersecting);
+              if (isInViewportRef.current) startTickerRef.current();
+            },
+            { rootMargin: '120px' },
+          )
+        : null;
+    if (vpEl && io) io.observe(vpEl);
+
+    const onVisibility = () => {
+      isPageVisibleRef.current = document.visibilityState === 'visible';
+      if (isPageVisibleRef.current) startTickerRef.current();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    const onContentVisibility = (e: Event) => {
+      const skipped = Boolean((e as Event & { skipped?: boolean }).skipped);
+      isContentSkippedRef.current = skipped;
+      if (!skipped) startTickerRef.current();
+    };
+    secEl?.addEventListener('contentvisibilityautostatechange', onContentVisibility);
+
+    return () => {
+      io?.disconnect();
+      document.removeEventListener('visibilitychange', onVisibility);
+      secEl?.removeEventListener('contentvisibilityautostatechange', onContentVisibility);
+    };
+  }, [loaded, setASlots.length]);
+
+  const handleSpotlightEnter = useCallback((key: string) => {
+    setSpotlightKey(key);
+  }, []);
+
+  const handleSpotlightLeave = useCallback(() => {
+    setSpotlightKey(null);
+  }, []);
+
+  const handleSelectHighlight = useCallback((hl: RunnerHighlight) => {
+    setSelectedHighlight(hl);
+  }, []);
 
   return (
     <section
+      ref={sectionRef}
+      id={instanceId ? `podium-highlights-${instanceId}` : 'podium-highlights'}
+      tabIndex={-1}
       aria-labelledby={headingId}
-      className={`pp-reel-stage space-y-3 ${spotlightId ? 'has-spotlight' : ''} ${searchFocused ? 'is-search-dimmed' : ''}`}
+      className={`pp-reel-stage scroll-mt-[84px] space-y-3 ${spotlightKey ? 'has-spotlight' : ''} ${searchFocused ? 'is-search-dimmed' : ''}`}
       data-testid="podium-pulse-reel"
     >
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-default)] pb-2.5">
@@ -265,7 +388,6 @@ export default function PodiumPulseReel({
             <button
               type="button"
               onClick={() => setManualPaused((prev) => !prev)}
-              aria-pressed={manualPaused}
               aria-label={manualPaused ? 'Play runner highlights marquee' : 'Pause runner highlights marquee'}
               className="min-h-11 px-3.5 py-2 rounded-full border border-[var(--border-button)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-mono font-semibold text-[var(--text-primary)] inline-flex items-center gap-1.5 transition"
             >
@@ -337,38 +459,49 @@ export default function PodiumPulseReel({
           }
         >
           <div ref={trackRef} className="pp-reel-track">
-            {/* Primary Set A */}
-            <div ref={setARef} className="pp-reel-group">
-              {repeatedItems.map(({ item, key, index }) => (
-                <PodiumPulseCard
-                  key={`a_${key}`}
-                  highlight={item}
-                  layoutMode={config.layoutMode}
-                  isSpotlight={spotlightId === item.id}
-                  staggerIndex={Math.min(index, 7)}
-                  animateEntrance
-                  onSpotlightEnter={(id) => setSpotlightId(id)}
-                  onSpotlightLeave={() => setSpotlightId(null)}
-                  onSelect={(hl) => setSelectedHighlight(hl)}
-                  registerShellRef={registerCardRef(`a_${key}::${index}`)}
-                />
-              ))}
+            {/* Primary Set A: each published highlight rendered once, padded with blank placeholders */}
+            <div className="pp-reel-group" data-testid="podium-reel-set-a">
+              {setASlots.map((slot) =>
+                slot.kind === 'placeholder' ? (
+                  <PodiumPulsePlaceholder key={`a_${slot.slotKey}`} layoutMode={config.layoutMode} />
+                ) : (
+                  <PodiumPulseCard
+                    key={`a_${slot.slotKey}`}
+                    slotKey={`a_${slot.slotKey}`}
+                    highlight={slot.item}
+                    layoutMode={config.layoutMode}
+                    isSpotlight={spotlightKey === `a_${slot.slotKey}`}
+                    holoHue={195 + ((slot.index * 47) % 140)}
+                    staggerIndex={Math.min(slot.index, 7)}
+                    animateEntrance
+                    onSpotlightEnter={handleSpotlightEnter}
+                    onSpotlightLeave={handleSpotlightLeave}
+                    onSelect={handleSelectHighlight}
+                  />
+                ),
+              )}
             </div>
 
-            {/* Duplicate Set B for zero-seam infinite wrap */}
-            <div className="pp-reel-group" aria-hidden="true">
-              {repeatedItems.map(({ item, key, index }) => (
-                <PodiumPulseCard
-                  key={`b_${key}`}
-                  highlight={item}
-                  layoutMode={config.layoutMode}
-                  isSpotlight={spotlightId === item.id}
-                  onSpotlightEnter={(id) => setSpotlightId(id)}
-                  onSpotlightLeave={() => setSpotlightId(null)}
-                  onSelect={(hl) => setSelectedHighlight(hl)}
-                  registerShellRef={registerCardRef(`b_${key}::${repeatedItems.length + index}`)}
-                />
-              ))}
+            {/* Duplicate Set B for zero-seam infinite wrap (off-screen behind Set A) */}
+            <div className="pp-reel-group" aria-hidden="true" data-testid="podium-reel-set-b">
+              {setASlots.map((slot) =>
+                slot.kind === 'placeholder' ? (
+                  <PodiumPulsePlaceholder key={`b_${slot.slotKey}`} layoutMode={config.layoutMode} />
+                ) : (
+                  <PodiumPulseCard
+                    key={`b_${slot.slotKey}`}
+                    slotKey={`b_${slot.slotKey}`}
+                    highlight={slot.item}
+                    layoutMode={config.layoutMode}
+                    isCloneSlot
+                    isSpotlight={spotlightKey === `b_${slot.slotKey}`}
+                    holoHue={195 + ((slot.index * 47) % 140)}
+                    onSpotlightEnter={handleSpotlightEnter}
+                    onSpotlightLeave={handleSpotlightLeave}
+                    onSelect={handleSelectHighlight}
+                  />
+                ),
+              )}
             </div>
           </div>
         </div>

@@ -27,7 +27,15 @@ import { db } from '../firebase';
 import { useAccess, useScopedRacesState } from '../lib/access';
 import { isRaceRegistrationOpen, philippineDate } from '../lib/raceRegistration';
 import { useWorkspaceHeader } from '../lib/workspaceHeader';
-import { Race, RunnerProfile } from '../types';
+import { ChipRead, Race, RunnerProfile } from '../types';
+import {
+  BottomTelemetryDock,
+  buildEventTelemetryData,
+  computeRowMicroMetrics,
+  EventTelemetryCard,
+  TableRevenueMicroPill,
+  TableRunnerMicroBar,
+} from './EventTelemetryPrimitives';
 import DialogSurface from './ui/DialogSurface';
 import { AnimatedMetricValue, ValueSkeleton } from './ui/MotionPrimitives';
 
@@ -82,6 +90,10 @@ interface EventDirectoryRow {
   sortedDistances: Race['distances'];
   distanceBreakdown: DistanceSummary[];
   unmappedRunnerCount: number;
+  assignedBibCount: number;
+  recent7dRevenue: number;
+  avgRevenuePerRunner: number;
+  miniSparkline: number[];
   searchHaystack: string;
 }
 
@@ -142,6 +154,7 @@ export default function MyRaceEventsPanel({
   const [selectedRaceId, setSelectedRaceId] = useState<string>(
     () => (typeof window !== 'undefined' ? localStorage.getItem('racepulse_active_race') || '' : ''),
   );
+  const [selectedRaceChipReads, setSelectedRaceChipReads] = useState<ChipRead[]>([]);
   const [posterLightboxRace, setPosterLightboxRace] = useState<Race | null>(null);
 
   const headerSearchRef = useRef<HTMLInputElement>(null);
@@ -226,6 +239,60 @@ export default function MyRaceEventsPanel({
     };
   }, [raceIdsKey, canViewRoster]);
 
+  // Throttled live RFID chipReads subscription for the currently inspected race (1,000ms cadence).
+  useEffect(() => {
+    if (!selectedRaceId || (!canViewTiming && !canViewRoster)) {
+      setSelectedRaceChipReads([]);
+      return;
+    }
+
+    let active = true;
+    let initialCommitted = false;
+    let latestReads: ChipRead[] = [];
+    let throttleTimerId: number | null = null;
+    let rafId: number | null = null;
+
+    const commitReads = () => {
+      if (!active) return;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null;
+        if (!active) return;
+        setSelectedRaceChipReads(latestReads);
+      });
+    };
+
+    const unsubscribe = onSnapshot(
+      query(collection(db, 'chipReads'), where('raceId', '==', selectedRaceId)),
+      (snapshot) => {
+        const list: ChipRead[] = [];
+        snapshot.forEach((docSnap) => list.push(docSnap.data() as ChipRead));
+        latestReads = list;
+
+        if (!initialCommitted) {
+          initialCommitted = true;
+          commitReads();
+          return;
+        }
+        if (throttleTimerId === null) {
+          throttleTimerId = window.setTimeout(() => {
+            throttleTimerId = null;
+            commitReads();
+          }, 1000);
+        }
+      },
+      () => {
+        if (active) setSelectedRaceChipReads([]);
+      },
+    );
+
+    return () => {
+      active = false;
+      if (throttleTimerId !== null) window.clearTimeout(throttleTimerId);
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
+      unsubscribe();
+    };
+  }, [selectedRaceId, canViewTiming, canViewRoster]);
+
   const runnersByRace = useMemo(() => {
     const map = new Map<string, RunnerProfile[]>();
     for (const runner of runners) {
@@ -273,6 +340,7 @@ export default function MyRaceEventsPanel({
       const estRevenue = distanceBreakdown.reduce((sum, item) => sum + item.estRevenue, 0);
       const completed = Boolean(race.completedAt) || race.date < todayStr;
       const registrationOpen = !completed && isRaceRegistrationOpen(race, todayStr);
+      const micro = computeRowMicroMetrics(raceRunners, sortedDistances, todayStr);
       const searchHaystack = `${race.name} ${race.date} ${sortedDistances
         .map((d) => d.label)
         .join(' ')}`.toLowerCase();
@@ -286,10 +354,19 @@ export default function MyRaceEventsPanel({
         sortedDistances,
         distanceBreakdown,
         unmappedRunnerCount,
+        assignedBibCount: micro.assignedBibCount,
+        recent7dRevenue: micro.recent7dRevenue,
+        avgRevenuePerRunner: micro.avgRevenuePerRunner,
+        miniSparkline: micro.miniSparkline,
         searchHaystack,
       };
     });
   }, [races, runnersByRace, todayStr]);
+
+  const maxEventRunners = useMemo(
+    () => Math.max(1, ...eventRows.map((row) => row.runnerCount)),
+    [eventRows],
+  );
 
   const portfolioStats = useMemo(() => {
     let upcoming = 0;
@@ -352,6 +429,19 @@ export default function MyRaceEventsPanel({
 
   const selectedIndex = filteredEvents.findIndex((row) => row.race.id === selectedRaceId);
   const selectedEvent = selectedIndex >= 0 ? filteredEvents[selectedIndex] : null;
+
+  const selectedTelemetry = useMemo(() => {
+    if (!selectedEvent) return null;
+    return buildEventTelemetryData({
+      race: selectedEvent.race,
+      raceRunners: runnersByRace.get(selectedEvent.race.id) || [],
+      allRaces: races,
+      runnersByRace,
+      chipReads: selectedRaceChipReads,
+      completed: selectedEvent.completed,
+      todayStr,
+    });
+  }, [selectedEvent, runnersByRace, races, selectedRaceChipReads, todayStr]);
 
   const selectRace = (raceId: string) => {
     setSelectedRaceId(raceId);
@@ -828,7 +918,7 @@ export default function MyRaceEventsPanel({
           aria-label="Race events directory table"
           className="flex flex-col min-h-0 lg:h-full bg-[var(--surface-page)] rounded-2xl lg:rounded-none border border-[var(--border-default)] lg:border-y-0 lg:border-l-0 lg:border-r overflow-hidden"
         >
-          <div className="flex-1 min-h-0 overflow-x-auto overflow-y-auto">
+          <div className="lg:flex-initial lg:max-h-[48%] min-h-0 overflow-x-auto overflow-y-auto">
             {racesLoading && races.length === 0 ? (
               <div
                 role="status"
@@ -1068,7 +1158,7 @@ export default function MyRaceEventsPanel({
                       </button>
                     </th>
                     <th
-                      className="py-2 px-2 w-[84px] text-right"
+                      className="py-2 px-2 w-[90px] text-right"
                       aria-sort={
                         sortKey === 'runners'
                           ? sortDir === 'asc'
@@ -1087,7 +1177,7 @@ export default function MyRaceEventsPanel({
                       </button>
                     </th>
                     <th
-                      className="py-2 px-2 w-[104px] text-right"
+                      className="py-2 px-2 w-[116px] text-right"
                       aria-sort={
                         sortKey === 'revenue'
                           ? sortDir === 'asc'
@@ -1191,6 +1281,14 @@ export default function MyRaceEventsPanel({
                               />
                             ) : 'Restricted'}
                           </span>
+                          {canViewRoster && (
+                            <TableRunnerMicroBar
+                              runnerCount={row.runnerCount}
+                              maxRunnerCount={maxEventRunners}
+                              assignedBibCount={row.assignedBibCount}
+                              completed={row.completed}
+                            />
+                          )}
                         </td>
 
                         <td className="py-2 px-2 align-middle text-right whitespace-nowrap">
@@ -1205,6 +1303,15 @@ export default function MyRaceEventsPanel({
                               />
                             ) : 'Restricted'}
                           </span>
+                          {canViewRoster && canViewRevenue && (
+                            <TableRevenueMicroPill
+                              estRevenue={row.estRevenue}
+                              runnerCount={row.runnerCount}
+                              recent7dRevenue={row.recent7dRevenue}
+                              avgRevenuePerRunner={row.avgRevenuePerRunner}
+                              sparkline={row.miniSparkline}
+                            />
+                          )}
                         </td>
 
                         <td className="py-2 pl-2 pr-3 align-middle text-right whitespace-nowrap">
@@ -1217,6 +1324,14 @@ export default function MyRaceEventsPanel({
               </table>
             )}
           </div>
+          {selectedTelemetry && (
+            <BottomTelemetryDock
+              telemetry={selectedTelemetry}
+              canViewRoster={canViewRoster}
+              canViewRevenue={canViewRevenue}
+              onOpenEngraving={canViewEngraving && onOpenEngraving ? handleLaunchEngraving : undefined}
+            />
+          )}
         </section>
 
         {/* RIGHT DETAIL DOCK (35% Width): Event Inspector, Uncropped Poster, Category Breakdown & Launchpad */}
@@ -1283,7 +1398,7 @@ export default function MyRaceEventsPanel({
                 {/* Full Uncropped Poster Preview (object-contain prevents top/bottom poster slicing) */}
                 <div
                   aria-label="Uncropped event poster preview"
-                  className="relative h-56 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] flex items-center justify-center p-2 overflow-hidden"
+                  className="relative h-44 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] flex items-center justify-center p-2 overflow-hidden"
                 >
                   {selectedEvent.race.posterImage ? (
                     <>
@@ -1361,73 +1476,38 @@ export default function MyRaceEventsPanel({
                   </div>
                 </div>
 
-                {/* Distance Category Breakdown */}
-                <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)]/60 p-3 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-                      Distance Category Breakdown
-                    </h3>
-                    <span className="font-mono text-xs text-[var(--text-secondary)] tabular-nums">
-                      {selectedEvent.distanceBreakdown.length} categories
-                    </span>
+                {/* Right-Hand Event Pulse Telemetry Card */}
+                {selectedTelemetry && (
+                  <div className="space-y-2">
+                    <EventTelemetryCard
+                      mode={selectedTelemetry.mode}
+                      distances={selectedTelemetry.distances}
+                      velocityData={selectedTelemetry.velocityData}
+                      velocityLabels={selectedTelemetry.velocityLabels}
+                      usingFinishScanSeries={selectedTelemetry.usingFinishScanSeries}
+                      medianFinishLabel={selectedTelemetry.medianFinishLabel}
+                      peakBucketLabel={selectedTelemetry.peakBucketLabel}
+                      peakBucketCount={selectedTelemetry.peakBucketCount}
+                      recent7dRunners={selectedTelemetry.recent7dRunners}
+                      canViewRoster={canViewRoster}
+                      canViewRevenue={canViewRevenue}
+                      ageSummary={selectedTelemetry.ageSummary}
+                      genderBreakdown={selectedTelemetry.genderBreakdown}
+                      paidCount={selectedTelemetry.paidCount}
+                      reportedTotalRunners={selectedTelemetry.totalRunners}
+                      topAgeCutLabel={selectedTelemetry.ageCuts[0]?.label ?? ''}
+                    />
+                    {canViewRoster && selectedEvent.unmappedRunnerCount > 0 && (
+                      <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)]/60 px-3 py-2 flex items-center justify-between text-xs text-[var(--text-secondary)]">
+                        <span>Other / Legacy Distance Labels</span>
+                        <span className="font-mono font-semibold tabular-nums">
+                          {formatCountPH(selectedEvent.unmappedRunnerCount)}{' '}
+                          {selectedEvent.unmappedRunnerCount === 1 ? 'runner' : 'runners'}
+                        </span>
+                      </div>
+                    )}
                   </div>
-
-                  {selectedEvent.distanceBreakdown.length === 0 ? (
-                    <p className="text-xs text-[var(--text-secondary)]">
-                      No distance categories configured yet.
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {selectedEvent.distanceBreakdown.map((item) => {
-                        const pct =
-                          selectedEvent.runnerCount > 0
-                            ? Math.round((item.runnerCount / selectedEvent.runnerCount) * 100)
-                            : 0;
-                        return (
-                          <div key={item.id} className="space-y-1">
-                            <div className="flex items-center justify-between gap-2 text-xs">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span className="font-mono font-semibold text-[var(--text-primary)]">
-                                  {item.label}
-                                </span>
-                                <span className="font-mono text-[var(--text-secondary)] tabular-nums">
-                                  {item.price > 0 ? formatCurrencyPH(item.price) : 'Free'}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-3 font-mono tabular-nums shrink-0">
-                                <span className="font-semibold text-[var(--text-primary)]">
-                                  {canViewRoster
-                                    ? `${formatCountPH(item.runnerCount)} ${item.runnerCount === 1 ? 'runner' : 'runners'}`
-                                    : 'Restricted'}
-                                </span>
-                                {canViewRoster && canViewRevenue && (
-                                  <span className="text-emerald-700 dark:text-emerald-400 font-semibold">
-                                    {formatCurrencyPH(item.estRevenue)}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            <div className="h-2 w-full rounded-full bg-[var(--surface-card)] overflow-hidden">
-                              <div
-                                className="h-full rounded-full bg-red-700 transition-all duration-200"
-                                style={{ width: `${canViewRoster ? pct : 0}%` }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {canViewRoster && selectedEvent.unmappedRunnerCount > 0 && (
-                        <div className="pt-1 border-t border-[var(--border-subtle)] flex items-center justify-between text-xs text-[var(--text-secondary)]">
-                          <span>Other / Legacy Distance Labels</span>
-                          <span className="font-mono font-semibold tabular-nums">
-                            {formatCountPH(selectedEvent.unmappedRunnerCount)}{' '}
-                            {selectedEvent.unmappedRunnerCount === 1 ? 'runner' : 'runners'}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
+                )}
 
                 {/* Operational Specs Readout */}
                 <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)]/60 p-3 space-y-2">

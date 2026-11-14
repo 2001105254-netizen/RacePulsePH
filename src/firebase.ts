@@ -11,6 +11,8 @@ import {
   signInWithCredential,
   reauthenticateWithPopup,
   reauthenticateWithCredential,
+  EmailAuthProvider,
+  updatePassword,
   GoogleAuthProvider,
   signOut as firebaseSignOut,
   updateProfile,
@@ -61,6 +63,51 @@ export async function signInWithEmail(email: string, password: string): Promise<
 export async function updateAccountDisplayName(displayName: string): Promise<void> {
   if (!auth.currentUser) throw new Error('You need to sign in again before updating your profile.');
   await updateProfile(auth.currentUser, { displayName: displayName.trim() });
+}
+
+/**
+ * Returns true when the current Firebase user has an email/password provider attached.
+ */
+export function hasPasswordProvider(user: User | null = auth.currentUser): boolean {
+  if (!user) return false;
+  return user.providerData.some((provider) => provider.providerId === 'password');
+}
+
+/**
+ * Reauthenticates the signed-in user with their current password and updates
+ * their Firebase Auth password to the provided new password.
+ */
+export async function changeAccountPassword(currentPassword: string, newPassword: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.email) {
+    throw new Error('You must be signed in with an email address to change your password.');
+  }
+  if (!currentPassword) {
+    throw new Error('Please enter your current password.');
+  }
+  if (newPassword.length < 6 || newPassword.length > 128) {
+    throw new Error('New password must be between 6 and 128 characters.');
+  }
+  if (!hasPasswordProvider(user)) {
+    throw new Error('This account signs in with Google. Use Reset via Email Code to set a password.');
+  }
+  const credential = EmailAuthProvider.credential(user.email, currentPassword);
+  try {
+    await reauthenticateWithCredential(user, credential);
+    await updatePassword(user, newPassword);
+  } catch (err: unknown) {
+    const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code?: unknown }).code ?? '') : '';
+    if (code === 'auth/wrong-password' || code === 'auth/invalid-credential' || code === 'auth/invalid-login-credentials') {
+      throw new Error('Current password is incorrect. Please try again or use Reset via Email Code.');
+    }
+    if (code === 'auth/weak-password') {
+      throw new Error('New password is too weak. Use at least 6 characters.');
+    }
+    if (code === 'auth/too-many-requests') {
+      throw new Error('Too many attempts. Please wait a moment or use Reset via Email Code.');
+    }
+    throw new Error(err instanceof Error && err.message ? err.message : 'Unable to update password right now.');
+  }
 }
 
 const GOOGLE_WEB_CLIENT_ID = '720035436658-3e4k16l8op866qja6updrf2dlptg89t9.apps.googleusercontent.com';

@@ -15,6 +15,10 @@ import {
   Link2,
   Check,
   RefreshCw,
+  Pause,
+  Play,
+  BarChart3,
+  Users,
 } from 'lucide-react';
 import { db } from '../firebase';
 import { PublicLeaderboardEntry, PublicLiveResults, Race, RunnerResult } from '../types';
@@ -24,7 +28,7 @@ import { Card, CardContent } from './ui/card';
 import { Input } from './ui/input';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { isRaceRegistrationOpen, philippineDate } from '../lib/raceRegistration';
-import { formatRaceTime } from '../lib/preciseTime';
+import { formatRaceTime, parseRaceDurationSeconds } from '../lib/preciseTime';
 import {
   CardSkeletonLoader,
   EMIL_EASE,
@@ -201,6 +205,7 @@ export default function PublicRaceLanding({
   const [downloadedBibKey, setDownloadedBibKey] = useState<string | null>(null);
   const [certificateNotice, setCertificateNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
   const [heroOutOfView, setHeroOutOfView] = useState(false);
+  const [heroLinesPaused, setHeroLinesPaused] = useState(false);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const bibInputRef = useRef<HTMLInputElement>(null);
@@ -245,6 +250,7 @@ export default function PublicRaceLanding({
     let currentX = 0;
     let currentY = 0;
     let rafId = 0;
+    let heroRect: DOMRect | null = null;
 
     const scheduleFrame = () => {
       if (rafId !== 0) return;
@@ -263,9 +269,13 @@ export default function PublicRaceLanding({
     const canHoverFine = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
     const isCoarseTouch = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
 
+    const onPointerEnter = () => {
+      heroRect = heroEl.getBoundingClientRect();
+    };
+
     const onPointerMove = (e: PointerEvent) => {
       if (e.pointerType === 'touch') return;
-      const rect = heroEl.getBoundingClientRect();
+      const rect = heroRect || (heroRect = heroEl.getBoundingClientRect());
       if (rect.width <= 0 || rect.height <= 0) return;
       const nx = ((e.clientX - rect.left) / rect.width - 0.5) * 2;
       const ny = ((e.clientY - rect.top) / rect.height - 0.5) * 2;
@@ -275,9 +285,14 @@ export default function PublicRaceLanding({
     };
 
     const onPointerLeave = () => {
+      heroRect = null;
       targetX = 0;
       targetY = 0;
       scheduleFrame();
+    };
+
+    const onWindowResize = () => {
+      heroRect = null;
     };
 
     const onDeviceOrientation = (e: DeviceOrientationEvent) => {
@@ -290,8 +305,10 @@ export default function PublicRaceLanding({
     };
 
     if (canHoverFine) {
+      heroEl.addEventListener('pointerenter', onPointerEnter, { passive: true });
       heroEl.addEventListener('pointermove', onPointerMove, { passive: true });
       heroEl.addEventListener('pointerleave', onPointerLeave, { passive: true });
+      window.addEventListener('resize', onWindowResize, { passive: true });
     } else if (isCoarseTouch && 'DeviceOrientationEvent' in window) {
       window.addEventListener('deviceorientation', onDeviceOrientation, { passive: true });
     }
@@ -339,8 +356,10 @@ export default function PublicRaceLanding({
 
     return () => {
       if (rafId !== 0) cancelAnimationFrame(rafId);
+      heroEl.removeEventListener('pointerenter', onPointerEnter);
       heroEl.removeEventListener('pointermove', onPointerMove);
       heroEl.removeEventListener('pointerleave', onPointerLeave);
+      window.removeEventListener('resize', onWindowResize);
       window.removeEventListener('deviceorientation', onDeviceOrientation);
       window.removeEventListener('scroll', onScrollParallaxFallback);
       viewObserver?.disconnect();
@@ -467,6 +486,184 @@ export default function PublicRaceLanding({
     [activeRaces, doneRaces]
   );
 
+  const runnerStatsSummary = useMemo(() => {
+    let totalRegistered = 0;
+    let totalStarted = 0;
+    let finishedFieldDenominator = 0;
+    const distanceMap = new Map<
+      string,
+      { label: string; raceCount: number; finisherCount: number; minPrice: number | null; fastestSecs: number | null; fastestRaw: string }
+    >();
+
+    for (const race of races) {
+      const summary = resultsByRaceId[race.id];
+      if (summary) {
+        totalRegistered += summary.totalRegistered || 0;
+        totalStarted += summary.totalStarted || 0;
+        const raceHasPublishedFinishers = (summary.officialResults?.length ?? 0) > 0;
+        if (raceHasPublishedFinishers) {
+          finishedFieldDenominator += Math.max(
+            summary.totalRegistered || 0,
+            summary.totalStarted || 0,
+            summary.officialResults?.length || 0,
+          );
+        }
+      }
+      for (const dist of race.distances || []) {
+        const label = dist.label?.trim().toUpperCase();
+        if (!label) continue;
+        const prev = distanceMap.get(label) || {
+          label,
+          raceCount: 0,
+          finisherCount: 0,
+          minPrice: null,
+          fastestSecs: null,
+          fastestRaw: '',
+        };
+        prev.raceCount += 1;
+        if (dist.price > 0 && (prev.minPrice === null || dist.price < prev.minPrice)) {
+          prev.minPrice = dist.price;
+        }
+        distanceMap.set(label, prev);
+      }
+    }
+
+    let chipTimedCount = 0;
+    let gunTimedCount = 0;
+    const allFinishTimes: Array<{ secs: number; raw: string }> = [];
+    const ageCutMap = new Map<string, { label: string; times: Array<{ secs: number; raw: string }>; totalCount: number }>();
+    const specialAwardWinners: Array<{
+      key: string;
+      raceName: string;
+      bibNumber: string;
+      displayName: string;
+      distance: string;
+      awards: string[];
+      finishTime: string;
+    }> = [];
+
+    for (const { race, entry } of allPublishedFinishers) {
+      if (entry.timingMethod === 'gun') gunTimedCount += 1;
+      else chipTimedCount += 1;
+
+      const parsedSecs = parseRaceDurationSeconds(entry.finishTime);
+      if (parsedSecs !== null) {
+        allFinishTimes.push({ secs: parsedSecs, raw: entry.finishTime });
+      }
+
+      const distKey = entry.distance?.trim().toUpperCase();
+      if (distKey) {
+        const prevDist = distanceMap.get(distKey) || {
+          label: distKey,
+          raceCount: 0,
+          finisherCount: 0,
+          minPrice: null,
+          fastestSecs: null,
+          fastestRaw: '',
+        };
+        prevDist.finisherCount += 1;
+        if (parsedSecs !== null && (prevDist.fastestSecs === null || parsedSecs < prevDist.fastestSecs)) {
+          prevDist.fastestSecs = parsedSecs;
+          prevDist.fastestRaw = entry.finishTime;
+        }
+        distanceMap.set(distKey, prevDist);
+      }
+
+      const cutLabel = entry.categoryLabel?.trim();
+      if (cutLabel) {
+        const prevCut = ageCutMap.get(cutLabel) || { label: cutLabel, times: [], totalCount: 0 };
+        prevCut.totalCount += 1;
+        if (parsedSecs !== null) {
+          prevCut.times.push({ secs: parsedSecs, raw: entry.finishTime });
+        }
+        ageCutMap.set(cutLabel, prevCut);
+      }
+
+      if (entry.specialAgeAwards && entry.specialAgeAwards.length > 0 && specialAwardWinners.length < 6) {
+        specialAwardWinners.push({
+          key: `${race.id}_${entry.bibNumber}`,
+          raceName: race.name,
+          bibNumber: entry.bibNumber,
+          displayName: entry.isFreeSlot ? `Bib ${entry.bibNumber}` : entry.fullName,
+          distance: entry.distance,
+          awards: entry.specialAgeAwards,
+          finishTime: entry.finishTime,
+        });
+      }
+    }
+
+    const totalFinishers = allPublishedFinishers.length;
+    allFinishTimes.sort((a, b) => a.secs - b.secs);
+    const fastestTime = allFinishTimes[0]?.raw ?? '';
+    const medianTime = allFinishTimes.length > 0 ? allFinishTimes[Math.floor(allFinishTimes.length / 2)].raw : '';
+
+    const ageCutStats = [...ageCutMap.values()]
+      .map((group) => {
+        const sorted = [...group.times].sort((a, b) => a.secs - b.secs);
+        return {
+          label: group.label,
+          count: group.totalCount,
+          pct: totalFinishers > 0 ? Math.round((group.totalCount / totalFinishers) * 100) : 0,
+          fastestTime: sorted[0]?.raw ?? '',
+          medianTime: sorted.length > 0 ? sorted[Math.floor(sorted.length / 2)].raw : '',
+        };
+      })
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+
+    const configuredDivisionMap = new Map<string, { label: string; gender: string; minAge: number; maxAge: number; raceCount: number }>();
+    for (const race of races) {
+      const seenInRace = new Set<string>();
+      for (const cat of race.ageCategories || []) {
+        const key = `${cat.label.trim().toLowerCase()}_${cat.minAge}_${cat.maxAge}_${cat.gender}`;
+        if (seenInRace.has(key)) continue;
+        seenInRace.add(key);
+        const prev = configuredDivisionMap.get(key) || {
+          label: cat.label,
+          gender: cat.gender,
+          minAge: cat.minAge,
+          maxAge: cat.maxAge,
+          raceCount: 0,
+        };
+        prev.raceCount += 1;
+        configuredDivisionMap.set(key, prev);
+      }
+    }
+
+    const configuredDivisions = [...configuredDivisionMap.values()].sort(
+      (a, b) => a.minAge - b.minAge || a.label.localeCompare(b.label),
+    );
+
+    const distanceStats = [...distanceMap.values()].sort((a, b) => {
+      const na = parseFloat(a.label);
+      const nb = parseFloat(b.label);
+      if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+      return a.label.localeCompare(b.label);
+    });
+
+    const denominator = finishedFieldDenominator > 0 ? finishedFieldDenominator : totalRegistered;
+    const completionRatePct =
+      denominator > 0 && totalFinishers > 0
+        ? Math.min(100, Math.round((totalFinishers / denominator) * 100))
+        : null;
+    const chipPct = totalFinishers > 0 ? Math.round((chipTimedCount / totalFinishers) * 100) : 0;
+
+    return {
+      totalRegistered,
+      totalStarted,
+      totalFinishers,
+      completionRatePct,
+      chipTimedCount,
+      gunTimedCount,
+      chipPct,
+      fastestTime,
+      medianTime,
+      ageCutStats,
+      configuredDivisions,
+      specialAwardWinners,
+      distanceStats,
+    };
+  }, [allPublishedFinishers, races, resultsByRaceId]);
+
   // Scroll to deep-linked ?race=<id> once races finish loading
   useEffect(() => {
     if (loadState === 'ready' && selectedRace && !didInitialUrlScrollRef.current) {
@@ -580,7 +777,7 @@ export default function PublicRaceLanding({
     <main
       id="main-content"
       tabIndex={-1}
-      className="public-landing focus:outline-none"
+      className={`public-landing focus:outline-none ${heroLinesPaused ? 'is-lines-paused' : ''}`}
     >
       {/* Finisher Spotlight Focus Backdrop Scrim */}
       <div
@@ -664,6 +861,19 @@ export default function PublicRaceLanding({
         aria-label="RacePulsePH overview"
         className="landing-intro"
       >
+        {/* Continuous Hero Telemetry Perimeter Trace */}
+        <svg
+          className="landing-hero-perimeter"
+          viewBox="0 0 800 320"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          <path
+            className="landing-hero-pulse"
+            pathLength={1000}
+            d="M 24 2 L 776 2 Q 798 2 798 24 L 798 296 Q 798 318 776 318 L 24 318 Q 2 318 2 296 L 2 24 Q 2 2 24 2 Z"
+          />
+        </svg>
         <div className="landing-intro-copy">
           <h1>
             <span className="landing-hero-line landing-hero-line-1">Your next</span>
@@ -774,14 +984,17 @@ export default function PublicRaceLanding({
                 />
                 <path
                   className="landing-gpx-pace landing-gpx-pace-1"
+                  pathLength={440}
                   d="M -40 245 C 110 150, 290 110, 600 135"
                 />
                 <path
                   className="landing-gpx-pace landing-gpx-pace-2"
+                  pathLength={440}
                   d="M -40 290 C 125 190, 310 148, 600 175"
                 />
                 <path
                   className="landing-gpx-pace landing-gpx-pace-3"
+                  pathLength={440}
                   d="M -40 332 C 140 232, 330 190, 600 218"
                 />
               </svg>
@@ -881,16 +1094,32 @@ export default function PublicRaceLanding({
               ))}
             </div>
           )}
-          <span className="landing-caption-brand">
-            <span className="landing-finish-mark" aria-hidden="true" />
-            <span>Happy running ka Racepulse!</span>
-          </span>
+          <div className="landing-intro-footer-end">
+            <button
+              type="button"
+              className="landing-motion-toggle"
+              onClick={() => setHeroLinesPaused((prev) => !prev)}
+            >
+              {heroLinesPaused ? (
+                <Play className="w-3 h-3" aria-hidden="true" />
+              ) : (
+                <Pause className="w-3 h-3" aria-hidden="true" />
+              )}
+              <span>{heroLinesPaused ? 'Animate lines' : 'Pause lines'}</span>
+            </button>
+            <span className="landing-caption-brand">
+              <span className="landing-finish-mark" aria-hidden="true" />
+              <span>Happy running ka Racepulse!</span>
+            </span>
+          </div>
         </footer>
       </section>
 
       {/* 2. Finisher Lookup Bar with Animated ECG Heartbeat Perimeter & Podium Spotlight Focus */}
       <section
-        className={`landing-lookup ${isBibSearchFocused ? 'is-spotlight-active' : ''}`}
+        id="finisher-lookup"
+        tabIndex={-1}
+        className={`landing-lookup scroll-mt-[84px] ${isBibSearchFocused ? 'is-spotlight-active' : ''}`}
         aria-labelledby="lookup-heading"
       >
         {/* Animated ECG Heartbeat Perimeter SVG */}
@@ -1133,7 +1362,7 @@ export default function PublicRaceLanding({
       )}
 
       {/* Events Catalog: Tab switcher, full-width tablet-safe search, scrollable distance bib chips, and card grid */}
-      <section id="events-catalog" className="space-y-3 scroll-mt-20" aria-labelledby="catalog-heading">
+      <section id="events-catalog" tabIndex={-1} className="space-y-3 scroll-mt-[84px]" aria-labelledby="catalog-heading">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 border-b border-[var(--border-default)] pb-3">
           <div className="space-y-1">
             <h2 id="catalog-heading" className="type-section text-[var(--text-primary)]">
@@ -1447,10 +1676,254 @@ export default function PublicRaceLanding({
         )}
       </AnimatePresence>
 
+      {/* Runner & Age-Cut Statistics: Driven directly by published RacePulsePH event & finisher records */}
+      <section
+        id="runner-statistics"
+        tabIndex={-1}
+        className="landing-stats-section space-y-4 pt-5 border-t border-[var(--border-default)] scroll-mt-[84px]"
+        aria-labelledby="stats-section-heading"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+          <div className="space-y-1">
+            <h2 id="stats-section-heading" className="type-section text-[var(--text-primary)] inline-flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+              <span>Runner &amp; age-cut statistics</span>
+            </h2>
+            <p className="type-lead text-[var(--text-secondary)]">
+              Published category splits, age divisions, finish rates, and distance turnout across RacePulsePH events.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="default"
+            className="h-11 px-4 shrink-0"
+            onClick={() => scrollToSection('events-catalog')}
+          >
+            Browse race results
+          </Button>
+        </div>
+
+        {/* Overview KPI Strip */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="glass-inset p-3.5 space-y-1">
+            <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+              Registered Field
+            </div>
+            <div className="font-mono text-xl font-semibold tabular-nums text-[var(--text-primary)]">
+              {runnerStatsSummary.totalRegistered > 0
+                ? runnerStatsSummary.totalRegistered.toLocaleString('en-PH')
+                : '--'}
+            </div>
+            <div className="text-xs text-[var(--text-secondary)]">
+              Across {races.length} {races.length === 1 ? 'event' : 'events'}
+            </div>
+          </div>
+
+          <div className="glass-inset p-3.5 space-y-1">
+            <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+              Official Finishers
+            </div>
+            <div className="font-mono text-xl font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
+              {runnerStatsSummary.totalFinishers.toLocaleString('en-PH')}
+            </div>
+            <div className="text-xs font-mono tabular-nums text-[var(--text-secondary)]">
+              {runnerStatsSummary.completionRatePct !== null
+                ? `${runnerStatsSummary.completionRatePct}% finish rate`
+                : 'Published records'}
+            </div>
+          </div>
+
+          <div className="glass-inset p-3.5 space-y-1">
+            <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+              Chip vs. Gun Split
+            </div>
+            <div className="font-mono text-xl font-semibold tabular-nums text-[var(--text-primary)]">
+              {runnerStatsSummary.totalFinishers > 0 ? `${runnerStatsSummary.chipPct}% chip` : '--'}
+            </div>
+            <div className="text-xs font-mono tabular-nums text-[var(--text-secondary)]">
+              {runnerStatsSummary.totalFinishers > 0
+                ? `${runnerStatsSummary.chipTimedCount} chip / ${runnerStatsSummary.gunTimedCount} gun`
+                : 'Awaiting starts'}
+            </div>
+          </div>
+
+          <div className="glass-inset p-3.5 space-y-1 min-w-0">
+            <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+              Fastest &amp; Median Time
+            </div>
+            <div className="font-mono text-base sm:text-xl font-semibold tabular-nums text-red-700 dark:text-red-400 break-all">
+              {runnerStatsSummary.fastestTime ? formatRaceTime(runnerStatsSummary.fastestTime) : '--:--:--'}
+            </div>
+            <div className="text-xs font-mono tabular-nums text-[var(--text-secondary)]">
+              {runnerStatsSummary.medianTime
+                ? `Median ${formatRaceTime(runnerStatsSummary.medianTime)}`
+                : 'No finishes recorded'}
+            </div>
+          </div>
+        </div>
+
+        {/* 2-Column Deep Analytics: Age Cuts + Distance Field Breakdown */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Panel 1: Age Cuts & Special Divisions */}
+          <div className="glass-panel p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)] inline-flex items-center gap-2">
+                <Users className="w-4 h-4 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
+                <span>Age cuts &amp; category divisions</span>
+              </h3>
+              <span className="font-mono text-xs text-[var(--text-secondary)] tabular-nums">
+                {runnerStatsSummary.ageCutStats.length > 0
+                  ? `${runnerStatsSummary.ageCutStats.length} active divisions`
+                  : `${runnerStatsSummary.configuredDivisions.length} configured`}
+              </span>
+            </div>
+
+            {runnerStatsSummary.ageCutStats.length > 0 ? (
+              <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                {runnerStatsSummary.ageCutStats.map((cut) => (
+                  <div key={cut.label} className="space-y-1">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="font-semibold text-[var(--text-primary)] truncate">{cut.label}</span>
+                      <div className="flex items-center gap-2 font-mono tabular-nums shrink-0 text-[var(--text-secondary)]">
+                        {cut.fastestTime && (
+                          <span className="text-emerald-700 dark:text-emerald-400">
+                            Best {formatRaceTime(cut.fastestTime)}
+                          </span>
+                        )}
+                        <span className="font-semibold text-[var(--text-primary)]">
+                          {cut.count} ({cut.pct}%)
+                        </span>
+                      </div>
+                    </div>
+                    <div className="h-2 w-full rounded-full bg-[var(--surface-inset)] overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-emerald-600 dark:bg-emerald-500 transition-all duration-200"
+                        style={{ width: `${Math.max(4, Math.min(100, cut.pct))}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : runnerStatsSummary.configuredDivisions.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {runnerStatsSummary.configuredDivisions.map((div) => (
+                  <span
+                    key={`${div.label}_${div.minAge}_${div.maxAge}_${div.gender}`}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 py-1.5 text-xs font-mono text-[var(--text-primary)]"
+                  >
+                    <span className="font-semibold">{div.label}</span>
+                    <span className="text-[var(--text-secondary)]">
+                      {div.minAge}-{div.maxAge}y ({div.gender === 'male' ? 'M' : 'F'})
+                    </span>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="glass-inset px-3 py-4 text-xs text-[var(--text-secondary)]">
+                Age-cut splits appear here once events publish category results or age brackets.
+              </p>
+            )}
+
+            {runnerStatsSummary.specialAwardWinners.length > 0 && (
+              <div className="pt-2 border-t border-[var(--border-default)] space-y-2">
+                <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+                  Special Age Recognition
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {runnerStatsSummary.specialAwardWinners.map((winner) => (
+                    <div
+                      key={winner.key}
+                      className="glass-inset px-3 py-2 flex items-center justify-between gap-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-[var(--text-primary)] truncate">
+                          {winner.displayName}
+                        </div>
+                        <div className="text-[11px] text-emerald-700 dark:text-emerald-400 truncate">
+                          {winner.awards.join(' / ')}
+                        </div>
+                      </div>
+                      <div className="font-mono text-xs tabular-nums text-[var(--text-secondary)] shrink-0">
+                        {winner.distance}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Panel 2: Distance Turnout & Capacity */}
+          <div className="glass-panel p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)] inline-flex items-center gap-2">
+                <Flag className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" />
+                <span>Distance turnout &amp; pace benchmarks</span>
+              </h3>
+              <span className="font-mono text-xs text-[var(--text-secondary)] tabular-nums">
+                {runnerStatsSummary.distanceStats.length} distances
+              </span>
+            </div>
+
+            {runnerStatsSummary.distanceStats.length === 0 ? (
+              <p className="glass-inset px-3 py-4 text-xs text-[var(--text-secondary)]">
+                No race distances loaded yet.
+              </p>
+            ) : (
+              <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                {runnerStatsSummary.distanceStats.map((dist) => {
+                  const pct =
+                    runnerStatsSummary.totalFinishers > 0
+                      ? Math.round((dist.finisherCount / runnerStatsSummary.totalFinishers) * 100)
+                      : 0;
+                  return (
+                    <div key={dist.label} className="glass-inset p-2.5 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="px-2 py-0.5 rounded-full border border-[var(--border-default)] bg-[var(--surface-card)] font-mono font-semibold text-[var(--text-primary)]">
+                            {dist.label}
+                          </span>
+                          <span className="text-[var(--text-secondary)] truncate">
+                            {dist.raceCount > 0
+                              ? `${dist.raceCount} ${dist.raceCount === 1 ? 'race' : 'races'}${
+                                  dist.minPrice !== null ? ` / from ₱${dist.minPrice.toLocaleString('en-PH')}` : ''
+                                }`
+                              : 'Official result division'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 font-mono tabular-nums shrink-0">
+                          {dist.fastestRaw && (
+                            <span className="text-emerald-700 dark:text-emerald-400">
+                              Top {formatRaceTime(dist.fastestRaw)}
+                            </span>
+                          )}
+                          <span className="font-semibold text-[var(--text-primary)]">
+                            {dist.finisherCount > 0 ? `${dist.finisherCount} fin` : 'Upcoming'}
+                          </span>
+                        </div>
+                      </div>
+                      {dist.finisherCount > 0 && (
+                        <div className="h-1.5 w-full rounded-full bg-[var(--surface-card)] overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-red-600 dark:bg-red-500 transition-all duration-200"
+                            style={{ width: `${Math.max(4, Math.min(100, pct))}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
       {/* Official Finisher Bib Board: Driven by real published finishers instead of generic feature template cards */}
       {featuredBibFinishers.length > 0 && (
         <section
-          className="space-y-4 pt-5 border-t border-[var(--border-default)]"
+          className="landing-bib-board space-y-4 pt-5 border-t border-[var(--border-default)]"
           aria-labelledby="bib-board-heading"
         >
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">

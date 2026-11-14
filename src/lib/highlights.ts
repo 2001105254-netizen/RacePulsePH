@@ -13,9 +13,11 @@ import { getWaveStartTime } from './timing';
 import {
   ChipRead,
   HighlightBorderPreset,
+  HighlightCardEffect,
   HighlightCardLayoutMode,
   HighlightCornerGeometry,
   HighlightFlowDirection,
+  HighlightHeaderStyle,
   HighlightHoverBehavior,
   HighlightPlacement,
   HighlightsMarqueeConfig,
@@ -46,36 +48,91 @@ export const HIGHLIGHT_BORDER_PRESETS: ReadonlyArray<{
   label: string;
   summary: string;
   defaultAccent: string;
+  defaultSecondaryAccent: string;
 }> = [
   {
     id: 'liquid-gold',
     label: 'Liquid Gold',
-    summary: 'Dual rotating conic frame with rising bottom ember particles.',
+    summary: 'Dual molten gold metallic frame with warm championship aura.',
     defaultAccent: '#f5b731',
+    defaultSecondaryAccent: '#ff3b30',
   },
   {
     id: 'cyber-hud',
     label: 'Cyber HUD',
-    summary: '45 deg chamfered corners, locking brackets, and race-code ticker.',
+    summary: '45 deg targeting brackets with live race-code edge ticker.',
     defaultAccent: '#22d3ee',
+    defaultSecondaryAccent: '#0ea5e9',
   },
   {
     id: 'sonic-wave',
     label: 'Sonic Wave',
-    summary: 'Pace-synced pulsing perimeter wave tied to runner speed.',
+    summary: 'Pace-synced perimeter neon pulse calibrated to split rhythm.',
     defaultAccent: '#ff3b30',
+    defaultSecondaryAccent: '#fb7185',
   },
   {
     id: 'holo-foil',
     label: 'Holo Foil',
-    summary: 'Iridescent spectrum border that shifts hue across the viewport.',
+    summary: 'Iridescent spectrum bezel blending violet, cyan, and gold.',
     defaultAccent: '#a855f7',
+    defaultSecondaryAccent: '#22d3ee',
   },
   {
     id: 'carbon-minimal',
     label: 'Carbon Minimal',
-    summary: 'Woven carbon bezel with razor-thin top and bottom laser rules.',
+    summary: 'Woven carbon matte frame with top and bottom laser rules.',
     defaultAccent: '#ff3b30',
+    defaultSecondaryAccent: '#f43f5e',
+  },
+  {
+    id: 'neon-circuit',
+    label: 'Neon Circuit',
+    summary: 'Arcade laser perimeter traces with luminous corner nodes.',
+    defaultAccent: '#38bdf8',
+    defaultSecondaryAccent: '#f472b6',
+  },
+  {
+    id: 'obsidian-chrome',
+    label: 'Obsidian Chrome',
+    summary: 'Brushed dark chrome steel bezel with specular silver trim.',
+    defaultAccent: '#e4e4e7',
+    defaultSecondaryAccent: '#71717a',
+  },
+  {
+    id: 'crimson-inferno',
+    label: 'Crimson Inferno',
+    summary: 'High-heat crimson and ember forge double gradient border.',
+    defaultAccent: '#ef4444',
+    defaultSecondaryAccent: '#f97316',
+  },
+  {
+    id: 'aurora-borealis',
+    label: 'Aurora Borealis',
+    summary: 'Northern lights emerald-to-indigo shimmering collector rim.',
+    defaultAccent: '#34d399',
+    defaultSecondaryAccent: '#818cf8',
+  },
+  {
+    id: 'vintage-prestige',
+    label: 'Vintage Prestige',
+    summary: 'Heritage double brass hairline inlay with marathon crest trim.',
+    defaultAccent: '#eab308',
+    defaultSecondaryAccent: '#b45309',
+  },
+  {
+    id: 'titanium-blade',
+    label: 'Titanium Blade',
+    summary: 'Razor-edged brushed titanium bezel with cool cyan core.',
+    defaultAccent: '#94a3b8',
+    defaultSecondaryAccent: '#22d3ee',
+  },
+  {
+    id: 'emerald-matrix',
+    label: 'Emerald Matrix',
+    summary: 'Precision timing console terminal border with lime edge glow.',
+    defaultAccent: '#10b981',
+    defaultSecondaryAccent: '#a3e635',
   },
 ];
 
@@ -84,9 +141,11 @@ export const HIGHLIGHT_CORNER_GEOMETRIES: ReadonlyArray<{
   label: string;
   detail: string;
 }> = [
-  { id: 'rounded', label: 'Rounded (16px)', detail: 'Soft broadcast trading card corners' },
-  { id: 'sharp', label: 'Sharp (0px)', detail: 'Squared editorial slab geometry' },
-  { id: 'tactical', label: 'Tactical Cut', detail: '45 deg chamfered telemetry polygon' },
+  { id: 'rounded', label: 'Rounded', detail: '16px broadcast collector radius' },
+  { id: 'sharp', label: 'Sharp', detail: '0px crisp editorial slab edges' },
+  { id: 'tactical', label: 'Tactical Cut', detail: '45 deg chamfered telemetry corners' },
+  { id: 'hex-crest', label: 'Hex Crest', detail: 'Beveled crown + stepped base cut' },
+  { id: 'ticket-notch', label: 'Ticket Notch', detail: 'Race pass inward corner cutouts' },
 ];
 
 export const HIGHLIGHT_SURFACE_FINISHES: ReadonlyArray<{
@@ -96,6 +155,31 @@ export const HIGHLIGHT_SURFACE_FINISHES: ReadonlyArray<{
   { id: 'matte', label: 'Matte' },
   { id: 'glossy', label: 'Glossy Sweep' },
   { id: 'topo', label: 'Topo Map' },
+  { id: 'carbon-weave', label: 'Carbon Weave' },
+  { id: 'halftone', label: 'Halftone' },
+];
+
+export const HIGHLIGHT_CARD_EFFECTS: ReadonlyArray<{
+  id: HighlightCardEffect;
+  label: string;
+  detail: string;
+}> = [
+  { id: 'sheen-sweep', label: 'Holo Sheen', detail: 'Diagonal specular glaze pass' },
+  { id: 'prism-glint', label: 'Prism Glint', detail: 'Iridescent refraction band' },
+  { id: 'ember-rise', label: 'Rising Sparks', detail: 'Podium spark particles on GPU' },
+  { id: 'radar-scan', label: 'Radar Scan', detail: 'Laser telemetry sweep line' },
+  { id: 'pulse-aura', label: 'Pace Pulse', detail: 'Pace-synced inner perimeter glow' },
+  { id: 'none', label: 'Clean Static', detail: 'No motion overlay on surface' },
+];
+
+export const HIGHLIGHT_HEADER_STYLES: ReadonlyArray<{
+  id: HighlightHeaderStyle;
+  label: string;
+  detail: string;
+}> = [
+  { id: 'crown-bezel', label: 'Crown Bezel', detail: 'Top telemetry rail clears photo' },
+  { id: 'floating-notch', label: 'Floating Notch', detail: 'Edge-docked top tabs lift on hover' },
+  { id: 'bottom-dock', label: 'Bottom Dock', detail: 'Zero top badges; docks below' },
 ];
 
 export const HIGHLIGHT_PLACEMENTS: readonly HighlightPlacement[] = [
@@ -300,6 +384,9 @@ export function sanitizeHighlightPayload(draft: RunnerHighlight): RunnerHighligh
   const badgeStamp = capText(draft.badgeStamp, HIGHLIGHT_CAPS.badgeStamp).toUpperCase();
   const expiresAt = capText(draft.expiresAt, 24);
   const createdBy = (draft.createdBy || '').trim().slice(0, 128);
+  const secondaryAccentColor = draft.secondaryAccentColor
+    ? sanitizeHexColor(draft.secondaryAccentColor, base.accentColor)
+    : undefined;
 
   if (gunTime) base.gunTime = gunTime;
   if (splitPace) base.splitPace = splitPace;
@@ -307,6 +394,15 @@ export function sanitizeHighlightPayload(draft: RunnerHighlight): RunnerHighligh
   if (raceId) base.raceId = raceId;
   if (raceCode) base.raceCode = raceCode;
   if (badgeStamp) base.badgeStamp = badgeStamp;
+  if (secondaryAccentColor) base.secondaryAccentColor = secondaryAccentColor;
+  if (draft.cardEffect) base.cardEffect = draft.cardEffect;
+  if (draft.headerStyle) base.headerStyle = draft.headerStyle;
+  if (typeof draft.borderWidthPx === 'number') {
+    base.borderWidthPx = Math.round(clampNumber(draft.borderWidthPx, 2, 6));
+  }
+  if (typeof draft.scrimStrength === 'number') {
+    base.scrimStrength = Math.round(clampNumber(draft.scrimStrength, 30, 95));
+  }
   if (typeof draft.pinned === 'boolean') base.pinned = draft.pinned;
   if (expiresAt) base.expiresAt = expiresAt;
   if (createdBy) base.createdBy = createdBy;
@@ -352,6 +448,7 @@ export function formatHighlightShareSummary(item: RunnerHighlight): string {
 // ========== DATABASE RUNNER DIRECTORY & TELEMETRY AUTO-FILL ==========
 
 export interface RunnerRaceEntry {
+  fullName: string;
   raceId: string;
   raceName: string;
   raceDate: string;
@@ -360,6 +457,11 @@ export interface RunnerRaceEntry {
   distance: string;
   distanceKm: number;
   placement: string;
+  rank?: number;
+  categoryRank?: number;
+  finishSeconds: number;
+  hasOfficialFinish: boolean;
+  disqualified?: boolean;
   chipTime: string;
   gunTime: string;
   pace: string;
@@ -380,6 +482,13 @@ export interface DirectoryRunner {
   uid?: string;
   photoUrl?: string;
   entries: RunnerRaceEntry[];
+}
+
+export type HighlightRunnerSortMode = 'rank' | 'time' | 'name' | 'bib';
+
+export interface RankedRaceRunnerItem {
+  runner: DirectoryRunner;
+  entry: RunnerRaceEntry;
 }
 
 export interface HighlightRunnerSources {
@@ -621,7 +730,17 @@ function buildEntryRecord(params: {
   const gunTime = gunStartClock || (chipTime ? '00:00:00' : '');
   const splitPace = finishClock || chipTime;
   const pace = computeHighlightPace(elapsedFromClock || chipTime, distanceKm);
-  const placement = deriveHighlightPlacement(result?.overallRank, result?.rank, result?.disqualified);
+  const finishSeconds = parseDurationToSeconds(chipTime);
+  const disqualified = Boolean(result?.disqualified);
+  const rawRank = !disqualified && typeof result?.overallRank === 'number' && result.overallRank > 0
+    ? result.overallRank
+    : !disqualified && typeof result?.rank === 'number' && result.rank > 0
+      ? result.rank
+      : undefined;
+  const categoryRank = !disqualified && typeof result?.categoryRank === 'number' && result.categoryRank > 0
+    ? result.categoryRank
+    : undefined;
+  const placement = deriveHighlightPlacement(rawRank, rawRank, disqualified);
 
   const partnerSplitTime = formatHighlightDuration(partnerResult?.gunTime || partnerResult?.finishTime || partnerResult?.chipTime);
   let combinedAvgPace: string | undefined;
@@ -639,6 +758,7 @@ function buildEntryRecord(params: {
   }
 
   return {
+    fullName: params.fullName.trim().replace(/\s+/g, ' '),
     raceId,
     raceName,
     raceDate,
@@ -647,6 +767,11 @@ function buildEntryRecord(params: {
     distance: resolvedDistance,
     distanceKm,
     placement,
+    rank: rawRank,
+    categoryRank,
+    finishSeconds,
+    hasOfficialFinish: finishSeconds > 0 && !disqualified,
+    disqualified: disqualified || undefined,
     chipTime,
     gunTime,
     pace,
@@ -795,11 +920,119 @@ export function buildRunnerDirectory(params: {
   }
 
   const list = Array.from(directory.values());
+
+  // Assign deterministic division ranks (raceId + distance + category) when timing results exist without explicit overallRank.
+  const divisionGroups = new Map<string, RunnerRaceEntry[]>();
+  for (const runner of list) {
+    for (const entry of runner.entries) {
+      if (!entry.hasOfficialFinish) continue;
+      const cohortKey = `${entry.raceId}::${entry.distance.trim().toLowerCase()}::${entry.entryCategory || 'solo'}`;
+      const bucket = divisionGroups.get(cohortKey) || [];
+      bucket.push(entry);
+      divisionGroups.set(cohortKey, bucket);
+    }
+  }
+  for (const bucket of divisionGroups.values()) {
+    bucket.sort((a, b) => {
+      const ra = a.rank ?? Number.POSITIVE_INFINITY;
+      const rb = b.rank ?? Number.POSITIVE_INFINITY;
+      if (ra !== rb) return ra - rb;
+      return a.finishSeconds - b.finishSeconds;
+    });
+    let nextSeq = 1;
+    const seenRanks = new Set<number>(bucket.map((e) => e.rank).filter((r): r is number => typeof r === 'number' && r > 0));
+    for (const entry of bucket) {
+      if (!entry.rank) {
+        while (seenRanks.has(nextSeq)) nextSeq += 1;
+        entry.rank = nextSeq;
+        seenRanks.add(nextSeq);
+        nextSeq += 1;
+        entry.placement = deriveHighlightPlacement(entry.rank, entry.rank, entry.disqualified);
+      }
+    }
+  }
+
   for (const runner of list) {
     runner.entries.sort((a, b) => (b.raceDate || '').localeCompare(a.raceDate || '') || a.raceName.localeCompare(b.raceName));
   }
   list.sort((a, b) => a.fullName.localeCompare(b.fullName));
   return list;
+}
+
+/**
+ * Returns race-scoped runner entries filtered by distance/query and sorted by official rank, finish time, name, or bib.
+ */
+export function getRaceRankedEntries(params: {
+  runnerDirectory: DirectoryRunner[];
+  raceId: string;
+  distanceFilter?: string;
+  sortBy?: HighlightRunnerSortMode;
+  searchQuery?: string;
+}): RankedRaceRunnerItem[] {
+  const {
+    runnerDirectory,
+    raceId,
+    distanceFilter = 'all',
+    sortBy = 'rank',
+    searchQuery = '',
+  } = params;
+
+  const normDist = distanceFilter.trim().toLowerCase();
+  const q = normalizeRunnerKey(searchQuery);
+  const results: RankedRaceRunnerItem[] = [];
+
+  for (const runner of runnerDirectory) {
+    for (const entry of runner.entries) {
+      if (raceId && raceId !== 'all' && entry.raceId !== raceId) continue;
+      if (normDist && normDist !== 'all' && entry.distance.trim().toLowerCase() !== normDist) continue;
+      if (q) {
+        const matchesQuery =
+          runner.key.includes(q) ||
+          entry.bibNumber.toLowerCase().includes(q) ||
+          entry.placement.toLowerCase().includes(q) ||
+          (entry.partnerName || '').toLowerCase().includes(q) ||
+          (entry.rank ? `#${entry.rank}` === q || String(entry.rank) === q : false);
+        if (!matchesQuery) continue;
+      }
+      results.push({ runner, entry });
+    }
+  }
+
+  results.sort((a, b) => {
+    const ea = a.entry;
+    const eb = b.entry;
+
+    if (sortBy === 'rank') {
+      const aFin = ea.hasOfficialFinish ? 0 : 1;
+      const bFin = eb.hasOfficialFinish ? 0 : 1;
+      if (aFin !== bFin) return aFin - bFin;
+
+      const aRank = ea.rank ?? (ea.hasOfficialFinish ? 900000 + placementRankWeight(ea.placement) : Number.POSITIVE_INFINITY);
+      const bRank = eb.rank ?? (eb.hasOfficialFinish ? 900000 + placementRankWeight(eb.placement) : Number.POSITIVE_INFINITY);
+      if (aRank !== bRank) return aRank - bRank;
+
+      if (ea.hasOfficialFinish && eb.hasOfficialFinish && ea.finishSeconds !== eb.finishSeconds) {
+        return ea.finishSeconds - eb.finishSeconds;
+      }
+      return a.runner.fullName.localeCompare(b.runner.fullName);
+    }
+
+    if (sortBy === 'time') {
+      const aFin = ea.hasOfficialFinish ? 0 : 1;
+      const bFin = eb.hasOfficialFinish ? 0 : 1;
+      if (aFin !== bFin) return aFin - bFin;
+      if (ea.finishSeconds !== eb.finishSeconds) return ea.finishSeconds - eb.finishSeconds;
+      return a.runner.fullName.localeCompare(b.runner.fullName);
+    }
+
+    if (sortBy === 'bib') {
+      return ea.bibNumber.localeCompare(eb.bibNumber, undefined, { numeric: true, sensitivity: 'base' });
+    }
+
+    return a.runner.fullName.localeCompare(b.runner.fullName);
+  });
+
+  return results;
 }
 
 // ========== FIRESTORE SUBSCRIPTIONS & CRUD ==========

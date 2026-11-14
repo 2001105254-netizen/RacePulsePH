@@ -11,7 +11,7 @@ import { LEGAL_CONFIG, LEGAL_DOCUMENTS, type LegalDocKey } from './lib/legalConf
 import { exitAndroidApp, subscribeAndroidBackButton, syncAndroidSystemBars } from './lib/capacitorAndroid';
 import { WorkspaceHeaderProvider, useWorkspaceHeader } from './lib/workspaceHeader';
 import { UserProfile } from './types';
-import { Sun, Moon, RefreshCw, Clock3, LogOut, LogIn, UserPlus, ArrowLeft, ShieldCheck, ChevronUp } from 'lucide-react';
+import { Sun, Moon, RefreshCw, Clock3, LogOut, LogIn, UserPlus, ArrowLeft, ShieldCheck, ChevronUp, Compass } from 'lucide-react';
 import { EMIL_EASE, ViewLoadingSkeleton, type NavDirection } from './components/ui/MotionPrimitives';
 
 // Lazy-load signed-in workspaces and authentication screens so public landing
@@ -119,6 +119,13 @@ function useTheme() {
   return { theme, toggleTheme: () => setTheme((t) => (t === 'dark' ? 'light' : 'dark')) };
 }
 
+const LANDING_NAV_SECTIONS = [
+  { id: 'finisher-lookup', label: 'Results' },
+  { id: 'podium-highlights', label: 'Highlights' },
+  { id: 'events-catalog', label: 'Races' },
+  { id: 'runner-statistics', label: 'Statistics' },
+] as const;
+
 export default function App() {
   return (
     <WorkspaceHeaderProvider>
@@ -153,6 +160,77 @@ function AppContent() {
   const [activeRaceTitle, setActiveRaceTitle] = useState<string | null>(null);
   const [pendingRaceId, setPendingRaceId] = useState<string | null>(() => registrationRaceIdFromUrl());
   const [runnerSignupIntent, setRunnerSignupIntent] = useState(() => !!registrationRaceIdFromUrl());
+  const [activeLandingSection, setActiveLandingSection] = useState<string>('finisher-lookup');
+  const sectionsPopoverRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (authUser || guestScreen !== 'landing') return;
+    const sectionIds = LANDING_NAV_SECTIONS.map((s) => s.id);
+
+    const resolveFromViewport = () => {
+      let current: string = sectionIds[0];
+      for (const id of sectionIds) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        if (el.getBoundingClientRect().top <= 180) {
+          current = id;
+        }
+      }
+      setActiveLandingSection(current);
+    };
+
+    let observer: IntersectionObserver | null = null;
+    if (typeof IntersectionObserver !== 'undefined') {
+      observer = new IntersectionObserver(
+        (entries) => {
+          const visible = entries.find((entry) => entry.isIntersecting);
+          if (visible?.target?.id) {
+            setActiveLandingSection(visible.target.id);
+          }
+        },
+        { rootMargin: '-18% 0px -62% 0px', threshold: 0 },
+      );
+      for (const id of sectionIds) {
+        const el = document.getElementById(id);
+        if (el) observer.observe(el);
+      }
+    }
+
+    const onScrollEnd = () => resolveFromViewport();
+    window.addEventListener('scrollend', onScrollEnd, { passive: true });
+    window.addEventListener('scroll', onScrollEnd, { passive: true });
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('scrollend', onScrollEnd);
+      window.removeEventListener('scroll', onScrollEnd);
+    };
+  }, [authUser, guestScreen, activeRaceTitle]);
+
+  const handleLandingSectionClick = useCallback(
+    (event: React.MouseEvent<HTMLAnchorElement>, sectionId: string) => {
+      const targetEl = document.getElementById(sectionId);
+      if (!targetEl) return;
+      event.preventDefault();
+      setActiveLandingSection(sectionId);
+
+      const popEl = sectionsPopoverRef.current as (HTMLDivElement & { hidePopover?: () => void }) | null;
+      if (popEl && typeof popEl.hidePopover === 'function') {
+        try {
+          popEl.hidePopover();
+        } catch {
+          // Safe no-op when popover is already closed
+        }
+      }
+
+      const reduceMotion =
+        typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      targetEl.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+      targetEl.focus({ preventScroll: true });
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${sectionId}`);
+    },
+    [],
+  );
 
   const navigateGuest = useCallback(
     (
@@ -558,7 +636,7 @@ function AppContent() {
 
           {/* Global Navigation - persistent charcoal brand bar on desktop; flows naturally on phone & short landscape screens */}
           <nav className="z-40 brand-nav shrink-0" aria-label="Primary navigation">
-            <div className={`${isWorkspaceShell ? 'w-full px-3 sm:px-4 xl:px-6' : 'w-full max-w-[1600px] mx-auto pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))]'} min-w-0 min-h-[64px] py-[8px] flex flex-wrap items-center justify-between gap-[8px] sm:gap-[12px]`}>
+            <div className={`${isWorkspaceShell ? 'w-full px-3 sm:px-4 xl:px-6' : 'w-full max-w-[1600px] mx-auto pl-[max(0.75rem,var(--rp-safe-left))] pr-[max(0.75rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))]'} min-w-0 min-h-[64px] py-[8px] flex items-center justify-between gap-[6px] sm:gap-[12px]`}>
               <div className={`flex items-center gap-[8px] ${isWorkspaceShell ? 'min-w-0 flex-1' : 'shrink-0'}`}>
                 {showBackButton && (
                   <button
@@ -601,7 +679,7 @@ function AppContent() {
                 )}
               </div>
 
-              <div className={`flex flex-wrap items-center justify-end gap-[8px] ${isWorkspaceShell ? 'min-w-0 shrink' : 'shrink-0 max-w-full'}`}>
+              <div className={`flex items-center justify-end gap-[4px] sm:gap-[8px] ${isWorkspaceShell ? 'min-w-0 shrink' : 'shrink-0 max-w-full'}`}>
                 {isWorkspaceShell && (
                   <div
                     ref={setRightSlotEl}
@@ -611,6 +689,67 @@ function AppContent() {
                 )}
                 {!authUser && guestScreen === 'landing' && (
                   <>
+                    <div className="landing-scrollspy-nav hidden md:inline-flex items-center gap-1 mr-1">
+                      {LANDING_NAV_SECTIONS.map((section) => {
+                        const isActive = activeLandingSection === section.id;
+                        return (
+                          <a
+                            key={section.id}
+                            href={`#${section.id}`}
+                            onClick={(event) => handleLandingSectionClick(event, section.id)}
+                            aria-current={isActive ? 'true' : undefined}
+                            className={`landing-scrollspy-link ${isActive ? 'target-current' : ''}`}
+                          >
+                            {section.label}
+                          </a>
+                        );
+                      })}
+                    </div>
+
+                    <button
+                      type="button"
+                      popoverTarget="landing-sections-popover"
+                      popoverTargetAction="toggle"
+                      aria-label="Jump to page sections"
+                      className="md:hidden min-h-[44px] px-[8px] rounded-full border border-white/15 bg-white/10 text-[11px] font-semibold uppercase text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:border-red-500/50 hover:text-red-400 transition-all duration-150 inline-flex items-center justify-center gap-[4px] motion-safe:active:scale-[0.97]"
+                    >
+                      <Compass className="w-3.5 h-3.5 shrink-0 text-red-400" aria-hidden="true" />
+                      <span>Sections</span>
+                    </button>
+
+                    <div
+                      id="landing-sections-popover"
+                      ref={sectionsPopoverRef}
+                      popover="auto"
+                      className="landing-sections-popover md:hidden"
+                      aria-label="Page sections menu"
+                    >
+                      <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                        Explore page sections
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        {LANDING_NAV_SECTIONS.map((section) => {
+                          const isActive = activeLandingSection === section.id;
+                          return (
+                            <a
+                              key={section.id}
+                              href={`#${section.id}`}
+                              onClick={(event) => handleLandingSectionClick(event, section.id)}
+                              aria-current={isActive ? 'true' : undefined}
+                              className={`min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors ${
+                                isActive
+                                  ? 'bg-red-700 text-white'
+                                  : 'text-zinc-100 hover:bg-white/10'
+                              }`}
+                            >
+                              <span>{section.label}</span>
+                              <span className="text-[10px] font-mono opacity-80">#{section.id}</span>
+                            </a>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     <button
                       type="button"
                       onMouseEnter={() => {
@@ -621,9 +760,9 @@ function AppContent() {
                       }}
                       onClick={() => navigateGuest('login')}
                       aria-label="Log in to your account"
-                      className="min-h-[44px] px-[8px] min-[380px]:px-[12px] sm:px-[16px] rounded-full border border-white/15 bg-white/10 text-xs font-semibold uppercase tracking-wider text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:border-red-500/50 hover:text-red-400 transition-all duration-150 flex items-center justify-center gap-[4px] min-[380px]:gap-[8px] motion-safe:active:scale-[0.97]"
+                      className="min-h-[44px] px-[8px] sm:px-[16px] rounded-full border border-white/15 bg-white/10 text-[11px] sm:text-xs font-semibold uppercase sm:tracking-wider text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:border-red-500/50 hover:text-red-400 transition-all duration-150 flex items-center justify-center gap-[4px] sm:gap-[8px] motion-safe:active:scale-[0.97] whitespace-nowrap"
                     >
-                      <LogIn className="w-4 h-4 shrink-0" aria-hidden="true" /> <span>Log in</span>
+                      <LogIn className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" aria-hidden="true" /> <span>Log in</span>
                     </button>
                     <button
                       type="button"
@@ -635,9 +774,9 @@ function AppContent() {
                       }}
                       onClick={() => navigateGuest('signup')}
                       aria-label="Create a RacePulsePH account"
-                      className="min-h-[44px] px-[8px] min-[380px]:px-[12px] sm:px-[16px] rounded-full bg-red-700 hover:bg-red-600 text-white text-xs font-semibold uppercase tracking-wider border border-red-500/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.35)] transition-all duration-150 flex items-center justify-center gap-[4px] min-[380px]:gap-[8px] motion-safe:active:scale-[0.97]"
+                      className="min-h-[44px] px-[8px] sm:px-[16px] rounded-full bg-red-700 hover:bg-red-600 text-white text-[11px] sm:text-xs font-semibold uppercase sm:tracking-wider border border-red-500/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.35)] transition-all duration-150 flex items-center justify-center gap-[4px] sm:gap-[8px] motion-safe:active:scale-[0.97] whitespace-nowrap"
                     >
-                      <UserPlus className="w-4 h-4 shrink-0" aria-hidden="true" /> <span>Register</span>
+                      <UserPlus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" aria-hidden="true" /> <span>Register</span>
                     </button>
                   </>
                 )}

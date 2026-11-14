@@ -141,7 +141,7 @@ export default function DesktopSidebar({
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-[var(--text-primary)] truncate leading-tight">{shortName}</p>
           <p className="text-xs font-normal text-zinc-700 dark:text-zinc-300 truncate mt-1">
-            {roleLabel}
+            {onOpenProfile ? `${roleLabel} • Profile` : roleLabel}
           </p>
         </div>
       )}
@@ -280,8 +280,8 @@ export default function DesktopSidebar({
             }}
             aria-expanded={!onOpenProfile ? identityPinned : undefined}
             aria-describedby={showIdentityTooltip && tooltipPos ? 'sidebar-identity-tooltip' : undefined}
-            aria-label={`${displayName} (${roleLabel})`}
-            title={`${displayName} (${roleLabel})`}
+            aria-label={onOpenProfile ? `Open profile settings for ${displayName} (${roleLabel})` : `${displayName} (${roleLabel})`}
+            title={onOpenProfile ? `Open profile settings for ${displayName} (${roleLabel})` : `${displayName} (${roleLabel})`}
             className={`min-h-11 rounded-xl hover:bg-[var(--surface-hover)] flex items-center transition-colors duration-150 ${focusRing} ${
               collapsed ? 'w-11 mx-auto justify-center' : 'w-full px-2 py-2 gap-3 text-left'
             }`}
@@ -307,6 +307,9 @@ export default function DesktopSidebar({
                     <p className="text-sm font-semibold text-white break-words mt-1">{displayName}</p>
                     {profile.email && (
                       <p className="text-xs text-zinc-300 break-all mt-1">{profile.email}</p>
+                    )}
+                    {onOpenProfile && (
+                      <p className="text-xs font-semibold text-red-400 mt-2">Click to configure name, avatar &amp; password</p>
                     )}
                   </m.div>
                 )}

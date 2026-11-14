@@ -354,7 +354,6 @@
   fill: none;
   stroke-dasharray: 180 260;
   stroke-dashoffset: 440;
-  filter: drop-shadow(0 0 6px oklch(65% 0.23 28 / 0.85));
 }
 
 .landing-gpx-pace-2 {
@@ -431,6 +430,55 @@
   display: inline-flex;
   align-items: center;
   gap: 12px;
+}
+
+.landing-intro-footer-end {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.landing-motion-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-default);
+  background: var(--surface-inset);
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  transition: border-color 160ms var(--ease-out-quart), background-color 160ms var(--ease-out-quart);
+}
+
+.landing-motion-toggle:hover,
+.landing-motion-toggle:focus-visible {
+  border-color: var(--landing-accent);
+}
+
+.landing-hero-perimeter {
+  position: absolute;
+  inset: -1px;
+  width: calc(100% + 2px);
+  height: calc(100% + 2px);
+  pointer-events: none;
+  z-index: 2;
+  overflow: visible;
+}
+
+.landing-hero-pulse {
+  fill: none;
+  stroke: var(--landing-accent);
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 160 840;
+  stroke-dashoffset: 1000;
+  opacity: 0.9;
 }
 
 .landing-finish-mark {
@@ -534,7 +582,6 @@
   vector-effect: non-scaling-stroke;
   stroke-dasharray: 180 820;
   stroke-dashoffset: 1000;
-  filter: drop-shadow(0 0 6px oklch(65% 0.23 28 / 0.75));
 }
 
 .landing-lookup h2 { font: 600 var(--text-landing-body)/1.5 var(--font-display); }
@@ -617,10 +664,12 @@
     animation: landing-clip-slide 260ms 35ms var(--ease-out-quart) both;
   }
   .landing-intro h1 .landing-finish-phrase::after {
-    animation: landing-line-arrive 240ms 60ms var(--ease-out-quart) both;
+    animation:
+      landing-line-arrive 240ms 60ms var(--ease-out-quart) both,
+      landing-line-pulse 3.6s 350ms ease-in-out infinite;
   }
   .landing-intro h1 .landing-finish-phrase::before {
-    animation: landing-finish-neon 2.8s var(--ease-out-quart) infinite;
+    animation: landing-finish-neon 260ms var(--ease-out-quart) both;
   }
 
   .landing-runners {
@@ -657,20 +706,41 @@
     );
   }
 
-  /* Animated GPX Pace Lines inside Hero Track Card */
+  /* Continuous flowing stroke on Hero Track GPX Lines and Hero/Lookup Perimeter Traces */
   .landing-gpx-pace-1 {
-    animation: landing-gpx-dash 3.2s linear infinite;
+    animation: landing-gpx-dash 4.2s -1.1s linear infinite;
   }
   .landing-gpx-pace-2 {
-    animation: landing-gpx-dash 3.8s 0.6s linear infinite;
+    animation: landing-gpx-dash 5.0s -2.4s linear infinite;
   }
   .landing-gpx-pace-3 {
-    animation: landing-gpx-dash 4.4s 1.2s linear infinite;
+    animation: landing-gpx-dash 5.8s -0.6s linear infinite;
   }
 
-  /* Animated ECG Heartbeat Pulse on Results Lookup Bar */
+  .landing-hero-pulse {
+    animation: landing-ecg-sweep 6.4s linear infinite;
+  }
+
+  .landing-intro::before {
+    animation: landing-top-bar-glide 4.4s ease-in-out infinite;
+  }
+
+  /* Continuous ECG Heartbeat Pulse on Lookup Card (accelerates on hover or focus) */
   .landing-ecg-pulse {
-    animation: landing-ecg-sweep 3.6s linear infinite;
+    animation: landing-ecg-sweep 3.8s linear infinite;
+  }
+  .landing-lookup:is(:hover, :focus-within, .is-spotlight-active) .landing-ecg-pulse {
+    animation-duration: 2.1s;
+  }
+
+  .public-landing.is-lines-paused :is(
+    .landing-gpx-pace,
+    .landing-ecg-pulse,
+    .landing-hero-pulse,
+    .landing-intro::before,
+    .landing-intro h1 .landing-finish-phrase::after
+  ) {
+    animation-play-state: paused !important;
   }
 
   .landing-distance:active,
@@ -721,8 +791,8 @@
 }
 
 @keyframes landing-finish-neon {
-  0%, 100% { opacity: 0.25; transform: scale3d(0.98, 0.98, 1); }
-  50% { opacity: 0.85; transform: scale3d(1.04, 1.04, 1); }
+  0% { opacity: 0.2; transform: scale3d(0.98, 0.98, 1); }
+  100% { opacity: 0.45; transform: scale3d(1, 1, 1); }
 }
 
 @keyframes landing-gpx-dash {
@@ -745,10 +815,112 @@
   to { opacity: 1; transform: skewX(-24deg) scaleX(1); }
 }
 
+@keyframes landing-top-bar-glide {
+  0%, 100% { transform: skewX(-24deg) translate3d(0, 0, 0); opacity: 1; }
+  50% { transform: skewX(-24deg) translate3d(16px, 0, 0); opacity: 0.72; }
+}
+
+@keyframes landing-line-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.58; }
+}
+
+/* Header Section Redirection & CSS Scrollspy (modern-web-guidance: scrollspy + navbar) */
+.landing-scrollspy-nav {
+  scroll-target-group: auto;
+}
+
+.landing-scrollspy-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.82);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 160ms var(--ease-out-quart), background-color 160ms var(--ease-out-quart);
+}
+
+.landing-scrollspy-link::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 6px;
+  height: 2px;
+  border-radius: 999px;
+  background: #ff6259;
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform 180ms var(--ease-out-quart);
+}
+
+.landing-scrollspy-link:hover,
+.landing-scrollspy-link:focus-visible {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.landing-scrollspy-link:is(:target-current, .target-current) {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.landing-scrollspy-link:is(:target-current, .target-current)::after {
+  transform: scaleX(1);
+}
+
+.landing-sections-popover:popover-open {
+  position: fixed;
+  inset: auto;
+  top: 64px;
+  right: 12px;
+  margin: 0;
+  min-width: 224px;
+  max-width: calc(100vw - 24px);
+  padding: 8px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: #18181b;
+  color: #fafafa;
+  box-shadow: 0 20px 44px -12px rgba(0, 0, 0, 0.6);
+  z-index: 60;
+}
+
+.landing-sections-popover::backdrop {
+  background: oklch(0% 0 0 / 0.35);
+}
+
+.public-landing section[tabindex='-1']:focus {
+  outline: none;
+}
+
+/* Below-the-fold containment & deferred rendering for complex catalog/stats/bib sections */
+#events-catalog,
+#runner-statistics,
+.landing-bib-board {
+  content-visibility: auto;
+  contain-intrinsic-size: auto none auto 640px;
+}
+
+@supports not (content-visibility: auto) {
+  #events-catalog,
+  #runner-statistics,
+  .landing-bib-board {
+    contain: layout style paint;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .public-landing :is(.landing-intro, .landing-lookup) *,
   .public-landing :is(.landing-intro, .landing-lookup) *::before,
-  .public-landing :is(.landing-intro, .landing-lookup) *::after {
+  .public-landing :is(.landing-intro, .landing-lookup) *::after,
+  .landing-scrollspy-link,
+  .landing-scrollspy-link::after {
     animation: none !important;
     transition: none !important;
     scroll-behavior: auto !important;

@@ -28,6 +28,7 @@ import {
   applyPlaylistRules,
   buildRunnerDirectory,
   capText,
+  clampNumber,
   computeElapsedHmsFromClockPair,
   computeHighlightPace,
   DEFAULT_MARQUEE_CONFIG,
@@ -36,17 +37,22 @@ import {
   DirectoryRunner,
   formatHighlightClockTime,
   formatReadableDate,
+  getRaceRankedEntries,
   HIGHLIGHT_BORDER_PRESETS,
   HIGHLIGHT_CAPS,
+  HIGHLIGHT_CARD_EFFECTS,
   HIGHLIGHT_CORNER_GEOMETRIES,
   HIGHLIGHT_DISTANCES,
+  HIGHLIGHT_HEADER_STYLES,
   HIGHLIGHT_PLACEMENTS,
   HIGHLIGHT_SURFACE_FINISHES,
+  HighlightRunnerSortMode,
   HighlightRunnerSources,
   isHighlightExpired,
   normalizeRunnerKey,
   parseDistanceKm,
   parseDurationToSeconds,
+  RankedRaceRunnerItem,
   RunnerRaceEntry,
   saveHighlightsMarqueeConfig,
   saveRunnerHighlight,
@@ -111,8 +117,13 @@ function createBlankDraft(uid: string): RunnerHighlight {
     borderPreset: 'liquid-gold',
     cornerGeometry: 'rounded',
     accentColor: '#f5b731',
+    secondaryAccentColor: '#ff3b30',
     glowIntensity: 75,
     surfaceFinish: 'glossy',
+    cardEffect: 'sheen-sweep',
+    headerStyle: 'crown-bezel',
+    borderWidthPx: 3,
+    scrimStrength: 78,
     badgeStamp: '',
     pinned: false,
     expiresAt: '',
@@ -156,7 +167,9 @@ export default function HighlightsStudioPanel({
   const [savingHighlight, setSavingHighlight] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
 
-  // Searchable database runner combobox states
+  // Required source race + rank-sorted directory combobox states
+  const [runnerSortBy, setRunnerSortBy] = useState<HighlightRunnerSortMode>('rank');
+  const [studioDistanceFilter, setStudioDistanceFilter] = useState<string>('all');
   const [selectedRunnerKey, setSelectedRunnerKey] = useState<string | null>(null);
   const [runnerDropdownOpen, setRunnerDropdownOpen] = useState(false);
   const [runnerActiveIndex, setRunnerActiveIndex] = useState(-1);
@@ -366,38 +379,120 @@ export default function HighlightsStudioPanel({
     return found || 'custom';
   }, [availablePlacements, draft.placement]);
 
-  const raceSelectValue = useMemo(() => {
-    if (matchedActiveEntry) {
-      return `entry::${matchedActiveEntry.raceId}::${matchedActiveEntry.bibNumber}`;
-    }
-    if (draft.raceId && races.some((r) => r.id === draft.raceId)) {
-      return `race::${draft.raceId}`;
-    }
-    return '';
-  }, [matchedActiveEntry, draft.raceId, races]);
+  useEffect(() => {
+    if (draft.raceId || editingId || races.length === 0) return;
+    const raceWithRunners = races.find((r) =>
+      runnerDirectory.some((runner) => runner.entries.some((e) => e.raceId === r.id)),
+    );
+    const defaultRace = raceWithRunners || races[0];
+    if (!defaultRace) return;
+    const nextDistance = capText(defaultRace.distances?.[0]?.label || '10K', HIGHLIGHT_CAPS.distance);
+    const waveStart = formatHighlightClockTime(
+      getWaveStartTime(defaultRace, nextDistance, draft.mode === 'duo' ? 'duo' : undefined),
+    );
+    setDraft((prev) => {
+      if (prev.raceId) return prev;
+      return {
+        ...prev,
+        raceId: defaultRace.id,
+        raceName: defaultRace.name.slice(0, HIGHLIGHT_CAPS.raceName),
+        raceDate: defaultRace.date,
+        raceCode: deriveRaceCode(defaultRace.name, defaultRace.date),
+        distance: nextDistance,
+        gunTime: prev.gunTime || waveStart || '',
+      };
+    });
+  }, [races, runnerDirectory, draft.raceId, editingId, draft.mode]);
 
-  const filteredRunnerSuggestions = useMemo(() => {
-    const q = normalizeRunnerKey(draft.runnerName);
-    if (!q) return runnerDirectory.slice(0, 12);
-    const startsWith: DirectoryRunner[] = [];
-    const contains: DirectoryRunner[] = [];
+  const raceRunnerCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
     for (const runner of runnerDirectory) {
-      if (runner.key.startsWith(q)) {
-        startsWith.push(runner);
-      } else if (
-        runner.key.includes(q) ||
-        runner.entries.some(
-          (e) =>
-            e.bibNumber.toLowerCase().includes(q) ||
-            e.raceName.toLowerCase().includes(q) ||
-            (e.partnerName || '').toLowerCase().includes(q),
-        )
-      ) {
-        contains.push(runner);
+      const seen = new Set<string>();
+      for (const entry of runner.entries) {
+        if (entry.raceId && !seen.has(entry.raceId)) {
+          seen.add(entry.raceId);
+          counts[entry.raceId] = (counts[entry.raceId] || 0) + 1;
+        }
       }
     }
-    return [...startsWith, ...contains].slice(0, 25);
-  }, [runnerDirectory, draft.runnerName]);
+    return counts;
+  }, [runnerDirectory]);
+
+  const activeRaceIdForQuery = draft.raceId || races[0]?.id || '';
+
+  const raceFilterDistances = useMemo(() => {
+    const targetRace = races.find((r) => r.id === activeRaceIdForQuery) || selectedRace;
+    const list: string[] = [];
+    for (const d of targetRace?.distances || []) {
+      const trimmed = (d.label || '').trim();
+      if (trimmed && !list.some((x) => x.toLowerCase() === trimmed.toLowerCase())) {
+        list.push(trimmed);
+      }
+    }
+    if (activeRaceIdForQuery) {
+      for (const runner of runnerDirectory) {
+        for (const entry of runner.entries) {
+          if (entry.raceId !== activeRaceIdForQuery) continue;
+          const dist = (entry.distance || '').trim();
+          if (dist && !list.some((x) => x.toLowerCase() === dist.toLowerCase())) {
+            list.push(dist);
+          }
+        }
+      }
+    }
+    return list;
+  }, [races, activeRaceIdForQuery, selectedRace, runnerDirectory]);
+
+  const rankedRaceEntries = useMemo<RankedRaceRunnerItem[]>(() => {
+    if (!activeRaceIdForQuery) return [];
+    return getRaceRankedEntries({
+      runnerDirectory,
+      raceId: activeRaceIdForQuery,
+      distanceFilter: studioDistanceFilter,
+      sortBy: runnerSortBy,
+      searchQuery: selectedRunnerKey ? '' : draft.runnerName,
+    });
+  }, [
+    runnerDirectory,
+    activeRaceIdForQuery,
+    studioDistanceFilter,
+    runnerSortBy,
+    selectedRunnerKey,
+    draft.runnerName,
+  ]);
+
+  const filteredRunnerSuggestions = useMemo<RankedRaceRunnerItem[]>(() => {
+    if (activeRaceIdForQuery) {
+      return rankedRaceEntries.slice(0, 40);
+    }
+    const q = normalizeRunnerKey(draft.runnerName);
+    const items: RankedRaceRunnerItem[] = [];
+    for (const runner of runnerDirectory) {
+      const entry = runner.entries[0];
+      if (!entry) continue;
+      if (
+        !q ||
+        runner.key.includes(q) ||
+        entry.bibNumber.toLowerCase().includes(q) ||
+        entry.raceName.toLowerCase().includes(q)
+      ) {
+        items.push({ runner, entry });
+      }
+    }
+    return items.slice(0, 40);
+  }, [activeRaceIdForQuery, rankedRaceEntries, runnerDirectory, draft.runnerName]);
+
+  const podiumQuickPicks = useMemo<RankedRaceRunnerItem[]>(() => {
+    if (!activeRaceIdForQuery) return [];
+    const byRank = getRaceRankedEntries({
+      runnerDirectory,
+      raceId: activeRaceIdForQuery,
+      distanceFilter: studioDistanceFilter,
+      sortBy: 'rank',
+    });
+    const ranked = byRank.filter((item) => item.entry.rank != null);
+    return (ranked.length > 0 ? ranked : byRank).slice(0, 6);
+  }, [runnerDirectory, activeRaceIdForQuery, studioDistanceFilter]);
 
   const filteredPartnerSuggestions = useMemo(() => {
     const q = normalizeRunnerKey(draft.partnerName);
@@ -452,7 +547,7 @@ export default function HighlightsStudioPanel({
 
   const landingPreviewHighlights = useMemo<RunnerHighlight[]>(() => {
     if (!includeDraftInLandingPreview) {
-      return highlights.length > 0 ? highlights : [livePreviewItem];
+      return highlights;
     }
     if (editingId) {
       const exists = highlights.some((item) => item.id === editingId);
@@ -517,22 +612,10 @@ export default function HighlightsStudioPanel({
     });
   };
 
-  const handleSelectDirectoryRunner = (runner: DirectoryRunner) => {
+  const handleSelectRankedEntry = (item: RankedRaceRunnerItem) => {
     setRunnerDropdownOpen(false);
     setRunnerActiveIndex(-1);
-    const chosenEntry =
-      (!selectedRunnerKey && draft.raceId ? runner.entries.find((e) => e.raceId === draft.raceId) : undefined) ||
-      runner.entries[0];
-    if (!chosenEntry) {
-      setSelectedRunnerKey(runner.key);
-      setDraft((prev) => ({
-        ...prev,
-        runnerName: runner.fullName.slice(0, HIGHLIGHT_CAPS.runnerName),
-        photoUrl: !prev.photoUrl && runner.photoUrl ? runner.photoUrl : prev.photoUrl,
-      }));
-      return;
-    }
-    applyRunnerRaceEntry(chosenEntry, runner);
+    applyRunnerRaceEntry(item.entry, item.runner);
   };
 
   const handleSelectPartnerFromDirectory = (partner: DirectoryRunner) => {
@@ -587,11 +670,13 @@ export default function HighlightsStudioPanel({
         activeRunner.entries.find((e) => e.raceId === rId && e.bibNumber === bib) ||
         activeRunner.entries.find((e) => e.raceId === rId);
       if (entry) {
+        setStudioDistanceFilter('all');
         applyRunnerRaceEntry(entry, activeRunner);
         return;
       }
     }
     const rId = selectedVal.startsWith('race::') ? selectedVal.slice('race::'.length) : selectedVal;
+    setStudioDistanceFilter('all');
     if (activeRunner) {
       const matchingEntry = activeRunner.entries.find((e) => e.raceId === rId);
       if (matchingEntry) {
@@ -601,24 +686,49 @@ export default function HighlightsStudioPanel({
     }
     const found = races.find((r) => r.id === rId);
     if (!found) return;
+    const hadDirectoryRunner = Boolean(selectedRunnerKey);
+    if (hadDirectoryRunner) {
+      setSelectedRunnerKey(null);
+    }
+    setRunnerDropdownOpen(false);
+    setRunnerActiveIndex(-1);
     setDraft((prev) => {
       const matchingRaceDistance = found.distances?.find(
         (d) => d.label.trim().toLowerCase() === (prev.distance || '').trim().toLowerCase(),
       )?.label;
       const nextDistance = capText(
-        matchingRaceDistance || found.distances?.[0]?.label || prev.distance || '10K',
+        (hadDirectoryRunner ? found.distances?.[0]?.label : matchingRaceDistance || found.distances?.[0]?.label) ||
+          prev.distance ||
+          '10K',
         HIGHLIGHT_CAPS.distance,
       );
       const waveStart = formatHighlightClockTime(
         getWaveStartTime(found, nextDistance, prev.mode === 'duo' ? 'duo' : undefined),
       );
       const nextGunTime = waveStart || prev.gunTime || '';
-      const elapsedFromClock = computeElapsedHmsFromClockPair(nextGunTime, prev.splitPace);
-      const nextChipTime = elapsedFromClock || prev.chipTime;
+      const nextChipTime = hadDirectoryRunner ? '' : computeElapsedHmsFromClockPair(nextGunTime, prev.splitPace) || prev.chipTime;
       const km = parseDistanceKm(nextDistance, found);
-      const nextPace = km > 0 && nextChipTime ? computeHighlightPace(nextChipTime, km) || prev.pace : prev.pace;
+      const nextPace =
+        hadDirectoryRunner
+          ? ''
+          : km > 0 && nextChipTime
+            ? computeHighlightPace(nextChipTime, km) || prev.pace
+            : prev.pace;
       return {
         ...prev,
+        ...(hadDirectoryRunner
+          ? {
+              runnerName: '',
+              bibNumber: '',
+              placement: '1st',
+              splitPace: '',
+              soloSplitTime: '',
+              partnerName: '',
+              partnerBibNumber: '',
+              partnerSplitTime: '',
+              combinedAvgPace: '',
+            }
+          : {}),
         raceId: found.id,
         raceName: found.name.slice(0, HIGHLIGHT_CAPS.raceName),
         raceDate: found.date,
@@ -670,6 +780,7 @@ export default function HighlightsStudioPanel({
       ...prev,
       borderPreset: presetId,
       accentColor: meta?.defaultAccent || prev.accentColor,
+      secondaryAccentColor: meta?.defaultSecondaryAccent || meta?.defaultAccent || prev.secondaryAccentColor,
     }));
   };
 
@@ -677,6 +788,14 @@ export default function HighlightsStudioPanel({
     e.preventDefault();
     if (!canManage) return;
 
+    if (races.length > 0 && !draft.raceId) {
+      notify({
+        title: 'Source race required',
+        message: 'Select an existing race event before publishing.',
+        tone: 'error',
+      });
+      return;
+    }
     if (!draft.photoUrl) {
       notify({ title: 'Photo required', message: 'Upload and crop a runner photo first.', tone: 'error' });
       return;
@@ -724,6 +843,7 @@ export default function HighlightsStudioPanel({
       setSelectedRunnerKey(null);
       setRunnerDropdownOpen(false);
       setPartnerDropdownOpen(false);
+      setStudioDistanceFilter('all');
       setDraft(createBlankDraft(profile.uid));
     } catch (err) {
       notify({
@@ -741,7 +861,15 @@ export default function HighlightsStudioPanel({
     setSelectedRunnerKey(normalizeRunnerKey(item.runnerName) || null);
     setRunnerDropdownOpen(false);
     setPartnerDropdownOpen(false);
-    setDraft({ ...item });
+    setStudioDistanceFilter('all');
+    setDraft({
+      ...item,
+      secondaryAccentColor: item.secondaryAccentColor || '#ff3b30',
+      cardEffect: item.cardEffect || 'sheen-sweep',
+      headerStyle: item.headerStyle || 'crown-bezel',
+      borderWidthPx: clampNumber(item.borderWidthPx ?? 3, 2, 6),
+      scrimStrength: clampNumber(item.scrimStrength ?? 78, 30, 95),
+    });
     setSubTab('studio');
   };
 
@@ -751,9 +879,15 @@ export default function HighlightsStudioPanel({
     setSelectedRunnerKey(normalizeRunnerKey(item.runnerName) || null);
     setRunnerDropdownOpen(false);
     setPartnerDropdownOpen(false);
+    setStudioDistanceFilter('all');
     setDraft({
       ...item,
       id: `hl_${Date.now().toString(36)}`,
+      secondaryAccentColor: item.secondaryAccentColor || '#ff3b30',
+      cardEffect: item.cardEffect || 'sheen-sweep',
+      headerStyle: item.headerStyle || 'crown-bezel',
+      borderWidthPx: clampNumber(item.borderWidthPx ?? 3, 2, 6),
+      scrimStrength: clampNumber(item.scrimStrength ?? 78, 30, 95),
       pinned: false,
       createdAt: now,
       updatedAt: now,
@@ -889,11 +1023,11 @@ export default function HighlightsStudioPanel({
       {/* TAB 1: 3-PANEL STUDIO */}
       {subTab === 'studio' && (
         <form onSubmit={handleSaveHighlight} className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
-          {/* LEFT PANEL: Runner Data & Smart Crop Upload */}
-          <section className="xl:col-span-4 glass-panel p-4 sm:p-5 space-y-4" aria-label="Runner data and photo upload">
+          {/* LEFT PANEL: Required Source Race, Rank-Sorted Runner Picker & Upload */}
+          <section className="xl:col-span-4 glass-panel p-4 sm:p-5 space-y-4" aria-label="Race source and runner selection">
             <div className="flex items-center justify-between gap-2 border-b border-[var(--border-default)] pb-2.5">
               <h2 className="font-display text-base font-semibold text-[var(--text-primary)]">
-                1. Runner Data &amp; Upload
+                1. Race Source &amp; Ranked Finisher
               </h2>
               <div className="inline-flex rounded-xl border border-[var(--border-default)] p-1 bg-[var(--surface-inset)]">
                 {(['solo', 'duo'] as const).map((mode) => (
@@ -912,6 +1046,136 @@ export default function HighlightsStudioPanel({
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Required Source Race Selector & Distance Filter */}
+            <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3.5 space-y-3">
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <label htmlFor="hl-race-link" className="text-xs font-mono font-semibold text-[var(--text-primary)]">
+                    Source Race Event {races.length > 0 ? '(Required)' : ''}
+                  </label>
+                  <span className="text-[11px] font-mono text-[var(--text-secondary)]">
+                    {rankedRaceEntries.length} in view
+                  </span>
+                </div>
+                <select
+                  id="hl-race-link"
+                  required={races.length > 0}
+                  disabled={!canManage || races.length === 0}
+                  value={draft.raceId}
+                  onChange={(e) => handleLinkedRaceChange(e.target.value)}
+                  className="w-full h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-sm text-[var(--text-primary)]"
+                >
+                  {races.length === 0 ? (
+                    <option value="">No synced races found</option>
+                  ) : (
+                    races.map((race) => (
+                      <option key={race.id} value={race.id}>
+                        {race.name} ({race.date}) · {raceRunnerCounts[race.id] || 0} runners
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+
+              {raceFilterDistances.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="block text-[11px] font-mono text-[var(--text-secondary)]">
+                    Distance Filter
+                  </span>
+                  <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter race runners by distance">
+                    <button
+                      type="button"
+                      disabled={!canManage}
+                      onClick={() => setStudioDistanceFilter('all')}
+                      className={`min-h-9 px-2.5 rounded-lg border text-xs font-mono transition ${
+                        studioDistanceFilter === 'all'
+                          ? 'bg-red-700 text-white border-red-800'
+                          : 'bg-[var(--surface-card)] text-[var(--text-secondary)] border-[var(--border-default)] hover:text-[var(--text-primary)]'
+                      }`}
+                    >
+                      All
+                    </button>
+                    {raceFilterDistances.map((dist) => {
+                      const activeDist = studioDistanceFilter.toLowerCase() === dist.toLowerCase();
+                      return (
+                        <button
+                          key={dist}
+                          type="button"
+                          disabled={!canManage}
+                          onClick={() => {
+                            setStudioDistanceFilter(dist);
+                            if (!selectedRunnerKey) {
+                              handleDistanceChange(dist);
+                            }
+                          }}
+                          className={`min-h-9 px-2.5 rounded-lg border text-xs font-mono transition ${
+                            activeDist
+                              ? 'bg-red-700 text-white border-red-800'
+                              : 'bg-[var(--surface-card)] text-[var(--text-secondary)] border-[var(--border-default)] hover:text-[var(--text-primary)]'
+                          }`}
+                        >
+                          {dist}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Sort Mode + Top Ranked Quick-Picks */}
+              <div className="flex items-center justify-between gap-2 pt-1 border-t border-[var(--border-default)]">
+                <label htmlFor="hl-runner-sort" className="text-[11px] font-mono text-[var(--text-secondary)]">
+                  Order Directory By
+                </label>
+                <select
+                  id="hl-runner-sort"
+                  disabled={!canManage}
+                  value={runnerSortBy}
+                  onChange={(e) => setRunnerSortBy(e.target.value as HighlightRunnerSortMode)}
+                  className="h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 text-xs font-mono text-[var(--text-primary)]"
+                >
+                  <option value="rank">Rank (1st -&gt; Nth)</option>
+                  <option value="time">Fastest Finish Time</option>
+                  <option value="name">Name (A-Z)</option>
+                  <option value="bib">Bib Number</option>
+                </select>
+              </div>
+
+              {podiumQuickPicks.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="block text-[11px] font-mono text-[var(--text-secondary)]">
+                    Podium Quick-Picks
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {podiumQuickPicks.map((item, idx) => {
+                      const rankNum = item.entry.rank ?? idx + 1;
+                      const isActive =
+                        activeRunner?.key === item.runner.key &&
+                        draft.bibNumber.trim().toUpperCase() === item.entry.bibNumber.trim().toUpperCase();
+                      return (
+                        <button
+                          key={`qp:${item.entry.raceId}:${item.entry.bibNumber}`}
+                          type="button"
+                          disabled={!canManage}
+                          onClick={() => handleSelectRankedEntry(item)}
+                          title={`${item.runner.fullName} | ${item.entry.distance} | ${item.entry.chipTime || 'No time'}`}
+                          className={`min-h-9 px-2.5 py-1 rounded-lg border text-[11px] font-mono transition inline-flex items-center gap-1.5 ${
+                            isActive
+                              ? 'bg-red-700 text-white border-red-800 shadow-sm'
+                              : 'bg-[var(--surface-card)] text-[var(--text-primary)] border-[var(--border-default)] hover:bg-[var(--surface-hover)]'
+                          }`}
+                        >
+                          <span className="font-bold">#{rankNum}</span>
+                          <span className="truncate max-w-[116px]">{item.runner.fullName}</span>
+                          <span className="opacity-80">{item.entry.distance}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Hidden File Inputs */}
@@ -1032,12 +1296,13 @@ export default function HighlightsStudioPanel({
                     <span className="inline-flex items-center gap-1 text-[11px] font-mono text-emerald-700 dark:text-emerald-400">
                       <Database className="w-3 h-3" aria-hidden="true" />
                       <span>
+                        {matchedActiveEntry?.rank != null ? `#${matchedActiveEntry.rank} · ` : ''}
                         {activeRunner.entries.length} {activeRunner.entries.length === 1 ? 'race' : 'races'}
                       </span>
                     </span>
-                  ) : runnerDirectory.length > 0 ? (
+                  ) : rankedRaceEntries.length > 0 ? (
                     <span className="text-[11px] font-mono text-[var(--text-secondary)]">
-                      {runnerDirectory.length} in DB
+                      {rankedRaceEntries.length} in race
                     </span>
                   ) : null}
                 </div>
@@ -1055,7 +1320,7 @@ export default function HighlightsStudioPanel({
                     value={draft.runnerName}
                     maxLength={HIGHLIGHT_CAPS.runnerName}
                     disabled={!canManage}
-                    placeholder="Search runner name (e.g. Marky Liandres)"
+                    placeholder="Search ranked runner or pick #1..."
                     onFocus={() => {
                       if (canManage) setRunnerDropdownOpen(true);
                     }}
@@ -1084,7 +1349,7 @@ export default function HighlightsStudioPanel({
                         const picked = filteredRunnerSuggestions[runnerActiveIndex];
                         if (picked) {
                           e.preventDefault();
-                          handleSelectDirectoryRunner(picked);
+                          handleSelectRankedEntry(picked);
                         }
                       } else if (e.key === 'Escape') {
                         setRunnerDropdownOpen(false);
@@ -1096,7 +1361,7 @@ export default function HighlightsStudioPanel({
                   <button
                     type="button"
                     disabled={!canManage}
-                    aria-label="Toggle runner directory"
+                    aria-label="Toggle ranked runner directory"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => setRunnerDropdownOpen((prev) => !prev)}
                     className="absolute right-0 top-0 h-11 w-11 inline-flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-r-xl"
@@ -1112,7 +1377,7 @@ export default function HighlightsStudioPanel({
                   <div
                     id="hl-runner-listbox"
                     role="listbox"
-                    aria-label="Database runners"
+                    aria-label="Ranked database runners"
                     className="absolute left-0 right-0 top-full mt-1 z-30 max-h-64 overflow-y-auto rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] shadow-xl p-1 space-y-1"
                   >
                     {filteredRunnerSuggestions.length === 0 ? (
@@ -1121,26 +1386,28 @@ export default function HighlightsStudioPanel({
                         <span>
                           {runnerDirectory.length === 0
                             ? 'No roster runners synced yet. Type details manually.'
-                            : `No DB match for "${draft.runnerName.trim()}". Save as custom runner.`}
+                            : `No runner match for "${draft.runnerName.trim() || studioDistanceFilter}" in this race.`}
                         </span>
                       </div>
                     ) : (
-                      filteredRunnerSuggestions.map((runner, idx) => {
-                        const isSelected = activeRunner?.key === runner.key;
+                      filteredRunnerSuggestions.map((item, idx) => {
+                        const { runner, entry } = item;
+                        const isSelected =
+                          activeRunner?.key === runner.key &&
+                          draft.bibNumber.trim().toUpperCase() === entry.bibNumber.trim().toUpperCase();
                         const isHighlighted = idx === runnerActiveIndex;
-                        const raceSummary = runner.entries
-                          .map((entry) => `${entry.raceName} (#${entry.bibNumber})`)
-                          .join(' | ');
+                        const rankLabel =
+                          entry.rank != null ? `#${entry.rank}` : entry.disqualified ? 'DQ' : 'REG';
                         return (
                           <button
-                            key={runner.key}
+                            key={`${runner.key}:${entry.raceId}:${entry.bibNumber}`}
                             id={`hl-runner-opt-${idx}`}
                             type="button"
                             role="option"
                             aria-selected={isSelected}
                             onMouseDown={(e) => e.preventDefault()}
                             onMouseEnter={() => setRunnerActiveIndex(idx)}
-                            onClick={() => handleSelectDirectoryRunner(runner)}
+                            onClick={() => handleSelectRankedEntry(item)}
                             className={`w-full min-h-11 text-left px-3 py-2 rounded-lg border transition flex flex-col gap-0.5 ${
                               isSelected || isHighlighted
                                 ? 'border-red-600/60 bg-red-500/10'
@@ -1148,15 +1415,28 @@ export default function HighlightsStudioPanel({
                             }`}
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <span className="text-xs font-semibold text-[var(--text-primary)] truncate">
-                                {runner.fullName}
-                              </span>
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span
+                                  className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold ${
+                                    entry.rank != null && entry.rank <= 3
+                                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                      : 'bg-[var(--surface-inset)] text-[var(--text-secondary)] border border-[var(--border-default)]'
+                                  }`}
+                                >
+                                  {rankLabel}
+                                </span>
+                                <span className="text-xs font-semibold text-[var(--text-primary)] truncate">
+                                  {runner.fullName}
+                                </span>
+                              </div>
                               <span className="shrink-0 px-2 py-0.5 rounded bg-[var(--surface-inset)] border border-[var(--border-default)] text-[10px] font-mono text-[var(--text-secondary)]">
-                                {runner.entries.length} {runner.entries.length === 1 ? 'race' : 'races'}
+                                {entry.distance} · #{entry.bibNumber}
                               </span>
                             </div>
                             <span className="text-[11px] font-mono text-[var(--text-secondary)] truncate">
-                              {raceSummary}
+                              {entry.chipTime ? `${entry.chipTime} finish` : 'Registered (no finish scan)'}
+                              {entry.pace ? ` · ${entry.pace}` : ''}
+                              {entry.gunTime ? ` · Gun ${entry.gunTime}` : ''}
                             </span>
                           </button>
                         );
@@ -1528,65 +1808,14 @@ export default function HighlightsStudioPanel({
               </div>
             )}
 
-            {/* Race Event Linking & Club */}
+            {/* Race Event Display Metadata & Club */}
             <div className="space-y-3 pt-2 border-t border-[var(--border-default)]">
-              <div className="space-y-1">
-                <div className="flex items-center justify-between gap-2">
-                  <label htmlFor="hl-race-link" className="text-xs font-mono text-[var(--text-secondary)]">
-                    {activeRunner && activeRunner.entries.length > 0
-                      ? 'Participated Race Event'
-                      : 'Link Existing Race (Optional)'}
-                  </label>
-                  {matchedActiveEntry && (
-                    <span className="text-[11px] font-mono text-[var(--text-secondary)]">
-                      Bib #{matchedActiveEntry.bibNumber} · {matchedActiveEntry.distance}
-                    </span>
-                  )}
-                </div>
-                <select
-                  id="hl-race-link"
-                  disabled={!canManage}
-                  value={raceSelectValue}
-                  onChange={(e) => handleLinkedRaceChange(e.target.value)}
-                  className="w-full h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-sm text-[var(--text-primary)]"
-                >
-                  {activeRunner && activeRunner.entries.length > 0 ? (
-                    <>
-                      <optgroup label={`${activeRunner.fullName} Participated Races`}>
-                        {activeRunner.entries.map((entry) => (
-                          <option
-                            key={`entry:${entry.raceId}:${entry.bibNumber}`}
-                            value={`entry::${entry.raceId}::${entry.bibNumber}`}
-                          >
-                            {entry.raceName} ({entry.raceDate}) | Bib #{entry.bibNumber} ({entry.distance})
-                          </option>
-                        ))}
-                      </optgroup>
-                      <optgroup label="Other Races">
-                        <option value="">Custom race entry</option>
-                        {races
-                          .filter((race) => !activeRunner.entries.some((e) => e.raceId === race.id))
-                          .map((race) => (
-                            <option key={race.id} value={`race::${race.id}`}>
-                              {race.name} ({race.date})
-                            </option>
-                          ))}
-                      </optgroup>
-                    </>
-                  ) : (
-                    <>
-                      <option value="">Custom race entry</option>
-                      {races.map((race) => (
-                        <option key={race.id} value={`race::${race.id}`}>
-                          {race.name} ({race.date})
-                        </option>
-                      ))}
-                    </>
-                  )}
-                </select>
-
-                {activeRunner && activeRunner.entries.length > 1 && (
-                  <div className="flex flex-wrap gap-2 pt-2" aria-label={`${activeRunner.fullName} participated races`}>
+              {activeRunner && activeRunner.entries.length > 1 && (
+                <div className="space-y-1.5">
+                  <span className="block text-[11px] font-mono text-[var(--text-secondary)]">
+                    {activeRunner.fullName} Participated Entries
+                  </span>
+                  <div className="flex flex-wrap gap-2" aria-label={`${activeRunner.fullName} participated races`}>
                     {activeRunner.entries.map((entry) => {
                       const activeChip =
                         matchedActiveEntry?.raceId === entry.raceId &&
@@ -1597,7 +1826,7 @@ export default function HighlightsStudioPanel({
                           type="button"
                           disabled={!canManage}
                           onClick={() => applyRunnerRaceEntry(entry, activeRunner)}
-                          className={`min-h-11 px-3 py-2 rounded-xl border text-xs font-mono transition ${
+                          className={`min-h-10 px-3 py-1.5 rounded-xl border text-xs font-mono transition ${
                             activeChip
                               ? 'bg-red-700 text-white border-red-800 shadow-sm'
                               : 'bg-[var(--surface-inset)] text-[var(--text-secondary)] border-[var(--border-default)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
@@ -1608,14 +1837,14 @@ export default function HighlightsStudioPanel({
                       );
                     })}
                   </div>
-                )}
+                </div>
+              )}
 
-                {matchedActiveEntry && !matchedActiveEntry.chipTime && !matchedActiveEntry.splitPace && (
-                  <p className="text-[11px] font-mono text-[var(--text-secondary)] pt-1">
-                    Registered bib #{matchedActiveEntry.bibNumber} ({matchedActiveEntry.distance}) loaded; no finish scan recorded for this event yet.
-                  </p>
-                )}
-              </div>
+              {matchedActiveEntry && !matchedActiveEntry.chipTime && !matchedActiveEntry.splitPace && (
+                <p className="text-[11px] font-mono text-[var(--text-secondary)]">
+                  Registered bib #{matchedActiveEntry.bibNumber} ({matchedActiveEntry.distance}) loaded; no finish scan recorded for this event yet.
+                </p>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 <div className="sm:col-span-2 space-y-1">
@@ -1668,18 +1897,51 @@ export default function HighlightsStudioPanel({
             </div>
           </section>
 
-          {/* CENTER PANEL: Visual FX Customizer */}
-          <section className="xl:col-span-4 glass-panel p-4 sm:p-5 space-y-4" aria-label="Visual FX customizer">
-            <h2 className="font-display text-base font-semibold text-[var(--text-primary)] border-b border-[var(--border-default)] pb-2.5">
-              2. Visual FX Customizer
-            </h2>
-
-            {/* Frame Presets */}
-            <div className="space-y-2">
-              <span className="block text-xs font-mono font-semibold text-[var(--text-secondary)]">
-                Border &amp; Frame FX Preset
+          {/* CENTER PANEL: Border, FX & Card Customizer */}
+          <section className="xl:col-span-4 glass-panel p-4 sm:p-5 space-y-4" aria-label="Border, FX and card customizer">
+            <div className="flex items-center justify-between gap-2 border-b border-[var(--border-default)] pb-2.5">
+              <h2 className="font-display text-base font-semibold text-[var(--text-primary)]">
+                2. Border, FX &amp; Card Customizer
+              </h2>
+              <span className="text-[11px] font-mono text-[var(--text-secondary)]">
+                {HIGHLIGHT_BORDER_PRESETS.length} borders · {HIGHLIGHT_CARD_EFFECTS.length} FX
               </span>
-              <div className="grid grid-cols-1 gap-2">
+            </div>
+
+            {/* Header / Badge Layout */}
+            <div className="space-y-1.5">
+              <span className="block text-xs font-mono font-semibold text-[var(--text-secondary)]">
+                Header &amp; Badge Placement
+              </span>
+              <div className="grid grid-cols-3 gap-2">
+                {HIGHLIGHT_HEADER_STYLES.map((styleOpt) => (
+                  <button
+                    key={styleOpt.id}
+                    type="button"
+                    disabled={!canManage}
+                    onClick={() => setDraft((p) => ({ ...p, headerStyle: styleOpt.id }))}
+                    className={chipBtn((draft.headerStyle || 'crown-bezel') === styleOpt.id)}
+                  >
+                    <span className="truncate">{styleOpt.label}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-[var(--text-secondary)]">
+                {HIGHLIGHT_HEADER_STYLES.find((s) => s.id === (draft.headerStyle || 'crown-bezel'))?.detail}
+              </p>
+            </div>
+
+            {/* 12 Border & Frame FX Presets */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-mono font-semibold text-[var(--text-secondary)]">
+                  Border &amp; Frame FX Preset
+                </span>
+                <span className="text-[11px] font-mono text-[var(--text-primary)]">
+                  {HIGHLIGHT_BORDER_PRESETS.find((p) => p.id === draft.borderPreset)?.label}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
                 {HIGHLIGHT_BORDER_PRESETS.map((preset) => {
                   const selected = draft.borderPreset === preset.id;
                   return (
@@ -1688,33 +1950,63 @@ export default function HighlightsStudioPanel({
                       type="button"
                       disabled={!canManage}
                       onClick={() => handleSelectBorderPreset(preset.id)}
-                      className={`min-h-11 w-full text-left px-3.5 py-2.5 rounded-xl border transition ${
+                      className={`min-h-11 w-full text-left px-3 py-2 rounded-xl border transition ${
                         selected
-                          ? 'border-red-600 bg-red-500/10 text-[var(--text-primary)]'
+                          ? 'border-red-600 bg-red-500/12 text-[var(--text-primary)] shadow-sm'
                           : 'border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)]'
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-semibold">{preset.label}</span>
-                        <span
-                          className="w-3.5 h-3.5 rounded-full border border-white/40 shrink-0"
-                          style={{ backgroundColor: preset.defaultAccent }}
-                          aria-hidden="true"
-                        />
+                      <div className="flex items-center justify-between gap-1.5">
+                        <span className="text-xs font-semibold truncate">{preset.label}</span>
+                        <span className="inline-flex items-center shrink-0" aria-hidden="true">
+                          <span
+                            className="w-2.5 h-2.5 rounded-full border border-white/40"
+                            style={{ backgroundColor: preset.defaultAccent }}
+                          />
+                          <span
+                            className="w-2.5 h-2.5 rounded-full border border-white/40 -ml-1"
+                            style={{ backgroundColor: preset.defaultSecondaryAccent }}
+                          />
+                        </span>
                       </div>
-                      <p className="text-xs text-[var(--text-secondary)] mt-0.5">{preset.summary}</p>
                     </button>
                   );
                 })}
               </div>
+              <p className="text-[11px] text-[var(--text-secondary)] bg-[var(--surface-inset)] border border-[var(--border-default)] rounded-lg px-2.5 py-1.5">
+                {HIGHLIGHT_BORDER_PRESETS.find((p) => p.id === draft.borderPreset)?.summary}
+              </p>
             </div>
 
-            {/* Corner Geometry */}
-            <div className="space-y-2">
+            {/* Animated Card Effect */}
+            <div className="space-y-1.5">
+              <span className="block text-xs font-mono font-semibold text-[var(--text-secondary)]">
+                Animated Card FX
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {HIGHLIGHT_CARD_EFFECTS.map((fx) => (
+                  <button
+                    key={fx.id}
+                    type="button"
+                    disabled={!canManage}
+                    onClick={() => setDraft((p) => ({ ...p, cardEffect: fx.id }))}
+                    className={chipBtn((draft.cardEffect || 'sheen-sweep') === fx.id)}
+                  >
+                    <span className="truncate">{fx.label}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-[var(--text-secondary)]">
+                {HIGHLIGHT_CARD_EFFECTS.find((fx) => fx.id === (draft.cardEffect || 'sheen-sweep'))?.detail}
+              </p>
+            </div>
+
+            {/* Corner Geometry (5 Options) */}
+            <div className="space-y-1.5">
               <span className="block text-xs font-mono font-semibold text-[var(--text-secondary)]">
                 Corner Geometry
               </span>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {HIGHLIGHT_CORNER_GEOMETRIES.map((geo) => (
                   <button
                     key={geo.id}
@@ -1723,24 +2015,27 @@ export default function HighlightsStudioPanel({
                     onClick={() => setDraft((p) => ({ ...p, cornerGeometry: geo.id }))}
                     className={chipBtn(draft.cornerGeometry === geo.id)}
                   >
-                    {geo.label.split(' ')[0]}
+                    <span className="truncate">{geo.label}</span>
                   </button>
                 ))}
               </div>
+              <p className="text-[11px] text-[var(--text-secondary)]">
+                {HIGHLIGHT_CORNER_GEOMETRIES.find((g) => g.id === draft.cornerGeometry)?.detail}
+              </p>
             </div>
 
-            {/* Accent Color & Glow Intensity */}
+            {/* Dual Accent Color, Border Thickness, Glow & Scrim Contrast */}
             <div className="space-y-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3.5">
               <div className="flex items-center justify-between gap-3">
                 <label htmlFor="hl-accent-hex" className="text-xs font-mono font-semibold text-[var(--text-primary)]">
-                  Accent &amp; Aura Color
+                  Primary Accent Color
                 </label>
                 <div className="flex items-center gap-2">
                   <input
                     id="hl-accent-picker"
                     type="color"
                     disabled={!canManage}
-                    aria-label="Pick accent color"
+                    aria-label="Pick primary accent color"
                     value={draft.accentColor}
                     onChange={(e) => setDraft((p) => ({ ...p, accentColor: e.target.value }))}
                     className="w-9 h-9 rounded-lg border border-[var(--border-default)] bg-transparent cursor-pointer"
@@ -1762,7 +2057,7 @@ export default function HighlightsStudioPanel({
                     key={hex}
                     type="button"
                     disabled={!canManage}
-                    aria-label={`Select accent ${hex}`}
+                    aria-label={`Select primary accent ${hex}`}
                     onClick={() => setDraft((p) => ({ ...p, accentColor: hex }))}
                     className={`w-8 h-8 rounded-full border-2 transition ${
                       draft.accentColor.toLowerCase() === hex ? 'border-white scale-110 ring-2 ring-red-600' : 'border-black/30'
@@ -1772,7 +2067,50 @@ export default function HighlightsStudioPanel({
                 ))}
               </div>
 
+              <div className="flex items-center justify-between gap-3 pt-1 border-t border-[var(--border-default)]">
+                <label htmlFor="hl-secondary-accent-hex" className="text-xs font-mono font-semibold text-[var(--text-primary)]">
+                  Secondary Trim Color
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    id="hl-secondary-accent-picker"
+                    type="color"
+                    disabled={!canManage}
+                    aria-label="Pick secondary accent color"
+                    value={draft.secondaryAccentColor || '#ff3b30'}
+                    onChange={(e) => setDraft((p) => ({ ...p, secondaryAccentColor: e.target.value }))}
+                    className="w-9 h-9 rounded-lg border border-[var(--border-default)] bg-transparent cursor-pointer"
+                  />
+                  <Input
+                    id="hl-secondary-accent-hex"
+                    value={draft.secondaryAccentColor || '#ff3b30'}
+                    disabled={!canManage}
+                    maxLength={7}
+                    onChange={(e) => setDraft((p) => ({ ...p, secondaryAccentColor: e.target.value }))}
+                    className="w-24 h-9 font-mono text-xs uppercase"
+                  />
+                </div>
+              </div>
+
               <div className="space-y-1.5 pt-1">
+                <div className="flex items-center justify-between text-xs font-mono">
+                  <span className="text-[var(--text-secondary)]">Border Thickness</span>
+                  <span className="font-semibold text-[var(--text-primary)]">{draft.borderWidthPx ?? 3}px</span>
+                </div>
+                <input
+                  type="range"
+                  min={2}
+                  max={6}
+                  step={1}
+                  disabled={!canManage}
+                  aria-label="Border thickness in pixels"
+                  value={draft.borderWidthPx ?? 3}
+                  onChange={(e) => setDraft((p) => ({ ...p, borderWidthPx: Number(e.target.value) }))}
+                  className="w-full accent-red-600 cursor-pointer"
+                />
+              </div>
+
+              <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs font-mono">
                   <span className="text-[var(--text-secondary)]">Glow Intensity</span>
                   <span className="font-semibold text-[var(--text-primary)]">{draft.glowIntensity}%</span>
@@ -1788,14 +2126,31 @@ export default function HighlightsStudioPanel({
                   className="w-full accent-red-600 cursor-pointer"
                 />
               </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs font-mono">
+                  <span className="text-[var(--text-secondary)]">Photo Scrim Contrast</span>
+                  <span className="font-semibold text-[var(--text-primary)]">{draft.scrimStrength ?? 78}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={30}
+                  max={95}
+                  disabled={!canManage}
+                  aria-label="Photo scrim contrast percentage"
+                  value={draft.scrimStrength ?? 78}
+                  onChange={(e) => setDraft((p) => ({ ...p, scrimStrength: Number(e.target.value) }))}
+                  className="w-full accent-red-600 cursor-pointer"
+                />
+              </div>
             </div>
 
-            {/* Surface Finish */}
+            {/* Surface Finish (5 Options) */}
             <div className="space-y-2">
               <span className="block text-xs font-mono font-semibold text-[var(--text-secondary)]">
                 Surface Finish
               </span>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {HIGHLIGHT_SURFACE_FINISHES.map((finish) => (
                   <button
                     key={finish.id}
@@ -1804,7 +2159,7 @@ export default function HighlightsStudioPanel({
                     onClick={() => setDraft((p) => ({ ...p, surfaceFinish: finish.id }))}
                     className={chipBtn(draft.surfaceFinish === finish.id)}
                   >
-                    {finish.label}
+                    <span className="truncate">{finish.label}</span>
                   </button>
                 ))}
               </div>
@@ -1936,6 +2291,7 @@ export default function HighlightsStudioPanel({
                   setSelectedRunnerKey(null);
                   setRunnerDropdownOpen(false);
                   setPartnerDropdownOpen(false);
+                  setStudioDistanceFilter('all');
                   setDraft(createBlankDraft(profile.uid));
                 }}
                 className="h-11 px-4 text-xs"

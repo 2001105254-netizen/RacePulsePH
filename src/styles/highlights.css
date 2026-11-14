@@ -3,79 +3,83 @@
    Strictly locked dimensions inside an 8px aura/corner buffer.
    ========================================================================== */
 
-@property --rp-gold-angle {
-  syntax: "<angle>";
-  initial-value: 0deg;
-  inherits: false;
-}
-
 .pp-reel-stage {
   position: relative;
   width: 100%;
-  transition: opacity 260ms var(--ease-out-expo), filter 260ms var(--ease-out-expo);
+  transition: opacity 220ms var(--ease-out-expo);
 }
 
 .pp-reel-stage.is-search-dimmed .pp-reel-viewport {
   opacity: 0.45;
-  filter: blur(2px);
 }
 
-/* State A: Center-outward clip-path entrance */
+/* State A: Center-outward clip-path entrance (generous vertical clearance preserves 3D lift) */
 .pp-track-reveal {
-  clip-path: inset(0 0% 0 0%);
+  clip-path: inset(-40px 0% -40px 0%);
   animation: pp-center-expand 600ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes pp-center-expand {
   0% {
-    clip-path: inset(0 50% 0 50%);
+    clip-path: inset(-40px 50% -40px 50%);
     opacity: 0.4;
   }
   100% {
-    clip-path: inset(0 0% 0 0%);
+    clip-path: inset(-40px 0% -40px 0%);
     opacity: 1;
   }
 }
 
 .pp-stagger-card {
-  animation: pp-stagger-rise 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  animation-delay: calc(var(--stagger-idx, 0) * 55ms);
+  animation: pp-stagger-rise 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--stagger-idx, 0) * 45ms);
 }
 
 @keyframes pp-stagger-rise {
   0% {
     opacity: 0;
-    transform: translate3d(0, 16px, 0);
-    filter: blur(4px);
+    transform: translate3d(0, 12px, 0);
   }
   100% {
     opacity: 1;
     transform: translate3d(0, 0, 0);
-    filter: blur(0px);
   }
 }
 
 .pp-reel-viewport {
   position: relative;
   width: 100%;
-  overflow: hidden;
-  padding-block: 8px;
-  transition: opacity 240ms ease, filter 240ms ease;
-  /* Soft left/right edge fade controlled cleanly by --edge-fade */
+  overflow-x: clip;
+  overflow-y: visible;
+  padding-top: 28px;
+  padding-bottom: 22px;
+  padding-inline: 8px;
+  margin-top: -12px;
+  margin-bottom: -8px;
+  contain: layout style;
+  transition: opacity 220ms ease;
+  /* Soft left/right edge fade capped so badges and card edges remain crisp */
+  --edge-fade-eff: clamp(0px, var(--edge-fade, 48px), 20px);
   mask-image: linear-gradient(
     to right,
     transparent 0px,
-    black var(--edge-fade, 48px),
-    black calc(100% - var(--edge-fade, 48px)),
+    black var(--edge-fade-eff),
+    black calc(100% - var(--edge-fade-eff)),
     transparent 100%
   );
   -webkit-mask-image: linear-gradient(
     to right,
     transparent 0px,
-    black var(--edge-fade, 48px),
-    black calc(100% - var(--edge-fade, 48px)),
+    black var(--edge-fade-eff),
+    black calc(100% - var(--edge-fade-eff)),
     transparent 100%
   );
+}
+
+@media (max-width: 640px) {
+  .pp-reel-viewport {
+    --edge-fade-eff: clamp(0px, var(--edge-fade, 48px), 8px);
+  }
 }
 
 .pp-reel-track {
@@ -111,6 +115,27 @@
   height: 156px;
 }
 
+.pp-card-placeholder {
+  width: 100%;
+  height: 100%;
+  border-radius: 16px;
+  border: 1px dashed var(--border-default);
+  background: var(--surface-inset);
+  contain: layout style paint;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 14px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.mode-pill .pp-card-placeholder {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
 /* Interactive Card Shell */
 .pp-card-shell {
   --card-accent: #ff3b30;
@@ -130,12 +155,9 @@
   background: transparent;
   text-align: left;
   cursor: pointer;
-  transform-style: preserve-3d;
-  will-change: transform, opacity;
   transition:
-    transform 240ms cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 220ms ease,
-    filter 220ms ease;
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 200ms ease;
 }
 
 .pp-card-shell:focus-visible {
@@ -151,6 +173,7 @@
 
 .pp-card-shell.is-spotlight {
   z-index: 20;
+  will-change: transform;
   transform: translate3d(0, -8px, 0) scale(1.06) rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
 }
 
@@ -159,8 +182,9 @@
   position: relative;
   width: 100%;
   height: 100%;
-  padding: 3px;
+  padding: var(--border-w, 3px);
   overflow: hidden;
+  contain: layout style paint;
   background: #141418;
   box-shadow:
     0 12px 26px -12px rgba(0, 0, 0, 0.55),
@@ -174,8 +198,7 @@
     0 0 calc(28px * var(--glow-alpha, 0.72)) 0px color-mix(in srgb, var(--card-accent) 62%, transparent);
 }
 
-.pp-geometry-rounded .pp-card-frame,
-.pp-geometry-rounded .pp-card-inner {
+.pp-geometry-rounded .pp-card-frame {
   border-radius: 16px;
 }
 
@@ -203,77 +226,60 @@
   );
 }
 
+.pp-geometry-hex-crest .pp-card-frame,
+.pp-geometry-hex-crest .pp-card-inner {
+  border-radius: 2px;
+  clip-path: polygon(
+    22px 0%,
+    calc(100% - 22px) 0%,
+    100% 22px,
+    100% calc(100% - 10px),
+    calc(100% - 10px) 100%,
+    10px 100%,
+    0% calc(100% - 10px),
+    0% 22px
+  );
+}
+
+.pp-geometry-ticket-notch .pp-card-frame,
+.pp-geometry-ticket-notch .pp-card-inner {
+  border-radius: 4px;
+  clip-path: polygon(
+    0% 10px,
+    10px 10px,
+    10px 0%,
+    calc(100% - 10px) 0%,
+    calc(100% - 10px) 10px,
+    100% 10px,
+    100% calc(100% - 10px),
+    calc(100% - 10px) calc(100% - 10px),
+    calc(100% - 10px) 100%,
+    10px 100%,
+    10px calc(100% - 10px),
+    0% calc(100% - 10px)
+  );
+}
+
 /* ==========================================================================
-   5 BORDER & FRAME FX PRESETS
+   12 BORDER & FRAME FX PRESETS (CSS Compositor-Safe)
    ========================================================================== */
 
 /* 1. Championship Liquid Gold */
 .pp-preset-liquid-gold .pp-card-frame {
-  background:
-    conic-gradient(
-      from var(--rp-gold-angle),
-      #9a6712 0deg,
-      #ffe599 65deg,
-      #d49b27 125deg,
-      var(--card-accent) 180deg,
-      #fff2bf 245deg,
-      #8b5a0b 320deg,
-      #9a6712 360deg
-    );
-  animation: pp-gold-spin 5.5s linear infinite;
-}
-
-@keyframes pp-gold-spin {
-  to {
-    --rp-gold-angle: 360deg;
-  }
-}
-
-.pp-embers {
-  position: absolute;
-  inset: auto 8px 2px 8px;
-  height: 54px;
-  pointer-events: none;
-  overflow: hidden;
-  z-index: 6;
-}
-
-.pp-ember {
-  position: absolute;
-  bottom: -4px;
-  width: 3px;
-  height: 3px;
-  border-radius: 999px;
-  background: #fde68a;
-  box-shadow: 0 0 6px #f59e0b;
-  opacity: 0;
-  animation: pp-ember-rise 2.4s ease-out infinite;
-}
-
-.pp-ember:nth-child(1) { left: 14%; animation-delay: 0s; }
-.pp-ember:nth-child(2) { left: 32%; animation-delay: 0.7s; width: 4px; height: 4px; }
-.pp-ember:nth-child(3) { left: 55%; animation-delay: 1.3s; }
-.pp-ember:nth-child(4) { left: 74%; animation-delay: 0.4s; }
-.pp-ember:nth-child(5) { left: 88%; animation-delay: 1.8s; }
-
-@keyframes pp-ember-rise {
-  0% {
-    transform: translate3d(0, 0, 0) scale(0.7);
-    opacity: 0;
-  }
-  20% {
-    opacity: 0.9;
-  }
-  100% {
-    transform: translate3d(4px, -44px, 0) scale(0.2);
-    opacity: 0;
-  }
+  background: linear-gradient(
+    135deg,
+    #9a6712 0%,
+    #ffe599 28%,
+    #d49b27 52%,
+    var(--card-accent) 76%,
+    var(--card-accent-2, #fff2bf) 100%
+  );
 }
 
 /* 2. Cyber-Telemetry HUD */
 .pp-preset-cyber-hud .pp-card-frame {
-  background: linear-gradient(135deg, var(--card-accent), #0f172a 48%, var(--card-accent));
-  padding: 4px;
+  background: linear-gradient(135deg, var(--card-accent), #0f172a 48%, var(--card-accent-2, var(--card-accent)));
+  padding: max(4px, var(--border-w, 4px));
 }
 
 .pp-hud-bracket {
@@ -299,7 +305,7 @@
 
 .pp-hud-ticker {
   position: absolute;
-  top: 0;
+  bottom: 0;
   left: 16px;
   right: 16px;
   height: 14px;
@@ -308,7 +314,7 @@
   align-items: center;
   z-index: 11;
   pointer-events: none;
-  background: rgba(8, 10, 14, 0.85);
+  background: rgba(8, 10, 14, 0.88);
 }
 
 .pp-hud-ticker-track {
@@ -319,6 +325,11 @@
   letter-spacing: 0.14em;
   color: var(--card-accent);
   animation: pp-hud-scroll 9s linear infinite;
+  animation-play-state: paused;
+}
+
+.pp-card-shell.is-spotlight .pp-hud-ticker-track {
+  animation-play-state: running;
 }
 
 @keyframes pp-hud-scroll {
@@ -328,33 +339,22 @@
 
 /* 3. Sonic Pace Wave */
 .pp-preset-sonic-wave .pp-card-frame {
-  background: linear-gradient(160deg, var(--card-accent), #111116 55%, var(--card-accent));
-  animation: pp-sonic-pulse var(--pace-pulse-ms, 1000ms) ease-in-out infinite;
-}
-
-@keyframes pp-sonic-pulse {
-  0%, 100% {
-    box-shadow:
-      0 10px 24px -10px rgba(0, 0, 0, 0.6),
-      0 0 calc(8px * var(--glow-alpha, 0.72)) 0px color-mix(in srgb, var(--card-accent) 40%, transparent);
-  }
-  50% {
-    box-shadow:
-      0 14px 28px -10px rgba(0, 0, 0, 0.65),
-      0 0 calc(26px * var(--glow-alpha, 0.72)) 2px color-mix(in srgb, var(--card-accent) 85%, transparent);
-  }
+  background: linear-gradient(160deg, var(--card-accent), #111116 55%, var(--card-accent-2, var(--card-accent)));
+  box-shadow:
+    0 12px 26px -12px rgba(0, 0, 0, 0.55),
+    0 0 calc(20px * var(--glow-alpha, 0.72)) -2px color-mix(in srgb, var(--card-accent) 62%, transparent);
 }
 
 /* 4. Prismatic Holo-Foil */
 .pp-preset-holo-foil .pp-card-frame {
   background: linear-gradient(
     130deg,
-    hsl(calc(var(--holo-hue, 210deg) - 45deg) 92% 62%),
-    hsl(calc(var(--holo-hue, 210deg) + 15deg) 95% 65%),
-    hsl(calc(var(--holo-hue, 210deg) + 85deg) 90% 60%),
-    hsl(calc(var(--holo-hue, 210deg) + 145deg) 92% 62%)
+    var(--card-accent) 0%,
+    hsl(calc(var(--holo-hue, 210deg) + 15deg) 95% 65%) 38%,
+    var(--card-accent-2, #22d3ee) 72%,
+    hsl(calc(var(--holo-hue, 210deg) + 145deg) 92% 62%) 100%
   );
-  padding: 3.5px;
+  padding: max(3px, var(--border-w, 3px));
 }
 
 /* 5. Carbon Track Minimalist */
@@ -363,7 +363,7 @@
   background-image:
     repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.05) 0px, rgba(255, 255, 255, 0.05) 2px, transparent 2px, transparent 6px),
     repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.45) 0px, rgba(0, 0, 0, 0.45) 2px, transparent 2px, transparent 6px);
-  padding: 4px;
+  padding: max(4px, var(--border-w, 4px));
 }
 
 .pp-preset-carbon-minimal .pp-card-frame::before,
@@ -382,6 +382,106 @@
 .pp-preset-carbon-minimal .pp-card-frame::before { top: 1px; }
 .pp-preset-carbon-minimal .pp-card-frame::after { bottom: 1px; }
 
+/* 6. Neon Circuit */
+.pp-preset-neon-circuit .pp-card-frame {
+  background: linear-gradient(
+    145deg,
+    var(--card-accent) 0%,
+    #090d16 28%,
+    #090d16 72%,
+    var(--card-accent-2, #f472b6) 100%
+  );
+  padding: max(4px, var(--border-w, 4px));
+}
+
+.pp-circuit-node {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--card-accent);
+  border: 1.5px solid #0a0d14;
+  z-index: 12;
+  pointer-events: none;
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.pp-circuit-node.tl { top: 3px; left: 3px; }
+.pp-circuit-node.tr { top: 3px; right: 3px; background: var(--card-accent-2, var(--card-accent)); }
+.pp-circuit-node.bl { bottom: 3px; left: 3px; background: var(--card-accent-2, var(--card-accent)); }
+.pp-circuit-node.br { bottom: 3px; right: 3px; }
+.pp-card-shell.is-spotlight .pp-circuit-node { transform: scale(1.3); }
+
+/* 7. Obsidian Chrome */
+.pp-preset-obsidian-chrome .pp-card-frame {
+  background: linear-gradient(
+    155deg,
+    #f4f4f5 0%,
+    #3f3f46 25%,
+    #18181b 52%,
+    #d4d4d8 78%,
+    var(--card-accent-2, #52525b) 100%
+  );
+}
+
+/* 8. Crimson Inferno */
+.pp-preset-crimson-inferno .pp-card-frame {
+  background: linear-gradient(
+    180deg,
+    var(--card-accent, #ef4444) 0%,
+    #450a0a 48%,
+    var(--card-accent-2, #f97316) 100%
+  );
+}
+
+/* 9. Aurora Borealis */
+.pp-preset-aurora-borealis .pp-card-frame {
+  background: linear-gradient(
+    135deg,
+    var(--card-accent, #34d399) 0%,
+    #065f46 32%,
+    #312e81 66%,
+    var(--card-accent-2, #818cf8) 100%
+  );
+}
+
+/* 10. Vintage Prestige */
+.pp-preset-vintage-prestige .pp-card-frame {
+  background: linear-gradient(
+    135deg,
+    #ca8a04 0%,
+    #1c1917 30%,
+    #292524 70%,
+    var(--card-accent, #eab308) 100%
+  );
+  padding: max(4px, var(--border-w, 4px));
+}
+
+.pp-preset-vintage-prestige .pp-card-inner {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--card-accent) 55%, transparent);
+}
+
+/* 11. Titanium Blade */
+.pp-preset-titanium-blade .pp-card-frame {
+  background: repeating-linear-gradient(
+    -35deg,
+    #475569 0px,
+    #94a3b8 6px,
+    #1e293b 12px,
+    var(--card-accent-2, #22d3ee) 18px
+  );
+}
+
+/* 12. Emerald Matrix */
+.pp-preset-emerald-matrix .pp-card-frame {
+  background: linear-gradient(
+    160deg,
+    var(--card-accent, #10b981) 0%,
+    #022c22 50%,
+    var(--card-accent-2, #a3e635) 100%
+  );
+}
+
 /* ==========================================================================
    CARD INTERIOR, PHOTO LAYERS, CONTRAST GUARD & DUO SPLIT-SYNC
    ========================================================================== */
@@ -393,6 +493,38 @@
   overflow: hidden;
   background: #0d0e12;
   color: #ffffff;
+}
+
+/* Dedicated unobstructed top rail above runner photo */
+.pp-crown-bezel {
+  position: relative;
+  z-index: 9;
+  flex-shrink: 0;
+  min-height: 34px;
+  padding: 5px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: linear-gradient(180deg, rgba(16, 17, 23, 0.98) 0%, rgba(11, 12, 16, 0.96) 100%);
+  border-bottom: 1px solid color-mix(in srgb, var(--card-accent) 45%, rgba(255, 255, 255, 0.14));
+}
+
+.pp-floating-notch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.pp-card-shell.is-spotlight .pp-floating-notch-row {
+  transform: translate3d(0, -3px, 0);
+}
+
+.pp-photo-stage {
+  position: relative;
+  overflow: hidden;
 }
 
 .pp-photo-layer {
@@ -460,7 +592,7 @@
   box-shadow: 0 0 22px var(--card-accent);
 }
 
-/* Bottom 45% Dark Scrim Contrast Guard (ensures AA legibility on sunlit photos) */
+/* Bottom Dark Scrim Contrast Guard (tunable via --scrim-alpha) */
 .pp-contrast-scrim {
   position: absolute;
   inset: 0;
@@ -468,10 +600,20 @@
   pointer-events: none;
   background: linear-gradient(
     180deg,
-    rgba(8, 8, 12, 0.58) 0%,
-    rgba(8, 8, 12, 0.08) 28%,
-    rgba(8, 8, 12, 0.22) 52%,
-    rgba(8, 8, 12, 0.86) 72%,
+    rgba(8, 8, 12, 0) 0%,
+    rgba(8, 8, 12, 0.04) 36%,
+    rgba(8, 8, 12, calc(0.28 * var(--scrim-alpha, 0.78))) 54%,
+    rgba(8, 8, 12, calc(0.92 * var(--scrim-alpha, 0.78))) 74%,
+    rgba(8, 8, 12, 0.97) 100%
+  );
+}
+
+.pp-header-floating-notch .pp-contrast-scrim {
+  background: linear-gradient(
+    180deg,
+    rgba(8, 8, 12, 0.36) 0%,
+    rgba(8, 8, 12, 0.04) 24%,
+    rgba(8, 8, 12, calc(0.28 * var(--scrim-alpha, 0.78))) 54%,
     rgba(8, 8, 12, 0.97) 100%
   );
 }
@@ -495,43 +637,158 @@
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='0.9'%3E%3Cpath d='M10 40 C 50 10, 120 70, 170 30'/%3E%3Cpath d='M0 80 C 45 50, 115 105, 180 75'/%3E%3Cpath d='M15 125 C 60 95, 130 155, 175 115'/%3E%3Cpath d='M5 160 C 55 135, 125 175, 180 150'/%3E%3C/g%3E%3C/svg%3E");
 }
 
-/* Holo-Sheen Sweep (State B Ambient Micro-Motion) */
+.pp-surface-carbon {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  opacity: 0.22;
+  background-image:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.08) 0px, rgba(255, 255, 255, 0.08) 1px, transparent 1px, transparent 5px),
+    repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.45) 0px, rgba(0, 0, 0, 0.45) 1px, transparent 1px, transparent 5px);
+}
+
+.pp-surface-halftone {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  opacity: 0.2;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.24) 1px, transparent 1px);
+  background-size: 6px 6px;
+}
+
+/* ==========================================================================
+   6 COMPOSITOR-ONLY ANIMATED CARD EFFECTS (transform & opacity only, <5ms)
+   ========================================================================== */
+
 .pp-holo-sheen {
   position: absolute;
   inset: -20%;
   z-index: 6;
   pointer-events: none;
+  opacity: 0;
   background: linear-gradient(
     115deg,
-    transparent 40%,
-    rgba(255, 255, 255, 0.25) 50%,
-    transparent 60%
+    transparent 38%,
+    rgba(255, 255, 255, 0.26) 50%,
+    transparent 62%
   );
   transform: translate3d(-120%, 0, 0);
-  animation: pp-sheen-sweep 5.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  transition: transform 320ms cubic-bezier(0.16, 1, 0.3, 1), opacity 220ms ease;
+}
+
+.pp-holo-sheen.is-prism {
+  background: linear-gradient(
+    115deg,
+    transparent 30%,
+    rgba(56, 189, 248, 0.26) 44%,
+    rgba(255, 255, 255, 0.34) 50%,
+    rgba(192, 132, 252, 0.28) 56%,
+    transparent 70%
+  );
 }
 
 .pp-finish-glossy .pp-holo-sheen {
-  background: linear-gradient(
-    115deg,
-    transparent 36%,
-    rgba(255, 255, 255, 0.36) 50%,
-    transparent 64%
-  );
-  animation-duration: 4.2s;
+  opacity: 0.9;
 }
 
-.pp-finish-matte .pp-holo-sheen {
-  opacity: 0.42;
+.pp-card-shell:not(.is-clone-slot).pp-effect-sheen-sweep .pp-holo-sheen,
+.pp-card-shell:not(.is-clone-slot).pp-effect-prism-glint .pp-holo-sheen {
+  animation: pp-gpu-sheen 4.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
 
-@keyframes pp-sheen-sweep {
-  0%, 58% {
-    transform: translate3d(-115%, 0, 0);
-  }
-  100% {
-    transform: translate3d(115%, 0, 0);
-  }
+.pp-card-shell.is-spotlight .pp-holo-sheen {
+  opacity: 1;
+  transform: translate3d(120%, 0, 0);
+}
+
+@keyframes pp-gpu-sheen {
+  0%, 62% { transform: translate3d(-115%, 0, 0); opacity: 0; }
+  66% { opacity: 0.78; }
+  88% { transform: translate3d(115%, 0, 0); opacity: 0; }
+  100% { transform: translate3d(115%, 0, 0); opacity: 0; }
+}
+
+/* Rising Sparks (transform + opacity only) */
+.pp-fx-sparks {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.pp-fx-spark {
+  position: absolute;
+  bottom: 12px;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--card-accent-2, var(--card-accent));
+  opacity: 0;
+  animation: pp-gpu-spark 2.6s ease-out infinite;
+}
+
+.pp-fx-spark.s1 { left: 16%; animation-delay: 0s; }
+.pp-fx-spark.s2 { left: 42%; animation-delay: 0.7s; background: #fde68a; }
+.pp-fx-spark.s3 { left: 68%; animation-delay: 1.3s; }
+.pp-fx-spark.s4 { left: 86%; animation-delay: 1.9s; background: var(--card-accent); }
+
+.pp-card-shell.is-clone-slot:not(.is-spotlight) .pp-fx-spark {
+  animation-play-state: paused;
+}
+
+@keyframes pp-gpu-spark {
+  0% { transform: translate3d(0, 0, 0) scale(0.7); opacity: 0; }
+  20% { opacity: 0.9; }
+  80% { opacity: 0.45; }
+  100% { transform: translate3d(8px, -110px, 0) scale(0.35); opacity: 0; }
+}
+
+/* Radar Scan Laser (transform + opacity only) */
+.pp-fx-radar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 6;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 5%, var(--card-accent) 50%, var(--card-accent-2, transparent) 95%);
+  opacity: 0;
+  animation: pp-gpu-radar 3.2s linear infinite;
+}
+
+.pp-card-shell.is-clone-slot:not(.is-spotlight) .pp-fx-radar {
+  animation-play-state: paused;
+}
+
+@keyframes pp-gpu-radar {
+  0% { transform: translate3d(0, 0px, 0); opacity: 0; }
+  12% { opacity: 0.85; }
+  88% { opacity: 0.85; }
+  100% { transform: translate3d(0, 300px, 0); opacity: 0; }
+}
+
+/* Pace Pulse Inner Perimeter Halo (opacity only, synced to pace) */
+.pp-fx-aura {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  border: 2px solid var(--card-accent);
+  opacity: 0.15;
+  animation: pp-gpu-aura var(--pace-pulse-ms, 1000ms) ease-in-out infinite;
+}
+
+.pp-card-shell.is-clone-slot:not(.is-spotlight) .pp-fx-aura {
+  animation-play-state: paused;
+}
+
+@keyframes pp-gpu-aura {
+  0%, 100% { opacity: 0.12; }
+  50% { opacity: 0.78; }
 }
 
 /* Live Telemetry Pace Dot */
@@ -541,20 +798,16 @@
   height: 7px;
   border-radius: 999px;
   background: #34d399;
-  box-shadow: 0 0 8px #34d399;
-  animation: pp-dot-beat var(--pace-pulse-ms, 1000ms) ease-in-out infinite;
   flex-shrink: 0;
 }
 
-@keyframes pp-dot-beat {
-  0%, 100% {
-    transform: scale(0.82);
-    opacity: 0.72;
-  }
-  45% {
-    transform: scale(1.22);
-    opacity: 1;
-  }
+.pp-card-shell:not(.is-clone-slot) .pp-pulse-dot {
+  animation: pp-dot-gpu var(--pace-pulse-ms, 1000ms) ease-in-out infinite;
+}
+
+@keyframes pp-dot-gpu {
+  0%, 100% { opacity: 0.65; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.25); }
 }
 
 /* State C: Secondary Telemetry Drawer Slide-Up (220ms) */
@@ -583,24 +836,26 @@
 @media (prefers-reduced-motion: reduce) {
   .pp-track-reveal,
   .pp-stagger-card,
-  .pp-preset-liquid-gold .pp-card-frame,
-  .pp-ember,
   .pp-hud-ticker-track,
-  .pp-preset-sonic-wave .pp-card-frame,
   .pp-holo-sheen,
+  .pp-fx-spark,
+  .pp-fx-radar,
+  .pp-fx-aura,
   .pp-pulse-dot {
     animation: none !important;
   }
 
   .pp-track-reveal {
-    clip-path: inset(0 0% 0 0%);
+    clip-path: inset(-40px 0% -40px 0%);
     opacity: 1;
   }
 
   .pp-card-shell,
   .pp-secondary-drawer,
-  .pp-photo-layer {
-    transition-duration: 0.01ms !important;
+  .pp-photo-layer,
+  .pp-holo-sheen,
+  .pp-floating-notch-row {
+    transition: none !important;
   }
 
   .pp-card-shell.is-spotlight {
