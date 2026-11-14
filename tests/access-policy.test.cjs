@@ -33,3 +33,23 @@ test('race assignments are deduplicated and versioned', () => {
   const result = validate({ ...input, raceIds: ['race_1', 'race_1'] });
   assert.deepEqual(result.raceIds, ['race_1']); assert.equal(result.schemaVersion, 1);
 });
+test('highlights permissions are toggleable with dependency enforcement across roles', () => {
+  assert.equal(defaults('admin')['highlights.view'], true);
+  assert.equal(defaults('admin')['highlights.manage'], true);
+  assert.equal(defaults('admin')['highlights.settings'], true);
+  assert.equal(defaults('admin')['highlights.playlist'], false);
+  assert.equal(defaults('organizer')['highlights.view'], false);
+  assert.equal(defaults('superadmin')['highlights.playlist'], true);
+
+  // Admin can be toggled on for playlist or off for highlights management
+  const adminWithPlaylist = { role: 'admin', status: 'active', scope: 'all', raceIds: [], overrides: { 'highlights.playlist': true } };
+  assert.equal(can({ uid: 'a1', role: 'admin', approved: true }, adminWithPlaylist, 'highlights.playlist'), true);
+
+  const adminWithoutManage = { role: 'admin', status: 'active', scope: 'all', raceIds: [], overrides: { 'highlights.manage': false } };
+  assert.equal(can({ uid: 'a2', role: 'admin', approved: true }, adminWithoutManage, 'highlights.manage'), false);
+  assert.equal(can({ uid: 'a2', role: 'admin', approved: true }, adminWithoutManage, 'highlights.settings'), true);
+
+  // Disabling highlights.view breaks dependency for manage/settings/playlist
+  assert.throws(() => validate({ ...input, role: 'organizer', overrides: { 'highlights.manage': true, 'highlights.view': false } }));
+  assert.throws(() => validate({ ...input, role: 'admin', overrides: { 'highlights.playlist': true, 'highlights.settings': false } }));
+});

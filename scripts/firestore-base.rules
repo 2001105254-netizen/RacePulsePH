@@ -569,5 +569,60 @@ service cloud.firestore {
       allow update: if isSignedIn() && isValidId(orderId) && isValidOrder(request.resource.data);
       allow delete: if isSuperAdmin();
     }
+
+    // ========== RUNNER HIGHLIGHTS MARQUEE (THE PODIUM PULSE SYSTEM) ==========
+
+    function isValidHighlight(data) {
+      return data.keys().hasAll([
+          'id', 'mode', 'runnerName', 'bibNumber', 'placement', 'distance',
+          'chipTime', 'pace', 'raceName', 'raceDate', 'photoUrl',
+          'borderPreset', 'cornerGeometry', 'accentColor', 'glowIntensity',
+          'surfaceFinish', 'createdAt', 'updatedAt'
+        ])
+        && data.id is string && data.id.size() >= 1 && data.id.size() <= 64
+        && data.mode in ['solo', 'duo']
+        && data.runnerName is string && data.runnerName.size() >= 1 && data.runnerName.size() <= 80
+        && data.bibNumber is string && data.bibNumber.size() >= 1 && data.bibNumber.size() <= 24
+        && data.placement is string && data.placement.size() >= 1 && data.placement.size() <= 40
+        && data.distance is string && data.distance.size() >= 1 && data.distance.size() <= 30
+        && data.chipTime is string && data.chipTime.size() >= 1 && data.chipTime.size() <= 30
+        && data.pace is string && data.pace.size() >= 1 && data.pace.size() <= 30
+        && data.raceName is string && data.raceName.size() >= 1 && data.raceName.size() <= 100
+        && data.raceDate is string && data.raceDate.size() >= 1 && data.raceDate.size() <= 30
+        && data.photoUrl is string && data.photoUrl.size() >= 1 && data.photoUrl.size() <= 900000
+        && data.borderPreset in ['liquid-gold', 'cyber-hud', 'sonic-wave', 'holo-foil', 'carbon-minimal']
+        && data.cornerGeometry in ['rounded', 'sharp', 'tactical']
+        && data.accentColor is string && data.accentColor.size() >= 4 && data.accentColor.size() <= 20
+        && data.glowIntensity is number && data.glowIntensity >= 0 && data.glowIntensity <= 100
+        && data.surfaceFinish in ['matte', 'glossy', 'topo']
+        && data.createdAt is string && data.updatedAt is string
+        && (!data.keys().hasAny(['partnerName']) || (data.partnerName is string && data.partnerName.size() <= 80))
+        && (!data.keys().hasAny(['partnerBibNumber']) || (data.partnerBibNumber is string && data.partnerBibNumber.size() <= 24))
+        && (!data.keys().hasAny(['partnerPhotoUrl']) || (data.partnerPhotoUrl is string && data.partnerPhotoUrl.size() <= 900000))
+        && (!data.keys().hasAny(['soloSplitTime']) || (data.soloSplitTime is string && data.soloSplitTime.size() <= 30))
+        && (!data.keys().hasAny(['partnerSplitTime']) || (data.partnerSplitTime is string && data.partnerSplitTime.size() <= 30))
+        && (!data.keys().hasAny(['combinedAvgPace']) || (data.combinedAvgPace is string && data.combinedAvgPace.size() <= 30))
+        && (!data.keys().hasAny(['gunTime']) || (data.gunTime is string && data.gunTime.size() <= 30))
+        && (!data.keys().hasAny(['splitPace']) || (data.splitPace is string && data.splitPace.size() <= 30))
+        && (!data.keys().hasAny(['runClub']) || (data.runClub is string && data.runClub.size() <= 60))
+        && (!data.keys().hasAny(['raceId']) || (data.raceId is string && data.raceId.size() <= 64))
+        && (!data.keys().hasAny(['raceCode']) || (data.raceCode is string && data.raceCode.size() <= 30))
+        && (!data.keys().hasAny(['badgeStamp']) || (data.badgeStamp is string && data.badgeStamp.size() <= 30))
+        && (!data.keys().hasAny(['pinned']) || data.pinned is bool)
+        && (!data.keys().hasAny(['expiresAt']) || (data.expiresAt is string && data.expiresAt.size() <= 30))
+        && (!data.keys().hasAny(['createdBy']) || (data.createdBy is string && data.createdBy.size() <= 128));
+    }
+
+    match /runnerHighlights/{highlightId} {
+      allow read: if true;
+      allow create, update: if isStaff() && isValidId(highlightId) && isValidHighlight(request.resource.data);
+      allow delete: if isStaff();
+    }
+
+    match /system/highlightsConfig {
+      allow read: if true;
+      allow create, update: if isStaff();
+      allow delete: if isSuperAdmin();
+    }
   }
 }

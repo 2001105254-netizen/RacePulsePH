@@ -1,0 +1,609 @@
+/* ==========================================================================
+   THE PODIUM PULSE SYSTEM: Kinetic Telemetry & Holo-Foil Podium Reel
+   Strictly locked dimensions inside an 8px aura/corner buffer.
+   ========================================================================== */
+
+@property --rp-gold-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.pp-reel-stage {
+  position: relative;
+  width: 100%;
+  transition: opacity 260ms var(--ease-out-expo), filter 260ms var(--ease-out-expo);
+}
+
+.pp-reel-stage.is-search-dimmed .pp-reel-viewport {
+  opacity: 0.45;
+  filter: blur(2px);
+}
+
+/* State A: Center-outward clip-path entrance */
+.pp-track-reveal {
+  clip-path: inset(0 0% 0 0%);
+  animation: pp-center-expand 600ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes pp-center-expand {
+  0% {
+    clip-path: inset(0 50% 0 50%);
+    opacity: 0.4;
+  }
+  100% {
+    clip-path: inset(0 0% 0 0%);
+    opacity: 1;
+  }
+}
+
+.pp-stagger-card {
+  animation: pp-stagger-rise 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--stagger-idx, 0) * 55ms);
+}
+
+@keyframes pp-stagger-rise {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0);
+    filter: blur(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+    filter: blur(0px);
+  }
+}
+
+.pp-reel-viewport {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  padding-block: 8px;
+  transition: opacity 240ms ease, filter 240ms ease;
+  /* Soft left/right edge fade controlled cleanly by --edge-fade */
+  mask-image: linear-gradient(
+    to right,
+    transparent 0px,
+    black var(--edge-fade, 48px),
+    black calc(100% - var(--edge-fade, 48px)),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0px,
+    black var(--edge-fade, 48px),
+    black calc(100% - var(--edge-fade, 48px)),
+    transparent 100%
+  );
+}
+
+.pp-reel-track {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: max-content;
+  will-change: transform;
+}
+
+.pp-reel-group {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--card-gap, 20px);
+  padding-right: var(--card-gap, 20px);
+}
+
+/* 8px locked buffer prevents glows, tilt, or brackets from clipping/shifting neighbors */
+.pp-card-slot {
+  padding: 8px;
+  flex: 0 0 auto;
+  perspective: 960px;
+}
+
+.pp-card-slot.mode-card {
+  width: 276px;
+  height: 356px;
+}
+
+.pp-card-slot.mode-pill {
+  width: 376px;
+  height: 156px;
+}
+
+/* Interactive Card Shell */
+.pp-card-shell {
+  --card-accent: #ff3b30;
+  --glow-alpha: 0.72;
+  --pace-pulse-ms: 1000ms;
+  --holo-hue: 210deg;
+  --tilt-x: 0deg;
+  --tilt-y: 0deg;
+  --photo-px: 0px;
+  --photo-py: 0px;
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transform-style: preserve-3d;
+  will-change: transform, opacity;
+  transition:
+    transform 240ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 220ms ease,
+    filter 220ms ease;
+}
+
+.pp-card-shell:focus-visible {
+  outline: 2px solid var(--card-accent);
+  outline-offset: 4px;
+}
+
+/* State C: Spotlight Hover & Sibling Dimming */
+.pp-reel-stage.has-spotlight .pp-card-shell:not(.is-spotlight) {
+  opacity: 0.6;
+  transform: scale(0.97);
+}
+
+.pp-card-shell.is-spotlight {
+  z-index: 20;
+  transform: translate3d(0, -8px, 0) scale(1.06) rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
+}
+
+/* Frame Wrapper (carries border FX & corner geometry) */
+.pp-card-frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 3px;
+  overflow: hidden;
+  background: #141418;
+  box-shadow:
+    0 12px 26px -12px rgba(0, 0, 0, 0.55),
+    0 0 calc(20px * var(--glow-alpha, 0.72)) -4px color-mix(in srgb, var(--card-accent) 45%, transparent);
+  transition: box-shadow 220ms ease;
+}
+
+.pp-card-shell.is-spotlight .pp-card-frame {
+  box-shadow:
+    0 20px 36px -14px rgba(0, 0, 0, 0.72),
+    0 0 calc(28px * var(--glow-alpha, 0.72)) 0px color-mix(in srgb, var(--card-accent) 62%, transparent);
+}
+
+.pp-geometry-rounded .pp-card-frame,
+.pp-geometry-rounded .pp-card-inner {
+  border-radius: 16px;
+}
+
+.pp-geometry-rounded .pp-card-inner {
+  border-radius: 13px;
+}
+
+.pp-geometry-sharp .pp-card-frame,
+.pp-geometry-sharp .pp-card-inner {
+  border-radius: 0px;
+}
+
+.pp-geometry-tactical .pp-card-frame,
+.pp-geometry-tactical .pp-card-inner {
+  border-radius: 2px;
+  clip-path: polygon(
+    14px 0%,
+    calc(100% - 14px) 0%,
+    100% 14px,
+    100% calc(100% - 14px),
+    calc(100% - 14px) 100%,
+    14px 100%,
+    0% calc(100% - 14px),
+    0% 14px
+  );
+}
+
+/* ==========================================================================
+   5 BORDER & FRAME FX PRESETS
+   ========================================================================== */
+
+/* 1. Championship Liquid Gold */
+.pp-preset-liquid-gold .pp-card-frame {
+  background:
+    conic-gradient(
+      from var(--rp-gold-angle),
+      #9a6712 0deg,
+      #ffe599 65deg,
+      #d49b27 125deg,
+      var(--card-accent) 180deg,
+      #fff2bf 245deg,
+      #8b5a0b 320deg,
+      #9a6712 360deg
+    );
+  animation: pp-gold-spin 5.5s linear infinite;
+}
+
+@keyframes pp-gold-spin {
+  to {
+    --rp-gold-angle: 360deg;
+  }
+}
+
+.pp-embers {
+  position: absolute;
+  inset: auto 8px 2px 8px;
+  height: 54px;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 6;
+}
+
+.pp-ember {
+  position: absolute;
+  bottom: -4px;
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: #fde68a;
+  box-shadow: 0 0 6px #f59e0b;
+  opacity: 0;
+  animation: pp-ember-rise 2.4s ease-out infinite;
+}
+
+.pp-ember:nth-child(1) { left: 14%; animation-delay: 0s; }
+.pp-ember:nth-child(2) { left: 32%; animation-delay: 0.7s; width: 4px; height: 4px; }
+.pp-ember:nth-child(3) { left: 55%; animation-delay: 1.3s; }
+.pp-ember:nth-child(4) { left: 74%; animation-delay: 0.4s; }
+.pp-ember:nth-child(5) { left: 88%; animation-delay: 1.8s; }
+
+@keyframes pp-ember-rise {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.7);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate3d(4px, -44px, 0) scale(0.2);
+    opacity: 0;
+  }
+}
+
+/* 2. Cyber-Telemetry HUD */
+.pp-preset-cyber-hud .pp-card-frame {
+  background: linear-gradient(135deg, var(--card-accent), #0f172a 48%, var(--card-accent));
+  padding: 4px;
+}
+
+.pp-hud-bracket {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-color: var(--card-accent);
+  border-style: solid;
+  pointer-events: none;
+  z-index: 12;
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.pp-hud-bracket.tl { top: 4px; left: 4px; border-width: 2px 0 0 2px; }
+.pp-hud-bracket.tr { top: 4px; right: 4px; border-width: 2px 2px 0 0; }
+.pp-hud-bracket.bl { bottom: 4px; left: 4px; border-width: 0 0 2px 2px; }
+.pp-hud-bracket.br { bottom: 4px; right: 4px; border-width: 0 2px 2px 0; }
+
+.pp-card-shell.is-spotlight .pp-hud-bracket.tl { transform: translate3d(4px, 4px, 0); }
+.pp-card-shell.is-spotlight .pp-hud-bracket.tr { transform: translate3d(-4px, 4px, 0); }
+.pp-card-shell.is-spotlight .pp-hud-bracket.bl { transform: translate3d(4px, -4px, 0); }
+.pp-card-shell.is-spotlight .pp-hud-bracket.br { transform: translate3d(-4px, -4px, 0); }
+
+.pp-hud-ticker {
+  position: absolute;
+  top: 0;
+  left: 16px;
+  right: 16px;
+  height: 14px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  z-index: 11;
+  pointer-events: none;
+  background: rgba(8, 10, 14, 0.85);
+}
+
+.pp-hud-ticker-track {
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  color: var(--card-accent);
+  animation: pp-hud-scroll 9s linear infinite;
+}
+
+@keyframes pp-hud-scroll {
+  from { transform: translate3d(0%, 0, 0); }
+  to { transform: translate3d(-50%, 0, 0); }
+}
+
+/* 3. Sonic Pace Wave */
+.pp-preset-sonic-wave .pp-card-frame {
+  background: linear-gradient(160deg, var(--card-accent), #111116 55%, var(--card-accent));
+  animation: pp-sonic-pulse var(--pace-pulse-ms, 1000ms) ease-in-out infinite;
+}
+
+@keyframes pp-sonic-pulse {
+  0%, 100% {
+    box-shadow:
+      0 10px 24px -10px rgba(0, 0, 0, 0.6),
+      0 0 calc(8px * var(--glow-alpha, 0.72)) 0px color-mix(in srgb, var(--card-accent) 40%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 14px 28px -10px rgba(0, 0, 0, 0.65),
+      0 0 calc(26px * var(--glow-alpha, 0.72)) 2px color-mix(in srgb, var(--card-accent) 85%, transparent);
+  }
+}
+
+/* 4. Prismatic Holo-Foil */
+.pp-preset-holo-foil .pp-card-frame {
+  background: linear-gradient(
+    130deg,
+    hsl(calc(var(--holo-hue, 210deg) - 45deg) 92% 62%),
+    hsl(calc(var(--holo-hue, 210deg) + 15deg) 95% 65%),
+    hsl(calc(var(--holo-hue, 210deg) + 85deg) 90% 60%),
+    hsl(calc(var(--holo-hue, 210deg) + 145deg) 92% 62%)
+  );
+  padding: 3.5px;
+}
+
+/* 5. Carbon Track Minimalist */
+.pp-preset-carbon-minimal .pp-card-frame {
+  background-color: #16171b;
+  background-image:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.05) 0px, rgba(255, 255, 255, 0.05) 2px, transparent 2px, transparent 6px),
+    repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.45) 0px, rgba(0, 0, 0, 0.45) 2px, transparent 2px, transparent 6px);
+  padding: 4px;
+}
+
+.pp-preset-carbon-minimal .pp-card-frame::before,
+.pp-preset-carbon-minimal .pp-card-frame::after {
+  content: "";
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  height: 2px;
+  background: var(--card-accent);
+  box-shadow: 0 0 8px var(--card-accent);
+  z-index: 12;
+  pointer-events: none;
+}
+
+.pp-preset-carbon-minimal .pp-card-frame::before { top: 1px; }
+.pp-preset-carbon-minimal .pp-card-frame::after { bottom: 1px; }
+
+/* ==========================================================================
+   CARD INTERIOR, PHOTO LAYERS, CONTRAST GUARD & DUO SPLIT-SYNC
+   ========================================================================== */
+
+.pp-card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0d0e12;
+  color: #ffffff;
+}
+
+.pp-photo-layer {
+  position: absolute;
+  inset: -10px;
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  transform: translate3d(var(--photo-px), var(--photo-py), 0) scale(1.04);
+}
+
+.pp-photo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Duo 12deg diagonal split-sync layout */
+.pp-duo-left {
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(0% 0%, 56% 0%, 44% 100%, 0% 100%);
+}
+
+.pp-duo-right {
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(56% 0%, 100% 0%, 100% 100%, 44% 100%);
+}
+
+.pp-duo-slash {
+  position: absolute;
+  top: -12%;
+  bottom: -12%;
+  left: 50%;
+  width: 3px;
+  transform: translateX(-50%) rotate(11.5deg);
+  background: linear-gradient(180deg, transparent, var(--card-accent), #ffffff, var(--card-accent), transparent);
+  box-shadow: 0 0 12px var(--card-accent);
+  z-index: 4;
+  pointer-events: none;
+}
+
+.pp-sync-badge {
+  position: absolute;
+  top: 46%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.92);
+  z-index: 8;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: #ffffff;
+  background: rgba(12, 12, 16, 0.88);
+  border: 1.5px solid var(--card-accent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--card-accent) 70%, transparent);
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms ease;
+  pointer-events: none;
+}
+
+.pp-card-shell.is-spotlight .pp-sync-badge {
+  transform: translate(-50%, -50%) scale(1.08);
+  box-shadow: 0 0 22px var(--card-accent);
+}
+
+/* Bottom 45% Dark Scrim Contrast Guard (ensures AA legibility on sunlit photos) */
+.pp-contrast-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(8, 8, 12, 0.58) 0%,
+    rgba(8, 8, 12, 0.08) 28%,
+    rgba(8, 8, 12, 0.22) 52%,
+    rgba(8, 8, 12, 0.86) 72%,
+    rgba(8, 8, 12, 0.97) 100%
+  );
+}
+
+.mode-pill .pp-contrast-scrim {
+  background: linear-gradient(
+    90deg,
+    rgba(8, 8, 12, 0.15) 0%,
+    rgba(8, 8, 12, 0.82) 32%,
+    rgba(8, 8, 12, 0.96) 100%
+  );
+}
+
+/* Surface Finish Overlays */
+.pp-surface-topo {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  opacity: 0.18;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='0.9'%3E%3Cpath d='M10 40 C 50 10, 120 70, 170 30'/%3E%3Cpath d='M0 80 C 45 50, 115 105, 180 75'/%3E%3Cpath d='M15 125 C 60 95, 130 155, 175 115'/%3E%3Cpath d='M5 160 C 55 135, 125 175, 180 150'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* Holo-Sheen Sweep (State B Ambient Micro-Motion) */
+.pp-holo-sheen {
+  position: absolute;
+  inset: -20%;
+  z-index: 6;
+  pointer-events: none;
+  background: linear-gradient(
+    115deg,
+    transparent 40%,
+    rgba(255, 255, 255, 0.25) 50%,
+    transparent 60%
+  );
+  transform: translate3d(-120%, 0, 0);
+  animation: pp-sheen-sweep 5.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.pp-finish-glossy .pp-holo-sheen {
+  background: linear-gradient(
+    115deg,
+    transparent 36%,
+    rgba(255, 255, 255, 0.36) 50%,
+    transparent 64%
+  );
+  animation-duration: 4.2s;
+}
+
+.pp-finish-matte .pp-holo-sheen {
+  opacity: 0.42;
+}
+
+@keyframes pp-sheen-sweep {
+  0%, 58% {
+    transform: translate3d(-115%, 0, 0);
+  }
+  100% {
+    transform: translate3d(115%, 0, 0);
+  }
+}
+
+/* Live Telemetry Pace Dot */
+.pp-pulse-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #34d399;
+  box-shadow: 0 0 8px #34d399;
+  animation: pp-dot-beat var(--pace-pulse-ms, 1000ms) ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes pp-dot-beat {
+  0%, 100% {
+    transform: scale(0.82);
+    opacity: 0.72;
+  }
+  45% {
+    transform: scale(1.22);
+    opacity: 1;
+  }
+}
+
+/* State C: Secondary Telemetry Drawer Slide-Up (220ms) */
+.pp-secondary-drawer {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 200ms ease,
+    margin-top 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  margin-top: 0px;
+}
+
+.pp-secondary-drawer > div {
+  overflow: hidden;
+}
+
+.pp-card-shell.is-spotlight .pp-secondary-drawer {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  margin-top: 8px;
+}
+
+/* Reduced Motion Safe Mode */
+@media (prefers-reduced-motion: reduce) {
+  .pp-track-reveal,
+  .pp-stagger-card,
+  .pp-preset-liquid-gold .pp-card-frame,
+  .pp-ember,
+  .pp-hud-ticker-track,
+  .pp-preset-sonic-wave .pp-card-frame,
+  .pp-holo-sheen,
+  .pp-pulse-dot {
+    animation: none !important;
+  }
+
+  .pp-track-reveal {
+    clip-path: inset(0 0% 0 0%);
+    opacity: 1;
+  }
+
+  .pp-card-shell,
+  .pp-secondary-drawer,
+  .pp-photo-layer {
+    transition-duration: 0.01ms !important;
+  }
+
+  .pp-card-shell.is-spotlight {
+    transform: translate3d(0, -4px, 0) scale(1.02);
+  }
+}

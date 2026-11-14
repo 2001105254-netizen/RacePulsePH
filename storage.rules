@@ -47,5 +47,21 @@ service firebase.storage {
       allow create, update: if writeAllowed() && (isRaceImage() || isRouteGpx()) && request.resource.size < 8 * 1024 * 1024;
       allow delete: if writeAllowed();
     }
+    function canHighlight(action) {
+      return request.auth != null && (isPlatformOwner() || (
+        firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)) && access().status == 'active'
+        && (profile().role == 'superadmin' || (
+          (profile().role != 'organizer' || profile().approved)
+          && access().get('overrides', {}).get(action, profile().role in ['admin','superadmin']) == true
+          && access().get('overrides', {}).get('highlights.view', profile().role in ['admin','superadmin']) == true
+        ))
+      ));
+    }
+    match /highlight-assets/{ownerUid}/{highlightId}/{file} {
+      allow read: if true;
+      allow create, update: if request.auth != null && request.auth.uid == ownerUid && canHighlight('highlights.manage')
+        && request.resource.contentType.matches('image/.*') && request.resource.size < 8 * 1024 * 1024;
+      allow delete: if request.auth != null && request.auth.uid == ownerUid && canHighlight('highlights.manage');
+    }
   }
 }

@@ -1,6 +1,7 @@
 /* Fonts loaded non-blocking via <link> in index.html */
 @import "tailwindcss";
 @import './access-ui.css';
+@import './styles/highlights.css';
 @import './components/public-landing.css';
 @import './components/timing-console.css';
 

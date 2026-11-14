@@ -10,7 +10,7 @@ const RunnerDashboard = lazy(() => import('./RunnerDashboard'));
 
 export default function AuthorizedWorkspace({ profile, raceId, onRaceHandled }: { profile: UserProfile; raceId: string | null; onRaceHandled: () => void }) {
   const access = useAccess();
-  const operations = access.authority || ['race.view','race.create','timing.view','roster.view','engraving.view','users.view','hub.manage'].some(access.can);
+  const operations = access.authority || ['race.view','race.create','timing.view','roster.view','engraving.view','users.view','hub.manage','highlights.view'].some(access.can);
   const personal = ['personal.register','personal.results','personal.bibs','personal.certificates','personal.engraving','personal.friends'].some(access.can);
   const [selected, setSelected] = useState<'operations' | 'personal'>(operations ? 'operations' : 'personal');
   const [workspaceDirection, setWorkspaceDirection] = useState<NavDirection>('forward');

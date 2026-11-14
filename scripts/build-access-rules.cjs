@@ -23,18 +23,27 @@ const helpers = `${markerStart}
     }
     function preset(action) {
       let role = callerDoc().data.role;
-      return role == 'superadmin' || (role == 'admin' && !action.matches('personal[.].*'))
-        || (role == 'organizer' && !action.matches('engraving[.].*') && action != 'users.view' && action != 'timing.correct')
+      return role == 'superadmin' || (role == 'admin' && !action.matches('personal[.].*') && action != 'highlights.playlist')
+        || (role == 'organizer' && !action.matches('engraving[.].*') && !action.matches('highlights[.].*') && action != 'users.view' && action != 'timing.correct')
         || (role == 'runner' && action.matches('personal[.].*'));
     }
     function rawPermission(action) { return access().get('overrides', {}).get(action, preset(action)) == true; }
+    function fallbackPermission(action) {
+      let a = access();
+      let p = a.get('permissions', {});
+      let o = a.get('overrides', {});
+      return (action in p ? p[action] : (action in o ? o[action] : preset(action))) == true;
+    }
     function permission(action) {
       return request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && exists(/databases/$(database)/documents/userAccess/$(request.auth.uid))
         && access().status == 'active'
+        && (callerDoc().data.role != 'organizer' || callerDoc().data.get('approved', false) == true || action.matches('personal[.].*'))
         // The active Super Admin must not be locked out by a stale saved
-        // permission map after a role promotion.
-        && (callerDoc().data.role == 'superadmin' || access().get('permissions', {}).get(action, false) == true);
+        // permission map after a role promotion. Existing userAccess records
+        // created before new permission keys were added fall back to overrides/preset.
+        && (callerDoc().data.role == 'superadmin'
+          || (fallbackPermission(action)
+            && (!action.matches('highlights[.].*') || fallbackPermission('highlights.view'))));
     }
     function raceScope(raceId) {
       let race = get(/databases/$(database)/documents/races/$(raceId)).data;
@@ -153,6 +162,19 @@ block('match /orders/{orderId}',`match /orders/{orderId} {
       allow create: if isValidId(orderId) && isValidOrder(request.resource.data) && request.resource.data.status == 'queued' && (permission('engraving.create') || (permission('personal.engraving') && request.resource.data.ownerUid == request.auth.uid));
       allow update: if isValidOrder(request.resource.data) && permission('engraving.status') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updatedAt']);
       allow delete: if isSuperAdmin() || (permission('personal.engraving') && resource.data.get('ownerUid', null) == request.auth.uid && resource.data.status == 'queued');
+    }`);
+block('match /runnerHighlights/{highlightId}',`match /runnerHighlights/{highlightId} {
+      allow read: if true;
+      allow create, update: if isValidId(highlightId) && permission('highlights.manage') && isValidHighlight(request.resource.data);
+      allow delete: if isSuperAdmin() || permission('highlights.manage');
+    }`);
+block('match /system/highlightsConfig',`match /system/highlightsConfig {
+      allow read: if true;
+      allow create: if permission('highlights.settings')
+        && (!request.resource.data.keys().hasAny(['pinPodiumFirst','filterRaceId','hideExpired']) || permission('highlights.playlist'));
+      allow update: if permission('highlights.settings')
+        && (!changed(['pinPodiumFirst','filterRaceId','hideExpired']) || permission('highlights.playlist'));
+      allow delete: if isSuperAdmin();
     }`);
 // Social mutations retain their existing ownership/consent restrictions.
 const socialStart=source.indexOf('match /friendRequests/'),socialEnd=source.indexOf('// ========== SYSTEM');

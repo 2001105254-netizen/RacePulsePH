@@ -37,12 +37,12 @@
 .public-landing {
   position: relative;
   width: 100%;
-  max-width: 1360px;
+  max-width: 1440px;
   margin-inline: auto;
-  padding: 24px max(16px, var(--rp-safe-right)) 32px max(16px, var(--rp-safe-left));
+  padding: 16px max(16px, var(--rp-safe-right)) 32px max(16px, var(--rp-safe-left));
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-landing-section);
+  gap: 20px;
 }
 
 .dark .public-landing :is(.landing-intro, .landing-lookup) {
@@ -57,7 +57,7 @@
   --landing-track-line: oklch(40% 0.07 28);
 }
 
-.public-landing :is(.landing-intro, .landing-lookup) :is(button, input) {
+.public-landing :is(.landing-intro, .landing-lookup) :is(button, input):not(.landing-distance):not(.landing-spotlight-card) {
   border-radius: 12px;
   box-shadow: none;
   font-weight: 400;
@@ -71,7 +71,7 @@
 .landing-lookup input { font-size: var(--text-landing-body); border-color: var(--border-button); }
 .public-landing :is(.landing-intro, .landing-lookup) button { cursor: pointer; }
 .public-landing :is(.landing-intro, .landing-lookup) button:disabled { cursor: not-allowed; }
-.public-landing :is(.landing-intro, .landing-lookup) button:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 4px; }
+.public-landing :is(.landing-intro, .landing-lookup) button:hover:not(:disabled):not(.landing-distance):not(.landing-spotlight-card):not(.landing-primary) { text-decoration: underline; text-underline-offset: 4px; }
 .public-landing :is(.landing-intro, .landing-lookup) :is(button, input, a):focus-visible {
   outline: 2px solid var(--landing-accent);
   outline-offset: 4px;
@@ -79,8 +79,46 @@
 .public-landing :is(.landing-intro, .landing-lookup) p { font-size: var(--text-landing-body); line-height: 1.6; }
 .landing-lookup .landing-field-label { font-size: var(--text-landing-caption); }
 
-/* 1. Hero Section: Kinetic Typography, Odometer & 4-Layer Cutout Stage */
-.landing-intro { display: grid; gap: 24px; align-items: center; position: relative; z-index: 10; }
+/* 1. Hero Section: Contained Box, Kinetic Typography, Odometer & 4-Layer Cutout Stage */
+.landing-intro {
+  display: grid;
+  gap: 12px;
+  align-items: center;
+  position: relative;
+  z-index: 10;
+  padding: 16px;
+  border-radius: 24px;
+  border: 1px solid var(--border-default);
+  background: linear-gradient(
+    135deg in oklch,
+    var(--surface-card) 0%,
+    var(--surface-card) 56%,
+    color-mix(in oklch, var(--surface-card) 84%, var(--landing-track-surface)) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.08),
+    0 16px 40px -20px oklch(18% 0.02 28 / 0.16);
+  overflow: clip;
+}
+
+.dark .landing-intro {
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.06),
+    0 20px 48px -20px oklch(0% 0 0 / 0.55);
+}
+
+.landing-intro::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 16px;
+  width: 96px;
+  height: 4px;
+  background: linear-gradient(90deg in oklch, var(--landing-accent), var(--color-entry-coral));
+  transform: skewX(-24deg);
+  pointer-events: none;
+}
+
 .landing-intro-copy { min-width: 0; }
 .landing-intro h1 {
   font: 600 var(--text-landing-hero)/1.04 var(--font-display);
@@ -120,12 +158,100 @@
   z-index: -1;
 }
 
-.landing-intro-copy > p { max-width: 440px; margin-top: 20px; color: var(--text-secondary); }
-.landing-intro-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
-.landing-intro-actions button { min-height: 48px; padding-inline: 20px; font-size: var(--text-landing-body); }
+.landing-intro-copy > p { max-width: 540px; margin-top: 12px; color: var(--text-secondary); }
+.landing-intro-actions { display: flex; flex-wrap: wrap; flex-wrap: balance; gap: 12px; margin-top: 16px; }
+.landing-intro-actions button { min-height: 44px; padding-inline: 12px; font-size: var(--text-landing-body); }
+.landing-hero-spotlight {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+@media (max-width: 639px) {
+  .landing-spotlight-card:nth-child(n + 2) {
+    display: none;
+  }
+}
+
+.landing-spotlight-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border-default);
+  background: var(--surface-inset);
+  text-align: left;
+  color: var(--text-primary);
+  transition-property: transform, opacity;
+  transition-duration: 160ms;
+  transition-timing-function: var(--ease-out-quart);
+}
+
+.landing-spotlight-card:hover {
+  border-color: var(--landing-accent);
+  text-decoration: none;
+}
+
+.landing-spotlight-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+  font-family: var(--font-mono);
+  font-size: var(--text-landing-caption);
+  color: var(--text-secondary);
+}
+
+.landing-spotlight-meta > span {
+  white-space: nowrap;
+}
+
+.landing-spotlight-status {
+  color: var(--landing-accent);
+  font-weight: 600;
+}
+
+.landing-spotlight-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-landing-body);
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+.landing-spotlight-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--text-landing-caption);
+  color: var(--text-secondary);
+}
+
+.landing-spotlight-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--landing-accent);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .public-landing .landing-primary:not(:disabled) {
   background-color: var(--color-entry-action);
   color: var(--color-entry-action-text);
+  font-weight: 600;
+  padding-inline: 16px;
+  border: 1px solid color-mix(in oklch, var(--color-entry-action) 80%, black);
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.22),
+    0 8px 20px -6px oklch(48% 0.18 28 / 0.42);
 }
 .public-landing .landing-primary:hover:not(:disabled) { background-color: var(--color-entry-action-hover); }
 
@@ -134,11 +260,11 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 20px;
-  margin-top: 24px;
+  margin: 0;
   font-size: var(--text-landing-caption);
   color: var(--text-secondary);
-  border-left: 4px solid var(--landing-track-line);
-  padding-left: 16px;
+  border-left: 4px solid var(--landing-accent);
+  padding-left: 12px;
 }
 .landing-race-summary strong {
   color: var(--text-primary);
@@ -268,23 +394,43 @@
   z-index: 4;
 }
 
-.landing-runners figcaption {
+.landing-intro-footer {
+  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
+  flex-wrap: balance;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 12px 16px;
   padding-top: 12px;
   border-top: 1px solid var(--border-default);
   color: var(--text-secondary);
   font-size: var(--text-landing-caption);
 }
 
+.landing-hero-distances {
+  display: flex;
+  flex-wrap: wrap;
+  flex-wrap: balance;
+  align-items: center;
+  gap: 8px;
+}
+
+.landing-hero-distances-label,
+.landing-lookup-quick-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-landing-caption);
+  color: var(--text-secondary);
+}
+
+.landing-lookup-quick-label {
+  flex-basis: 100%;
+}
+
 .landing-caption-brand {
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  margin-left: auto;
 }
 
 .landing-finish-mark {
@@ -292,25 +438,6 @@
   height: 12px;
   border-inline: 4px solid var(--landing-accent);
   transform: skewX(-24deg);
-}
-
-.landing-motion-toggle {
-  min-height: 44px;
-  padding: 4px 12px;
-  border-radius: 9999px;
-  border: 1px solid var(--border-button, var(--border-default));
-  background: var(--surface-card);
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.landing-motion-toggle:hover {
-  color: var(--text-primary);
-  border-color: var(--landing-accent);
 }
 
 /* 2. Finisher Lookup: ECG Perimeter & Spotlight */
@@ -338,8 +465,8 @@
   position: relative;
   z-index: 25;
   display: grid;
-  gap: 20px;
-  padding: 24px;
+  gap: 16px 24px;
+  padding: 20px 24px;
   border: 1px solid var(--border-default);
   border-radius: 20px;
   background: var(--surface-card);
@@ -412,6 +539,14 @@
 
 .landing-lookup h2 { font: 600 var(--text-landing-body)/1.5 var(--font-display); }
 .landing-lookup-copy p { margin-top: 4px; color: var(--text-secondary); }
+.landing-lookup-quick {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  flex-wrap: balance;
+  align-items: center;
+  gap: 8px;
+}
 .landing-lookup-form { min-width: 0; position: relative; z-index: 3; }
 .landing-field-label { display: block; margin-bottom: 8px; color: var(--text-secondary); }
 .landing-lookup-matches { grid-column: 1 / -1; position: relative; z-index: 3; }
@@ -458,14 +593,18 @@
 }
 
 @media (min-width: 640px) {
-  .public-landing { padding-inline: max(24px, var(--rp-safe-left)); }
-  .landing-intro { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .public-landing { padding-inline: max(24px, var(--rp-safe-left)); gap: 24px; }
+  .landing-intro { padding: 24px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+  .landing-intro::before { left: 24px; }
+  .landing-intro-actions button { min-height: 48px; padding-inline: 20px; }
+  .public-landing .landing-primary:not(:disabled) { padding-inline: 24px; }
 }
 @media (min-width: 960px) {
-  .public-landing { padding: 40px 40px 48px; gap: 40px; }
-  .landing-intro { grid-template-columns: 1fr 1.1fr; gap: 32px; }
-  .landing-intro-copy { padding-block: 16px; }
-  .landing-lookup { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); align-items: center; gap: 32px; }
+  .public-landing { padding: 24px 32px 40px; gap: 24px; }
+  .landing-intro { padding: 24px 32px; grid-template-columns: 1.08fr 1fr; gap: 20px 32px; }
+  .landing-intro::before { left: 32px; }
+  .landing-intro-copy { padding-block: 4px; }
+  .landing-lookup { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); align-items: center; gap: 24px; }
 }
 
 /* Hardware-Accelerated Motion & Scroll-Driven Timelines */
@@ -534,22 +673,17 @@
     animation: landing-ecg-sweep 3.6s linear infinite;
   }
 
-  .landing-distance:active {
-    transform: scale(0.96);
+  .landing-distance:active,
+  .landing-spotlight-card:active {
+    transform: scale(0.98);
   }
 
   .landing-primary svg { transition: transform 160ms var(--ease-out-quart); }
   .landing-primary:is(:hover, :focus-visible) svg { transform: translateX(4px); }
   .public-landing .landing-intro-actions button:active { transform: translateY(2px); }
   @media (hover: hover) {
-    .public-landing .landing-intro-actions button:hover { transform: translateY(-2px); text-decoration: none; }
-  }
-
-  /* Pause continuous animations when user toggles Pause motion (R-39) */
-  .public-landing[data-motion-paused="true"] .landing-gpx-pace,
-  .public-landing[data-motion-paused="true"] .landing-ecg-pulse,
-  .public-landing[data-motion-paused="true"] .landing-intro h1 .landing-finish-phrase::before {
-    animation-play-state: paused !important;
+    .public-landing .landing-intro-actions button:hover,
+    .landing-spotlight-card:hover { transform: translateY(-2px); text-decoration: none; }
   }
 }
 

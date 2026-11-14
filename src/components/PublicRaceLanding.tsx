@@ -15,8 +15,6 @@ import {
   Link2,
   Check,
   RefreshCw,
-  Pause,
-  Play,
 } from 'lucide-react';
 import { db } from '../firebase';
 import { PublicLeaderboardEntry, PublicLiveResults, Race, RunnerResult } from '../types';
@@ -36,6 +34,7 @@ import {
 
 const PublicLiveRaceHub = lazy(() => import('./PublicLiveRaceHub'));
 const PublicRaceResults = lazy(() => import('./PublicRaceResults'));
+import PodiumPulseReel from './PodiumPulseReel';
 
 interface PublicRaceLandingProps {
   onRegister: (raceId?: string) => void;
@@ -136,13 +135,12 @@ function toRunnerResult(entry: PublicLeaderboardEntry): RunnerResult {
   };
 }
 
-function OdometerStat({ value, paused }: { value: number; paused: boolean }) {
+function OdometerStat({ value }: { value: number }) {
   const [displayValue, setDisplayValue] = useState(value);
 
   useEffect(() => {
     const reduceMotion =
-      paused ||
-      (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reduceMotion || value <= 0) {
       setDisplayValue(value);
       return;
@@ -174,7 +172,7 @@ function OdometerStat({ value, paused }: { value: number; paused: boolean }) {
       cancelAnimationFrame(rafId);
       window.clearTimeout(fallbackTimer);
     };
-  }, [value, paused]);
+  }, [value]);
 
   return (
     <span className="landing-odometer" aria-label={String(value)}>
@@ -203,7 +201,6 @@ export default function PublicRaceLanding({
   const [downloadedBibKey, setDownloadedBibKey] = useState<string | null>(null);
   const [certificateNotice, setCertificateNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
   const [heroOutOfView, setHeroOutOfView] = useState(false);
-  const [motionPaused, setMotionPaused] = useState(false);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const bibInputRef = useRef<HTMLInputElement>(null);
@@ -237,7 +234,7 @@ export default function PublicRaceLanding({
     if (!figureEl || !stageEl || !heroEl || typeof window === 'undefined') return;
 
     const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    if (reducedMotionQuery.matches || motionPaused) {
+    if (reducedMotionQuery.matches) {
       figureEl.style.setProperty('--tilt-x', '0');
       figureEl.style.setProperty('--tilt-y', '0');
       return;
@@ -348,7 +345,7 @@ export default function PublicRaceLanding({
       window.removeEventListener('scroll', onScrollParallaxFallback);
       viewObserver?.disconnect();
     };
-  }, [motionPaused]);
+  }, []);
 
   useEffect(() => {
     return subscribeSharedRaces((rawList, loaded, err) => {
@@ -465,6 +462,11 @@ export default function PublicRaceLanding({
     return (podiumOnly.length > 0 ? podiumOnly : allPublishedFinishers).slice(0, 6);
   }, [allPublishedFinishers]);
 
+  const heroSpotlightRaces = useMemo(
+    () => (activeRaces.length > 0 ? activeRaces : doneRaces).slice(0, 2),
+    [activeRaces, doneRaces]
+  );
+
   // Scroll to deep-linked ?race=<id> once races finish loading
   useEffect(() => {
     if (loadState === 'ready' && selectedRace && !didInitialUrlScrollRef.current) {
@@ -481,12 +483,30 @@ export default function PublicRaceLanding({
 
   const handleSelectRace = (raceId: string) => {
     didInitialUrlScrollRef.current = true;
+    const targetRace = races.find((r) => r.id === raceId);
+    if (targetRace) {
+      setActiveTab(targetRace.completedAt || targetRace.date < today ? 'completed' : 'upcoming');
+    }
     setSelectedRaceId(raceId);
     syncRaceIdToUrl(raceId);
     requestAnimationFrame(() => {
       const reduceMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       document.getElementById('public-race-results')?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
     });
+  };
+
+  const handleViewHighlightLeaderboard = (raceId?: string) => {
+    if (raceId) {
+      const target = races.find((r) => r.id === raceId);
+      if (target) {
+        if (target.completedAt || target.date < today) {
+          setActiveTab('completed');
+        }
+        handleSelectRace(target.id);
+        return;
+      }
+    }
+    handleSwitchToCompletedAndSearch();
   };
 
   const handleCloseSelectedRace = () => {
@@ -560,7 +580,6 @@ export default function PublicRaceLanding({
     <main
       id="main-content"
       tabIndex={-1}
-      data-motion-paused={motionPaused ? 'true' : 'false'}
       className="public-landing focus:outline-none"
     >
       {/* Finisher Spotlight Focus Backdrop Scrim */}
@@ -661,33 +680,66 @@ export default function PublicRaceLanding({
               Create account
             </Button>
           </div>
-          <div className="landing-race-summary" aria-live="polite">
-            {loadState === 'ready' ? (
-              <>
-                <span>
-                  <strong>
-                    <OdometerStat value={activeRaces.length} paused={motionPaused} />
-                  </strong>{' '}
-                  upcoming {activeRaces.length === 1 ? 'race' : 'races'}
-                </span>
-                <span>
-                  <strong>
-                    <OdometerStat value={doneRaces.length} paused={motionPaused} />
-                  </strong>{' '}
-                  completed
-                </span>
-                {liveRaces.length > 0 && (
-                  <span className="landing-live-count">
-                    <OdometerStat value={liveRaces.length} paused={motionPaused} /> live now
-                  </span>
-                )}
-              </>
-            ) : (
-              <span>
-                {loadState === 'loading' ? 'Loading the race calendar...' : 'Race calendar temporarily unavailable'}
-              </span>
-            )}
-          </div>
+          {loadState === 'ready' && heroSpotlightRaces.length > 0 && (
+            <div className="landing-hero-spotlight" role="group" aria-label="Featured races">
+              {heroSpotlightRaces.map((race) => {
+                const raceHasStarted =
+                  Object.keys(race.waveStartTimes || {}).length > 0 || !!race.gunStartTime;
+                const hasResults = !!race.completedAt || raceHasStarted;
+                const regOpen = isRaceRegistrationOpen(race, today);
+
+                return (
+                  <button
+                    key={race.id}
+                    type="button"
+                    className="landing-spotlight-card"
+                    onClick={() => {
+                      if (hasResults) {
+                        handleSelectRace(race.id);
+                        return;
+                      }
+                      didInitialUrlScrollRef.current = true;
+                      setActiveTab('upcoming');
+                      setSearchQuery('');
+                      setSelectedDistanceFilter('all');
+                      setSelectedRaceId(race.id);
+                      syncRaceIdToUrl(race.id);
+                      requestAnimationFrame(() => {
+                        const targetEl =
+                          document.getElementById(`race-card-${race.id}`) ||
+                          document.getElementById('events-catalog');
+                        const reduceMotion =
+                          typeof window !== 'undefined' &&
+                          window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                        targetEl?.scrollIntoView({
+                          behavior: reduceMotion ? 'auto' : 'smooth',
+                          block: 'start',
+                        });
+                      });
+                    }}
+                  >
+                    <span className="landing-spotlight-meta">
+                      <span className="landing-spotlight-status">
+                        {(formatRaceScheduleNote(race, today) || (race.completedAt ? 'Official results' : 'Upcoming')).replace(
+                          /^Closes [A-Za-z]+,\s*/,
+                          'Closes '
+                        )}
+                      </span>
+                      <span>{formatReadableRaceDate(race.date).replace(/^[A-Za-z]+,\s*/, '')}</span>
+                    </span>
+                    <span className="landing-spotlight-title">{race.name}</span>
+                    <span className="landing-spotlight-footer">
+                      <span>{(race.distances || []).map((d) => d.label).join(' · ') || 'Open categories'}</span>
+                      <span className="landing-spotlight-cta">
+                        <span>{hasResults ? 'View results' : regOpen ? 'Register' : 'View details'}</span>
+                        <ArrowRight className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <figure ref={runnersFigureRef} className="landing-runners">
@@ -773,32 +825,67 @@ export default function PublicRaceLanding({
               data-depth="4"
             />
           </div>
-
-          <figcaption>
-            <button
-              type="button"
-              aria-pressed={motionPaused}
-              onClick={() => setMotionPaused((prev) => !prev)}
-              className="landing-motion-toggle"
-            >
-              {motionPaused ? (
-                <>
-                  <Play className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span>Resume motion</span>
-                </>
-              ) : (
-                <>
-                  <Pause className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span>Pause motion</span>
-                </>
-              )}
-            </button>
-            <span className="landing-caption-brand">
-              <span className="landing-finish-mark" aria-hidden="true" />
-              <span>Happy running ka Racepulse!</span>
-            </span>
-          </figcaption>
         </figure>
+
+        <footer className="landing-intro-footer">
+          <div className="landing-race-summary" aria-live="polite">
+            {loadState === 'ready' ? (
+              <>
+                <span>
+                  <strong>
+                    <OdometerStat value={activeRaces.length} />
+                  </strong>{' '}
+                  upcoming {activeRaces.length === 1 ? 'race' : 'races'}
+                </span>
+                <span>
+                  <strong>
+                    <OdometerStat value={doneRaces.length} />
+                  </strong>{' '}
+                  completed
+                </span>
+                {liveRaces.length > 0 && (
+                  <span className="landing-live-count">
+                    <OdometerStat value={liveRaces.length} /> live now
+                  </span>
+                )}
+              </>
+            ) : (
+              <span>
+                {loadState === 'loading' ? 'Loading the race calendar...' : 'Race calendar temporarily unavailable'}
+              </span>
+            )}
+          </div>
+          {loadState === 'ready' && availableDistances.length > 0 && (
+            <div className="landing-hero-distances" role="group" aria-label="Quick filter by distance">
+              <span className="landing-hero-distances-label">Distances:</span>
+              {availableDistances.slice(0, 6).map((dist) => (
+                <button
+                  key={dist}
+                  type="button"
+                  aria-pressed={selectedDistanceFilter === dist}
+                  className={`${chipBase} ${selectedDistanceFilter === dist ? chipActive : chipIdle}`}
+                  onClick={() => {
+                    const nextDist = selectedDistanceFilter === dist ? 'all' : dist;
+                    setSelectedDistanceFilter(nextDist);
+                    if (nextDist !== 'all') {
+                      const hasInUpcoming = activeRaces.some((r) =>
+                        (r.distances || []).some((d) => d.label.trim().toUpperCase() === nextDist)
+                      );
+                      if (!hasInUpcoming) setActiveTab('completed');
+                    }
+                    scrollToSection('events-catalog');
+                  }}
+                >
+                  {dist}
+                </button>
+              ))}
+            </div>
+          )}
+          <span className="landing-caption-brand">
+            <span className="landing-finish-mark" aria-hidden="true" />
+            <span>Happy running ka Racepulse!</span>
+          </span>
+        </footer>
       </section>
 
       {/* 2. Finisher Lookup Bar with Animated ECG Heartbeat Perimeter & Podium Spotlight Focus */}
@@ -828,6 +915,21 @@ export default function PublicRaceLanding({
         <div className="landing-lookup-copy">
           <h2 id="lookup-heading">Already crossed the line?</h2>
           <p>Find your finish time and finisher certificate.</p>
+          {!bibQuery.trim() && featuredBibFinishers.length > 0 && (
+            <div className="landing-lookup-quick" role="group" aria-label="Recent official finisher bibs">
+              <span className="landing-lookup-quick-label">Recent finishers:</span>
+              {featuredBibFinishers.slice(0, 3).map(({ race, entry }) => (
+                <button
+                  key={`${race.id}_${entry.bibNumber}_${entry.distance}`}
+                  type="button"
+                  className="landing-distance"
+                  onClick={() => setBibQuery(entry.bibNumber)}
+                >
+                  #{entry.bibNumber} &middot; {entry.distance}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <form
           role="search"
@@ -1009,6 +1111,12 @@ export default function PublicRaceLanding({
         )}
       </section>
 
+      {/* Podium Highlights Reel directly below the Hero Search Bar */}
+      <PodiumPulseReel
+        searchFocused={isBibSearchFocused || bibQuery.trim().length > 0}
+        onViewLeaderboard={handleViewHighlightLeaderboard}
+      />
+
       {/* Live Timing Feed Spotlight (Conditional on active broadcast) */}
       {liveRaces.length > 0 && (
         <section className="space-y-4" aria-labelledby="live-heading">
@@ -1160,7 +1268,8 @@ export default function PublicRaceLanding({
               return (
                 <li
                   key={race.id}
-                  className="flex min-w-0"
+                  id={`race-card-${race.id}`}
+                  className="flex min-w-0 scroll-mt-24"
                 >
                   <Card
                     className={`group w-full min-w-0 flex flex-col justify-between transition-[transform,box-shadow] duration-200 hover:-translate-y-1 hover:shadow-lg ${

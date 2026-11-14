@@ -391,3 +391,82 @@ export interface RunnerResult {
   timingMethod?: 'chip' | 'gun' | 'transition';
   sequenceStartTime?: string;
 }
+
+// ========== RUNNER HIGHLIGHTS MARQUEE (THE PODIUM PULSE SYSTEM) ==========
+
+export type HighlightEntryMode = 'solo' | 'duo';
+
+export type HighlightPlacement =
+  | '1st'
+  | '2nd'
+  | '3rd'
+  | 'Top 10'
+  | 'Finisher'
+  | 'Record Holder';
+
+export type HighlightBorderPreset =
+  | 'liquid-gold'
+  | 'cyber-hud'
+  | 'sonic-wave'
+  | 'holo-foil'
+  | 'carbon-minimal';
+
+export type HighlightCornerGeometry = 'rounded' | 'sharp' | 'tactical';
+
+export type HighlightSurfaceFinish = 'matte' | 'glossy' | 'topo';
+
+export type HighlightCardLayoutMode = 'card' | 'pill';
+
+export type HighlightHoverBehavior = 'stop' | 'slow' | 'keep';
+
+export type HighlightFlowDirection = 'left' | 'right';
+
+export interface RunnerHighlight {
+  id: string;
+  mode: HighlightEntryMode;
+  runnerName: string;
+  bibNumber: string;
+  partnerName?: string;
+  partnerBibNumber?: string;
+  photoUrl: string;
+  partnerPhotoUrl?: string;
+  placement: HighlightPlacement | string;
+  distance: string;
+  chipTime: string;
+  gunTime?: string;
+  pace: string;
+  splitPace?: string;
+  soloSplitTime?: string;
+  partnerSplitTime?: string;
+  combinedAvgPace?: string;
+  raceId?: string;
+  raceName: string;
+  raceCode?: string;
+  raceDate: string;
+  runClub?: string;
+  borderPreset: HighlightBorderPreset;
+  cornerGeometry: HighlightCornerGeometry;
+  accentColor: string;
+  glowIntensity: number;
+  surfaceFinish: HighlightSurfaceFinish;
+  badgeStamp?: string;
+  pinned?: boolean;
+  expiresAt?: string;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HighlightsMarqueeConfig {
+  speedPxPerSec: number;
+  hoverBehavior: HighlightHoverBehavior;
+  direction: HighlightFlowDirection;
+  layoutMode: HighlightCardLayoutMode;
+  cardGapPx: number;
+  edgeFadePx: number;
+  pinPodiumFirst: boolean;
+  filterRaceId: string;
+  hideExpired: boolean;
+  updatedAt?: string;
+  updatedBy?: string;
+}

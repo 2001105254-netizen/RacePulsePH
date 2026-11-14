@@ -5,10 +5,11 @@ import { auth, db } from '../firebase';
 import { Race, UserProfile } from '../types';
 import { defaults } from './accessPolicy';
 import catalog from './access-presets.json';
-type AccessState = { overrides?: Record<string, boolean>; scope?: string; raceIds?: string[]; status?: string; revision?: number };
+type AccessState = { overrides?: Record<string, boolean>; permissions?: Record<string, boolean>; scope?: string; raceIds?: string[]; status?: string; revision?: number };
 type AccessContextValue = { can: (key: string) => boolean; inScope: (race: Race) => boolean; authority: boolean; ready: boolean; suspended: boolean; state: AccessState; version: string };
 const denied: AccessContextValue = { can: () => false, inScope: () => false, authority: false, ready: false, suspended: false, state: {}, version: '' };
 const Context = createContext(denied);
+export const AccessContext = Context;
 export const useAccess = () => useContext(Context);
 export interface ScopedRacesState {
   races: Race[];
@@ -46,7 +47,35 @@ export function useScopedRaces() {
 }
 export function AccessProvider({ profile, children, onLoadState }: { profile: UserProfile; children: React.ReactNode; onLoadState?: (state: 'loading' | 'ready' | 'error') => void }) {
   const [state, setState] = useState<AccessState>({}), [ready, setReady] = useState(false), [error, setError] = useState('');
-  useEffect(() => { setReady(false); setError(''); return onSnapshot(doc(db, 'userAccess', profile.uid), snap => { setState(snap.data() || {}); setReady(snap.exists()); if (!snap.exists()) void accessCommand('session', {}).catch(e => setError(e.message)); }, e => { setError(e.message); setReady(false); }); }, [profile.uid]);
+  useEffect(() => {
+    setReady(false);
+    setError('');
+    let syncedMissingPerms = false;
+    return onSnapshot(
+      doc(db, 'userAccess', profile.uid),
+      (snap) => {
+        const data = (snap.data() || {}) as AccessState;
+        setState(data);
+        setReady(snap.exists());
+        if (!snap.exists()) {
+          void accessCommand('session', {}).catch((e) => setError(e.message));
+          return;
+        }
+        if (!syncedMissingPerms) {
+          const expectedKeys = Object.keys(defaults(profile.role));
+          const perms = data.permissions;
+          if (!perms || expectedKeys.some((key) => typeof perms[key] !== 'boolean')) {
+            syncedMissingPerms = true;
+            void accessCommand('session', {}).catch(() => {});
+          }
+        }
+      },
+      (e) => {
+        setError(e.message);
+        setReady(false);
+      },
+    );
+  }, [profile.uid, profile.role]);
   // Report after commit so a successful signal includes the mounted workspace.
   useEffect(() => { onLoadState?.(error ? 'error' : ready ? 'ready' : 'loading'); }, [error, ready, onLoadState]);
   const value = useMemo<AccessContextValue>(() => {

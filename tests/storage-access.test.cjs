@@ -35,3 +35,8 @@ test('Super Admin can upload artwork for any race despite a legacy restricted sc
 test('platform owner email can recover Storage uploads without a profile or access record',async()=>{
  await assertSucceeds(upload(env.authenticatedContext('storage_owner_email',{email:'kiahzeh@gmail.com'}),'unassigned_storage_race','poster-owner-email.jpg','storage_owner_email'));
 });
+test('highlight asset uploads enforce highlights.manage permission and owner path',async()=>{
+ await assertFails(uploadBytes(ref(env.authenticatedContext('storage_owner').storage(),'highlight-assets/storage_owner/hl_1/primary.jpg'),image,{contentType:'image/jpeg'}));
+ await assertSucceeds(uploadBytes(ref(env.authenticatedContext('storage_superadmin').storage(),'highlight-assets/storage_superadmin/hl_1/primary.jpg'),image,{contentType:'image/jpeg'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('storage_superadmin').storage(),'highlight-assets/someone_else/hl_1/primary.jpg'),image,{contentType:'image/jpeg'}));
+});

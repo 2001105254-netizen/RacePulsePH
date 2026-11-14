@@ -576,11 +576,14 @@ export default function MyRaceEventsPanel({
   const renderInlineActions = (race: Race, compactMobile = false) => {
     const btnClass = compactMobile
       ? 'min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-2 transition-colors whitespace-nowrap'
-      : 'h-8 px-2 rounded-md border border-[var(--border-default)] bg-[var(--surface-card)] hover:border-red-600 hover:text-red-700 dark:hover:text-red-400 text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-1 transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400';
+      : 'w-8 h-8 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:border-red-600 hover:text-red-700 dark:hover:text-red-400 text-[var(--text-primary)] inline-flex items-center justify-center shrink-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400';
 
     const timingBtnClass = compactMobile
       ? 'min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center gap-2 transition-colors whitespace-nowrap'
-      : 'h-8 px-2 rounded-md bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center gap-1 transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400';
+      : 'w-8 h-8 rounded-lg bg-red-700 hover:bg-red-600 text-white inline-flex items-center justify-center shrink-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400';
+
+    const iconClass = compactMobile ? 'w-3.5 h-3.5 shrink-0' : 'w-4 h-4 shrink-0';
+    const labelClass = compactMobile ? undefined : 'sr-only';
 
     return (
       <div
@@ -595,8 +598,8 @@ export default function MyRaceEventsPanel({
             aria-label={`Timing for ${race.name}`}
             className={timingBtnClass}
           >
-            <Radio className="w-3 h-3 shrink-0" aria-hidden="true" />
-            <span>Timing</span>
+            <Radio className={iconClass} aria-hidden="true" />
+            <span className={labelClass}>Timing</span>
           </button>
         )}
         {canViewEngraving && onOpenEngraving && (
@@ -607,8 +610,8 @@ export default function MyRaceEventsPanel({
             aria-label={`Engrave for ${race.name}`}
             className={btnClass}
           >
-            <Award className="w-3 h-3 shrink-0" aria-hidden="true" />
-            <span>Engrave</span>
+            <Award className={iconClass} aria-hidden="true" />
+            <span className={labelClass}>Engrave</span>
           </button>
         )}
         {canViewRoster && onOpenRunners && (
@@ -619,8 +622,8 @@ export default function MyRaceEventsPanel({
             aria-label={`Runners for ${race.name}`}
             className={btnClass}
           >
-            <Users className="w-3 h-3 shrink-0" aria-hidden="true" />
-            <span>Runners</span>
+            <Users className={iconClass} aria-hidden="true" />
+            <span className={labelClass}>Runners</span>
           </button>
         )}
         {canEditRace && onOpenSetup && (
@@ -631,8 +634,8 @@ export default function MyRaceEventsPanel({
             aria-label={`Setup for ${race.name}`}
             className={btnClass}
           >
-            <Settings2 className="w-3 h-3 shrink-0" aria-hidden="true" />
-            <span>Setup</span>
+            <Settings2 className={iconClass} aria-hidden="true" />
+            <span className={labelClass}>Setup</span>
           </button>
         )}
       </div>
@@ -1023,11 +1026,11 @@ export default function MyRaceEventsPanel({
               </div>
             ) : (
               /* Desktop High-Density Event Directory Table */
-              <table id="events_directory_table" className="w-full text-left border-collapse">
+              <table id="events_directory_table" className="w-full table-fixed text-left border-collapse">
                 <thead className="sticky top-0 z-10 bg-[var(--surface-inset)] border-b border-[var(--border-default)] text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                   <tr>
                     <th
-                      className="py-2 pl-4 pr-3"
+                      className="py-2 pl-4 pr-2"
                       aria-sort={
                         sortKey === 'name'
                           ? sortDir === 'asc'
@@ -1046,7 +1049,7 @@ export default function MyRaceEventsPanel({
                       </button>
                     </th>
                     <th
-                      className="py-2 px-3 w-32"
+                      className="py-2 px-2 w-[108px]"
                       aria-sort={
                         sortKey === 'date'
                           ? sortDir === 'asc'
@@ -1065,7 +1068,7 @@ export default function MyRaceEventsPanel({
                       </button>
                     </th>
                     <th
-                      className="py-2 px-3 w-24 text-right"
+                      className="py-2 px-2 w-[84px] text-right"
                       aria-sort={
                         sortKey === 'runners'
                           ? sortDir === 'asc'
@@ -1084,7 +1087,7 @@ export default function MyRaceEventsPanel({
                       </button>
                     </th>
                     <th
-                      className="py-2 px-3 w-28 text-right"
+                      className="py-2 px-2 w-[104px] text-right"
                       aria-sort={
                         sortKey === 'revenue'
                           ? sortDir === 'asc'
@@ -1102,7 +1105,7 @@ export default function MyRaceEventsPanel({
                         {renderSortMarker('revenue')}
                       </button>
                     </th>
-                    <th className="py-2 pl-2 pr-4 text-right w-56">Quick Actions</th>
+                    <th className="py-2 pl-2 pr-3 text-right whitespace-nowrap w-[160px]">Quick Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border-subtle)] text-sm">
@@ -1124,7 +1127,7 @@ export default function MyRaceEventsPanel({
                               } hover:bg-[var(--surface-hover)]/65`
                         }`}
                       >
-                        <td className="py-2 pl-3 pr-3 align-middle max-w-[260px]">
+                        <td className="py-2 pl-3 pr-2 align-middle min-w-0">
                           <div className="flex items-center gap-3 min-w-0">
                             <div className="w-12 h-8 rounded border border-[var(--border-subtle)] bg-[var(--surface-inset)] overflow-hidden shrink-0 flex items-center justify-center">
                               {row.race.posterImage ? (
@@ -1161,7 +1164,7 @@ export default function MyRaceEventsPanel({
                           </div>
                         </td>
 
-                        <td className="py-2 px-3 align-middle whitespace-nowrap">
+                        <td className="py-2 px-2 align-middle whitespace-nowrap">
                           <div className="font-mono text-xs font-semibold tabular-nums text-[var(--text-primary)] leading-tight">
                             {row.race.date}
                           </div>
@@ -1176,7 +1179,7 @@ export default function MyRaceEventsPanel({
                           </span>
                         </td>
 
-                        <td className="py-2 px-3 align-middle text-right whitespace-nowrap">
+                        <td className="py-2 px-2 align-middle text-right whitespace-nowrap">
                           <span className="font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">
                             {canViewRoster ? (
                               <AnimatedMetricValue
@@ -1190,7 +1193,7 @@ export default function MyRaceEventsPanel({
                           </span>
                         </td>
 
-                        <td className="py-2 px-3 align-middle text-right whitespace-nowrap">
+                        <td className="py-2 px-2 align-middle text-right whitespace-nowrap">
                           <span className="font-mono text-sm font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
                             {canViewRoster && canViewRevenue ? (
                               <AnimatedMetricValue
@@ -1204,7 +1207,7 @@ export default function MyRaceEventsPanel({
                           </span>
                         </td>
 
-                        <td className="py-2 pl-2 pr-4 align-middle text-right whitespace-nowrap">
+                        <td className="py-2 pl-2 pr-3 align-middle text-right whitespace-nowrap">
                           {renderInlineActions(row.race, false)}
                         </td>
                       </tr>

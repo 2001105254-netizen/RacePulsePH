@@ -79,14 +79,17 @@ export default function PublicRaceResults({ race, onRegister }: PublicRaceResult
         <div className="absolute inset-0 bg-gradient-to-r from-red-950/35 to-[var(--surface-card)]/90" />
         <div className="relative flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div className="min-w-0">
-            <h2 className="heading-float font-display text-xl sm:text-2xl font-semibold tracking-tight text-[var(--text-primary)]">{race.name}</h2>
+            <p className="font-display text-base sm:text-lg font-semibold tracking-tight text-[var(--text-primary)]">
+              {resultsArePublic ? 'Official leaderboard & finisher certificates' : 'Event schedule, distances & route preview'}
+            </p>
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
               <p className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
                 <Calendar className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
                 <span>{race.date}</span>
               </p>
               <span className="inline-flex items-center gap-2 rounded-full border border-emerald-700/30 bg-emerald-700/10 px-3 py-1 text-xs font-semibold text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300">
-                <Trophy className="w-3.5 h-3.5" aria-hidden="true" /> Official results
+                <Trophy className="w-3.5 h-3.5" aria-hidden="true" />{' '}
+                {resultsArePublic ? 'Official results' : registrationOpen ? 'Registration open' : 'Upcoming event'}
               </span>
             </div>
           </div>

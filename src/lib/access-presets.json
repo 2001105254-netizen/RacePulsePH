@@ -58,6 +58,12 @@
       "engraving.export",
       "engraving.backup"
     ],
+    "Highlights": [
+      "highlights.view",
+      "highlights.manage",
+      "highlights.settings",
+      "highlights.playlist"
+    ],
     "Personal": [
       "personal.register",
       "personal.checkout",
@@ -172,6 +178,16 @@
     "engraving.backup": [
       "engraving.view"
     ],
+    "highlights.manage": [
+      "highlights.view"
+    ],
+    "highlights.settings": [
+      "highlights.view"
+    ],
+    "highlights.playlist": [
+      "highlights.view",
+      "highlights.settings"
+    ],
     "timing.view": [
       "roster.view",
       "race.view"
@@ -234,6 +250,10 @@
       "engraving.status": false,
       "engraving.export": false,
       "engraving.backup": false,
+      "highlights.view": false,
+      "highlights.manage": false,
+      "highlights.settings": false,
+      "highlights.playlist": false,
       "personal.register": true,
       "personal.checkout": true,
       "personal.results": true,
@@ -285,6 +305,10 @@
       "engraving.status": false,
       "engraving.export": false,
       "engraving.backup": false,
+      "highlights.view": false,
+      "highlights.manage": false,
+      "highlights.settings": false,
+      "highlights.playlist": false,
       "personal.register": true,
       "personal.checkout": true,
       "personal.results": true,
@@ -336,6 +360,10 @@
       "engraving.status": true,
       "engraving.export": true,
       "engraving.backup": true,
+      "highlights.view": true,
+      "highlights.manage": true,
+      "highlights.settings": true,
+      "highlights.playlist": false,
       "personal.register": false,
       "personal.checkout": false,
       "personal.results": false,
@@ -387,6 +415,10 @@
       "engraving.status": true,
       "engraving.export": true,
       "engraving.backup": true,
+      "highlights.view": true,
+      "highlights.manage": true,
+      "highlights.settings": true,
+      "highlights.playlist": true,
       "personal.register": true,
       "personal.checkout": true,
       "personal.results": true,

@@ -34,3 +34,7 @@ evidence*.png
 signing/
 *.jks
 *.keystore
+
+# Local IDE settings and Firebase Android config
+.vscode/
+android/app/google-services.json

@@ -10,13 +10,24 @@ function createAccessService(db) {
     const actorAccess = policy.accessFor(actor, actorState.data());
     if (actorAccess.status !== 'active') fail('Your account access is suspended.', 403);
     if (path === '/session') {
-      if (!actorState.exists) {
+      const existingPerms = actorState.exists ? (actorState.data()?.permissions || {}) : null;
+      const missingPermissionKey = !actorState.exists || policy.keys.some(key => typeof existingPerms[key] !== 'boolean');
+      if (missingPermissionKey) {
         await db.runTransaction(async tx => {
           const [latestUser, latestAccess] = await Promise.all([tx.get(userRef(actorUid)), tx.get(accessRef(actorUid))]);
-          if (!latestAccess.exists && latestUser.exists) {
+          if (!latestUser.exists) return;
+          if (!latestAccess.exists) {
             const baseline = policy.accessFor(latestUser.data());
             baseline.permissions = Object.fromEntries(policy.keys.map(key => [key, policy.can(latestUser.data(), baseline, key)]));
             tx.create(accessRef(actorUid), baseline);
+            return;
+          }
+          const current = latestAccess.data() || {};
+          const latestPerms = current.permissions || {};
+          if (policy.keys.some(key => typeof latestPerms[key] !== 'boolean')) {
+            const merged = policy.accessFor(latestUser.data(), current);
+            const permissions = Object.fromEntries(policy.keys.map(key => [key, policy.can(latestUser.data(), merged, key)]));
+            tx.update(accessRef(actorUid), { permissions });
           }
         });
       }
