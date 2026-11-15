@@ -332,7 +332,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
   const { confirm, notify } = useFeedback();
   const headerCtx = useWorkspaceHeader();
   const defaultMode = can('timing.view') ? 'record' : (can('roster.view') ? 'roster' : 'assign');
-  const [mode, setMode] = useState<'record' | 'mobile-checkin' | 'assign' | 'roster' | 'rankings' | 'rollcall'>(() => initialMode || defaultMode);
+  const [mode, setMode] = useState<'record' | 'mobile-checkin' | 'assign' | 'roster' | 'payments' | 'rankings' | 'rollcall'>(() => initialMode || defaultMode);
   const [mobileRecordPane, setMobileRecordPane] = useState<'reads' | 'results'>('reads');
   const modeTabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
@@ -1280,6 +1280,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
     { key: 'mobile-checkin' as const, label: 'Mobile Check-In', Icon: Smartphone },
     { key: 'assign' as const, label: 'Assign Chips', Icon: Cpu },
     { key: 'roster' as const, label: 'Roster', Icon: Users2 },
+    ...(can('payment.confirm') ? [{ key: 'payments' as const, label: 'Payments', Icon: CheckCircle2 }] : []),
     { key: 'rankings' as const, label: 'Rankings', Icon: Trophy },
     { key: 'rollcall' as const, label: 'Start Roll Call', Icon: ListChecks },
   ];
@@ -1453,7 +1454,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
       {/* Mode navigation + read-only telemetry ribbon */}
       <div className="glass-panel rounded-2xl px-3 py-2 lg:rounded-none lg:border-x-0 lg:border-t-0 lg:border-b lg:border-[var(--border-default)] lg:bg-[var(--surface-card)] lg:shadow-none lg:px-4 lg:py-2 flex items-center justify-between gap-3 shrink-0">
         <div className="w-full racepulse-horizontal-scroll touch-pan-x md:flex-1 md:min-w-0">
-          <div role="tablist" aria-label="Timing tools" className="grid grid-cols-6 gap-2 md:flex md:items-center md:gap-1 md:min-w-max py-1">
+          <div role="tablist" aria-label="Timing tools" className="flex min-w-max items-center gap-1 py-1">
             {timingModes.map(({ key, label, Icon }) => {
               const active = mode === key;
               return (
@@ -1528,6 +1529,12 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
           <div className="order-2 lg:order-none lg:h-full lg:overflow-y-auto shrink-0">
             <EntrySequencePanel race={race} runners={runnerProfiles} chipReads={chipReads} />
           </div>
+        </div>
+      )}
+
+      {mode === 'payments' && can('payment.confirm') && (
+        <div className="flex-1 min-h-0 flex flex-col px-0 py-0 lg:p-4 lg:overflow-hidden">
+          <PaymentListPanel race={race} runnerProfiles={runnerProfiles} />
         </div>
       )}
 
@@ -3826,6 +3833,215 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
         </div>
       </section>
     </div>
+  );
+}
+
+// ========== PAYMENT REVIEW ==========
+
+interface PaymentListPanelProps {
+  race: Race;
+  runnerProfiles: RunnerProfile[];
+}
+
+type PaymentFilter = 'all' | 'pending' | 'paid';
+
+function PaymentListPanel({ race, runnerProfiles }: PaymentListPanelProps) {
+  const { can } = useAccess();
+  const { confirm, notify } = useFeedback();
+  const [filter, setFilter] = useState<PaymentFilter>('all');
+  const [queryText, setQueryText] = useState('');
+  const [distanceFilter, setDistanceFilter] = useState('all');
+  const [busyRunnerUid, setBusyRunnerUid] = useState<string | null>(null);
+
+  const paymentRunners = useMemo(
+    () => runnerProfiles.filter((runner) => runner.paymentStatus === 'pending' || runner.paymentStatus === 'paid'),
+    [runnerProfiles],
+  );
+  const distances = useMemo(
+    () => [...new Set(paymentRunners.map((runner) => runner.distance))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
+    [paymentRunners],
+  );
+  const summary = useMemo(() => {
+    const pending = paymentRunners.filter((runner) => runner.paymentStatus === 'pending');
+    const paid = paymentRunners.filter((runner) => runner.paymentStatus === 'paid');
+    const sum = (items: RunnerProfile[]) => items.reduce((total, runner) => total + Math.max(0, Number(runner.paymentAmount || 0)), 0);
+    return {
+      pendingCount: pending.length,
+      pendingAmount: sum(pending),
+      paidCount: paid.length,
+      paidAmount: sum(paid),
+    };
+  }, [paymentRunners]);
+  const visiblePayments = useMemo(() => {
+    const term = queryText.trim().toUpperCase().replace(/^#/, '');
+    return [...paymentRunners]
+      .filter((runner) => filter === 'all' || runner.paymentStatus === filter)
+      .filter((runner) => distanceFilter === 'all' || runner.distance === distanceFilter)
+      .filter((runner) => !term
+        || runner.fullName.toUpperCase().includes(term)
+        || runner.bibNumber.toUpperCase().includes(term)
+        || (runner.paymentReference || '').toUpperCase().includes(term))
+      .sort((a, b) => {
+        if (a.paymentStatus !== b.paymentStatus) return a.paymentStatus === 'pending' ? -1 : 1;
+        return a.fullName.localeCompare(b.fullName);
+      });
+  }, [distanceFilter, filter, paymentRunners, queryText]);
+
+  const confirmManualPayment = async (runner: RunnerProfile) => {
+    if (!can('payment.confirm') || runner.paymentStatus !== 'pending' || runner.paymentMethod !== 'manual') return;
+    const amount = Math.max(0, Number(runner.paymentAmount || 0));
+    const reference = runner.paymentReference || 'No reference supplied';
+    const approved = await confirm({
+      title: `Confirm payment for bib #${runner.bibNumber}?`,
+      message: `${runner.fullName}, ₱${amount.toFixed(2)}, reference: ${reference}. Confirm only after checking your GCash, bank, or cash record.`,
+      confirmLabel: 'Confirm payment',
+      cancelLabel: 'Cancel',
+    });
+    if (!approved) return;
+
+    setBusyRunnerUid(runner.uid);
+    try {
+      const paidAt = new Date().toISOString();
+      await updateDoc(doc(db, 'runners', `${runner.uid}_${race.id}`), {
+        paymentStatus: 'paid',
+        paymentMethod: 'manual',
+        paymentId: `manual_${race.id}_${runner.uid}`.slice(0, 120),
+        paymentPaidAt: paidAt,
+      });
+      notify({ tone: 'success', title: 'Payment confirmed', message: `${runner.fullName} is marked paid.` });
+    } catch (error: any) {
+      notify({ tone: 'error', title: 'Payment not confirmed', message: error.message || 'Try again after checking your connection.' });
+    } finally {
+      setBusyRunnerUid(null);
+    }
+  };
+
+  return (
+    <section className="glass-panel flex-1 min-h-0 flex flex-col gap-4 p-4" aria-labelledby="payment-list-heading">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 id="payment-list-heading" className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
+            <CheckCircle2 className="h-5 w-5 text-red-700 dark:text-red-400" aria-hidden="true" /> Payment list
+          </h2>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">Review manual references and payment status for {race.name}.</p>
+        </div>
+        <span className="text-xs font-mono font-semibold tabular-nums text-[var(--text-secondary)]">{paymentRunners.length} payment records</span>
+      </div>
+
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" aria-label="Payment totals">
+        <div className="glass-inset px-3 py-3">
+          <p className="text-xs text-[var(--text-secondary)]">Pending manual payments</p>
+          <p className="mt-1 text-base font-semibold tabular-nums text-amber-800 dark:text-amber-300">{summary.pendingCount} <span className="text-xs font-normal">runner{summary.pendingCount === 1 ? '' : 's'}</span></p>
+          <p className="mt-1 text-xs font-mono tabular-nums text-[var(--text-secondary)]">₱{summary.pendingAmount.toFixed(2)}</p>
+        </div>
+        <div className="glass-inset px-3 py-3">
+          <p className="text-xs text-[var(--text-secondary)]">Confirmed payments</p>
+          <p className="mt-1 text-base font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">{summary.paidCount} <span className="text-xs font-normal">runner{summary.paidCount === 1 ? '' : 's'}</span></p>
+          <p className="mt-1 text-xs font-mono tabular-nums text-[var(--text-secondary)]">₱{summary.paidAmount.toFixed(2)}</p>
+        </div>
+        <div className="glass-inset px-3 py-3">
+          <p className="text-xs text-[var(--text-secondary)]">Registered payment value</p>
+          <p className="mt-1 text-base font-semibold tabular-nums text-[var(--text-primary)]">₱{(summary.pendingAmount + summary.paidAmount).toFixed(2)}</p>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">Includes pending and confirmed records</p>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden="true" />
+          <input
+            type="search"
+            value={queryText}
+            onChange={(event) => setQueryText(event.target.value)}
+            placeholder="Search name, bib, or reference number"
+            className="min-h-11 w-full glass-inset py-2 pl-9 pr-3 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-red-600/50"
+          />
+        </div>
+        {distances.length > 1 && (
+          <select
+            aria-label="Filter payments by distance"
+            value={distanceFilter}
+            onChange={(event) => setDistanceFilter(event.target.value)}
+            className="min-h-11 glass-inset px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-600/50"
+          >
+            <option value="all">All distances</option>
+            {distances.map((distance) => <option key={distance} value={distance}>{distance}</option>)}
+          </select>
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Payment status filters">
+        {([
+          ['all', `All (${paymentRunners.length})`],
+          ['pending', `Pending (${summary.pendingCount})`],
+          ['paid', `Paid (${summary.paidCount})`],
+        ] as const).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={filter === value}
+            onClick={() => setFilter(value)}
+            className={`min-h-11 rounded-xl border px-4 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 ${
+              filter === value
+                ? 'border-red-700 bg-red-700 text-white'
+                : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+        {paymentRunners.length === 0 ? (
+          <div className="glass-inset px-4 py-8 text-center">
+            <p className="text-sm font-semibold text-[var(--text-primary)]">No payment records yet</p>
+            <p className="mt-1 text-xs text-[var(--text-secondary)]">Manual or online payment registrations will appear here.</p>
+          </div>
+        ) : visiblePayments.length === 0 ? (
+          <div className="glass-inset px-4 py-8 text-center">
+            <p className="text-sm font-semibold text-[var(--text-primary)]">No matching payment records</p>
+            <p className="mt-1 text-xs text-[var(--text-secondary)]">Change the search or filter to view another payment.</p>
+          </div>
+        ) : visiblePayments.map((runner) => {
+          const isPendingManual = runner.paymentStatus === 'pending' && runner.paymentMethod === 'manual';
+          const isBusy = busyRunnerUid === runner.uid;
+          return (
+            <article key={runner.uid} className="glass-inset flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <p className="truncate text-sm font-semibold text-[var(--text-primary)]">{runner.fullName}</p>
+                  <span className="font-mono text-xs font-semibold text-[var(--text-secondary)]">#{runner.bibNumber}</span>
+                  <span className={`text-xs font-semibold ${runner.paymentStatus === 'paid' ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-800 dark:text-amber-300'}`}>
+                    {runner.paymentStatus === 'paid' ? 'Paid' : 'Pending'}
+                  </span>
+                </div>
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--text-secondary)]">
+                  <span>{runner.distance}</span>
+                  <span className="capitalize">{runner.paymentMethod || 'Manual'} payment</span>
+                  {runner.paymentReference && <span className="font-mono break-all">Ref: {runner.paymentReference}</span>}
+                  {runner.paymentPaidAt && <span>Confirmed {formatDateTime(runner.paymentPaidAt)}</span>}
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-3 sm:flex-col sm:items-end sm:gap-1">
+                <p className="font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">₱{Math.max(0, Number(runner.paymentAmount || 0)).toFixed(2)}</p>
+                {isPendingManual && (
+                  <button
+                    type="button"
+                    onClick={() => void confirmManualPayment(runner)}
+                    disabled={isBusy}
+                    className="min-h-11 rounded-xl border border-emerald-700/35 bg-emerald-500/10 px-3 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-700 hover:text-white dark:text-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isBusy ? 'Confirming...' : 'Confirm payment'}
+                  </button>
+                )}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
