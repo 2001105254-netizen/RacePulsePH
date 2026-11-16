@@ -49,6 +49,7 @@ import { PasswordResetFlow } from './AccountSecurity';
 import DeleteAccountModal from './DeleteAccountModal';
 import DialogSurface from './ui/DialogSurface';
 import RaceTimeText from './ui/RaceTimeText';
+import { Select } from './ui/Select';
 
 interface AccountPrivacyModalProps {
   profile: UserProfile;
@@ -1666,18 +1667,18 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
                   <label htmlFor={`${dialogId}-distance`} className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
                     Favorite Distance
                   </label>
-                  <select
+                  <Select
                     id={`${dialogId}-distance`}
                     value={favoriteDistance}
-                    onChange={(event) => setFavoriteDistance(event.target.value)}
+                    onChange={setFavoriteDistance}
                     disabled={saving}
-                    className="w-full min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50"
-                  >
-                    <option value="">Not specified</option>
-                    {FAVORITE_DISTANCES.map((dist) => (
-                      <option key={dist} value={dist}>{dist}</option>
-                    ))}
-                  </select>
+                    surface="card"
+                    size="md"
+                    options={[
+                      { value: '', label: 'Not specified' },
+                      ...FAVORITE_DISTANCES.map((dist) => ({ value: dist, label: dist })),
+                    ]}
+                  />
                 </div>
 
                 <div>
@@ -1707,27 +1708,27 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
                   <label htmlFor={`${dialogId}-shirt`} className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
                     Shirt Size
                   </label>
-                  <select
+                  <Select
                     id={`${dialogId}-shirt`}
                     value={usesCustomShirt ? '__other__' : shirtSize}
-                    onChange={(event) => {
-                      if (event.target.value === '__other__') {
+                    onChange={(nextValue) => {
+                      if (nextValue === '__other__') {
                         setShirtCustomMode(true);
                         setShirtSize('');
                       } else {
                         setShirtCustomMode(false);
-                        setShirtSize(event.target.value);
+                        setShirtSize(nextValue);
                       }
                     }}
                     disabled={saving}
-                    className="w-full min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50"
-                  >
-                    <option value="">Not selected</option>
-                    {STANDARD_SHIRT_SIZES.map((size) => (
-                      <option key={size} value={size}>{size}</option>
-                    ))}
-                    <option value="__other__">Other size</option>
-                  </select>
+                    surface="card"
+                    size="md"
+                    options={[
+                      { value: '', label: 'Not selected' },
+                      ...STANDARD_SHIRT_SIZES.map((size) => ({ value: size, label: size })),
+                      { value: '__other__', label: 'Other size' },
+                    ]}
+                  />
                 </div>
 
                 <div>

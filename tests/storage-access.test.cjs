@@ -47,3 +47,9 @@ test('SVG and executable file types are rejected across image and font storage p
  await assertSucceeds(uploadBytes(ref(env.authenticatedContext('storage_superadmin').storage(),'race-bib-fonts/storage_superadmin/custom.woff2'),image,{contentType:'font/woff2'}));
  await assertFails(uploadBytes(ref(env.authenticatedContext('storage_superadmin').storage(),'race-bib-fonts/storage_superadmin/evil.html'),svgBytes,{contentType:'text/html'}));
 });
+test('route-private blocks anonymous writes and cross-owner access while route-published allows authorized publish',async()=>{
+ await assertFails(uploadBytes(ref(env.unauthenticatedContext().storage(),'route-private/storage_owner/preset_1/course.gpx'),image,{contentType:'application/gpx+xml'}));
+ await assertSucceeds(uploadBytes(ref(env.authenticatedContext('storage_owner').storage(),'route-private/storage_owner/preset_1/course.gpx'),image,{contentType:'application/gpx+xml'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('storage_owner').storage(),'route-private/other_owner/preset_1/course.gpx'),image,{contentType:'application/gpx+xml'}));
+ await assertSucceeds(uploadBytes(ref(env.authenticatedContext('storage_owner').storage(),'route-published/pub_1/manifest.json'),image,{contentType:'application/json'}));
+});

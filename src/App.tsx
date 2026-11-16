@@ -9,6 +9,7 @@ import CookieConsentBanner from './components/CookieConsentBanner';
 import UnsubscribePage from './components/UnsubscribePage';
 import { LEGAL_CONFIG, LEGAL_DOCUMENTS, type LegalDocKey } from './lib/legalConfig';
 import { exitAndroidApp, subscribeAndroidBackButton, syncAndroidSystemBars } from './lib/capacitorAndroid';
+import { matchRouteLocation } from './lib/routes/routing';
 import { WorkspaceHeaderProvider, useWorkspaceHeader } from './lib/workspaceHeader';
 import { UserProfile } from './types';
 import { Sun, Moon, RefreshCw, Clock3, LogOut, LogIn, UserPlus, ArrowLeft, ShieldCheck, ChevronUp, Compass, Menu, Check } from 'lucide-react';
@@ -43,6 +44,77 @@ const AuthorizedSession = lazy(async () => {
 const EmailVerificationScreen = lazy(() =>
   import('./components/AccountSecurity').then((mod) => ({ default: mod.EmailVerificationScreen }))
 );
+const RouteExplorerPage = lazy(() => import('./components/routes/RouteExplorerPage'));
+const RouteStudioWrapper = lazy(async () => {
+  const [{ AccessProvider, useAccess }, { default: RouteStudioPanel }] = await Promise.all([
+    import('./lib/access'),
+    import('./components/routes/RouteStudioPanel'),
+  ]);
+  return {
+    default: function LazyRouteStudio({
+      profile,
+      theme,
+      presetId,
+      onNavigateUrl,
+      onBackHome,
+    }: {
+      profile: UserProfile;
+      theme: 'light' | 'dark';
+      presetId?: string;
+      onNavigateUrl: (url: string) => void;
+      onBackHome: () => void;
+    }) {
+      function GuardedStudio() {
+        const { can } = useAccess();
+        if (!can('routes.view') && !can('race.view')) {
+          return (
+            <main id="main-content" tabIndex={-1} className="mx-auto max-w-xl px-4 py-16 text-center space-y-4">
+              <h1 className="text-2xl font-semibold text-[var(--text-primary)]">Route Studio access restricted</h1>
+              <p className="text-sm text-[var(--text-secondary)]">Your account does not have Route Studio editing permission. View published courses in Route Explorer instead.</p>
+              <button
+                type="button"
+                onClick={() => onNavigateUrl('/routes')}
+                className="min-h-11 rounded-xl bg-red-700 px-4 text-xs font-semibold text-white hover:bg-red-600"
+              >
+                Open Route Explorer
+              </button>
+            </main>
+          );
+        }
+        return (
+          <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-[1600px] px-4 py-4 sm:px-6 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={onBackHome}
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+              >
+                <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                Back to Workspace
+              </button>
+              <a
+                href="/routes"
+                onClick={(e) => {
+                  e.preventDefault();
+                  onNavigateUrl('/routes');
+                }}
+                className="inline-flex min-h-11 items-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-red-700 hover:border-red-600/50 dark:text-red-400"
+              >
+                View Public Route Explorer
+              </a>
+            </div>
+            <RouteStudioPanel profile={profile} theme={theme} initialPresetId={presetId} onNavigateUrl={onNavigateUrl} />
+          </main>
+        );
+      }
+      return (
+        <AccessProvider key={profile.uid} profile={profile}>
+          <GuardedStudio />
+        </AccessProvider>
+      );
+    },
+  };
+});
 
 type Theme = 'light' | 'dark';
 type GuestScreen = 'landing' | 'login' | 'signup' | LegalDocKey | 'unsubscribe' | 'not-found';
@@ -73,6 +145,7 @@ function utilityViewFromPath(path: string): SignedInUtilityView {
 
 function guestScreenFromLocation(): GuestScreen {
   if (registrationRaceIdFromUrl()) return 'signup';
+  if (matchRouteLocation(window.location.pathname, window.location.search)) return 'landing';
   const path = normalizedPathname();
   if (path === '/' || path === '/index.html') return 'landing';
   if (path === '/login' || path === '/signin') return 'login';
@@ -157,6 +230,11 @@ function AppContent() {
   const [navDirection, setNavDirection] = useState<NavDirection>('forward');
   const wasSignedInRef = React.useRef<boolean | null>(null);
   const [currentPathname, setCurrentPathname] = useState<string>(() => window.location.pathname);
+  const [currentSearch, setCurrentSearch] = useState<string>(() => window.location.search);
+  const routeMatch = React.useMemo(
+    () => matchRouteLocation(currentPathname, currentSearch),
+    [currentPathname, currentSearch],
+  );
   const [activeRaceTitle, setActiveRaceTitle] = useState<string | null>(null);
   const [pendingRaceId, setPendingRaceId] = useState<string | null>(() => registrationRaceIdFromUrl());
   const [runnerSignupIntent, setRunnerSignupIntent] = useState(() => !!registrationRaceIdFromUrl());
@@ -173,7 +251,7 @@ function AppContent() {
     [],
   );
 
-  const isLandingGuest = !authUser && guestScreen === 'landing';
+  const isLandingGuest = !authUser && guestScreen === 'landing' && !routeMatch;
 
   const closeLandingMenu = useCallback(() => {
     setLandingMenuOpen(false);
@@ -408,6 +486,7 @@ function AppContent() {
       }
       setNavDirection(options?.direction ?? 'forward');
       setCurrentPathname(url.pathname);
+      setCurrentSearch(url.search);
       setPendingRaceId(options?.raceId ?? null);
       setRunnerSignupIntent(Boolean(options?.lockRunner));
       if (next !== 'landing') setActiveRaceTitle(null);
@@ -419,6 +498,22 @@ function AppContent() {
     []
   );
 
+  const navigateUrl = useCallback((targetUrl: string) => {
+    const resolved = new URL(targetUrl, window.location.origin);
+    if (resolved.origin !== window.location.origin) return;
+    const nextPath = resolved.pathname;
+    const nextSearch = resolved.search;
+    const full = `${nextPath}${nextSearch}${resolved.hash}`;
+    if (`${window.location.pathname}${window.location.search}${window.location.hash}` !== full) {
+      window.history.pushState({}, '', full);
+    }
+    setNavDirection('forward');
+    setCurrentPathname(nextPath);
+    setCurrentSearch(nextSearch);
+    setSignedInUtilityView(null);
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }, []);
+
   const closeSignedInUtility = useCallback(() => {
     setSignedInUtilityView(null);
     const url = new URL(window.location.href);
@@ -426,6 +521,7 @@ function AppContent() {
     url.search = '';
     window.history.pushState({}, '', url.pathname);
     setCurrentPathname('/');
+    setCurrentSearch('');
     setNavDirection('back');
     window.scrollTo({ top: 0, behavior: 'auto' });
   }, []);
@@ -464,6 +560,7 @@ function AppContent() {
     const onPopState = () => {
       setNavDirection('back');
       setCurrentPathname(window.location.pathname);
+      setCurrentSearch(window.location.search);
       setSignedInUtilityView(utilityViewFromPath(normalizedPathname()));
       if (!authUser) {
         const regId = registrationRaceIdFromUrl();
@@ -472,14 +569,31 @@ function AppContent() {
         setGuestScreen(guestScreenFromLocation());
       }
     };
+    const onNavigateEvent = (event: Event) => {
+      const target = (event as CustomEvent<{ url?: string }>).detail?.url;
+      if (target) navigateUrl(target);
+    };
     window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
-  }, [authUser]);
+    window.addEventListener('racepulse:navigate', onNavigateEvent);
+    return () => {
+      window.removeEventListener('popstate', onPopState);
+      window.removeEventListener('racepulse:navigate', onNavigateEvent);
+    };
+  }, [authUser, navigateUrl]);
 
   // Route Android hardware back presses through active overlays/modals first,
   // then inner console tabs or guest history before exiting cleanly.
   useEffect(() => {
     return subscribeAndroidBackButton((canGoBack) => {
+      if (routeMatch) {
+        setNavDirection('back');
+        if (canGoBack && window.history.length > 1) {
+          window.history.back();
+        } else {
+          navigateUrl('/');
+        }
+        return;
+      }
       if (!authUser) {
         if (guestScreen !== 'landing') {
           setNavDirection('back');
@@ -508,13 +622,17 @@ function AppContent() {
         exitAndroidApp();
       }
     });
-  }, [authUser, closeSignedInUtility, guestScreen, navigateGuest, signedInUtilityView]);
+  }, [authUser, closeSignedInUtility, guestScreen, navigateGuest, navigateUrl, routeMatch, signedInUtilityView]);
 
   // Dashboard navigation lives in React state, so browser history is not a
   // safe back action. Each signed-in console listens for this event and goes
   // to its own home screen instead.
   const handleBack = () => {
     setNavDirection('back');
+    if (routeMatch) {
+      navigateUrl('/');
+      return;
+    }
     if (!authUser) {
       navigateGuest('landing', { direction: 'back' });
       return;
@@ -596,7 +714,13 @@ function AppContent() {
       ? LEGAL_DOCUMENTS.find((entry) => entry.key === activeUtility)
       : undefined;
 
-    if (legalDocMeta) {
+    if (routeMatch?.kind === 'route-studio') {
+      title = 'Route Studio | RacePulsePH';
+      description = 'Design, validate, annotate, and publish RacePulsePH race courses and checkpoints.';
+    } else if (routeMatch) {
+      title = 'Route Explorer | RacePulsePH';
+      description = 'Explore official Philippine race course maps, elevation profiles, aid stations, and landmark photos.';
+    } else if (legalDocMeta) {
       title = legalDocMeta.title;
       description = legalDocMeta.description;
     } else if (activeUtility === 'unsubscribe') {
@@ -644,12 +768,65 @@ function AppContent() {
         )}
       </main>
     );
+  } else if (routeMatch && routeMatch.kind !== 'route-studio') {
+    content = (
+      <Suspense fallback={suspenseFallback}>
+        <RouteExplorerPage
+          match={routeMatch}
+          theme={theme}
+          canEditRoutes={Boolean(authUser && profile && ['superadmin', 'admin', 'organizer'].includes(profile.role))}
+          onNavigateUrl={navigateUrl}
+          onBackHome={() => navigateUrl('/')}
+        />
+      </Suspense>
+    );
   } else if (stillLoading) {
     content = (
       <main id="main-content" tabIndex={-1} className="flex-grow focus:outline-none">
         {suspenseFallback}
       </main>
     );
+  } else if (routeMatch && routeMatch.kind === 'route-studio') {
+    if (authUser && profile) {
+      content = (
+        <Suspense fallback={suspenseFallback}>
+          <RouteStudioWrapper
+            profile={profile}
+            theme={theme}
+            presetId={routeMatch.presetId}
+            onNavigateUrl={navigateUrl}
+            onBackHome={() => navigateUrl('/')}
+          />
+        </Suspense>
+      );
+    } else {
+      content = (
+        <main id="main-content" tabIndex={-1} className="mx-auto flex-grow max-w-lg px-4 py-16 text-center space-y-4">
+          <h1 className="text-2xl sm:text-3xl font-semibold text-[var(--text-primary)]">
+            Sign in to open Route Studio
+          </h1>
+          <p className="text-sm text-[var(--text-secondary)]">
+            Route Studio is reserved for authorized race organizers and RacePulsePH admins.
+          </p>
+          <div className="flex flex-wrap justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => navigateGuest('login')}
+              className="min-h-11 rounded-xl bg-red-700 px-5 text-xs font-semibold text-white hover:bg-red-600"
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              onClick={() => navigateUrl('/routes')}
+              className="min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-4 text-xs font-semibold text-[var(--text-primary)]"
+            >
+              Browse public courses
+            </button>
+          </div>
+        </main>
+      );
+    }
   } else if (authUser && !emailVerified && !profile) {
     content = (
       <main id="main-content" tabIndex={-1} className="flex-grow flex flex-col focus:outline-none">
@@ -764,17 +941,19 @@ function AppContent() {
     );
   }
 
-  const showBackButton = (!authUser && guestScreen !== 'landing') || Boolean(signedInUtilityView);
-  const isWorkspaceShell = Boolean(authUser && profile && !authError && !profileError && !signedInUtilityView);
-  const viewKey = signedInUtilityView
-    ? `utility-${signedInUtilityView}`
-    : authUser
-      ? profile
-        ? 'workspace'
-        : 'auth-setup'
-      : guestScreen === 'login' || guestScreen === 'signup'
-        ? 'auth-portal'
-        : guestScreen;
+  const showBackButton = (!authUser && guestScreen !== 'landing') || Boolean(signedInUtilityView) || Boolean(routeMatch);
+  const isWorkspaceShell = Boolean(authUser && profile && !authError && !profileError && !signedInUtilityView && !routeMatch);
+  const viewKey = routeMatch
+    ? `route-${routeMatch.kind}`
+    : signedInUtilityView
+      ? `utility-${signedInUtilityView}`
+      : authUser
+        ? profile
+          ? 'workspace'
+          : 'auth-setup'
+        : guestScreen === 'login' || guestScreen === 'signup'
+          ? 'auth-portal'
+          : guestScreen;
 
   return (
     <LazyMotion features={domMax}>
@@ -917,6 +1096,19 @@ function AppContent() {
                           </li>
                         );
                       })}
+                      <li>
+                        <a
+                          href="/routes"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            closeLandingMenu();
+                            navigateUrl('/routes');
+                          }}
+                          className="landing-nav-link"
+                        >
+                          <span>Routes</span>
+                        </a>
+                      </li>
                       <li className="landing-menu-register-item mt-1.5 pt-2 border-t border-white/10">
                         <a
                           href="/register"

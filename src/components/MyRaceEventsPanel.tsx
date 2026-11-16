@@ -4,6 +4,7 @@ import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import {
   AlertTriangle,
   Award,
+  BarChart3,
   Calendar,
   CalendarDays,
   ChevronLeft,
@@ -25,12 +26,17 @@ import {
 } from 'lucide-react';
 import { db } from '../firebase';
 import { useAccess, useScopedRacesState } from '../lib/access';
+import {
+  buildEventViewerBundle,
+  buildPortfolioComparison,
+  DataViewerCategory,
+} from '../lib/eventAnalytics';
 import { isRaceRegistrationOpen, philippineDate } from '../lib/raceRegistration';
 import { useWorkspaceHeader } from '../lib/workspaceHeader';
 import { ChipRead, Race, RunnerProfile } from '../types';
+import EventDataViewer from './EventDataViewer';
 import {
   BottomTelemetryDock,
-  buildEventTelemetryData,
   computeRowMicroMetrics,
   EventTelemetryCard,
   TableRevenueMicroPill,
@@ -131,6 +137,8 @@ export default function MyRaceEventsPanel({
   const canViewTiming = can('timing.view');
   const canViewEngraving = can('engraving.view');
   const canCreateRace = can('race.create');
+  const canExportRoster = can('roster.export');
+  const canExportResults = can('results.export');
   const canViewHub = can('hub.manage') || can('hub.publish');
   const canEditRace = [
     'race.edit',
@@ -156,6 +164,9 @@ export default function MyRaceEventsPanel({
   );
   const [selectedRaceChipReads, setSelectedRaceChipReads] = useState<ChipRead[]>([]);
   const [posterLightboxRace, setPosterLightboxRace] = useState<Race | null>(null);
+  const [viewMode, setViewMode] = useState<'directory' | 'viewer'>('directory');
+  const [viewerCategory, setViewerCategory] = useState<DataViewerCategory>('performance');
+  const [viewerDistanceFilter, setViewerDistanceFilter] = useState<string>('all');
 
   const headerSearchRef = useRef<HTMLInputElement>(null);
   const mobileSearchRef = useRef<HTMLInputElement>(null);
@@ -429,10 +440,19 @@ export default function MyRaceEventsPanel({
 
   const selectedIndex = filteredEvents.findIndex((row) => row.race.id === selectedRaceId);
   const selectedEvent = selectedIndex >= 0 ? filteredEvents[selectedIndex] : null;
+  const activeViewerEvent =
+    selectedEvent || eventRows.find((row) => row.race.id === selectedRaceId) || eventRows[0] || null;
+  const safeViewerCategory: DataViewerCategory =
+    viewerCategory === 'financial' && !canViewRevenue ? 'performance' : viewerCategory;
 
-  const selectedTelemetry = useMemo(() => {
+  const sortedViewerRaces = useMemo(
+    () => [...races].sort((a, b) => (b.date || '').localeCompare(a.date || '')),
+    [races],
+  );
+
+  const selectedDockBundle = useMemo(() => {
     if (!selectedEvent) return null;
-    return buildEventTelemetryData({
+    return buildEventViewerBundle({
       race: selectedEvent.race,
       raceRunners: runnersByRace.get(selectedEvent.race.id) || [],
       allRaces: races,
@@ -440,14 +460,60 @@ export default function MyRaceEventsPanel({
       chipReads: selectedRaceChipReads,
       completed: selectedEvent.completed,
       todayStr,
+      distanceFilter: 'all',
     });
   }, [selectedEvent, runnersByRace, races, selectedRaceChipReads, todayStr]);
 
+  const selectedViewerBundle = useMemo(() => {
+    if (!activeViewerEvent) return null;
+    if (selectedEvent && activeViewerEvent.race.id === selectedEvent.race.id && viewerDistanceFilter === 'all') {
+      return selectedDockBundle;
+    }
+    return buildEventViewerBundle({
+      race: activeViewerEvent.race,
+      raceRunners: runnersByRace.get(activeViewerEvent.race.id) || [],
+      allRaces: races,
+      runnersByRace,
+      chipReads: activeViewerEvent.race.id === selectedRaceId ? selectedRaceChipReads : [],
+      completed: activeViewerEvent.completed,
+      todayStr,
+      distanceFilter: viewerDistanceFilter,
+    });
+  }, [
+    activeViewerEvent,
+    selectedEvent,
+    viewerDistanceFilter,
+    selectedDockBundle,
+    runnersByRace,
+    races,
+    selectedRaceId,
+    selectedRaceChipReads,
+    todayStr,
+  ]);
+
+  const selectedTelemetry = selectedDockBundle?.telemetry ?? null;
+
+  const portfolioComparison = useMemo(
+    () => buildPortfolioComparison(races, runnersByRace, todayStr),
+    [races, runnersByRace, todayStr],
+  );
+
   const selectRace = (raceId: string) => {
     setSelectedRaceId(raceId);
+    setViewerDistanceFilter('all');
     if (typeof window !== 'undefined') {
       localStorage.setItem('racepulse_active_race', raceId);
     }
+  };
+
+  const openDataViewer = (category: DataViewerCategory = 'performance') => {
+    const resolvedCategory: DataViewerCategory =
+      category === 'financial' && !canViewRevenue ? 'performance' : category;
+    if (!selectedRaceId && activeViewerEvent) {
+      selectRace(activeViewerEvent.race.id);
+    }
+    setViewerCategory(resolvedCategory);
+    setViewMode('viewer');
   };
 
   const stepSelectedEvent = (delta: -1 | 1) => {
@@ -460,6 +526,17 @@ export default function MyRaceEventsPanel({
     selectRace(filteredEvents[nextIdx].race.id);
   };
 
+  const stepViewerEvent = (delta: -1 | 1) => {
+    if (sortedViewerRaces.length === 0) return;
+    const idx = sortedViewerRaces.findIndex((r) => r.id === (activeViewerEvent?.race.id || selectedRaceId));
+    if (idx === -1) {
+      selectRace(sortedViewerRaces[0].id);
+      return;
+    }
+    const nextIdx = (idx + delta + sortedViewerRaces.length) % sortedViewerRaces.length;
+    selectRace(sortedViewerRaces[nextIdx].id);
+  };
+
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
@@ -469,7 +546,7 @@ export default function MyRaceEventsPanel({
     setSortDir(key === 'name' ? 'asc' : 'desc');
   };
 
-  // Global keyboard shortcuts: / focuses search, Up/Down steps through events
+  // Global keyboard shortcuts: / focuses search, Up/Down steps through events, Esc closes Data Viewer
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (posterLightboxRace) return;
@@ -479,6 +556,14 @@ export default function MyRaceEventsPanel({
         target?.tagName === 'TEXTAREA' ||
         target?.tagName === 'SELECT' ||
         target?.isContentEditable;
+
+      if (viewMode === 'viewer') {
+        if (!isFormField && event.key === 'Escape') {
+          event.preventDefault();
+          setViewMode('directory');
+        }
+        return;
+      }
 
       if (event.key === '/' && !isFormField && !event.ctrlKey && !event.metaKey && !event.altKey) {
         event.preventDefault();
@@ -554,75 +639,100 @@ export default function MyRaceEventsPanel({
       <div className="flex items-center gap-2 shrink-0">
         <CalendarDays className="w-4 h-4 text-red-400 shrink-0" aria-hidden="true" />
         <span className="text-xs font-display font-semibold uppercase tracking-wider text-white whitespace-nowrap">
-          My Race Events
+          {viewMode === 'viewer' ? 'Event Data Viewer' : 'My Race Events'}
         </span>
       </div>
 
-      <div className="relative flex-1 min-w-[180px] max-w-sm">
-        <Search
-          className="w-3.5 h-3.5 text-zinc-300 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-          aria-hidden="true"
-        />
-        <label htmlFor="events_header_search" className="sr-only">
-          Search race events by name, date, or distance
-        </label>
-        <input
-          ref={headerSearchRef}
-          id="events_header_search"
-          type="text"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Search race, date, or distance... (/)"
-          className="w-full h-9 rounded-lg border border-white/15 bg-white/10 pl-8 pr-9 text-xs font-semibold text-white placeholder-zinc-300 focus:outline-none focus:ring-2 focus:ring-red-400"
-        />
-        {searchTerm && (
-          <button
-            type="button"
-            onClick={() => setSearchTerm('')}
-            aria-label="Clear event search"
-            className="absolute right-1 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-md text-zinc-300 hover:text-white"
-          >
-            <X className="w-3.5 h-3.5" aria-hidden="true" />
-          </button>
-        )}
-      </div>
+      {viewMode === 'directory' ? (
+        <div className="relative flex-1 min-w-[180px] max-w-sm">
+          <Search
+            className="w-3.5 h-3.5 text-zinc-300 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+            aria-hidden="true"
+          />
+          <label htmlFor="events_header_search" className="sr-only">
+            Search race events by name, date, or distance
+          </label>
+          <input
+            ref={headerSearchRef}
+            id="events_header_search"
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search race, date, or distance... (/)"
+            className="w-full h-9 rounded-lg border border-white/15 bg-white/10 pl-8 pr-9 text-xs font-semibold text-white placeholder-zinc-300 focus:outline-none focus:ring-2 focus:ring-red-400"
+          />
+          {searchTerm && (
+            <button
+              type="button"
+              onClick={() => setSearchTerm('')}
+              aria-label="Clear event search"
+              className="absolute right-1 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-md text-zinc-300 hover:text-white"
+            >
+              <X className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      ) : (
+        activeViewerEvent && (
+          <span className="text-xs font-semibold text-zinc-200 truncate max-w-md">
+            {activeViewerEvent.race.name} ({activeViewerEvent.race.date})
+          </span>
+        )
+      )}
     </div>
   );
 
   // Desktop Top Global Header Right Cluster (Portaled beside Theme Toggle in App.tsx)
   const headerRightMarkup = (
     <div className="flex items-center gap-2" role="toolbar" aria-label="Event filters and creation">
-      <div
-        className="inline-flex rounded-lg border border-white/15 bg-white/10 p-1 shrink-0"
-        role="group"
-        aria-label="Filter events by status"
-      >
-        {statusTabs.map((item) => {
-          const active = statusFilter === item.key;
-          return (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => setStatusFilter(item.key)}
-              aria-pressed={active}
-              className={`h-8 px-3 rounded-md text-xs font-semibold inline-flex items-center gap-2 transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 ${
-                active
-                  ? 'bg-red-700 text-white'
-                  : 'text-zinc-200 hover:bg-white/10 hover:text-white'
-              }`}
-            >
-              <span>{item.label}</span>
-              <span
-                className={`font-mono text-xs tabular-nums ${
-                  active ? 'text-white' : 'text-zinc-300'
+      {viewMode === 'directory' && (
+        <div
+          className="inline-flex rounded-lg border border-white/15 bg-white/10 p-1 shrink-0"
+          role="group"
+          aria-label="Filter events by status"
+        >
+          {statusTabs.map((item) => {
+            const active = statusFilter === item.key;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setStatusFilter(item.key)}
+                aria-pressed={active}
+                className={`h-8 px-3 rounded-md text-xs font-semibold inline-flex items-center gap-2 transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 ${
+                  active
+                    ? 'bg-red-700 text-white'
+                    : 'text-zinc-200 hover:bg-white/10 hover:text-white'
                 }`}
               >
-                {item.count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+                <span>{item.label}</span>
+                <span
+                  className={`font-mono text-xs tabular-nums ${
+                    active ? 'text-white' : 'text-zinc-300'
+                  }`}
+                >
+                  {item.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => (viewMode === 'viewer' ? setViewMode('directory') : openDataViewer(safeViewerCategory))}
+        aria-pressed={viewMode === 'viewer'}
+        disabled={races.length === 0 && viewMode === 'directory'}
+        className={`h-9 px-3 rounded-lg border text-xs font-semibold inline-flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap disabled:opacity-40 ${
+          viewMode === 'viewer'
+            ? 'bg-white text-zinc-900 border-white hover:bg-zinc-100'
+            : 'bg-white/10 hover:bg-white/15 text-white border-white/15'
+        }`}
+      >
+        <BarChart3 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+        <span>{viewMode === 'viewer' ? 'Event Directory' : 'Data Viewer'}</span>
+      </button>
 
       {canCreateRace && onCreateEvent && (
         <button
@@ -745,7 +855,7 @@ export default function MyRaceEventsPanel({
       {isDesktop && headerCtx?.rightSlotEl && createPortal(headerRightMarkup, headerCtx.rightSlotEl)}
 
       {/* Mobile / Tablet Responsive Action & Filter Bar (< 1024px) */}
-      {!isDesktop && (
+      {!isDesktop && viewMode === 'directory' && (
         <div className="space-y-3 mb-4">
           <div className="glass-panel p-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -757,15 +867,26 @@ export default function MyRaceEventsPanel({
                   Directory and operational module launchpad
                 </p>
               </div>
-              {canCreateRace && onCreateEvent && (
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={onCreateEvent}
-                  className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold uppercase tracking-wider inline-flex items-center gap-2"
+                  onClick={() => openDataViewer(safeViewerCategory)}
+                  disabled={races.length === 0}
+                  className="min-h-11 px-4 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-2 disabled:opacity-40"
                 >
-                  <Plus className="w-4 h-4" aria-hidden="true" /> Create Event
+                  <BarChart3 className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+                  <span>Data Viewer</span>
                 </button>
-              )}
+                {canCreateRace && onCreateEvent && (
+                  <button
+                    type="button"
+                    onClick={onCreateEvent}
+                    className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold uppercase tracking-wider inline-flex items-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" aria-hidden="true" /> Create Event
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="relative">
@@ -822,8 +943,35 @@ export default function MyRaceEventsPanel({
         </div>
       )}
 
-      {/* Portfolio Telemetry Ribbon (48px desktop strip matching Engraving v2.0 ISO 11064-5 ribbon) */}
-      <section
+      {viewMode === 'viewer' ? (
+        <EventDataViewer
+          races={sortedViewerRaces}
+          selectedRaceId={activeViewerEvent?.race.id || selectedRaceId}
+          onSelectRace={selectRace}
+          onStepRace={stepViewerEvent}
+          bundle={selectedViewerBundle}
+          portfolio={portfolioComparison}
+          category={safeViewerCategory}
+          onCategoryChange={(next) =>
+            setViewerCategory(next === 'financial' && !canViewRevenue ? 'performance' : next)
+          }
+          distanceFilter={viewerDistanceFilter}
+          onDistanceFilterChange={setViewerDistanceFilter}
+          canViewRoster={canViewRoster}
+          canViewRevenue={canViewRevenue}
+          canViewTiming={canViewTiming}
+          canExportRoster={canExportRoster}
+          canExportResults={canExportResults}
+          canEditRace={canEditRace}
+          onClose={() => setViewMode('directory')}
+          onOpenTiming={canViewTiming ? handleLaunchTiming : undefined}
+          onOpenRunners={canViewRoster && onOpenRunners ? handleLaunchRunners : undefined}
+          onOpenSetup={canEditRace && onOpenSetup ? handleLaunchSetup : undefined}
+        />
+      ) : (
+        <>
+          {/* Portfolio Telemetry Ribbon (48px desktop strip matching Engraving v2.0 ISO 11064-5 ribbon) */}
+          <section
         id="events_portfolio_telemetry"
         aria-label="Portfolio telemetry summary"
         className="shrink-0 border border-[var(--border-default)] lg:border-x-0 lg:border-t-0 rounded-2xl lg:rounded-none bg-[var(--surface-card)] mb-4 lg:mb-0 lg:h-12 px-3 sm:px-4 py-2 lg:py-0 flex flex-wrap lg:flex-nowrap items-center justify-between gap-2 lg:gap-4 lg:overflow-x-auto"
@@ -1324,12 +1472,13 @@ export default function MyRaceEventsPanel({
               </table>
             )}
           </div>
-          {selectedTelemetry && (
+          {selectedDockBundle && (
             <BottomTelemetryDock
-              telemetry={selectedTelemetry}
+              bundle={selectedDockBundle}
               canViewRoster={canViewRoster}
               canViewRevenue={canViewRevenue}
               onOpenEngraving={canViewEngraving && onOpenEngraving ? handleLaunchEngraving : undefined}
+              onOpenDataViewer={openDataViewer}
             />
           )}
         </section>
@@ -1560,6 +1709,15 @@ export default function MyRaceEventsPanel({
                     </button>
                   )}
 
+                  <button
+                    type="button"
+                    onClick={() => openDataViewer(safeViewerCategory)}
+                    className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 transition-colors col-span-2"
+                  >
+                    <BarChart3 className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+                    <span>Open Data Viewer</span>
+                  </button>
+
                   {canViewEngraving && onOpenEngraving && (
                     <button
                       type="button"
@@ -1619,6 +1777,8 @@ export default function MyRaceEventsPanel({
           )}
         </aside>
       </div>
+        </>
+      )}
 
       {/* Full-Resolution Uncropped Poster Modal */}
       {posterLightboxRace && posterLightboxRace.posterImage && (

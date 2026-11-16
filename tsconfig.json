@@ -1,5 +1,22 @@
 {
-  "exclude": ["node_modules", "dist", "build", "coverage", ".firebase"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "build",
+    "coverage",
+    ".firebase",
+    "android",
+    "functions",
+    "output",
+    "release",
+    "tmp",
+    "rfid-bridge",
+    "rfid-station",
+    "public",
+    "scripts",
+    ".agents",
+    "skills"
+  ],
   "compilerOptions": {
     "target": "ES2022",
     "experimentalDecorators": true,

@@ -271,6 +271,58 @@ async function startServer() {
     });
   });
 
+  app.get('/api/routes/health', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      status: 'ok',
+      service: 'racepulse-routes',
+      provider: 'copernicus-sentinel2-glo30',
+      fallbackProvider: 'local-fallback',
+      terrainRelease: 'Copernicus DEM GLO-30 (2024_1, 30 m)',
+      imagerySource: 'Sentinel-2 Level-3 Quarterly Mosaic + Scene Cloud-Mask Composite (10 m)',
+      quarterlyMosaic: '2026-Q3',
+      elevationAlgorithm: 'rp-elev-v1',
+      maxGpxBytes: 8 * 1024 * 1024,
+      maxGpxPoints: 100000,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  app.get('/api/tiles/manifest', (_req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.json({
+      country: 'Philippines',
+      islandGroups: ['Luzon', 'Visayas', 'Mindanao'],
+      bounds: { west: 116.8, south: 4.5, east: 126.7, north: 21.2 },
+      terrainRelease: 'Copernicus DEM GLO-30 (2024_1, 30 m)',
+      imageryMosaic: 'Sentinel-2_L3_2026-Q3_PH',
+      attribution: 'Contains modified Copernicus Sentinel-2 data (2026) · Copernicus DEM GLO-30 (2024_1) · ESA',
+      pilotCourses: [
+        {
+          id: 'cebu-highlands-trail-2026_21k',
+          islandGroup: 'Visayas',
+          province: 'Cebu',
+          gpxFixture: '/fixtures/cebu-highlands-21k.gpx',
+          imageryDate: '2026-11-08',
+          corridorCloudPct: 6,
+          patchedFromMosaicQuarter: '2026-Q3',
+          zoomRange: 'z=12..16',
+        },
+        {
+          id: 'bukidnon-kitanglad-trail-2026_32k',
+          islandGroup: 'Mindanao',
+          province: 'Bukidnon',
+          gpxFixture: '/fixtures/bukidnon-kitanglad-32k.gpx',
+          imageryDate: '2026-11-05',
+          corridorCloudPct: 11,
+          patchedFromMosaicQuarter: '2026-Q3',
+          zoomRange: 'z=12..16',
+        },
+      ],
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   app.use('/api', async (req, res, next) => {
     const cleanSubpath = req.path.replace(/\/+$/, '') || '/';
     const route = '/api' + (cleanSubpath === '/' ? '' : cleanSubpath);

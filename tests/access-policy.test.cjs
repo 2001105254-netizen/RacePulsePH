@@ -53,3 +53,12 @@ test('highlights permissions are toggleable with dependency enforcement across r
   assert.throws(() => validate({ ...input, role: 'organizer', overrides: { 'highlights.manage': true, 'highlights.view': false } }));
   assert.throws(() => validate({ ...input, role: 'admin', overrides: { 'highlights.playlist': true, 'highlights.settings': false } }));
 });
+
+test('route studio permissions enforce view and edit dependencies across roles', () => {
+  assert.equal(defaults('runner')['routes.view'], false);
+  assert.equal(defaults('organizer')['routes.view'], true);
+  assert.equal(defaults('organizer')['routes.publish'], true);
+  assert.equal(defaults('admin')['routes.assign'], true);
+  assert.throws(() => validate({ ...input, role: 'organizer', overrides: { 'routes.publish': true, 'routes.edit': false } }));
+  assert.throws(() => validate({ ...input, role: 'organizer', overrides: { 'routes.assign': true, 'race.view': false } }));
+});

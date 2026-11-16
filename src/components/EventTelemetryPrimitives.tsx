@@ -1,39 +1,37 @@
 import React, { useId, useMemo, useState } from 'react';
-import { Award, Radio, TrendingUp, Users2 } from 'lucide-react';
-import { computeResults } from '../lib/timing';
-import { AgeCategory, ChipRead, Race, RunnerProfile, RunnerResult } from '../types';
+import { Award, Maximize2, Radio, TrendingUp, Users2 } from 'lucide-react';
+import {
+  buildEventTelemetryData,
+  computeRowMicroMetrics,
+  DISTANCE_PALETTE,
+  formatPacePerKm,
+  formatShortDuration,
+  type AgeCutStat,
+  type DataViewerCategory,
+  type DemographicStat,
+  type DistanceBreakdown,
+  type EventTelemetryData,
+  type EventViewerBundle,
+  type FinishWaveBucket,
+  type FunnelStage,
+  type RowMicroMetrics,
+} from '../lib/eventAnalytics';
 
-export const DISTANCE_PALETTE = ['#10b981', '#ef4444', '#f59e0b', '#3b82f6', '#06b6d4', '#a855f7'] as const;
-
-const STANDARD_AGE_CUTS: Array<{ id: string; label: string; min: number; max: number }> = [
-  { id: 'u18', label: 'Under 18', min: 1, max: 17 },
-  { id: '18-29', label: '18-29', min: 18, max: 29 },
-  { id: '30-39', label: '30-39', min: 30, max: 39 },
-  { id: '40-49', label: '40-49', min: 40, max: 49 },
-  { id: '50-59', label: '50-59', min: 50, max: 59 },
-  { id: '60plus', label: '60+', min: 60, max: 120 },
-];
-
-const SHIRT_SIZE_ORDER = ['3XS', '2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', 'XXL', '3XL', '4XL'];
-
-function matchConfiguredAgeCut(
-  configured: AgeCategory[],
-  runner: RunnerProfile,
-): AgeCategory | undefined {
-  if (runner.ageNotProvided || runner.isFreeSlot) return undefined;
-  if (runner.ageCategoryOverrideId) {
-    const override = configured.find(
-      (cat) => cat.id === runner.ageCategoryOverrideId && cat.gender === runner.gender,
-    );
-    if (override) return override;
-  }
-  return configured.find(
-    (cat) =>
-      cat.gender === runner.gender &&
-      runner.age >= cat.minAge &&
-      runner.age <= cat.maxAge,
-  );
-}
+export {
+  buildEventTelemetryData,
+  computeRowMicroMetrics,
+  DISTANCE_PALETTE,
+  formatShortDuration,
+  type AgeCutStat,
+  type DataViewerCategory,
+  type DemographicStat,
+  type DistanceBreakdown,
+  type EventTelemetryData,
+  type EventViewerBundle,
+  type FinishWaveBucket,
+  type FunnelStage,
+  type RowMicroMetrics,
+};
 
 const COUNT_FORMATTER = new Intl.NumberFormat('en-PH');
 const COMPACT_PHP_FORMATTER = new Intl.NumberFormat('en-PH', {
@@ -55,731 +53,6 @@ function formatCompactPhp(value: number): string {
   if (value >= 1000000) return `₱${(value / 1000000).toFixed(1)}M`;
   if (value >= 1000) return `₱${Math.round(value / 1000)}k`;
   return `₱${Math.round(value)}`;
-}
-
-export function formatShortDuration(totalSeconds: number | undefined): string {
-  if (totalSeconds === undefined || !Number.isFinite(totalSeconds) || totalSeconds < 0) return '--:--:--';
-  const whole = Math.floor(totalSeconds);
-  const hrs = Math.floor(whole / 3600);
-  const mins = Math.floor((whole % 3600) / 60);
-  const secs = whole % 60;
-  return [hrs, mins, secs].map((part) => String(part).padStart(2, '0')).join(':');
-}
-
-function parseIsoDayMs(value: string | undefined): number | null {
-  if (!value) return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const dayStr = trimmed.slice(0, 10);
-  const parsed = Date.parse(`${dayStr}T00:00:00+08:00`);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function daysBetween(laterDayStr: string, earlierDayStr: string): number {
-  const a = parseIsoDayMs(laterDayStr);
-  const b = parseIsoDayMs(earlierDayStr);
-  if (a === null || b === null) return 0;
-  return Math.round((a - b) / 86400000);
-}
-
-function build14DayCumulativeRegSeries(
-  runners: RunnerProfile[],
-  anchorDayStr: string,
-): { series: number[]; labels: string[]; recent7dCount: number } {
-  const POINTS = 14;
-  if (runners.length === 0) {
-    return {
-      series: new Array(POINTS).fill(0),
-      labels: ['D-13', 'D-7', 'Latest'],
-      recent7dCount: 0,
-    };
-  }
-
-  let minMs = Infinity;
-  let maxMs = -Infinity;
-  const dayTimestamps: number[] = [];
-
-  for (const runner of runners) {
-    const ms = parseIsoDayMs(runner.createdAt);
-    if (ms !== null) {
-      dayTimestamps.push(ms);
-      if (ms < minMs) minMs = ms;
-      if (ms > maxMs) maxMs = ms;
-    }
-  }
-
-  const anchorMs = parseIsoDayMs(anchorDayStr) ?? Date.now();
-  const recentCutoffMs = anchorMs - 7 * 86400000;
-  let recent7dCount = 0;
-  for (const ms of dayTimestamps) {
-    if (ms >= recentCutoffMs) recent7dCount += 1;
-  }
-
-  // Anchor the 14-point window cleanly on the active registration span when timestamps exist
-  const windowEndMs = Number.isFinite(maxMs) ? maxMs : anchorMs;
-  const windowStartMs = Number.isFinite(minMs) && maxMs > minMs
-    ? Math.max(minMs, windowEndMs - (POINTS - 1) * 86400000)
-    : windowEndMs - (POINTS - 1) * 86400000;
-
-  const spanMs = Math.max(1, windowEndMs - windowStartMs);
-  const dailyCounts = new Array<number>(POINTS).fill(0);
-  let priorCount = 0;
-
-  for (const ms of dayTimestamps) {
-    if (ms < windowStartMs) {
-      priorCount += 1;
-    } else {
-      const idx = Math.min(
-        POINTS - 1,
-        Math.max(0, Math.round(((ms - windowStartMs) / spanMs) * (POINTS - 1))),
-      );
-      dailyCounts[idx] += 1;
-    }
-  }
-
-  // Unknown-date entries land at the final slot so total always reconciles accurately
-  const undated = runners.length - dayTimestamps.length;
-  if (undated > 0) {
-    dailyCounts[POINTS - 1] += undated;
-  }
-
-  const cumulative: number[] = [];
-  let running = priorCount;
-  for (let i = 0; i < POINTS; i += 1) {
-    running += dailyCounts[i];
-    cumulative.push(running);
-  }
-
-  const startLabel = new Date(windowStartMs).toISOString().slice(5, 10);
-  const midLabel = new Date(windowStartMs + spanMs / 2).toISOString().slice(5, 10);
-  const endLabel = new Date(windowEndMs).toISOString().slice(5, 10);
-
-  return {
-    series: cumulative,
-    labels: [startLabel, midLabel, endLabel],
-    recent7dCount,
-  };
-}
-
-export interface DistanceBreakdown {
-  id: string;
-  label: string;
-  km: number;
-  price: number;
-  runners: number;
-  assignedBibs: number;
-  taggedOrClaimed: number;
-  capacity: number;
-  estRevenue: number;
-  color: string;
-}
-
-export interface FunnelStage {
-  id: string;
-  label: string;
-  count: number;
-  pct: number;
-  detail: string;
-  color: string;
-}
-
-export interface FinishWaveBucket {
-  label: string;
-  count: number;
-  startMin: number;
-}
-
-export interface AgeCutStat {
-  id: string;
-  label: string;
-  gender: 'all' | 'male' | 'female';
-  count: number;
-  pct: number;
-  medianFinishSeconds?: number;
-  fastestFinishSeconds?: number;
-  color: string;
-}
-
-export interface DemographicStat {
-  id: string;
-  label: string;
-  count: number;
-  pct: number;
-  color: string;
-}
-
-export interface RowMicroMetrics {
-  assignedBibCount: number;
-  recent7dRevenue: number;
-  avgRevenuePerRunner: number;
-  miniSparkline: number[];
-}
-
-export interface EventTelemetryData {
-  raceId: string;
-  raceName: string;
-  raceDate: string;
-  mode: 'upcoming' | 'completed';
-  distances: DistanceBreakdown[];
-  totalRunners: number;
-  totalRevenue: number;
-  assignedBibTotal: number;
-  taggedOrClaimedTotal: number;
-  recent7dRunners: number;
-  recent7dRevenue: number;
-  avgFeePerRunner: number;
-  velocityData: number[];
-  velocityLabels: string[];
-  usingFinishScanSeries: boolean;
-  benchmarkCurve: {
-    current: number[];
-    benchmark: number[];
-    benchmarkName: string;
-    daysToRace: number;
-  };
-  checkpointFunnel: FunnelStage[];
-  finishBuckets: FinishWaveBucket[];
-  medianFinishSeconds?: number;
-  medianFinishLabel: string;
-  fastestFinishLabel: string;
-  peakBucketLabel: string;
-  peakBucketCount: number;
-  cutoffMinutes?: number;
-  dnsCount: number;
-  activeReadCount: number;
-  ageCuts: AgeCutStat[];
-  usingCustomAgeCuts: boolean;
-  genderBreakdown: DemographicStat[];
-  entryFormats: DemographicStat[];
-  shirtSizes: DemographicStat[];
-  ageSummary: {
-    medianAge: number | null;
-    minAge: number | null;
-    maxAge: number | null;
-    youthUnder18: number;
-    masters50Plus: number;
-    knownAgeCount: number;
-    undisclosedCount: number;
-  };
-  paidCount: number;
-  pendingPaymentCount: number;
-  finishedCount: number;
-  finishRatePct: number;
-  chipTimedCount: number;
-  gunTimedCount: number;
-}
-
-/** Pre-computes per-row micro visuals for the desktop Events table in a single O(N) pass. */
-export function computeRowMicroMetrics(
-  raceRunners: RunnerProfile[],
-  sortedDistances: Race['distances'],
-  todayStr: string,
-): RowMicroMetrics {
-  const priceByDistance = new Map<string, number>();
-  for (const dist of sortedDistances) {
-    priceByDistance.set(dist.label.trim(), dist.price || 0);
-  }
-
-  const anchorMs = parseIsoDayMs(todayStr) ?? Date.now();
-  const weekCutoffMs = anchorMs - 7 * 86400000;
-  const sparkline = new Array<number>(7).fill(0);
-
-  let assignedBibCount = 0;
-  let totalEstRevenue = 0;
-  let recent7dRevenue = 0;
-
-  for (const runner of raceRunners) {
-    if ((runner.bibNumber || '').trim()) {
-      assignedBibCount += 1;
-    }
-    const fee = priceByDistance.get((runner.distance || '').trim()) || 0;
-    totalEstRevenue += fee;
-
-    const createdMs = parseIsoDayMs(runner.createdAt);
-    if (createdMs !== null && createdMs >= weekCutoffMs) {
-      recent7dRevenue += fee;
-      const bucketIdx = Math.min(6, Math.max(0, Math.floor(((createdMs - weekCutoffMs) / (7 * 86400000)) * 7)));
-      sparkline[bucketIdx] += 1;
-    }
-  }
-
-  const avgRevenuePerRunner = raceRunners.length > 0 ? Math.round(totalEstRevenue / raceRunners.length) : 0;
-
-  return {
-    assignedBibCount,
-    recent7dRevenue,
-    avgRevenuePerRunner,
-    miniSparkline: sparkline,
-  };
-}
-
-/** Aggregates raw runner rosters and checkpoint reads into <= 14 chart points. */
-export function buildEventTelemetryData({
-  race,
-  raceRunners,
-  allRaces,
-  runnersByRace,
-  chipReads,
-  completed,
-  todayStr,
-}: {
-  race: Race;
-  raceRunners: RunnerProfile[];
-  allRaces: Race[];
-  runnersByRace: Map<string, RunnerProfile[]>;
-  chipReads: ChipRead[];
-  completed: boolean;
-  todayStr: string;
-}): EventTelemetryData {
-  const sortedDistances = [...(race.distances || [])].sort((a, b) => a.km - b.km);
-  const statsByLabel = new Map<
-    string,
-    { runners: number; assignedBibs: number; taggedOrClaimed: number }
-  >();
-
-  let assignedBibTotal = 0;
-  let taggedOrClaimedTotal = 0;
-
-  for (const runner of raceRunners) {
-    const key = (runner.distance || '').trim();
-    const bucket = statsByLabel.get(key) ?? { runners: 0, assignedBibs: 0, taggedOrClaimed: 0 };
-    bucket.runners += 1;
-    if ((runner.bibNumber || '').trim()) {
-      bucket.assignedBibs += 1;
-      assignedBibTotal += 1;
-    }
-    if ((runner.chipId || '').trim() || runner.kitClaimedAt) {
-      bucket.taggedOrClaimed += 1;
-      taggedOrClaimedTotal += 1;
-    }
-    statsByLabel.set(key, bucket);
-  }
-
-  const distances: DistanceBreakdown[] = sortedDistances.map((dist, idx) => {
-    const entry = statsByLabel.get(dist.label.trim()) ?? {
-      runners: 0,
-      assignedBibs: 0,
-      taggedOrClaimed: 0,
-    };
-    const estRevenue = entry.runners * (dist.price || 0);
-    // Target capacity derives cleanly from current registration volume when explicit cap is unset
-    const suggestedCap =
-      entry.runners > 0
-        ? Math.max(entry.runners, Math.ceil((entry.runners * 1.15) / 10) * 10)
-        : 50;
-    return {
-      id: dist.id,
-      label: dist.label,
-      km: dist.km,
-      price: dist.price || 0,
-      runners: entry.runners,
-      assignedBibs: entry.assignedBibs,
-      taggedOrClaimed: entry.taggedOrClaimed,
-      capacity: suggestedCap,
-      estRevenue,
-      color: DISTANCE_PALETTE[idx % DISTANCE_PALETTE.length],
-    };
-  });
-
-  const totalRunners = raceRunners.length;
-  const totalRevenue = distances.reduce((sum, item) => sum + item.estRevenue, 0);
-  const regSeries = build14DayCumulativeRegSeries(raceRunners, todayStr);
-
-  // Average revenue per runner + 7-day surge revenue
-  const rowMetrics = computeRowMicroMetrics(raceRunners, sortedDistances, todayStr);
-
-  // Pick a reference race for upcoming momentum comparison
-  const referenceCandidates = allRaces
-    .filter((candidate) => candidate.id !== race.id && (runnersByRace.get(candidate.id)?.length || 0) > 0)
-    .sort((a, b) => (runnersByRace.get(b.id)?.length || 0) - (runnersByRace.get(a.id)?.length || 0));
-
-  const referenceRace = referenceCandidates[0];
-  const referenceRunners = referenceRace ? runnersByRace.get(referenceRace.id) || [] : [];
-  const referenceSeries = referenceRace
-    ? build14DayCumulativeRegSeries(referenceRunners, referenceRace.date || todayStr).series
-    : regSeries.series;
-
-  const normalizeCurve = (series: number[]): number[] => {
-    const peak = Math.max(...series, 0);
-    if (peak <= 0) return series.map(() => 0);
-    return series.map((val) => Math.round((val / peak) * 100));
-  };
-
-  // Pre-aggregate RFID reads / official results for race-day & completed telemetry
-  const checkpoints = race.checkpoints || [];
-  const results = (completed || chipReads.length > 0) && raceRunners.length > 0
-    ? computeResults(checkpoints, chipReads, raceRunners, race.ageCategories || [], race)
-    : [];
-
-  const intermediateCheckpointIds = new Set(
-    [...checkpoints]
-      .sort((a, b) => a.order - b.order)
-      .filter((cp, idx, list) =>
-        cp.type ? cp.type === 'intermediate' : idx > 0 && idx < list.length - 1,
-      )
-      .map((cp) => cp.id),
-  );
-
-  let startedCount = 0;
-  let intermediateCount = 0;
-  let finishedCount = 0;
-  let disqualifiedCount = 0;
-  const finishSecondsList: number[] = [];
-
-  for (const res of results) {
-    const hasStartedScan = res.splits.length > 0 || res.finishSeconds !== undefined;
-    if (hasStartedScan) startedCount += 1;
-    if (
-      res.splits.some((split) => intermediateCheckpointIds.has(split.checkpointId)) ||
-      (intermediateCheckpointIds.size === 0 && res.finishSeconds !== undefined)
-    ) {
-      intermediateCount += 1;
-    }
-    if (res.disqualified) {
-      disqualifiedCount += 1;
-    } else if (res.finishSeconds !== undefined) {
-      finishedCount += 1;
-      finishSecondsList.push(res.finishSeconds);
-    }
-  }
-
-  finishSecondsList.sort((a, b) => a - b);
-  const medianFinishSeconds =
-    finishSecondsList.length > 0
-      ? finishSecondsList[Math.floor(finishSecondsList.length / 2)]
-      : undefined;
-
-  const dnsCount = Math.max(0, totalRunners - startedCount);
-  const unresolvedStarted = Math.max(0, startedCount - finishedCount - disqualifiedCount);
-  const dnfTotal = completed ? unresolvedStarted + disqualifiedCount : disqualifiedCount;
-
-  const checkpointFunnel: FunnelStage[] = [
-    {
-      id: 'registered',
-      label: 'Registered',
-      count: totalRunners,
-      pct: totalRunners > 0 ? 100 : 0,
-      detail: `${formatCount(dnsCount)} DNS`,
-      color: '#3b82f6',
-    },
-    {
-      id: 'started',
-      label: 'Started',
-      count: startedCount,
-      pct: totalRunners > 0 ? Math.round((startedCount / totalRunners) * 100) : 0,
-      detail: chipReads.length > 0 ? `${formatCount(chipReads.length)} scans` : '0 scans',
-      color: '#10b981',
-    },
-    {
-      id: 'split',
-      label: intermediateCheckpointIds.size > 0 ? 'Split Mat' : 'Mid Check',
-      count: intermediateCount,
-      pct: totalRunners > 0 ? Math.round((intermediateCount / totalRunners) * 100) : 0,
-      detail: `${intermediateCheckpointIds.size} ${intermediateCheckpointIds.size === 1 ? 'mat' : 'mats'}`,
-      color: '#f59e0b',
-    },
-    {
-      id: 'finished',
-      label: 'Finished',
-      count: finishedCount,
-      pct: totalRunners > 0 ? Math.round((finishedCount / totalRunners) * 100) : 0,
-      detail: medianFinishSeconds !== undefined ? `Med ${formatShortDuration(medianFinishSeconds)}` : 'Awaiting',
-      color: '#10b981',
-    },
-    {
-      id: 'dnf',
-      label: completed ? 'DNF / Cut-off' : 'DQ / Hold',
-      count: dnfTotal,
-      pct: totalRunners > 0 ? Math.round((dnfTotal / totalRunners) * 100) : 0,
-      detail: disqualifiedCount > 0 ? `${formatCount(disqualifiedCount)} DQ` : '0 DQ',
-      color: '#ef4444',
-    },
-  ];
-
-  // Bucket finish times into 14 uniform intervals (15-min base, auto-scaled for ultras)
-  const BUCKET_COUNT = 14;
-  let finishBuckets: FinishWaveBucket[] = [];
-  let peakBucketLabel = 'No finish scans';
-  let peakBucketCount = 0;
-
-  if (finishSecondsList.length > 0) {
-    const minMinutes = Math.floor(finishSecondsList[0] / 60 / 15) * 15;
-    const maxMinutes = Math.ceil(finishSecondsList[finishSecondsList.length - 1] / 60 / 15) * 15;
-    const rawSpan = Math.max(15, maxMinutes - minMinutes);
-    const stepMinutes = Math.max(15, Math.ceil(rawSpan / BUCKET_COUNT / 15) * 15);
-
-    finishBuckets = Array.from({ length: BUCKET_COUNT }, (_, idx) => {
-      const startMin = minMinutes + idx * stepMinutes;
-      const hrs = Math.floor(startMin / 60);
-      const mins = startMin % 60;
-      const label = `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
-      return { label, count: 0, startMin };
-    });
-
-    for (const sec of finishSecondsList) {
-      const min = sec / 60;
-      const idx = Math.min(
-        BUCKET_COUNT - 1,
-        Math.max(0, Math.floor((min - minMinutes) / stepMinutes)),
-      );
-      finishBuckets[idx].count += 1;
-    }
-
-    for (const bucket of finishBuckets) {
-      if (bucket.count > peakBucketCount) {
-        peakBucketCount = bucket.count;
-        peakBucketLabel = bucket.label;
-      }
-    }
-  }
-
-  // Index valid finish results by bib so age cuts can attach median & fastest times in O(N)
-  const resultByBib = new Map<string, RunnerResult>();
-  let chipTimedCount = 0;
-  let gunTimedCount = 0;
-  for (const res of results) {
-    if (!res.disqualified && res.finishSeconds !== undefined) {
-      resultByBib.set(res.bibNumber, res);
-      if (res.timingMethod === 'gun') gunTimedCount += 1;
-      else chipTimedCount += 1;
-    }
-  }
-
-  // Age cuts (prefer organizer-configured ageCategories; fall back to standard cuts when unconfigured)
-  const configuredAgeCats = race.ageCategories || [];
-  const usingCustomAgeCuts = configuredAgeCats.length > 0;
-  const ageCutCounts = new Map<
-    string,
-    { id: string; label: string; gender: 'all' | 'male' | 'female'; count: number; finishSecs: number[] }
-  >();
-
-  let maleCount = 0;
-  let femaleCount = 0;
-  let paidCount = 0;
-  let pendingPaymentCount = 0;
-  let youthUnder18 = 0;
-  let masters50Plus = 0;
-  let undisclosedAgeCount = 0;
-  const validAges: number[] = [];
-  const formatCounts = new Map<string, number>();
-  const shirtCounts = new Map<string, number>();
-
-  for (const runner of raceRunners) {
-    if (runner.gender === 'female') femaleCount += 1;
-    else maleCount += 1;
-
-    if (runner.paymentStatus === 'paid') paidCount += 1;
-    else if (runner.paymentStatus === 'pending') pendingPaymentCount += 1;
-
-    const entryCat = (runner.entryCategory || 'solo').toLowerCase();
-    const catLabel = entryCat.charAt(0).toUpperCase() + entryCat.slice(1);
-    formatCounts.set(catLabel, (formatCounts.get(catLabel) || 0) + 1);
-
-    const rawShirt = (runner.shirtSize || '').trim().toUpperCase();
-    if (rawShirt) {
-      shirtCounts.set(rawShirt, (shirtCounts.get(rawShirt) || 0) + 1);
-    }
-
-    const runnerRes = resultByBib.get(runner.bibNumber);
-    const hasRealAge =
-      !runner.ageNotProvided &&
-      !runner.isFreeSlot &&
-      Number.isFinite(runner.age) &&
-      runner.age > 0 &&
-      runner.age <= 120;
-
-    if (hasRealAge) {
-      validAges.push(runner.age);
-      if (runner.age < 18) youthUnder18 += 1;
-      if (runner.age >= 50) masters50Plus += 1;
-    } else {
-      undisclosedAgeCount += 1;
-    }
-
-    let bucketKey = 'unassigned';
-    let bucketLabel = 'Open / Unspecified';
-    let bucketGender: 'all' | 'male' | 'female' = 'all';
-
-    if (usingCustomAgeCuts) {
-      const matched = matchConfiguredAgeCut(configuredAgeCats, runner);
-      if (matched) {
-        bucketKey = matched.id;
-        bucketLabel = matched.label;
-        bucketGender = matched.gender;
-      } else if (!hasRealAge) {
-        bucketKey = 'unspecified';
-        bucketLabel = 'Age Unspecified';
-      } else {
-        bucketKey = 'outside-cuts';
-        bucketLabel = 'Outside Cuts';
-      }
-    } else if (hasRealAge) {
-      const std = STANDARD_AGE_CUTS.find((cut) => runner.age >= cut.min && runner.age <= cut.max);
-      if (std) {
-        bucketKey = std.id;
-        bucketLabel = std.label;
-      }
-    } else {
-      bucketKey = 'unspecified';
-      bucketLabel = 'Age Unspecified';
-    }
-
-    const existingCut = ageCutCounts.get(bucketKey) ?? {
-      id: bucketKey,
-      label: bucketLabel,
-      gender: bucketGender,
-      count: 0,
-      finishSecs: [],
-    };
-    existingCut.count += 1;
-    if (runnerRes?.finishSeconds !== undefined) {
-      existingCut.finishSecs.push(runnerRes.finishSeconds);
-    }
-    ageCutCounts.set(bucketKey, existingCut);
-  }
-
-  validAges.sort((a, b) => a - b);
-  const ageSummary = {
-    medianAge: validAges.length > 0 ? validAges[Math.floor(validAges.length / 2)] : null,
-    minAge: validAges.length > 0 ? validAges[0] : null,
-    maxAge: validAges.length > 0 ? validAges[validAges.length - 1] : null,
-    youthUnder18,
-    masters50Plus,
-    knownAgeCount: validAges.length,
-    undisclosedCount: undisclosedAgeCount,
-  };
-
-  // Preserve organizer or age-bracket canonical ordering rather than unsorted map insertion
-  const orderedAgeKeys = usingCustomAgeCuts
-    ? [...configuredAgeCats.map((c) => c.id), 'outside-cuts', 'unspecified']
-    : [...STANDARD_AGE_CUTS.map((c) => c.id), 'unspecified'];
-
-  const ageCuts: AgeCutStat[] = orderedAgeKeys
-    .map((key, idx) => {
-      const entry = ageCutCounts.get(key);
-      if (!entry || entry.count === 0) return null;
-      const secs = [...entry.finishSecs].sort((a, b) => a - b);
-      return {
-        id: entry.id,
-        label: entry.label,
-        gender: entry.gender,
-        count: entry.count,
-        pct: totalRunners > 0 ? Math.round((entry.count / totalRunners) * 100) : 0,
-        medianFinishSeconds: secs.length > 0 ? secs[Math.floor(secs.length / 2)] : undefined,
-        fastestFinishSeconds: secs.length > 0 ? secs[0] : undefined,
-        color: DISTANCE_PALETTE[idx % DISTANCE_PALETTE.length],
-      } as AgeCutStat;
-    })
-    .filter((item): item is AgeCutStat => item !== null);
-
-  const genderBreakdown: DemographicStat[] =
-    totalRunners > 0
-      ? [
-          {
-            id: 'male',
-            label: 'Male',
-            count: maleCount,
-            pct: Math.round((maleCount / totalRunners) * 100),
-            color: '#3b82f6',
-          },
-          {
-            id: 'female',
-            label: 'Female',
-            count: femaleCount,
-            pct: Math.round((femaleCount / totalRunners) * 100),
-            color: '#ec4899',
-          },
-        ]
-      : [];
-
-  const entryFormats: DemographicStat[] = Array.from(formatCounts.entries())
-    .sort((a, b) => b[1] - a[1])
-    .map(([label, count], idx) => ({
-      id: label.toLowerCase(),
-      label,
-      count,
-      pct: totalRunners > 0 ? Math.round((count / totalRunners) * 100) : 0,
-      color: DISTANCE_PALETTE[idx % DISTANCE_PALETTE.length],
-    }));
-
-  const shirtSizes: DemographicStat[] = Array.from(shirtCounts.entries())
-    .sort((a, b) => {
-      const ia = SHIRT_SIZE_ORDER.indexOf(a[0]);
-      const ib = SHIRT_SIZE_ORDER.indexOf(b[0]);
-      if (ia !== -1 && ib !== -1) return ia - ib;
-      if (ia !== -1) return -1;
-      if (ib !== -1) return 1;
-      return b[1] - a[1];
-    })
-    .map(([label, count], idx) => ({
-      id: `shirt-${label}`,
-      label,
-      count,
-      pct: totalRunners > 0 ? Math.round((count / totalRunners) * 100) : 0,
-      color: DISTANCE_PALETTE[idx % DISTANCE_PALETTE.length],
-    }));
-
-  const fastestFinishSeconds = finishSecondsList.length > 0 ? finishSecondsList[0] : undefined;
-  const finishRatePct = totalRunners > 0 ? Math.round((finishedCount / totalRunners) * 100) : 0;
-
-  const cutoffMinutes = checkpoints.find((cp) => typeof cp.cutoffMinutes === 'number')?.cutoffMinutes;
-  const usingFinishScanSeries = (completed || chipReads.length > 0) && finishBuckets.some((b) => b.count > 0);
-  const velocityData = usingFinishScanSeries
-    ? finishBuckets.map((b) => b.count)
-    : regSeries.series;
-  const velocityLabels = usingFinishScanSeries
-    ? [
-        finishBuckets[0]?.label || '00:00',
-        finishBuckets[Math.floor(finishBuckets.length / 2)]?.label || '',
-        finishBuckets[finishBuckets.length - 1]?.label || '',
-      ]
-    : regSeries.labels;
-
-  return {
-    raceId: race.id,
-    raceName: race.name,
-    raceDate: race.date,
-    mode: completed || chipReads.length > 0 ? 'completed' : 'upcoming',
-    distances,
-    totalRunners,
-    totalRevenue,
-    assignedBibTotal,
-    taggedOrClaimedTotal,
-    recent7dRunners: regSeries.recent7dCount,
-    recent7dRevenue: rowMetrics.recent7dRevenue,
-    avgFeePerRunner: rowMetrics.avgRevenuePerRunner,
-    velocityData,
-    velocityLabels,
-    usingFinishScanSeries,
-    benchmarkCurve: {
-      current: normalizeCurve(regSeries.series),
-      benchmark: normalizeCurve(referenceSeries),
-      benchmarkName: referenceRace ? referenceRace.name : race.name,
-      daysToRace: daysBetween(race.date, todayStr),
-    },
-    checkpointFunnel,
-    finishBuckets,
-    medianFinishSeconds,
-    medianFinishLabel: formatShortDuration(medianFinishSeconds),
-    fastestFinishLabel: formatShortDuration(fastestFinishSeconds),
-    peakBucketLabel,
-    peakBucketCount,
-    cutoffMinutes,
-    dnsCount,
-    activeReadCount: chipReads.length,
-    ageCuts,
-    usingCustomAgeCuts,
-    genderBreakdown,
-    entryFormats,
-    shirtSizes,
-    ageSummary,
-    paidCount,
-    pendingPaymentCount,
-    finishedCount,
-    finishRatePct,
-    chipTimedCount,
-    gunTimedCount,
-  };
 }
 
 export interface EventTelemetryCardProps {
@@ -1138,25 +411,31 @@ export const TableRevenueMicroPill: React.FC<TableRevenueMicroPillProps> = ({
 };
 
 export interface BottomTelemetryDockProps {
-  telemetry: EventTelemetryData;
+  bundle: EventViewerBundle;
   canViewRoster: boolean;
   canViewRevenue: boolean;
   onOpenEngraving?: (raceId: string) => void;
+  onOpenDataViewer?: (category: DataViewerCategory) => void;
 }
 
 /**
- * 2-Column Bottom-Center Telemetry Dock sitting beneath the Event Directory table
- * that switches automatically between Upcoming Readiness and Completed/Live RFID modes.
+ * Compact 4-category bottom analytics dock beneath the Event Directory table
+ * with a one-click Expand Viewer trigger into the full-workspace Data Viewer.
  */
 export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
-  telemetry,
+  bundle,
   canViewRoster,
   canViewRevenue,
   onOpenEngraving,
+  onOpenDataViewer,
 }) => {
   const gradCurrentId = useId();
-  const [dockTab, setDockTab] = useState<'telemetry' | 'demographics'>('telemetry');
+  const [dockTab, setDockTab] = useState<DataViewerCategory>('performance');
+  const { telemetry, performance, financial, demographics, operations } = bundle;
   const isCompletedOrLive = telemetry.mode === 'completed';
+
+  const activeTab: DataViewerCategory =
+    dockTab === 'financial' && !canViewRevenue ? 'performance' : dockTab;
 
   const comparisonPaths = useMemo(() => {
     const width = 360;
@@ -1185,6 +464,13 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
 
   const maxBucket = Math.max(...telemetry.finishBuckets.map((b) => b.count), 1);
 
+  const dockTabs: Array<{ key: DataViewerCategory; label: string }> = [
+    { key: 'performance', label: 'Performance' },
+    ...(canViewRevenue ? [{ key: 'financial' as const, label: 'Financial' }] : []),
+    { key: 'demographics', label: 'Demographics' },
+    { key: 'operations', label: 'Operations' },
+  ];
+
   return (
     <section
       id="events_bottom_telemetry_dock"
@@ -1199,74 +485,136 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
             Telemetry Dock · {telemetry.raceName}
           </h2>
           <span
-            className={`px-2 py-0.5 rounded-full border text-[11px] font-semibold shrink-0 ${
+            className={`px-2 py-0.5 rounded-full border text-xs font-semibold shrink-0 ${
               isCompletedOrLive
                 ? 'border-red-500/35 bg-red-500/10 text-red-700 dark:text-red-300'
                 : 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
             }`}
           >
-            {isCompletedOrLive ? 'Checkpoint & Finisher Mode' : 'Upcoming Readiness Mode'}
+            {isCompletedOrLive ? 'Checkpoint & Finisher' : 'Upcoming Readiness'}
           </span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           <div
             role="tablist"
-            aria-label="Telemetry dock view"
-            className="inline-flex items-center rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] p-0.5"
+            aria-label="Telemetry dock category"
+            className="w-full sm:w-auto grid grid-cols-2 sm:inline-flex items-center gap-0.5 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] p-0.5"
           >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={dockTab === 'telemetry'}
-              onClick={() => setDockTab('telemetry')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
-                dockTab === 'telemetry'
-                  ? 'bg-[var(--surface-card)] text-[var(--text-primary)] shadow-xs'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-              }`}
-            >
-              Telemetry
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={dockTab === 'demographics'}
-              onClick={() => setDockTab('demographics')}
-              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
-                dockTab === 'demographics'
-                  ? 'bg-[var(--surface-card)] text-[var(--text-primary)] shadow-xs'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-              }`}
-            >
-              <Users2 className="w-3 h-3 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
-              <span>Age Cuts &amp; Stats</span>
-            </button>
+            {dockTabs.map((item) => {
+              const selected = activeTab === item.key;
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  onClick={() => setDockTab(item.key)}
+                  className={`min-h-10 lg:min-h-0 lg:h-7 px-2.5 rounded-md text-xs font-semibold whitespace-nowrap inline-flex items-center justify-center transition-colors duration-150 ${
+                    selected
+                      ? 'bg-[var(--surface-card)] text-[var(--text-primary)] shadow-xs'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
           </div>
 
-          <div className="flex items-center gap-3 font-mono text-xs tabular-nums text-[var(--text-secondary)]">
-            <span>
-              Bibs: <strong className="text-[var(--text-primary)]">{canViewRoster ? `${formatCount(telemetry.assignedBibTotal)}/${formatCount(telemetry.totalRunners)}` : '--'}</strong>
-            </span>
-            {canViewRoster && canViewRevenue && (
-              <span>
-                Avg Ticket: <strong className="text-emerald-700 dark:text-emerald-400">{formatPhp(telemetry.avgFeePerRunner)}</strong>
-              </span>
-            )}
-          </div>
+          {onOpenDataViewer && (
+            <button
+              type="button"
+              onClick={() => onOpenDataViewer(activeTab)}
+              className="min-h-9 lg:min-h-0 lg:h-8 px-2.5 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] hover:border-red-600 text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-1.5 whitespace-nowrap transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+            >
+              <Maximize2 className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+              <span>Data Viewer</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Adaptive 2-Column Panels */}
-      {dockTab === 'demographics' ? (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3" role="tabpanel" aria-label="Age cuts and runner demographics">
+      {/* Category Tab Panels */}
+      {activeTab === 'financial' && canViewRevenue ? (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3" role="tabpanel" aria-label="Financial summary">
+          <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">
+                Revenue &amp; Collection Reconciliation
+              </span>
+              <span className="font-mono text-xs font-semibold tabular-nums text-emerald-700 dark:text-emerald-400 shrink-0">
+                {canViewRoster ? `${financial.collectionRatePct}% collected` : 'Restricted'}
+              </span>
+            </div>
+            {!canViewRoster ? (
+              <p className="text-xs text-[var(--text-secondary)]">Roster view permission required for financial metrics.</p>
+            ) : (
+              <>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 py-2">
+                    <div className="text-xs text-[var(--text-secondary)]">Collected</div>
+                    <div className="font-mono text-xs font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
+                      {formatPhp(financial.collectedAmount)}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 py-2">
+                    <div className="text-xs text-[var(--text-secondary)]">Pending</div>
+                    <div className="font-mono text-xs font-semibold tabular-nums text-red-700 dark:text-red-400">
+                      {formatPhp(financial.pendingAmount)}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 py-2">
+                    <div className="text-xs text-[var(--text-secondary)]">List Gross</div>
+                    <div className="font-mono text-xs font-semibold tabular-nums text-[var(--text-primary)]">
+                      {formatPhp(financial.listPriceGross)}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono text-[var(--text-secondary)]">
+                  <span>Online: <strong className="text-[var(--text-primary)]">{formatPhp(financial.onlinePaidAmount)}</strong> ({formatCount(financial.onlinePaidCount)})</span>
+                  <span>Manual: <strong className="text-[var(--text-primary)]">{formatPhp(financial.manualPaidAmount)}</strong> ({formatCount(financial.manualPaidCount)})</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">
+                Yield by Distance
+              </span>
+              <span className="font-mono text-xs text-[var(--text-secondary)] shrink-0">
+                Avg Ticket {canViewRoster ? formatPhp(financial.avgRealizedTicket) : '--'}
+              </span>
+            </div>
+            {!canViewRoster || financial.byDistance.length === 0 ? (
+              <p className="text-xs text-[var(--text-secondary)]">No distance fee schedule configured yet.</p>
+            ) : (
+              <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                {financial.byDistance.map((row) => (
+                  <div key={row.id} className="flex items-center justify-between gap-2 text-xs font-mono tabular-nums">
+                    <span className="font-sans font-semibold text-[var(--text-primary)] truncate">
+                      {row.label} ({formatCount(row.paidCount)}/{formatCount(row.registrants)} paid)
+                    </span>
+                    <span className="text-emerald-700 dark:text-emerald-400 font-semibold shrink-0">
+                      {formatPhp(row.collectedAmount)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : activeTab === 'demographics' ? (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3" role="tabpanel" aria-label="Demographics and apparel summary">
           {/* Panel 1: Age Cuts & Divisions */}
           <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3 space-y-2.5">
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">
                 Age Cuts &amp; Divisions
               </span>
-              <span className="px-2 py-0.5 rounded-full border border-[var(--border-default)] bg-[var(--surface-card)] font-mono text-[10px] font-semibold text-[var(--text-secondary)] shrink-0">
+              <span className="px-2 py-0.5 rounded-full border border-[var(--border-default)] bg-[var(--surface-card)] font-mono text-xs font-semibold text-[var(--text-secondary)] shrink-0">
                 {telemetry.usingCustomAgeCuts ? 'Race Divisions' : 'Standard Brackets'}
               </span>
             </div>
@@ -1277,13 +625,13 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
               <>
                 <div className="grid grid-cols-4 gap-2">
                   <div className="rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2 py-1.5">
-                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">Median</div>
+                    <div className="text-xs text-[var(--text-secondary)]">Median</div>
                     <div className="font-mono text-xs font-semibold tabular-nums text-[var(--text-primary)]">
                       {telemetry.ageSummary.medianAge !== null ? `${telemetry.ageSummary.medianAge}y` : '--'}
                     </div>
                   </div>
                   <div className="rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2 py-1.5">
-                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">Range</div>
+                    <div className="text-xs text-[var(--text-secondary)]">Range</div>
                     <div className="font-mono text-xs font-semibold tabular-nums text-[var(--text-primary)]">
                       {telemetry.ageSummary.minAge !== null && telemetry.ageSummary.maxAge !== null
                         ? `${telemetry.ageSummary.minAge}-${telemetry.ageSummary.maxAge}`
@@ -1291,13 +639,13 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
                     </div>
                   </div>
                   <div className="rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2 py-1.5">
-                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">Under 18</div>
+                    <div className="text-xs text-[var(--text-secondary)]">Under 18</div>
                     <div className="font-mono text-xs font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
                       {formatCount(telemetry.ageSummary.youthUnder18)}
                     </div>
                   </div>
                   <div className="rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2 py-1.5">
-                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">Masters 50+</div>
+                    <div className="text-xs text-[var(--text-secondary)]">50+</div>
                     <div className="font-mono text-xs font-semibold tabular-nums text-red-700 dark:text-red-400">
                       {formatCount(telemetry.ageSummary.masters50Plus)}
                     </div>
@@ -1307,7 +655,7 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
                 {telemetry.ageCuts.length === 0 ? (
                   <p className="text-xs text-[var(--text-secondary)]">No age data recorded for registered runners yet.</p>
                 ) : (
-                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
                     {telemetry.ageCuts.map((cut) => (
                       <div key={cut.id} className="space-y-1">
                         <div className="flex items-center justify-between gap-2 text-xs">
@@ -1319,20 +667,15 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
                             />
                             <span className="font-semibold text-[var(--text-primary)] truncate">{cut.label}</span>
                             {cut.gender !== 'all' && (
-                              <span className="px-1 py-0.5 rounded bg-[var(--surface-card)] border border-[var(--border-default)] text-[10px] font-mono uppercase text-[var(--text-secondary)] shrink-0">
+                              <span className="px-1 py-0.5 rounded bg-[var(--surface-card)] border border-[var(--border-default)] text-xs font-mono uppercase text-[var(--text-secondary)] shrink-0">
                                 {cut.gender === 'male' ? 'M' : 'F'}
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-2 font-mono tabular-nums shrink-0 text-[11px]">
+                          <div className="flex items-center gap-2 font-mono tabular-nums shrink-0 text-xs">
                             {cut.medianFinishSeconds !== undefined && (
                               <span className="text-[var(--text-secondary)]">
                                 Med {formatShortDuration(cut.medianFinishSeconds)}
-                              </span>
-                            )}
-                            {cut.fastestFinishSeconds !== undefined && (
-                              <span className="text-emerald-700 dark:text-emerald-400">
-                                Best {formatShortDuration(cut.fastestFinishSeconds)}
                               </span>
                             )}
                             <span className="font-semibold text-[var(--text-primary)]">
@@ -1353,24 +696,18 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
                     ))}
                   </div>
                 )}
-
-                {telemetry.ageSummary.undisclosedCount > 0 && (
-                  <p className="text-[11px] font-mono text-[var(--text-secondary)]">
-                    Age unspecified / free slots: {formatCount(telemetry.ageSummary.undisclosedCount)}
-                  </p>
-                )}
               </>
             )}
           </div>
 
-          {/* Panel 2: Runner Demographics, Apparel & Operations */}
+          {/* Panel 2: Gender, Headcount & Shirt Demand */}
           <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3 space-y-3">
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">
-                Runner Demographics &amp; Apparel
+                Demographics &amp; Apparel
               </span>
-              <span className="font-mono text-[11px] tabular-nums text-[var(--text-secondary)] shrink-0">
-                {canViewRoster ? `${formatCount(telemetry.totalRunners)} entries` : 'Restricted'}
+              <span className="font-mono text-xs tabular-nums text-[var(--text-secondary)] shrink-0">
+                {canViewRoster ? `${formatCount(demographics.compliance.totalHeadcount)} runners on course` : 'Restricted'}
               </span>
             </div>
 
@@ -1378,11 +715,10 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
               <p className="text-xs text-[var(--text-secondary)]">Roster view permission required for demographic breakdown.</p>
             ) : (
               <>
-                {/* Gender Distribution Bar */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-semibold text-[var(--text-primary)]">Gender Split</span>
-                    <div className="flex items-center gap-3 font-mono text-[11px] tabular-nums text-[var(--text-secondary)]">
+                    <div className="flex items-center gap-3 font-mono text-xs tabular-nums text-[var(--text-secondary)]">
                       {telemetry.genderBreakdown.map((g) => (
                         <span key={g.id} className="inline-flex items-center gap-1">
                           <span className="w-2 h-2 rounded-full" style={{ backgroundColor: g.color }} aria-hidden="true" />
@@ -1403,53 +739,20 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
                   </div>
                 </div>
 
-                {/* Entry Formats & Operations Summary */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <div className="rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2 py-1.5">
-                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">Paid / Pending</div>
-                    <div className="font-mono text-xs font-semibold tabular-nums text-[var(--text-primary)]">
-                      {formatCount(telemetry.paidCount)} / {formatCount(telemetry.pendingPaymentCount)}
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2 py-1.5">
-                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">Kits Claimed</div>
-                    <div className="font-mono text-xs font-semibold tabular-nums text-[var(--text-primary)]">
-                      {formatCount(telemetry.taggedOrClaimedTotal)}/{formatCount(telemetry.totalRunners)}
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2 py-1.5">
-                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">Finish Rate</div>
-                    <div className="font-mono text-xs font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
-                      {telemetry.finishedCount > 0 ? `${telemetry.finishRatePct}% (${formatCount(telemetry.finishedCount)})` : '--'}
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2 py-1.5">
-                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">Chip / Gun</div>
-                    <div className="font-mono text-xs font-semibold tabular-nums text-[var(--text-primary)]">
-                      {telemetry.chipTimedCount + telemetry.gunTimedCount > 0
-                        ? `${formatCount(telemetry.chipTimedCount)} / ${formatCount(telemetry.gunTimedCount)}`
-                        : '--'}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Entry Format & Apparel Demand */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-[var(--border-default)]">
                   <div className="space-y-1">
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-                      Entry Formats
-                    </div>
+                    <div className="text-xs font-semibold text-[var(--text-secondary)]">Entry Formats</div>
                     <div className="flex flex-wrap gap-1.5">
-                      {telemetry.entryFormats.length === 0 ? (
+                      {demographics.entryFormatHeadcount.length === 0 ? (
                         <span className="text-xs text-[var(--text-secondary)]">--</span>
                       ) : (
-                        telemetry.entryFormats.map((fmt) => (
+                        demographics.entryFormatHeadcount.map((fmt) => (
                           <span
-                            key={fmt.id}
-                            className="inline-flex items-center gap-1 rounded border border-[var(--border-default)] bg-[var(--surface-card)] px-2 py-0.5 font-mono text-[11px] tabular-nums text-[var(--text-primary)]"
+                            key={fmt.category}
+                            className="inline-flex items-center gap-1 rounded border border-[var(--border-default)] bg-[var(--surface-card)] px-2 py-0.5 font-mono text-xs tabular-nums text-[var(--text-primary)]"
                           >
                             <span>{fmt.label}</span>
-                            <strong className="text-emerald-700 dark:text-emerald-400">{formatCount(fmt.count)}</strong>
+                            <strong className="text-emerald-700 dark:text-emerald-400">{formatCount(fmt.entriesCount)}</strong>
                           </span>
                         ))
                       )}
@@ -1457,20 +760,18 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
                   </div>
 
                   <div className="space-y-1">
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-                      Shirt Size Demand
-                    </div>
+                    <div className="text-xs font-semibold text-[var(--text-secondary)]">Shirt Sizes (Claimed/Total)</div>
                     <div className="flex flex-wrap gap-1.5">
-                      {telemetry.shirtSizes.length === 0 ? (
+                      {demographics.shirtInventory.length === 0 ? (
                         <span className="text-xs text-[var(--text-secondary)]">--</span>
                       ) : (
-                        telemetry.shirtSizes.map((sz) => (
+                        demographics.shirtInventory.map((sz) => (
                           <span
-                            key={sz.id}
-                            className="inline-flex items-center gap-1 rounded border border-[var(--border-default)] bg-[var(--surface-card)] px-2 py-0.5 font-mono text-[11px] tabular-nums text-[var(--text-primary)]"
+                            key={sz.size}
+                            className="inline-flex items-center gap-1 rounded border border-[var(--border-default)] bg-[var(--surface-card)] px-2 py-0.5 font-mono text-xs tabular-nums text-[var(--text-primary)]"
                           >
-                            <span>{sz.label}</span>
-                            <strong>{formatCount(sz.count)}</strong>
+                            <span>{sz.size}</span>
+                            <strong>{formatCount(sz.claimedCount)}/{formatCount(sz.orderedCount)}</strong>
                           </span>
                         ))
                       )}
@@ -1481,15 +782,73 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
             )}
           </div>
         </div>
+      ) : activeTab === 'operations' ? (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3" role="tabpanel" aria-label="Operations readiness">
+          <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">
+                Roster, Kit &amp; Safety Completeness
+              </span>
+              <span className="font-mono text-xs text-[var(--text-secondary)] shrink-0">
+                {canViewRoster ? `${formatCount(operations.attentionItems.length)} flags` : 'Restricted'}
+              </span>
+            </div>
+            {!canViewRoster ? (
+              <p className="text-xs text-[var(--text-secondary)]">Roster view permission required for operational audit.</p>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 py-2">
+                  <div className="text-xs text-[var(--text-secondary)]">Missing Bib</div>
+                  <div className="font-mono text-xs font-semibold text-[var(--text-primary)]">{formatCount(operations.missingBibCount)}</div>
+                </div>
+                <div className="rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 py-2">
+                  <div className="text-xs text-[var(--text-secondary)]">Missing Chip</div>
+                  <div className="font-mono text-xs font-semibold text-[var(--text-primary)]">{formatCount(operations.missingChipCount)}</div>
+                </div>
+                <div className="rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 py-2">
+                  <div className="text-xs text-[var(--text-secondary)]">Unclaimed Kit</div>
+                  <div className="font-mono text-xs font-semibold text-[var(--text-primary)]">{formatCount(operations.unclaimedKitCount)}</div>
+                </div>
+                <div className="rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 py-2">
+                  <div className="text-xs text-[var(--text-secondary)]">Emergency Info</div>
+                  <div className="font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                    {demographics.compliance.emergencyContactPct}%
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">
+                Timing &amp; Relay Integrity
+              </span>
+              <span className="font-mono text-xs text-red-700 dark:text-red-400 shrink-0">
+                {canViewRoster && operations.brokenRelayLinks.length > 0 ? `${operations.brokenRelayLinks.length} broken links` : 'Checked'}
+              </span>
+            </div>
+            {!canViewRoster ? (
+              <p className="text-xs text-[var(--text-secondary)]">Roster view permission required.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 text-xs font-mono text-[var(--text-secondary)]">
+                <div>Unmatched RFID scans: <strong className="text-red-700 dark:text-red-400">{formatCount(performance.timingHealth.unmatchedBibs.length)}</strong></div>
+                <div>Close finish reviews: <strong className="text-[var(--text-primary)]">{formatCount(performance.timingHealth.reviewFlaggedCount)}</strong></div>
+                <div>Relay links: <strong className="text-[var(--text-primary)]">{formatCount(operations.relayLinksCount)}</strong></div>
+                <div>Free slots: <strong className="text-[var(--text-primary)]">{formatCount(operations.freeSlotCount)}</strong></div>
+              </div>
+            )}
+          </div>
+        </div>
       ) : isCompletedOrLive ? (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3" role="tabpanel" aria-label="Performance and checkpoint telemetry">
           {/* Completed Panel 1: Checkpoint Funnel & Runner Status */}
           <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3 space-y-2.5">
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">
-                Checkpoint Funnel
+                Checkpoint Funnel &amp; Pace
               </span>
-              <span className="font-mono text-[11px] tabular-nums text-[var(--text-secondary)] whitespace-nowrap shrink-0">
+              <span className="font-mono text-xs tabular-nums text-[var(--text-secondary)] whitespace-nowrap shrink-0">
                 {formatCount(telemetry.activeReadCount)} scans
               </span>
             </div>
@@ -1503,7 +862,7 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
                     <div className="flex items-center justify-between gap-2 text-xs">
                       <span className="font-semibold text-[var(--text-primary)] truncate">{stage.label}</span>
                       <div className="flex items-center gap-2 font-mono tabular-nums shrink-0">
-                        <span className="text-[11px] text-[var(--text-secondary)]">{stage.detail}</span>
+                        <span className="text-xs text-[var(--text-secondary)]">{stage.detail}</span>
                         <span className="font-semibold text-[var(--text-primary)]">
                           {formatCount(stage.count)} ({stage.pct}%)
                         </span>
@@ -1535,16 +894,16 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
                   <button
                     type="button"
                     onClick={() => onOpenEngraving(telemetry.raceId)}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-[var(--border-default)] bg-[var(--surface-card)] hover:border-red-600 text-[10px] font-semibold text-[var(--text-primary)] transition-colors shrink-0"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-[var(--border-default)] bg-[var(--surface-card)] hover:border-red-600 text-xs font-semibold text-[var(--text-primary)] transition-colors shrink-0"
                   >
                     <Award className="w-3 h-3 text-red-700 dark:text-red-400" aria-hidden="true" />
                     <span>Engrave Rush</span>
                   </button>
                 )}
               </div>
-              <span className="font-mono text-[11px] tabular-nums text-emerald-700 dark:text-emerald-400 shrink-0">
+              <span className="font-mono text-xs tabular-nums text-emerald-700 dark:text-emerald-400 shrink-0">
                 {telemetry.finishBuckets.length > 0
-                  ? `Median ${telemetry.medianFinishLabel}`
+                  ? `Med ${telemetry.medianFinishLabel} / P90 ${telemetry.p90FinishLabel}`
                   : `${formatCount(telemetry.totalRunners)} registered`}
               </span>
             </div>
@@ -1558,7 +917,6 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
                   role="img"
                   aria-label="Finish wave histogram showing peak arrival rush and median line"
                 >
-                  {/* Histogram Bars */}
                   {telemetry.finishBuckets.map((bucket, idx) => {
                     const barW = 360 / telemetry.finishBuckets.length - 3;
                     const x = idx * (360 / telemetry.finishBuckets.length) + 1.5;
@@ -1577,17 +935,18 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
                       />
                     );
                   })}
-                  {/* Vertical Crimson Median & Cut-off Indicator */}
                   <line x1="180" y1="4" x2="180" y2="80" stroke="#ef4444" strokeWidth="1.5" strokeDasharray="3 3" />
                 </svg>
 
-                <div className="flex items-center justify-between text-[10px] font-mono tabular-nums text-[var(--text-secondary)]">
+                <div className="flex items-center justify-between text-xs font-mono tabular-nums text-[var(--text-secondary)]">
                   <span>First: {telemetry.finishBuckets[0]?.label}</span>
                   <span className="text-red-700 dark:text-red-400 font-semibold">
                     Peak Chute: {telemetry.peakBucketLabel} ({formatCount(telemetry.peakBucketCount)})
                   </span>
                   <span>
-                    {telemetry.cutoffMinutes ? `Cut-off: ${telemetry.cutoffMinutes}m` : `Last: ${telemetry.finishBuckets[telemetry.finishBuckets.length - 1]?.label}`}
+                    {performance.byDistance[0]?.avgPaceSecPerKm
+                      ? formatPacePerKm(performance.byDistance[0].avgPaceSecPerKm, 1)
+                      : `Last: ${telemetry.finishBuckets[telemetry.finishBuckets.length - 1]?.label}`}
                   </span>
                 </div>
               </div>
@@ -1609,7 +968,7 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
                   <path d={comparisonPaths.current.area} fill={`url(#${gradCurrentId})`} />
                   <path d={comparisonPaths.current.line} fill="none" stroke="#10b981" strokeWidth="1.75" />
                 </svg>
-                <div className="flex items-center justify-between text-[10px] font-mono tabular-nums text-[var(--text-secondary)]">
+                <div className="flex items-center justify-between text-xs font-mono tabular-nums text-[var(--text-secondary)]">
                   <span>0 RFID finish scans synced</span>
                   <span>Showing registration progression ({formatCount(telemetry.totalRunners)})</span>
                 </div>
@@ -1618,7 +977,7 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3" role="tabpanel" aria-label="Upcoming readiness telemetry">
           {/* Upcoming Panel 1: Bib Allocation & Kit Readiness Bullet Bars */}
           <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3 space-y-2.5">
             <div className="flex items-center justify-between gap-2">
@@ -1626,7 +985,7 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
                 <Users2 className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400 shrink-0" aria-hidden="true" />
                 <span className="truncate">Bib Allocation &amp; Tag Readiness</span>
               </span>
-              <span className="font-mono text-[11px] tabular-nums text-[var(--text-secondary)] whitespace-nowrap shrink-0">
+              <span className="font-mono text-xs tabular-nums text-[var(--text-secondary)] whitespace-nowrap shrink-0">
                 {canViewRoster ? `${formatCount(telemetry.taggedOrClaimedTotal)} tagged` : 'Restricted'}
               </span>
             </div>
@@ -1645,11 +1004,10 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
                           <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: dist.color }} aria-hidden="true" />
                           <span className="font-mono font-semibold text-[var(--text-primary)]">{dist.label}</span>
                         </div>
-                        <span className="font-mono text-[11px] tabular-nums text-[var(--text-secondary)] shrink-0">
+                        <span className="font-mono text-xs tabular-nums text-[var(--text-secondary)] shrink-0">
                           <strong className="text-[var(--text-primary)]">{canViewRoster ? formatCount(dist.runners) : '--'}</strong> reg · {canViewRoster ? `${bibPct}% bibs` : '--'}
                         </span>
                       </div>
-                      {/* Bullet Gauge Bar */}
                       <div className="relative h-2 w-full rounded-full bg-[var(--surface-card)] overflow-hidden">
                         <div
                           className="h-full rounded-full opacity-35 transition-all duration-200"
@@ -1677,7 +1035,7 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
                 <TrendingUp className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400 shrink-0" aria-hidden="true" />
                 <span className="truncate">Momentum vs. Benchmark</span>
               </span>
-              <span className="font-mono text-[11px] font-semibold tabular-nums text-emerald-700 dark:text-emerald-400 shrink-0">
+              <span className="font-mono text-xs font-semibold tabular-nums text-emerald-700 dark:text-emerald-400 shrink-0">
                 {telemetry.benchmarkCurve.daysToRace >= 0
                   ? `T-${telemetry.benchmarkCurve.daysToRace}d`
                   : `T+${Math.abs(telemetry.benchmarkCurve.daysToRace)}d`}
@@ -1697,7 +1055,6 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
                   <stop offset="100%" stopColor="#10b981" stopOpacity="0.02" />
                 </linearGradient>
               </defs>
-              {/* Benchmark dashed curve */}
               <path
                 d={comparisonPaths.benchmark.line}
                 fill="none"
@@ -1706,7 +1063,6 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
                 strokeDasharray="4 3"
                 strokeOpacity="0.85"
               />
-              {/* Active race curve */}
               <path d={comparisonPaths.current.area} fill={`url(#${gradCurrentId})`} />
               <path
                 d={comparisonPaths.current.line}
@@ -1718,7 +1074,7 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
               />
             </svg>
 
-            <div className="flex items-center justify-between gap-2 text-[10px] font-mono tabular-nums text-[var(--text-secondary)]">
+            <div className="flex items-center justify-between gap-2 text-xs font-mono tabular-nums text-[var(--text-secondary)]">
               <span className="inline-flex items-center gap-1.5">
                 <span className="w-2.5 h-0.5 bg-emerald-500 inline-block" aria-hidden="true" />
                 Selected ({formatCount(telemetry.totalRunners)})

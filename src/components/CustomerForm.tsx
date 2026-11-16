@@ -5,12 +5,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { doc, setDoc, onSnapshot, collection, query, where, getDocs, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { EngravingOrder, EngravingStatus } from '../types';
-import { Award, Clock, ArrowRight, CheckCircle, RefreshCw, XCircle, Wifi, WifiOff, AlertTriangle, User, Hash, MapPin, Trophy, MessageSquare, ChevronDown } from 'lucide-react';
+import { Award, Clock, ArrowRight, CheckCircle, RefreshCw, XCircle, Wifi, WifiOff, AlertTriangle, User, Hash, MapPin, Trophy, MessageSquare } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useAndroidBackHandler } from '../lib/capacitorAndroid';
 import { randomShortCode } from '../lib/security';
 import DialogSurface from './ui/DialogSurface';
 import RaceTimeText from './ui/RaceTimeText';
+import { Select } from './ui/Select';
 
 export interface EngravingRacePrefill {
   key: string;
@@ -394,7 +395,7 @@ export default function CustomerForm({
                   ? 'bg-emerald-500/10 border-emerald-600/30 text-emerald-700 dark:text-emerald-400'
                   : 'bg-red-500/10 border-red-600/30 text-red-700 dark:text-red-400'
               }`}>
-                <span className={`w-2 h-2 rounded-full ${lanConnected ? 'bg-emerald-600 dark:bg-emerald-400 motion-safe:animate-pulse' : 'bg-red-600 dark:bg-red-400 motion-safe:animate-ping'}`} aria-hidden="true" />
+                <span className={`w-2 h-2 rounded-full ${lanConnected ? 'bg-emerald-600 dark:bg-emerald-400' : 'bg-red-600 dark:bg-red-400'}`} aria-hidden="true" />
                 {lanConnected ? (
                   <>
                     <Wifi className="w-3.5 h-3.5" aria-hidden="true" /> LAN Sync Linked
@@ -409,7 +410,7 @@ export default function CustomerForm({
             <button
               type="button"
               onClick={onBackToRoleSelection}
-              className="min-h-9 px-3 py-1.5 rounded-lg border border-[var(--border-default)] bg-[var(--surface-elevated)] hover:border-red-600/40 text-xs font-semibold text-[var(--text-primary)] transition-colors flex items-center gap-1.5 shrink-0"
+              className="min-h-11 lg:min-h-9 px-3 py-1.5 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] hover:border-red-600/40 text-xs font-semibold text-[var(--text-primary)] transition-colors flex items-center gap-1.5 shrink-0"
             >
               {backLabel}
             </button>
@@ -427,7 +428,7 @@ export default function CustomerForm({
                     ? 'bg-emerald-500/10 border-emerald-600/30 text-emerald-700 dark:text-emerald-400'
                     : 'bg-red-500/10 border-red-600/30 text-red-700 dark:text-red-400'
                 }`}>
-                  <span className={`w-2 h-2 rounded-full ${lanConnected ? 'bg-emerald-600 dark:bg-emerald-400 motion-safe:animate-pulse' : 'bg-red-600 dark:bg-red-400 motion-safe:animate-ping'}`} aria-hidden="true"></span>
+                  <span className={`w-2 h-2 rounded-full ${lanConnected ? 'bg-emerald-600 dark:bg-emerald-400' : 'bg-red-600 dark:bg-red-400'}`} aria-hidden="true"></span>
                   {lanConnected ? (
                     <>
                       <Wifi className="w-3.5 h-3.5" aria-hidden="true" /> LAN Sync Linked
@@ -485,26 +486,29 @@ export default function CustomerForm({
                         {racePrefills[0].label}
                       </p>
                     ) : (
-                      <label className="block">
-                        <span className="sr-only">Choose registered race to auto-fill engraving details</span>
-                        <select
+                      <div>
+                        <label htmlFor="prefill_race_select" className="sr-only">Choose registered race to auto-fill engraving details</label>
+                        <Select
+                          id="prefill_race_select"
                           value={selectedPrefillKey}
-                          onChange={(e) => {
-                            const found = racePrefills.find((item) => item.key === e.target.value);
+                          onChange={(nextKey) => {
+                            const found = racePrefills.find((item) => item.key === nextKey);
                             if (found) {
                               hasEditedRef.current = true;
                               applyPrefill(found);
                             }
                           }}
-                          className="w-full min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50"
-                        >
-                          {racePrefills.map((item) => (
-                            <option key={item.key} value={item.key}>
-                              {item.label}{item.finishingTime ? ' (Official time)' : ''}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                          searchable={racePrefills.length >= 6}
+                          searchPlaceholder="Filter registered races..."
+                          surface="card"
+                          size="md"
+                          triggerClassName="text-xs"
+                          options={racePrefills.map((item) => ({
+                            value: item.key,
+                            label: `${item.label}${item.finishingTime ? ' (Official time)' : ''}`,
+                          }))}
+                        />
+                      </div>
                     )}
                   </div>
                 )}
@@ -574,22 +578,21 @@ export default function CustomerForm({
                     <label htmlFor="distance" className="block text-xs font-semibold font-display uppercase tracking-wider text-[var(--text-secondary)] mb-2">
                       Race Distance <span className="text-red-700 dark:text-red-400">*</span>
                     </label>
-                    <div className="relative">
-                      <MapPin className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] pointer-events-none" aria-hidden="true" />
-                      <select
-                        id="distance"
-                        value={distance}
-                        onChange={(e) => { hasEditedRef.current = true; setDistance(e.target.value); }}
-                        className="w-full min-h-11 appearance-none glass-inset pl-10 pr-10 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50 focus:border-red-700/60 transition"
-                      >
-                        <option value="Marathon"> 42KM</option>
-                        <option value="Half Marathon">21KM</option>
-                        <option value="10K">10KM</option>
-                        <option value="5K">5KM</option>
-                        <option value="Custom">Custom Distance...</option>
-                      </select>
-                      <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] pointer-events-none" aria-hidden="true" />
-                    </div>
+                    <Select
+                      id="distance"
+                      value={distance}
+                      onChange={(nextValue) => { hasEditedRef.current = true; setDistance(nextValue); }}
+                      leadingIcon={<MapPin className="w-4 h-4" aria-hidden="true" />}
+                      surface="inset"
+                      size="md"
+                      options={[
+                        { value: 'Marathon', label: '42KM' },
+                        { value: 'Half Marathon', label: '21KM' },
+                        { value: '10K', label: '10KM' },
+                        { value: '5K', label: '5KM' },
+                        { value: 'Custom', label: 'Custom Distance...' },
+                      ]}
+                    />
                   </div>
 
                   {/* Custom Distance text box (only if custom is selected) */}
@@ -621,52 +624,52 @@ export default function CustomerForm({
 
                     <div className="flex flex-wrap items-center gap-2 glass-inset p-3">
                       {/* Hours */}
-                      <div className="flex-1 min-w-12">
+                      <div className="flex-1 min-w-14">
                         <label htmlFor="timeHour" className="block text-xs uppercase tracking-wider font-semibold text-[var(--text-secondary)] text-center mb-1">Hours</label>
-                        <select
+                        <Select
                           id="timeHour"
                           value={timeHour}
-                          onChange={(e) => { hasEditedRef.current = true; setTimeHour(e.target.value); }}
-                          className="w-full min-h-11 bg-[var(--surface-card)]/80 border border-[var(--border-default)] rounded-xl py-2 px-2 text-center font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50 text-sm"
-                        >
-                          {Array.from({ length: 13 }, (_, i) => String(i).padStart(2, '0')).map(h => (
-                            <option key={h} value={h}>{h}</option>
-                          ))}
-                        </select>
+                          onChange={(nextValue) => { hasEditedRef.current = true; setTimeHour(nextValue); }}
+                          surface="card"
+                          size="md"
+                          align="center"
+                          minMenuWidth={92}
+                          options={Array.from({ length: 13 }, (_, i) => String(i).padStart(2, '0')).map((h) => ({ value: h, label: h }))}
+                        />
                       </div>
 
                       <span className="text-lg font-semibold text-[var(--text-secondary)] self-end mb-2 shrink-0" aria-hidden="true">:</span>
 
                       {/* Minutes */}
-                      <div className="flex-1 min-w-12">
+                      <div className="flex-1 min-w-14">
                         <label htmlFor="timeMin" className="block text-xs uppercase tracking-wider font-semibold text-[var(--text-secondary)] text-center mb-1">Mins</label>
-                        <select
+                        <Select
                           id="timeMin"
                           value={timeMin}
-                          onChange={(e) => { hasEditedRef.current = true; setTimeMin(e.target.value); }}
-                          className="w-full min-h-11 bg-[var(--surface-card)]/80 border border-[var(--border-default)] rounded-xl py-2 px-2 text-center font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50 text-sm"
-                        >
-                          {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0')).map(m => (
-                            <option key={m} value={m}>{m}</option>
-                          ))}
-                        </select>
+                          onChange={(nextValue) => { hasEditedRef.current = true; setTimeMin(nextValue); }}
+                          surface="card"
+                          size="md"
+                          align="center"
+                          minMenuWidth={92}
+                          options={Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0')).map((m) => ({ value: m, label: m }))}
+                        />
                       </div>
 
                       <span className="text-lg font-semibold text-[var(--text-secondary)] self-end mb-2 shrink-0" aria-hidden="true">:</span>
 
                       {/* Seconds */}
-                      <div className="flex-1 min-w-12">
+                      <div className="flex-1 min-w-14">
                         <label htmlFor="timeSec" className="block text-xs uppercase tracking-wider font-semibold text-[var(--text-secondary)] text-center mb-1">Secs</label>
-                        <select
+                        <Select
                           id="timeSec"
                           value={timeSec}
-                          onChange={(e) => { hasEditedRef.current = true; setTimeSec(e.target.value); }}
-                          className="w-full min-h-11 bg-[var(--surface-card)]/80 border border-[var(--border-default)] rounded-xl py-2 px-2 text-center font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50 text-sm"
-                        >
-                          {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0')).map(s => (
-                            <option key={s} value={s}>{s}</option>
-                          ))}
-                        </select>
+                          onChange={(nextValue) => { hasEditedRef.current = true; setTimeSec(nextValue); }}
+                          surface="card"
+                          size="md"
+                          align="center"
+                          minMenuWidth={92}
+                          options={Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0')).map((s) => ({ value: s, label: s }))}
+                        />
                       </div>
                     </div>
                     <p className="text-xs font-mono text-[var(--text-secondary)] mt-2">
@@ -802,10 +805,6 @@ export default function CustomerForm({
           <div className="flex flex-col items-center">
             <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center border border-red-500/20 mb-4 shadow-sm relative">
               <CheckCircle className="w-10 h-10 text-red-700 dark:text-red-400" aria-hidden="true" />
-              <span className="absolute -top-1 -right-1 flex h-3 w-3" aria-hidden="true">
-                <span className="motion-safe:animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-600"></span>
-              </span>
             </div>
 
             <h2 className="heading-float text-2xl sm:text-3xl font-semibold font-display tracking-tight text-[var(--text-primary)] uppercase">Your Medal Inscription is Registered!</h2>
@@ -999,7 +998,7 @@ export default function CustomerForm({
                   </p>
                 )}
                 {createdOrder.status === 'ready' && (
-                  <div className="mt-3 flex flex-col items-center justify-center bg-emerald-950/15 dark:bg-emerald-950/30 border border-emerald-700/40 p-3 rounded-xl motion-safe:animate-pulse">
+                  <div className="mt-3 flex flex-col items-center justify-center bg-emerald-950/15 dark:bg-emerald-950/30 border border-emerald-700/40 p-3 rounded-xl">
                     <CheckCircle className="w-5 h-5 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
                     <p className="text-xs text-emerald-800 dark:text-emerald-300 mt-2 font-semibold uppercase tracking-wider">
                       Please Walk up to the engraving operators now to collect!

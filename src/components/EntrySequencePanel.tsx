@@ -5,6 +5,7 @@ import { ChipRead, Race, RunnerProfile } from '../types';
 import { runnerDivisionLabel } from '../lib/raceEntry';
 import { entrySequenceError } from '../lib/entrySequence';
 import { useAccess } from '../lib/access';
+import { Select } from './ui/Select';
 
 export default function EntrySequencePanel({ race, runners, chipReads }: {
   race: Race; runners: RunnerProfile[]; chipReads: ChipRead[];
@@ -36,7 +37,6 @@ export default function EntrySequencePanel({ race, runners, chipReads }: {
     } finally { setSaving(false); }
   };
   const [expanded, setExpanded] = useState(false);
-  const control = 'w-full min-h-11 glass-inset px-3 py-2 text-xs text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50';
   const linked = runners.filter((runner) => runner.startsAfterBib);
   return (
     <div className="glass-panel p-4 space-y-3">
@@ -64,40 +64,47 @@ export default function EntrySequencePanel({ race, runners, chipReads }: {
         </p>
         <form onSubmit={save} className="grid grid-cols-1 gap-3">
           <fieldset className="contents" disabled={!can('roster.edit')}>
-            <label className="space-y-1 text-xs text-[var(--text-secondary)]">
-              <span className="font-semibold text-[var(--text-primary)]">Next entry bib</span>
-              <select
-                required
+            <div className="space-y-1 text-xs text-[var(--text-secondary)]">
+              <label htmlFor={`entry-next-${race.id}`} className="block font-semibold text-[var(--text-primary)]">Next entry bib</label>
+              <Select
+                id={`entry-next-${race.id}`}
+                aria-required={true}
                 value={nextBib}
-                onChange={(event) => {
-                  const bib = event.target.value;
+                searchable={runners.length >= 6}
+                searchPlaceholder="Filter bibs..."
+                surface="inset"
+                size="md"
+                triggerClassName="text-xs font-normal"
+                onChange={(bib) => {
                   setNextBib(bib);
                   setPreviousBib(runners.find((runner) => runner.bibNumber === bib)?.startsAfterBib || '');
                   setFeedback(null);
                 }}
-                className={control}
-              >
-                <option value="">Choose next entry</option>
-                {runners.map((runner) => (
-                  <option key={runner.bibNumber} value={runner.bibNumber}>{label(runner)}</option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-1 text-xs text-[var(--text-secondary)]">
-              <span className="font-semibold text-[var(--text-primary)]">Starts after this bib finishes</span>
-              <select
+                options={[
+                  { value: '', label: 'Choose next entry' },
+                  ...runners.map((runner) => ({ value: runner.bibNumber, label: label(runner) })),
+                ]}
+              />
+            </div>
+            <div className="space-y-1 text-xs text-[var(--text-secondary)]">
+              <label htmlFor={`entry-prev-${race.id}`} className="block font-semibold text-[var(--text-primary)]">Starts after this bib finishes</label>
+              <Select
+                id={`entry-prev-${race.id}`}
                 value={previousBib}
-                onChange={(event) => setPreviousBib(event.target.value)}
-                className={control}
-              >
-                <option value="">Normal start (no previous entry)</option>
-                {runners
-                  .filter((runner) => runner.bibNumber !== nextBib)
-                  .map((runner) => (
-                    <option key={runner.bibNumber} value={runner.bibNumber}>{label(runner)}</option>
-                  ))}
-              </select>
-            </label>
+                searchable={runners.length >= 6}
+                searchPlaceholder="Filter bibs..."
+                surface="inset"
+                size="md"
+                triggerClassName="text-xs font-normal"
+                onChange={setPreviousBib}
+                options={[
+                  { value: '', label: 'Normal start (no previous entry)' },
+                  ...runners
+                    .filter((runner) => runner.bibNumber !== nextBib)
+                    .map((runner) => ({ value: runner.bibNumber, label: label(runner) })),
+                ]}
+              />
+            </div>
             <button
               type="submit"
               disabled={saving || !nextBib || !!race.completedAt}

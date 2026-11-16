@@ -4,6 +4,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { AlertTriangle, Calendar, FileDown, Medal, RefreshCw, Search, Trophy, UserPlus, X } from 'lucide-react';
 import { ResultsSkeletonList } from './ui/MotionPrimitives';
 import RaceTimeText from './ui/RaceTimeText';
+import { Select } from './ui/Select';
 import { db } from '../firebase';
 import { downloadFinisherCertificate } from '../lib/finisherCertificate';
 import { isRaceRegistrationOpen } from '../lib/raceRegistration';
@@ -14,6 +15,7 @@ interface PublicRaceResultsProps {
   race: Race;
   onRegister: (raceId: string) => void;
   registerLabel?: string;
+  embedded?: boolean;
 }
 
 function certificateResult(entry: PublicLeaderboardEntry): RunnerResult {
@@ -37,7 +39,7 @@ function certificateResult(entry: PublicLeaderboardEntry): RunnerResult {
 // Read-only results view. It deliberately reads only the compact public
 // `liveResults` record published by the timing console: never raw scan data or
 // runner contact details.
-export default function PublicRaceResults({ race, onRegister, registerLabel = 'Sign up to register' }: PublicRaceResultsProps) {
+export default function PublicRaceResults({ race, onRegister, registerLabel = 'Sign up to register', embedded = false }: PublicRaceResultsProps) {
   const [summary, setSummary] = useState<PublicLiveResults | null | undefined>(undefined);
   const [search, setSearch] = useState('');
   const [distance, setDistance] = useState('all');
@@ -148,36 +150,55 @@ export default function PublicRaceResults({ race, onRegister, registerLabel = 'S
   const registrationOpen = isRaceRegistrationOpen(race);
 
   return (
-    <section className="glass-panel overflow-hidden scroll-mt-[84px] animate-fadeIn" aria-label={`${race.name} official results`}>
-      <div className="relative p-4 sm:p-6 border-b border-[var(--border-default)] hero-glow overflow-x-clip">
-        {race.posterImage && <img src={race.posterImage} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover opacity-[0.1]" />}
-        <div className="absolute inset-0 bg-gradient-to-r from-red-950/35 to-[var(--surface-card)]/90" />
-        <div className="relative flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="font-display text-base sm:text-lg font-semibold tracking-tight text-[var(--text-primary)]">
-              {resultsArePublic ? 'Official leaderboard & finisher certificates' : 'Event schedule, distances & route preview'}
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
-              <p className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
-                <Calendar className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
-                <span>{race.date}</span>
+    <section
+      className={embedded ? 'space-y-4' : 'glass-panel overflow-hidden scroll-mt-[84px] animate-fadeIn'}
+      aria-label={`${race.name} official results`}
+    >
+      {!embedded && (
+        <div className="relative p-4 sm:p-6 border-b border-[var(--border-default)] hero-glow overflow-x-clip">
+          {race.posterImage && <img src={race.posterImage} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover opacity-[0.1]" />}
+          <div className="absolute inset-0 bg-gradient-to-r from-red-950/35 to-[var(--surface-card)]/90" />
+          <div className="relative flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="font-display text-base sm:text-lg font-semibold tracking-tight text-[var(--text-primary)]">
+                {resultsArePublic ? 'Official leaderboard & finisher certificates' : 'Event schedule, distances & route preview'}
               </p>
-              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-700/30 bg-emerald-700/10 px-3 py-1 text-xs font-semibold text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300">
-                <Trophy className="w-3.5 h-3.5" aria-hidden="true" />{' '}
-                {resultsArePublic ? 'Official results' : registrationOpen ? 'Registration open' : 'Upcoming event'}
-              </span>
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+                <p className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+                  <Calendar className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
+                  <span>{race.date}</span>
+                </p>
+                <span className="inline-flex items-center gap-2 rounded-full border border-emerald-700/30 bg-emerald-700/10 px-3 py-1 text-xs font-semibold text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300">
+                  <Trophy className="w-3.5 h-3.5" aria-hidden="true" />{' '}
+                  {resultsArePublic ? 'Official results' : registrationOpen ? 'Registration open' : 'Upcoming event'}
+                </span>
+              </div>
             </div>
+            {registrationOpen && (
+              <button type="button" onClick={() => onRegister(race.id)} className="shrink-0 min-h-11 h-11 px-5 rounded-full font-semibold text-xs text-white bg-red-700 hover:bg-red-600 border border-[#3d0b09] dark:border-red-500/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.35)] transition-[background-color,transform] duration-150 flex items-center justify-center gap-2 motion-safe:active:scale-[0.97]">
+                <UserPlus className="w-4 h-4" aria-hidden="true" /> {registerLabel}
+              </button>
+            )}
           </div>
-          {registrationOpen && (
-            <button type="button" onClick={() => onRegister(race.id)} className="shrink-0 min-h-11 h-11 px-5 rounded-full font-semibold text-xs text-white bg-red-700 hover:bg-red-600 border border-[#3d0b09] dark:border-red-500/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.35)] transition-[background-color,transform] duration-150 flex items-center justify-center gap-2 motion-safe:active:scale-[0.97]">
-              <UserPlus className="w-4 h-4" aria-hidden="true" /> {registerLabel}
-            </button>
-          )}
         </div>
-      </div>
+      )}
 
-      <div className="p-4 sm:p-6 space-y-4">
-        {race.routeGpxUrl && <RouteMap3D gpxUrl={race.routeGpxUrl} fileName={race.routeGpxFileName} raceName={race.name} />}
+      <div className={embedded ? 'space-y-4' : 'p-4 sm:p-6 space-y-4'}>
+        {race.routeGpxUrl && (
+          <>
+            <a
+              href={`/?race=${encodeURIComponent(race.id)}&view=course`}
+              onClick={(e) => {
+                e.preventDefault();
+                window.dispatchEvent(new CustomEvent('racepulse:navigate', { detail: { url: `/?race=${encodeURIComponent(race.id)}&view=course` } }));
+              }}
+              className="inline-flex min-h-11 items-center font-semibold text-red-700 dark:text-red-400"
+            >
+              Explore course and elevation
+            </a>
+            <RouteMap3D gpxUrl={race.routeGpxUrl} fileName={race.routeGpxFileName} raceName={race.name} />
+          </>
+        )}
         {summary === undefined ? (
           <ResultsSkeletonList rows={5} />
         ) : summary === null || officialResults.length === 0 ? (
@@ -234,7 +255,21 @@ export default function PublicRaceResults({ race, onRegister, registerLabel = 'S
                 <Search className="pointer-events-none absolute left-3 top-1/2 w-4 h-4 -translate-y-1/2 text-[var(--text-secondary)]" aria-hidden="true" />
                 <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or bib number" className="w-full glass-inset py-3 pl-10 pr-4 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700 dark:focus:ring-red-400" />
               </label>
-              {distances.length > 1 && <select aria-label="Filter results by distance" value={distance} onChange={(event) => setDistance(event.target.value)} className="min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700 dark:focus:ring-red-400"><option value="all">All distances</option>{distances.map((item) => <option key={item} value={item}>{item}</option>)}</select>}
+              {distances.length > 1 && (
+                <Select
+                  aria-label="Filter results by distance"
+                  value={distance}
+                  onChange={setDistance}
+                  surface="inset"
+                  size="md"
+                  className="sm:w-auto sm:min-w-[160px]"
+                  triggerClassName="text-xs"
+                  options={[
+                    { value: 'all', label: 'All distances' },
+                    ...distances.map((item) => ({ value: item, label: item })),
+                  ]}
+                />
+              )}
             </div>
 
             {categories.length > 0 && (

@@ -8,9 +8,11 @@ import { PublicLiveResults, Race, RunnerProfile } from '../types';
 
 const DISMISSED_KEY = 'racepulse_dismissed_runner_reminders_v1';
 const ALERTED_KEY = 'racepulse_sent_runner_alerts_v1';
+const EMPTY_RUNNER_PROFILES: RunnerProfile[] = [];
 
-interface Reminder {
+export interface RunnerReminder {
   id: string;
+  raceId: string;
   title: string;
   detail: string;
   kind: 'kit' | 'race' | 'result';
@@ -42,7 +44,7 @@ function loadAlerted(): string[] {
   }
 }
 
-export default function RunnerReminderCenter({ runnerProfiles }: { runnerProfiles: RunnerProfile[] }) {
+export function useRunnerReminders(runnerProfiles: RunnerProfile[] | undefined) {
   const [races, setRaces] = useState<Race[]>([]);
   const [liveResults, setLiveResults] = useState<Record<string, PublicLiveResults>>({});
   const [dismissed, setDismissed] = useState<string[]>(loadDismissed);
@@ -61,33 +63,54 @@ export default function RunnerReminderCenter({ runnerProfiles }: { runnerProfile
     });
   }, []);
 
-  useEffect(() => {
-    const unsubscribes = runnerProfiles.map((profile) => onSnapshot(doc(db, 'liveResults', profile.raceId), (resultDoc) => {
-      setLiveResults((current) => {
-        const next = { ...current };
-        if (resultDoc.exists()) next[profile.raceId] = resultDoc.data() as PublicLiveResults;
-        else delete next[profile.raceId];
-        return next;
-      });
-    }, () => undefined));
-    return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
-  }, [runnerProfiles]);
+  const profiles = runnerProfiles ?? EMPTY_RUNNER_PROFILES;
+  const profileKey = useMemo(
+    () => profiles.map((p) => `${p.raceId}:${p.bibNumber}`).sort().join('|'),
+    [profiles],
+  );
 
-  const reminders = useMemo<Reminder[]>(() => {
+  useEffect(() => {
+    if (profiles.length === 0) {
+      setLiveResults((current) => (Object.keys(current).length === 0 ? current : {}));
+      return;
+    }
+    const unsubscribes = profiles.map((profile) =>
+      onSnapshot(
+        doc(db, 'liveResults', profile.raceId),
+        (resultDoc) => {
+          setLiveResults((current) => {
+            const next = { ...current };
+            if (resultDoc.exists()) next[profile.raceId] = resultDoc.data() as PublicLiveResults;
+            else delete next[profile.raceId];
+            return next;
+          });
+        },
+        () => undefined,
+      ),
+    );
+    return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileKey]);
+
+  const reminders = useMemo<RunnerReminder[]>(() => {
+    if (profiles.length === 0) return [];
     const today = philippineDate();
     const raceById = new Map(races.map((race) => [race.id, race]));
-    const all: Reminder[] = [];
+    const all: RunnerReminder[] = [];
 
-    for (const profile of runnerProfiles) {
+    for (const profile of profiles) {
       const race = raceById.get(profile.raceId);
       if (!race) continue;
       const resultsArePublic = !!race.completedAt || Object.keys(race.waveStartTimes || {}).length > 0 || !!race.gunStartTime;
-      const officialEntry = resultsArePublic ? liveResults[profile.raceId]?.officialResults?.find((entry) => entry.bibNumber === profile.bibNumber) : undefined;
+      const officialEntry = resultsArePublic
+        ? liveResults[profile.raceId]?.officialResults?.find((entry) => entry.bibNumber === profile.bibNumber)
+        : undefined;
       if (officialEntry) {
         all.push({
           id: `result_${profile.raceId}_${profile.bibNumber}`,
+          raceId: profile.raceId,
           title: 'Official result ready',
-          detail: `${race.name} • ${officialEntry.distance} • Rank #${officialEntry.rank} • ${formatRaceTime(officialEntry.finishTime)}`,
+          detail: `${race.name} · ${officialEntry.distance} · Rank #${officialEntry.rank} · ${formatRaceTime(officialEntry.finishTime)}`,
           kind: 'result',
         });
       }
@@ -95,8 +118,9 @@ export default function RunnerReminderCenter({ runnerProfiles }: { runnerProfile
       if (race.date >= today && !profile.kitClaimedAt) {
         all.push({
           id: `kit_${profile.raceId}_${profile.bibNumber}`,
+          raceId: profile.raceId,
           title: 'Race kit to claim',
-          detail: `${race.name} • Bib #${profile.bibNumber}. Visit the organizer’s kit desk before race day.`,
+          detail: `${race.name} · Bib #${profile.bibNumber}. Visit the organizer kit desk before race day.`,
           kind: 'kit',
         });
       }
@@ -105,15 +129,17 @@ export default function RunnerReminderCenter({ runnerProfiles }: { runnerProfile
       if (daysAway === 0) {
         all.push({
           id: `raceday_${profile.raceId}`,
-          title: 'It’s race day!',
-          detail: `${race.name} • ${profile.distance}. Open My Races for your QR pass and live status.`,
+          raceId: profile.raceId,
+          title: 'Race day today',
+          detail: `${race.name} · ${profile.distance}. Open My Passes for your QR pass and live status.`,
           kind: 'race',
         });
       } else if ([1, 3, 7].includes(daysAway)) {
         all.push({
           id: `upcoming_${profile.raceId}_${daysAway}`,
+          raceId: profile.raceId,
           title: `${race.name} is ${daysAway === 1 ? 'tomorrow' : `in ${daysAway} days`}`,
-          detail: `${profile.distance} • Bib #${profile.bibNumber}. Check your race pass and kit status.`,
+          detail: `${profile.distance} · Bib #${profile.bibNumber}. Check your race pass and kit status.`,
           kind: 'race',
         });
       }
@@ -123,7 +149,7 @@ export default function RunnerReminderCenter({ runnerProfiles }: { runnerProfile
     return all
       .filter((reminder) => !dismissed.includes(reminder.id))
       .sort((a, b) => priority[a.kind] - priority[b.kind]);
-  }, [dismissed, liveResults, races, runnerProfiles]);
+  }, [dismissed, liveResults, profiles, races]);
 
   const dismiss = (id: string) => {
     setDismissed((current) => {
@@ -139,9 +165,6 @@ export default function RunnerReminderCenter({ runnerProfiles }: { runnerProfile
     setNotificationPermission(permission);
   };
 
-  // Browser alerts supplement the in-app list. They intentionally fire once
-  // per reminder while the app is open; background push delivery when the app
-  // is closed needs a separate Firebase Messaging server setup.
   useEffect(() => {
     if (notificationPermission !== 'granted' || typeof window === 'undefined') return;
     const alerted = new Set(loadAlerted());
@@ -162,15 +185,33 @@ export default function RunnerReminderCenter({ runnerProfiles }: { runnerProfile
     localStorage.setItem(ALERTED_KEY, JSON.stringify([...alerted]));
   }, [notificationPermission, reminders]);
 
-  if (runnerProfiles.length === 0) return null;
+  return { reminders, dismiss, notificationPermission, requestAlerts };
+}
 
+interface RunnerRemindersPanelProps {
+  reminders: RunnerReminder[];
+  dismiss: (id: string) => void;
+  notificationPermission: NotificationPermission | 'unsupported';
+  requestAlerts: () => Promise<void>;
+  onOpenPass?: (raceId: string) => void;
+  onClose?: () => void;
+}
+
+export function RunnerRemindersPanel({
+  reminders,
+  dismiss,
+  notificationPermission,
+  requestAlerts,
+  onOpenPass,
+  onClose,
+}: RunnerRemindersPanelProps) {
   return (
     <section
       aria-label="Race day and kit updates"
-      className="border border-[var(--border-default)] rounded-2xl bg-[var(--surface-card)] px-4 py-3 space-y-2.5 animate-fadeIn"
+      className="shrink-0 border border-[var(--border-default)] lg:border-x-0 lg:border-t-0 rounded-2xl lg:rounded-none bg-[var(--surface-card)] mb-4 lg:mb-0 px-3 sm:px-4 py-3 space-y-2.5"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2.5">
-        <div className="flex items-center gap-2.5 min-w-0">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <BellRing className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
           <h2 className="text-xs font-semibold font-display uppercase tracking-wider text-[var(--text-primary)] whitespace-nowrap">
             Race Day &amp; Kit Alerts
@@ -196,9 +237,19 @@ export default function RunnerReminderCenter({ runnerProfiles }: { runnerProfile
             <button
               type="button"
               onClick={() => void requestAlerts()}
-              className="min-h-9 inline-flex items-center text-xs font-semibold uppercase tracking-wide px-3.5 py-1.5 rounded-lg bg-red-700/10 text-red-700 dark:text-red-400 border border-red-700/25 dark:border-red-400/25 hover:bg-red-700 hover:text-white transition"
+              className="min-h-11 lg:min-h-8 px-3 py-1.5 rounded-lg bg-red-700/10 text-red-700 dark:text-red-400 border border-red-700/25 dark:border-red-400/25 hover:bg-red-700 hover:text-white text-xs font-semibold uppercase tracking-wide transition inline-flex items-center"
             >
               Enable Browser Alerts
+            </button>
+          )}
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Hide race day alerts"
+              className="min-h-11 min-w-11 lg:min-h-8 lg:min-w-8 flex items-center justify-center rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)] transition"
+            >
+              <X className="w-4 h-4" aria-hidden="true" />
             </button>
           )}
         </div>
@@ -228,32 +279,56 @@ export default function RunnerReminderCenter({ runnerProfiles }: { runnerProfile
             return (
               <div
                 key={reminder.id}
-                className={`rounded-xl border border-[var(--border-default)] border-l-4 ${leftBorder} bg-[var(--surface-elevated)] px-3.5 py-2.5 flex items-center gap-3`}
+                className={`rounded-xl border border-[var(--border-default)] border-l-4 ${leftBorder} bg-[var(--surface-inset)] px-3.5 py-2.5 flex items-center gap-3`}
               >
                 <Icon className={`w-4 h-4 shrink-0 ${iconColor}`} aria-hidden="true" />
                 <div className="min-w-0 flex-1">
                   <span className="block text-xs font-semibold text-[var(--text-primary)]">{reminder.title}</span>
                   <span className="block text-xs text-[var(--text-secondary)] mt-0.5 leading-snug">{reminder.detail}</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => dismiss(reminder.id)}
-                  title="Dismiss reminder"
-                  aria-label={`Dismiss ${reminder.title}`}
-                  className="min-h-9 min-w-9 flex items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-red-700 dark:hover:text-red-400 transition shrink-0"
-                >
-                  <X className="w-4 h-4" aria-hidden="true" />
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  {onOpenPass && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenPass(reminder.raceId)}
+                      className="min-h-11 lg:min-h-8 px-2.5 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:border-red-600/50 text-xs font-semibold text-[var(--text-primary)] transition"
+                    >
+                      Open
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => dismiss(reminder.id)}
+                    title="Dismiss reminder"
+                    aria-label={`Dismiss ${reminder.title}`}
+                    className="min-h-11 min-w-11 lg:min-h-8 lg:min-w-8 flex items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-red-700 dark:hover:text-red-400 transition shrink-0"
+                  >
+                    <X className="w-4 h-4" aria-hidden="true" />
+                  </button>
+                </div>
               </div>
             );
           })}
           {reminders.length > 4 && (
-            <p className="xl:col-span-2 text-xs text-[var(--text-secondary)] text-right font-mono">
-              +{reminders.length - 4} more reminders
+            <p className="text-xs text-[var(--text-secondary)] font-semibold xl:col-span-2">
+              + {reminders.length - 4} more reminders
             </p>
           )}
         </div>
       )}
     </section>
+  );
+}
+
+export default function RunnerReminderCenter({ runnerProfiles }: { runnerProfiles: RunnerProfile[] }) {
+  const { reminders, dismiss, notificationPermission, requestAlerts } = useRunnerReminders(runnerProfiles);
+  if (runnerProfiles.length === 0) return null;
+  return (
+    <RunnerRemindersPanel
+      reminders={reminders}
+      dismiss={dismiss}
+      notificationPermission={notificationPermission}
+      requestAlerts={requestAlerts}
+    />
   );
 }

@@ -1021,3 +1021,45 @@ html::-webkit-scrollbar-thumb:active,
     transition: --rp-tab-fade-start 160ms ease, --rp-tab-fade-end 160ms ease;
   }
 }
+
+/* Custom top-layer select popover overrides UA [popover] centering/borders with zero specificity */
+:where([popover].rp-select-popover) {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 0;
+}
+
+.rp-select-list-dark {
+  color-scheme: dark;
+  --scrollbar-thumb: oklch(57% 0.01 25);
+  --scrollbar-thumb-hover: oklch(71% 0.008 25);
+  --scrollbar-thumb-active: oklch(85% 0.006 25);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [popover].rp-select-popover:popover-open {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+    transition: transform 110ms var(--ease-out-quint);
+  }
+
+  @starting-style {
+    [popover].rp-select-popover[data-placement="bottom"]:popover-open {
+      opacity: 1;
+      transform: translate3d(0, -4px, 0);
+    }
+    [popover].rp-select-popover[data-placement="top"]:popover-open {
+      opacity: 1;
+      transform: translate3d(0, 4px, 0);
+    }
+  }
+}
+
+/* Route Studio interactive starting point dot target sizing on touch/coarse pointers */
+@media (pointer: coarse) {
+  .rp-start-dot-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

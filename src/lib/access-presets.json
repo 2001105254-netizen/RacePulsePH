@@ -16,6 +16,15 @@
       "race.bibs",
       "race.team"
     ],
+    "Routes": [
+      "routes.view",
+      "routes.create",
+      "routes.edit",
+      "routes.media",
+      "routes.publish",
+      "routes.assign",
+      "routes.archive"
+    ],
     "Roster": [
       "roster.view",
       "roster.add",
@@ -96,6 +105,26 @@
     ],
     "race.team": [
       "race.view"
+    ],
+    "routes.create": [
+      "routes.view"
+    ],
+    "routes.edit": [
+      "routes.view"
+    ],
+    "routes.media": [
+      "routes.view"
+    ],
+    "routes.publish": [
+      "routes.view",
+      "routes.edit"
+    ],
+    "routes.assign": [
+      "routes.view",
+      "race.view"
+    ],
+    "routes.archive": [
+      "routes.view"
     ],
     "roster.add": [
       "roster.view"
@@ -218,6 +247,13 @@
       "race.artwork": false,
       "race.bibs": false,
       "race.team": false,
+      "routes.view": false,
+      "routes.create": false,
+      "routes.edit": false,
+      "routes.media": false,
+      "routes.publish": false,
+      "routes.assign": false,
+      "routes.archive": false,
       "roster.view": false,
       "roster.add": false,
       "roster.import": false,
@@ -273,6 +309,13 @@
       "race.artwork": true,
       "race.bibs": true,
       "race.team": true,
+      "routes.view": true,
+      "routes.create": true,
+      "routes.edit": true,
+      "routes.media": true,
+      "routes.publish": true,
+      "routes.assign": true,
+      "routes.archive": true,
       "roster.view": true,
       "roster.add": true,
       "roster.import": true,
@@ -328,6 +371,13 @@
       "race.artwork": true,
       "race.bibs": true,
       "race.team": true,
+      "routes.view": true,
+      "routes.create": true,
+      "routes.edit": true,
+      "routes.media": true,
+      "routes.publish": true,
+      "routes.assign": true,
+      "routes.archive": true,
       "roster.view": true,
       "roster.add": true,
       "roster.import": true,
@@ -383,6 +433,13 @@
       "race.artwork": true,
       "race.bibs": true,
       "race.team": true,
+      "routes.view": true,
+      "routes.create": true,
+      "routes.edit": true,
+      "routes.media": true,
+      "routes.publish": true,
+      "routes.assign": true,
+      "routes.archive": true,
       "roster.view": true,
       "roster.add": true,
       "roster.import": true,

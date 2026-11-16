@@ -490,27 +490,38 @@ service cloud.firestore {
     }
 
     function selfRegistrationAllowed(data) {
-      let race = get(/databases/$(database)/documents/races/$(data.raceId)).data;
-      let raceDistances = race.get('distances', []);
-      let priceFree = raceDistances.size() > 0
-        ? (isKnownRaceDistance(raceDistances, data.distance) && !distanceRequiresPayment(raceDistances, data.distance))
-        : (!race.get('onlinePaymentEnabled', false) && !race.get('manualPaymentEnabled', false));
       return exists(/databases/$(database)/documents/races/$(data.raceId))
-        && race.get('registrationOpen', true)
+        && selfRegistrationWithRace(data, get(/databases/$(database)/documents/races/$(data.raceId)).data);
+    }
+
+    function selfRegistrationWithRace(data, race) {
+      let raceDistances = race.get('distances', []);
+      return race.get('registrationOpen', true)
         && isKnownRaceDistance(raceDistances, data.distance)
-        && (createsManualPaymentReservation(data) || (hasNoPaymentMetadata(data) && priceFree));
+        && (
+          (hasNoPaymentMetadata(data)
+            && (raceDistances.size() > 0
+              ? !distanceRequiresPayment(raceDistances, data.distance)
+              : (!race.get('onlinePaymentEnabled', false) && !race.get('manualPaymentEnabled', false))))
+          || createsManualPaymentReservationForRace(data, race, raceDistances)
+        );
     }
 
     function createsManualPaymentReservation(data) {
-      let raceExists = exists(/databases/$(database)/documents/races/$(data.raceId));
-      let race = get(/databases/$(database)/documents/races/$(data.raceId)).data;
-      let raceDistances = race.get('distances', []);
+      return exists(/databases/$(database)/documents/races/$(data.raceId))
+        && createsManualPaymentReservationForRace(
+          data,
+          get(/databases/$(database)/documents/races/$(data.raceId)).data,
+          get(/databases/$(database)/documents/races/$(data.raceId)).data.get('distances', [])
+        );
+    }
+
+    function createsManualPaymentReservationForRace(data, race, raceDistances) {
       return data.paymentStatus == 'pending'
         && data.paymentMethod == 'manual'
         && data.paymentAmount is number && data.paymentAmount >= 0
         && data.paymentReference is string && data.paymentReference.size() >= 4 && data.paymentReference.size() <= 100
         && !data.keys().hasAny(['paymentId', 'paymentPaidAt'])
-        && raceExists
         && race.manualPaymentEnabled == true
         && isKnownRaceDistance(raceDistances, data.distance)
         && manualAmountCoversDistance(raceDistances, data.distance, data.paymentAmount);

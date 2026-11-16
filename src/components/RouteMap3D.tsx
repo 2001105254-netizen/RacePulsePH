@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExternalLink, MapPinned, RefreshCw, RotateCcw } from 'lucide-react';
 import { GpxRoute, loadGpxRoute, routeCenter } from '../lib/gpxRoute';
+import RouteElevationProfile from './RouteElevationProfile';
 
 interface RouteMap3DProps {
   gpxUrl: string;
   raceName: string;
   fileName?: string;
   compact?: boolean;
+  showProfile?: boolean;
 }
 
 interface ProjectedPoint {
+  startsSegment: boolean;
+  routeIndex: number;
   x: number;
   y: number;
   groundY: number;
@@ -24,7 +28,12 @@ function limitedPoints<T>(points: T[], maximum = 700): T[] {
 }
 
 function projectRoute(route: GpxRoute, yaw: number, pitch: number): ProjectedPoint[] {
-  const points = limitedPoints(route.points);
+  let offset = 0;
+  const points = route.segments.flatMap((segment) => {
+    const indexed = segment.map((point, index) => ({ ...point, routeIndex: offset + index, startsSegment: index === 0 }));
+    offset += segment.length;
+    return limitedPoints(indexed, Math.max(2, Math.ceil(700 * segment.length / route.points.length)));
+  });
   const longitudeSpan = Math.max(route.bounds.east - route.bounds.west, 0.000001);
   const latitudeSpan = Math.max(route.bounds.north - route.bounds.south, 0.000001);
   const elevations = points.map((point) => point.elevation ?? 0);
@@ -42,6 +51,8 @@ function projectRoute(route: GpxRoute, yaw: number, pitch: number): ProjectedPoi
       x: rotatedX,
       y: rotatedY * Math.sin(pitchRadians) - z * Math.cos(pitchRadians) * 0.6,
       groundY: rotatedY * Math.sin(pitchRadians),
+      startsSegment: point.startsSegment,
+      routeIndex: point.routeIndex,
     };
   });
   const minX = Math.min(...raw.map((point) => point.x));
@@ -56,18 +67,26 @@ function projectRoute(route: GpxRoute, yaw: number, pitch: number): ProjectedPoi
     x: viewport.padding + (point.x - minX) * scale,
     y: viewport.height - viewport.padding - (point.y - minY) * scale,
     groundY: viewport.height - viewport.padding - (point.groundY - minY) * scale,
+    startsSegment: point.startsSegment,
+    routeIndex: point.routeIndex,
   }));
 }
 
-function RouteCanvas({ route, raceName }: { route: GpxRoute; raceName: string }) {
+function RouteCanvas({ route, raceName, selectedPoint }: {
+  route: GpxRoute;
+  raceName: string;
+  selectedPoint?: number;
+}) {
   const [yaw, setYaw] = useState(-28);
   const [pitch, setPitch] = useState(58);
   const dragStart = useRef<{ x: number; y: number; yaw: number; pitch: number } | null>(null);
   const projected = useMemo(() => projectRoute(route, yaw, pitch), [route, yaw, pitch]);
-  const path = projected.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ');
-  const groundPath = projected.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(1)} ${point.groundY.toFixed(1)}`).join(' ');
+  const path = projected.map((point) => `${point.startsSegment ? 'M' : 'L'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ');
+  const groundPath = projected.map((point) => `${point.startsSegment ? 'M' : 'L'} ${point.x.toFixed(1)} ${point.groundY.toFixed(1)}`).join(' ');
   const start = projected[0];
   const finish = projected[projected.length - 1];
+  const cursor = selectedPoint === undefined ? undefined : projected.reduce((nearest, point) =>
+    Math.abs(point.routeIndex - selectedPoint) < Math.abs(nearest.routeIndex - selectedPoint) ? point : nearest);
   const center = routeCenter(route);
   const openStreetMapUrl = `https://www.openstreetmap.org/?mlat=${center.latitude.toFixed(6)}&mlon=${center.longitude.toFixed(6)}#map=14/${center.latitude.toFixed(6)}/${center.longitude.toFixed(6)}`;
 
@@ -109,6 +128,7 @@ function RouteCanvas({ route, raceName }: { route: GpxRoute; raceName: string })
         <path d={path} fill="none" stroke="url(#route-line)" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
         <circle cx={start.x} cy={start.y} r="7" fill="#16a34a" stroke="var(--surface-page)" strokeWidth="3" />
         <circle cx={finish.x} cy={finish.y} r="7" fill="#dc2626" stroke="var(--surface-page)" strokeWidth="3" />
+        {cursor && <circle cx={cursor.x} cy={cursor.y} r="9" fill="var(--surface-page)" stroke="currentColor" strokeWidth="3" />}
       </svg>
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border-default)] px-3 py-2">
         <p className="text-xs text-[var(--text-secondary)]">Drag the route to rotate. Elevation comes from the GPX file.</p>
@@ -123,13 +143,15 @@ function RouteCanvas({ route, raceName }: { route: GpxRoute; raceName: string })
   );
 }
 
-export default function RouteMap3D({ gpxUrl, raceName, fileName, compact = false }: RouteMap3DProps) {
+export default function RouteMap3D({ gpxUrl, raceName, fileName, compact = false, showProfile = false }: RouteMap3DProps) {
   const [route, setRoute] = useState<GpxRoute | null>(null);
   const [error, setError] = useState('');
+  const [selection, setSelection] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
     setRoute(null);
+    setSelection(0);
     setError('');
     void loadGpxRoute(gpxUrl, controller.signal)
       .then((loaded) => setRoute(loaded))
@@ -150,7 +172,12 @@ export default function RouteMap3D({ gpxUrl, raceName, fileName, compact = false
         {route && <div className="text-right text-xs text-[var(--text-secondary)]"><p><span className="font-semibold text-[var(--text-primary)]">{route.distanceKm.toFixed(1)} km</span> route distance</p><p className="mt-1"><span className="font-semibold text-[var(--text-primary)]">+{Math.round(route.elevationGainM)} m</span> ascent</p></div>}
       </div>
       <div className={compact ? 'mt-3' : 'mt-4'}>
-        {route ? <RouteCanvas route={route} raceName={raceName} /> : error ? (
+        {route ? (
+          <>
+            <RouteCanvas route={route} raceName={raceName} selectedPoint={showProfile ? selection : undefined} />
+            {showProfile && <RouteElevationProfile route={route} selected={selection} onSelect={setSelection} />}
+          </>
+        ) : error ? (
           <div className="rounded-[16px] border border-red-500/30 bg-red-500/10 px-4 py-5 text-sm text-red-700 dark:text-red-300">Route file is available, but the preview could not load. Download or replace the GPX file, then try again.</div>
         ) : (
           <div className="flex min-h-48 items-center justify-center gap-2 rounded-[16px] border border-[var(--border-default)] bg-[var(--surface-inset)] text-sm text-[var(--text-secondary)]"><RefreshCw className="h-4 w-4 animate-spin" /> Loading route preview</div>

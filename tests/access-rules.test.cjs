@@ -159,3 +159,13 @@ test('friendDirectory prevents hijacking another UID handle and runner rules blo
  await assertFails(setDoc(doc(env.authenticatedContext('runner',{email_verified:true}).firestore(),'runners','runner_paid_race'),{uid:'runner',raceId:'paid_race',distance:'10K',bibNumber:'10-001',paymentStatus:'paid',registeredAt:'2026-01-01'}));
  await assertFails(setDoc(doc(env.authenticatedContext('runner',{email_verified:true}).firestore(),'bibCounters','paid_race_10K'),{raceId:'paid_race',count:250}));
 });
+
+test('routePresets, immutable versions, and publishedRaceRoutes enforce owner scope and public/private isolation', async () => {
+ await assertSucceeds(setDoc(doc(db('organizer'), 'routePresets', 'preset_1'), { id: 'preset_1', ownerUid: 'organizer', title: 'Course 1', archived: false }));
+ await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), 'routePresets', 'preset_1')));
+ await assertFails(getDoc(doc(db('runner'), 'routePresets', 'preset_1')));
+ await assertSucceeds(setDoc(doc(db('organizer'), 'routePresets', 'preset_1', 'versions', 'v1'), { id: 'v1', presetId: 'preset_1', versionNumber: 1 }));
+ await assertFails(updateDoc(doc(db('organizer'), 'routePresets', 'preset_1', 'versions', 'v1'), { versionNumber: 2 }));
+ await assertSucceeds(setDoc(doc(db('organizer'), 'publishedRaceRoutes', 'pub_1'), { id: 'pub_1', status: 'published', raceId: 'race_a' }));
+ await assertSucceeds(getDoc(doc(env.unauthenticatedContext().firestore(), 'publishedRaceRoutes', 'pub_1')));
+});

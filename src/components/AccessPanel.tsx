@@ -9,6 +9,7 @@ import { roleLabel, roles } from '../lib/accessPolicy';
 import { AccessDraft, draftKey, scopeLabel } from '../lib/accessDraft';
 import AccessWorkspace, { AccessHistoryEntry } from './AccessWorkspace';
 import { useFeedback } from './ui/FeedbackProvider';
+import { Select } from './ui/Select';
 
 interface AccessRecord { scope?: string; raceIds?: string[]; overrides?: Record<string, boolean>; status?: string; revision?: number }
 const fromServer = (user: UserProfile, value: AccessRecord = {}): AccessDraft => ({ role: user.role, approved: user.approved, scope: value.scope || (['admin','superadmin'].includes(user.role) ? 'all' : 'owned-assigned'), raceIds: value.raceIds || [], overrides: value.overrides || {}, status: value.status || 'active' });
@@ -27,7 +28,7 @@ export default function AccessPanel() {
   return <section className="access-directory" aria-labelledby="access-directory-title">
     <div className="access-directory-heading"><div><p className="access-eyebrow"><ShieldCheck size={16} aria-hidden="true" /> Super Admin workspace</p><h2 id="access-directory-title">People & access</h2><p>Choose a person to manage their role, permissions and race access.</p></div><span className="access-directory-total">{users.length} people</span></div>
     {error && <p role="alert" className="access-inline-notice is-error">{error}</p>}
-    <div className="access-directory-toolbar"><label className="access-search"><Search size={20} aria-hidden="true" /><input aria-label="Search users" placeholder="Search by name or email…" value={search} onChange={event => setSearch(event.target.value)} /></label><label className="access-field access-role-filter"><span className="sr-only">Filter people</span><select aria-label="Filter people" value={filter} onChange={event => setFilter(event.target.value)}><option value="all">All people</option>{roles.map(role => <option key={role} value={role}>{roleLabel(role)}</option>)}<option value="customized">Customized access</option><option value="pending">Pending approval</option><option value="suspended">Suspended</option></select></label></div>
+    <div className="access-directory-toolbar"><label className="access-search"><Search size={20} aria-hidden="true" /><input aria-label="Search users" placeholder="Search by name or email…" value={search} onChange={event => setSearch(event.target.value)} /></label><div className="access-field access-role-filter"><label htmlFor="access-people-filter" className="sr-only">Filter people</label><Select id="access-people-filter" aria-label="Filter people" value={filter} onChange={setFilter} surface="card" size="lg" options={[{ value: 'all', label: 'All people' }, ...roles.map(role => ({ value: role, label: roleLabel(role) })), { value: 'customized', label: 'Customized access' }, { value: 'pending', label: 'Pending approval' }, { value: 'suspended', label: 'Suspended' }]} /></div></div>
     <div className="access-directory-columns" aria-hidden="true"><span>Person</span><span>Role & permissions</span><span>Race access</span><span>Status</span><span /></div>
     {loading && <p role="status" className="access-empty">Loading people…</p>}
     <ul className="access-user-list">{visible.map(user => {

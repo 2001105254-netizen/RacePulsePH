@@ -1,0 +1,49 @@
+title = "RacePulsePH Secret Scanning Configuration"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "paymongo-secret-key"
+description = "PayMongo API secret key (live or test)"
+regex = '''\bsk_(?:live|test)_[A-Za-z0-9]{12,}\b'''
+tags = ["secret", "paymongo", "critical"]
+
+[[rules]]
+id = "paymongo-webhook-secret"
+description = "PayMongo webhook signing secret"
+regex = '''\bwhsec_[A-Za-z0-9]{12,}\b'''
+tags = ["secret", "paymongo", "webhook"]
+
+[[rules]]
+id = "firebase-service-account-json"
+description = "Firebase or GCP service account private key field"
+regex = '''"private_key"\s*:\s*"-----BEGIN [A-Z ]*PRIVATE KEY-----'''
+tags = ["secret", "gcp", "firebase"]
+
+[[rules]]
+id = "racepulse-server-secret-literal"
+description = "Hardcoded RacePulsePH server, SMTP, webhook, bridge, or keystore secret"
+regex = '''\b(?:PAYMONGO_SECRET_KEY|PAYMONGO_WEBHOOK_SECRET|SMTP_APP_PASSWORD|AUTH_CODE_SECRET|RACEPULSE_BRIDGE_KEY|KEYSTORE_PASSWORD|KEYSTORE_ALIAS_PASSWORD|RELEASE_STORE_PASSWORD|RELEASE_KEY_PASSWORD|ANDROID_KEYSTORE_PASSWORD|ANDROID_KEY_PASSWORD|GEMINI_API_KEY)\b\s*[:=]\s*['"][A-Za-z0-9+/=_!@#$%^&*.-]{8,}['"]'''
+tags = ["secret", "password", "racepulse"]
+
+[[rules.allowlists]]
+description = "Allow documented .env.example placeholder and synthetic test keys"
+regexes = [
+  '''MY_GEMINI_API_KEY''',
+  '''test-pairing-key-012345678901234567890''',
+]
+
+[[rules]]
+id = "embedded-uri-credentials"
+description = "URI containing embedded username and password credentials"
+regex = '''\b(?:mongodb(?:\+srv)?|postgres(?:ql)?|mysql|redis|amqps?|smtp):\/\/[^:\s'"`<>]+:[^@\s'"`<>]{4,}@[^\s'"`<>]+'''
+tags = ["secret", "password", "uri"]
+
+[allowlist]
+description = "Allowlist only documented public Firebase web API keys and WebCrypto doc algorithm name"
+regexes = [
+  '''AIzaSyBDJINSNOpvVOtichvPKWIKixWvxa5pI9s''',
+  '''AIzaSyDnDiKSfsjlmZiDkVuxLUwpKbvEjaSPz_c''',
+  '''MLKEM768-X25519''',
+]

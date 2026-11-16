@@ -5,7 +5,7 @@ service firebase.storage {
     // It provides a recovery path when a legacy Firestore access document is
     // missing, stale, or cannot be read by Storage rules.
     function isPlatformOwner() {
-      return request.auth != null && request.auth.token.email == 'kiahzeh@gmail.com';
+      return request.auth != null && request.auth.token.get('email', '') == 'kiahzeh@gmail.com';
     }
     function profile() { return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data; }
     function access() { return firestore.exists(/databases/(default)/documents/userAccess/$(request.auth.uid)) ? firestore.get(/databases/(default)/documents/userAccess/$(request.auth.uid)).data : {'status':'active','overrides':{},'scope':profile().role in ['admin','superadmin'] ? 'all' : 'owned-assigned','raceIds':[]}; }
@@ -78,6 +78,39 @@ service firebase.storage {
         && request.resource.contentType.matches('image/(png|jpeg|jpg|webp|gif|avif)')
         && request.resource.size < 8 * 1024 * 1024;
       allow delete: if request.auth != null && request.auth.uid == ownerUid && canHighlight('highlights.manage');
+    }
+    function canRoute(action) {
+      return request.auth != null && (isPlatformOwner() || (
+        firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)) && access().status == 'active'
+        && (profile().role == 'superadmin' || (
+          (profile().role != 'organizer' || profile().approved)
+          && access().get('overrides', {}).get(action, profile().role in ['admin','superadmin','organizer']) == true
+          && access().get('overrides', {}).get('routes.view', profile().role in ['admin','superadmin','organizer']) == true
+        ))
+      ));
+    }
+    match /route-private/{ownerUid}/{presetId}/{file} {
+      allow read: if request.auth != null
+        && (request.auth.uid == ownerUid || isPlatformOwner() || profile().role in ['admin','superadmin'])
+        && canRoute('routes.view');
+      allow create, update: if request.auth != null
+        && (request.auth.uid == ownerUid || isPlatformOwner() || profile().role in ['admin','superadmin'])
+        && (canRoute('routes.edit') || canRoute('routes.media'))
+        && presetId.matches('^[a-zA-Z0-9_-]{1,64}$')
+        && file.matches('^[a-zA-Z0-9._-]+\\.(gpx|GPX|json|JSON|png|jpg|jpeg|webp|PNG|JPG|JPEG|WEBP)$')
+        && request.resource.size < 8 * 1024 * 1024;
+      allow delete: if request.auth != null
+        && (request.auth.uid == ownerUid || isPlatformOwner() || profile().role == 'superadmin')
+        && canRoute('routes.edit');
+    }
+    match /route-published/{publicationId}/{file} {
+      allow read: if true;
+      allow create, update: if request.auth != null
+        && canRoute('routes.publish')
+        && publicationId.matches('^[a-zA-Z0-9_-]{1,64}$')
+        && file.matches('^[a-zA-Z0-9._-]+\\.(gpx|GPX|json|JSON|png|jpg|jpeg|webp|PNG|JPG|JPEG|WEBP)$')
+        && request.resource.size < 8 * 1024 * 1024;
+      allow delete: if request.auth != null && (isPlatformOwner() || profile().role == 'superadmin');
     }
   }
 }

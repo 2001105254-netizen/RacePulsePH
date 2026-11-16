@@ -23,6 +23,7 @@ import { buildBroadcastShortcutGuide, getDistanceLabelsForRace } from '../lib/li
 import EntrySequencePanel from './EntrySequencePanel';
 import DialogSurface from './ui/DialogSurface';
 import { useFeedback } from './ui/FeedbackProvider';
+import { Select } from './ui/Select';
 import { MAX_ROSTER_ROWS, MAX_ROSTER_SHEETS, MAX_XLSX_BYTES, assertSafeImportFile, stripUnsafeKeys } from '../lib/security';
 
 interface DequeuedFinisherRecord {
@@ -1300,18 +1301,22 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
           >
             <ArrowLeft className="w-4 h-4" aria-hidden="true" />
           </button>
-          <select
+          <Select
             aria-label="Active race event"
             name="active-race-desktop"
             value={race.id}
-            onChange={(event) => onSelectRace(event.target.value)}
-            className="timing-race-select timing-race-select--header min-h-11 w-[260px] min-w-0 rounded-xl border border-white/20 bg-zinc-900 px-3 text-xs font-semibold text-white focus-visible:ring-2 focus-visible:ring-red-400"
-          >
-            {races.map((item) => (
-              <option key={item.id} value={item.id}>{item.name}</option>
-            ))}
-            <option value="">All race events...</option>
-          </select>
+            onChange={onSelectRace}
+            searchable={races.length >= 6}
+            searchPlaceholder="Filter race events..."
+            surface="header"
+            size="md"
+            className="w-[260px]"
+            triggerClassName="text-xs"
+            options={[
+              ...races.map((item) => ({ value: item.id, label: item.name })),
+              { value: '', label: 'All race events...' },
+            ]}
+          />
         </div>,
         headerCtx.leftSlotEl,
       )}
@@ -1385,18 +1390,22 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
           >
             <ArrowLeft className="w-4 h-4" aria-hidden="true" />
           </button>
-          <select
+          <Select
             aria-label="Active race event"
             name="active-race-mobile"
             value={race.id}
-            onChange={(event) => onSelectRace(event.target.value)}
-            className="timing-race-select min-w-0 w-0 flex-1 min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-xs font-semibold text-[var(--text-primary)] focus:ring-2 focus:ring-red-500/50"
-          >
-            {races.map((item) => (
-              <option key={item.id} value={item.id}>{item.name}</option>
-            ))}
-            <option value="">All race events...</option>
-          </select>
+            onChange={onSelectRace}
+            searchable={races.length >= 6}
+            searchPlaceholder="Filter race events..."
+            surface="inset"
+            size="md"
+            className="flex-1 min-w-0"
+            triggerClassName="text-xs"
+            options={[
+              ...races.map((item) => ({ value: item.id, label: item.name })),
+              { value: '', label: 'All race events...' },
+            ]}
+          />
         </div>
 
         <div className="grid grid-cols-1 min-[480px]:grid-cols-[1fr_auto] items-center gap-4">
@@ -2656,25 +2665,51 @@ function ManualRunnerPanel({ race, runnerProfiles }: ManualRunnerPanelProps) {
             <input required value={bibNumber} onChange={(event) => setBibNumber(event.target.value.toUpperCase())} placeholder="EX: 10-001" className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold font-mono text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600/50" />
           </div>
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Distance</label>
-            <select value={distance} onChange={(event) => setDistance(event.target.value)} className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-600/50">
-              {race.distances.map((raceDistance) => <option key={raceDistance.id} value={raceDistance.label}>{raceDistance.label}</option>)}
-            </select>
+            <label htmlFor="manual-runner-distance" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Distance</label>
+            <Select
+              id="manual-runner-distance"
+              value={distance}
+              onChange={setDistance}
+              surface="inset"
+              size="md"
+              triggerClassName="text-xs"
+              options={race.distances.map((raceDistance) => ({
+                value: raceDistance.label,
+                label: raceDistance.label,
+              }))}
+            />
           </div>
           {categories.length > 1 && (
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Entry category</label>
-              <select value={entryCategory} onChange={(event) => setEntryCategory(event.target.value as RaceEntryCategory)} className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-600/50">
-                {categories.map((category) => <option key={category} value={category}>{entryCategoryLabels[category]}</option>)}
-              </select>
+              <label htmlFor="manual-runner-category" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Entry category</label>
+              <Select
+                id="manual-runner-category"
+                value={entryCategory}
+                onChange={(value) => setEntryCategory(value as RaceEntryCategory)}
+                surface="inset"
+                size="md"
+                triggerClassName="text-xs"
+                options={categories.map((category) => ({
+                  value: category,
+                  label: entryCategoryLabels[category],
+                }))}
+              />
             </div>
           )}
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Gender</label>
-            <select value={gender} onChange={(event) => setGender(event.target.value as RunnerProfile['gender'])} className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-600/50">
-              <option value="male">Male</option>
-              <option value="female">Female</option>
-            </select>
+            <label htmlFor="manual-runner-gender" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Gender</label>
+            <Select
+              id="manual-runner-gender"
+              value={gender}
+              onChange={(value) => setGender(value as RunnerProfile['gender'])}
+              surface="inset"
+              size="md"
+              triggerClassName="text-xs"
+              options={[
+                { value: 'male', label: 'Male' },
+                { value: 'female', label: 'Female' },
+              ]}
+            />
           </div>
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Age</label>
@@ -3688,17 +3723,19 @@ function StartRollCallPanel({ race, runnerProfiles, chipReads, startCheckpointId
             />
           </div>
           {distanceGroups.length > 1 && (
-            <select
+            <Select
               aria-label="Filter start checklist by wave"
               value={rollCallDistanceFilter}
-              onChange={(event) => setRollCallDistanceFilter(event.target.value)}
-              className="min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-600/50 shrink-0"
-            >
-              <option value="all">All waves</option>
-              {distanceGroups.map((group) => (
-                <option key={group.distance} value={group.distance}>{group.distance}</option>
-              ))}
-            </select>
+              onChange={setRollCallDistanceFilter}
+              surface="inset"
+              size="md"
+              className="w-full sm:w-auto sm:min-w-[150px] shrink-0"
+              triggerClassName="text-xs"
+              options={[
+                { value: 'all', label: 'All waves' },
+                ...distanceGroups.map((group) => ({ value: group.distance, label: group.distance })),
+              ]}
+            />
           )}
         </div>
 
@@ -3963,15 +4000,18 @@ function PaymentListPanel({ race, runnerProfiles }: PaymentListPanelProps) {
           />
         </div>
         {distances.length > 1 && (
-          <select
+          <Select
             aria-label="Filter payments by distance"
             value={distanceFilter}
-            onChange={(event) => setDistanceFilter(event.target.value)}
-            className="min-h-11 glass-inset px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-600/50"
-          >
-            <option value="all">All distances</option>
-            {distances.map((distance) => <option key={distance} value={distance}>{distance}</option>)}
-          </select>
+            onChange={setDistanceFilter}
+            surface="inset"
+            size="md"
+            className="w-full sm:w-auto sm:min-w-[160px] shrink-0"
+            options={[
+              { value: 'all', label: 'All distances' },
+              ...distances.map((distance) => ({ value: distance, label: distance })),
+            ]}
+          />
         )}
       </div>
 
@@ -4113,17 +4153,19 @@ function RunnerRosterPanel({ race, runnerProfiles }: RunnerRosterPanelProps) {
           />
         </div>
         {distanceGroups.length > 1 && (
-          <select
+          <Select
             aria-label="Filter roster by distance"
             value={distanceFilter}
-            onChange={(event) => setDistanceFilter(event.target.value)}
-            className="min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-600/50 shrink-0"
-          >
-            <option value="all">All distances</option>
-            {distanceGroups.map((group) => (
-              <option key={group.distance} value={group.distance}>{group.distance}</option>
-            ))}
-          </select>
+            onChange={setDistanceFilter}
+            surface="inset"
+            size="md"
+            className="w-full sm:w-auto sm:min-w-[160px] shrink-0"
+            triggerClassName="text-xs"
+            options={[
+              { value: 'all', label: 'All distances' },
+              ...distanceGroups.map((group) => ({ value: group.distance, label: group.distance })),
+            ]}
+          />
         )}
       </div>
 

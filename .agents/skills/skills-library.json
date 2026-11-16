@@ -867,7 +867,7 @@
       "origin": "repo",
       "status": "active",
       "category": "release",
-      "description": "Ship RacePulsePH in one pass: commit, merge to main, push, publish the GitHub Release, and build the signed Play Store AAB from the local keystore file. Use when the user chats \"hit it\".",
+      "description": "Ship RacePulsePH in one pass: commit, merge to main, push, publish the GitHub Release, build the signed Play Store AAB from the local keystore file, and format Play Console release details. Use when the user chats \"hit it\".",
       "dependsOn": [
         "racepulse-github-release-cicd"
       ],

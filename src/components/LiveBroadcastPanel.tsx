@@ -36,6 +36,7 @@ import {
 } from '../types';
 import { useFeedback } from './ui/FeedbackProvider';
 import { AnimatedMetricValue, ValueSkeleton } from './ui/MotionPrimitives';
+import { Select } from './ui/Select';
 
 export interface LiveBroadcastLaunchRequest {
   raceId: string;
@@ -723,26 +724,28 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
       ? 'External'
       : 'Unlinked';
 
-  const renderRaceEventSelect = (id: string, className: string, optionClassName?: string) => (
-    <select
+  const renderRaceEventSelect = (
+    id: string,
+    surface: 'header' | 'inset',
+    size: 'sm' | 'md',
+    className?: string,
+  ) => (
+    <Select
       id={id}
       value={activeRaceId}
       disabled={sortedRaces.length === 0}
-      onChange={(event) => setActiveRaceId(event.target.value)}
+      onChange={setActiveRaceId}
+      searchable={sortedRaces.length >= 6}
+      searchPlaceholder="Filter race events..."
+      surface={surface}
+      size={size}
       className={className}
-    >
-      {sortedRaces.length === 0 ? (
-        <option value="" className={optionClassName}>
-          {racesLoading ? 'Loading events...' : 'No race events'}
-        </option>
-      ) : (
-        sortedRaces.map((race) => (
-          <option key={race.id} value={race.id} className={optionClassName}>
-            {race.name} ({race.date})
-          </option>
-        ))
-      )}
-    </select>
+      options={
+        sortedRaces.length === 0
+          ? [{ value: '', label: racesLoading ? 'Loading events...' : 'No race events' }]
+          : sortedRaces.map((race) => ({ value: race.id, label: `${race.name} (${race.date})` }))
+      }
+    />
   );
 
   // Desktop Header Left Cluster (Portaled next to brand logo in App.tsx)
@@ -759,8 +762,9 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
         </label>
         {renderRaceEventSelect(
           'hub_header_event_select',
-          'h-9 min-w-[160px] max-w-[220px] xl:max-w-[300px] rounded-lg border border-white/15 bg-white/10 px-3 text-xs font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 truncate disabled:opacity-50',
-          'bg-[#141416] text-white',
+          'header',
+          'sm',
+          'w-auto min-w-[160px] max-w-[220px] xl:max-w-[300px]',
         )}
       </div>
 
@@ -892,10 +896,7 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
             >
               Race event
             </label>
-            {renderRaceEventSelect(
-              'hub_mobile_event_select',
-              'w-full min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-sm font-semibold text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-50',
-            )}
+            {renderRaceEventSelect('hub_mobile_event_select', 'inset', 'md')}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -1177,45 +1178,44 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
                         <label htmlFor="hub_status_filter" className="sr-only">
                           Filter runners by timing status
                         </label>
-                        <select
+                        <Select
                           id="hub_status_filter"
                           value={statusFilter}
-                          onChange={(event) =>
-                            setStatusFilter(event.target.value as LeaderboardStatusFilter)
-                          }
-                          className="min-h-11 lg:min-h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-xs font-semibold text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
-                        >
-                          <option value="all">All runners</option>
-                          <option value="finished">Finished ({finishedCount})</option>
-                          <option value="on-course">On course (started)</option>
-                          <option value="missing-start">
-                            No start scan ({missingStartBibs.size})
-                          </option>
-                          {reviewRequiredCount > 0 && (
-                            <option value="review">
-                              Needs finish review ({reviewRequiredCount})
-                            </option>
-                          )}
-                        </select>
+                          onChange={(value) => setStatusFilter(value as LeaderboardStatusFilter)}
+                          surface="inset"
+                          size="sm"
+                          className="w-full sm:w-auto sm:min-w-[170px]"
+                          options={[
+                            { value: 'all', label: 'All runners' },
+                            { value: 'finished', label: `Finished (${finishedCount})` },
+                            { value: 'on-course', label: 'On course (started)' },
+                            { value: 'missing-start', label: `No start scan (${missingStartBibs.size})` },
+                            ...(reviewRequiredCount > 0
+                              ? [{ value: 'review', label: `Needs finish review (${reviewRequiredCount})` }]
+                              : []),
+                          ]}
+                        />
                       </div>
                     ) : (
                       <div className="shrink-0">
                         <label htmlFor="hub_checkpoint_filter" className="sr-only">
                           Filter scans by checkpoint
                         </label>
-                        <select
+                        <Select
                           id="hub_checkpoint_filter"
                           value={checkpointFilter}
-                          onChange={(event) => setCheckpointFilter(event.target.value)}
-                          className="min-h-11 lg:min-h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-xs font-semibold text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
-                        >
-                          <option value="all">All checkpoints</option>
-                          {(activeRace?.checkpoints || []).map((cp) => (
-                            <option key={cp.id} value={cp.id}>
-                              {cp.label}
-                            </option>
-                          ))}
-                        </select>
+                          onChange={setCheckpointFilter}
+                          surface="inset"
+                          size="sm"
+                          className="w-full sm:w-auto sm:min-w-[170px]"
+                          options={[
+                            { value: 'all', label: 'All checkpoints' },
+                            ...(activeRace?.checkpoints || []).map((cp) => ({
+                              value: cp.id,
+                              label: cp.label,
+                            })),
+                          ]}
+                        />
                       </div>
                     )}
                   </div>

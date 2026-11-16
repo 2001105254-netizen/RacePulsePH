@@ -16,42 +16,67 @@ const helpers = `${markerStart}
     match /userAccess/{uid} { allow read: if request.auth != null && (request.auth.uid == uid || isSuperAdmin()); allow write: if false; }
     match /accessHistory/{id} { allow read, write: if false; }
     match /accessSystem/{id} { allow read: if isSuperAdmin(); allow write: if false; }
-    function access() {
+    function accessForCaller(caller) {
       return exists(/databases/$(database)/documents/userAccess/$(request.auth.uid))
         ? get(/databases/$(database)/documents/userAccess/$(request.auth.uid)).data
-        : {'status': 'active', 'scope': callerDoc().data.role in ['admin','superadmin'] ? 'all' : 'owned-assigned', 'raceIds': [], 'overrides': {}};
+        : {'status': 'active', 'scope': caller.role in ['admin','superadmin'] ? 'all' : 'owned-assigned', 'raceIds': [], 'overrides': {}};
     }
-    function preset(action) {
-      let role = callerDoc().data.role;
+    function access() {
+      return accessForCaller(callerDoc().data);
+    }
+    function presetForRole(role, action) {
       return role == 'superadmin' || (role == 'admin' && !action.matches('personal[.].*') && action != 'highlights.playlist')
         || (role == 'organizer' && !action.matches('engraving[.].*') && !action.matches('highlights[.].*') && action != 'users.view' && action != 'timing.correct')
         || (role == 'runner' && action.matches('personal[.].*'));
     }
-    function rawPermission(action) { return access().get('overrides', {}).get(action, preset(action)) == true; }
+    function preset(action) {
+      return presetForRole(callerDoc().data.role, action);
+    }
+    function directAction(p, o, role, action) {
+      return (action in p ? p[action] : (action in o ? o[action] : presetForRole(role, action))) == true;
+    }
+    function permBase(action, role, approved, p, o) {
+      return (role != 'organizer' || approved || action == 'personal.register')
+        && (role == 'superadmin' || directAction(p, o, role, action));
+    }
+    function actionDepsOk(p, o, role, action) {
+      return (action in ['highlights.manage','highlights.settings'] ? directAction(p, o, role, 'highlights.view') : true)
+        && (action != 'highlights.playlist' || (directAction(p, o, role, 'highlights.view') && directAction(p, o, role, 'highlights.settings')))
+        && (action in ['routes.create','routes.edit','routes.media','routes.archive'] ? directAction(p, o, role, 'routes.view') : true)
+        && (action != 'routes.publish' || (directAction(p, o, role, 'routes.view') && directAction(p, o, role, 'routes.edit')))
+        && (action != 'routes.assign' || (directAction(p, o, role, 'routes.view') && directAction(p, o, role, 'race.view')));
+    }
+    function callerHasAction(acc, role, action) {
+      return directAction(acc.get('permissions', {}), acc.get('overrides', {}), role, action);
+    }
     function fallbackPermission(action) {
-      let a = access();
-      let p = a.get('permissions', {});
-      let o = a.get('overrides', {});
-      return (action in p ? p[action] : (action in o ? o[action] : preset(action))) == true;
+      return callerHasAction(access(), callerDoc().data.role, action);
+    }
+    function permissionForCaller(action, caller, acc) {
+      let role = caller.role;
+      let p = acc.get('permissions', {});
+      let o = acc.get('overrides', {});
+      return acc.status == 'active'
+        && (role != 'organizer' || caller.get('approved', false) == true || action.matches('personal[.].*'))
+        && (role == 'superadmin'
+          || (directAction(p, o, role, action)
+            && (!(action in ['highlights.manage','highlights.settings','highlights.playlist','routes.create','routes.edit','routes.media','routes.publish','routes.assign','routes.archive'])
+              || actionDepsOk(p, o, role, action))));
     }
     function permission(action) {
       return request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && access().status == 'active'
-        && (callerDoc().data.role != 'organizer' || callerDoc().data.get('approved', false) == true || action.matches('personal[.].*'))
-        // The active Super Admin must not be locked out by a stale saved
-        // permission map after a role promotion. Existing userAccess records
-        // created before new permission keys were added fall back to overrides/preset.
-        && (callerDoc().data.role == 'superadmin'
-          || (fallbackPermission(action)
-            && (!action.matches('highlights[.].*') || fallbackPermission('highlights.view'))));
+        && permissionForCaller(action, callerDoc().data, access());
     }
-    function raceScope(raceId) {
+    function raceScopeForCaller(raceId, caller, acc) {
       let race = get(/databases/$(database)/documents/races/$(raceId)).data;
       // Super Admin remains global even if an older userAccess document has
       // an obsolete selected/owned scope.
-      return callerDoc().data.role == 'superadmin' || access().scope == 'all'
-        || (access().scope == 'selected' && raceId in access().raceIds)
-        || (access().scope == 'owned-assigned' && (race.createdBy == request.auth.uid || request.auth.uid in race.get('organizerIds', [])));
+      return caller.role == 'superadmin' || acc.scope == 'all'
+        || (acc.scope == 'selected' && raceId in acc.raceIds)
+        || (acc.scope == 'owned-assigned' && (race.createdBy == request.auth.uid || request.auth.uid in race.get('organizerIds', [])));
+    }
+    function raceScope(raceId) {
+      return raceScopeForCaller(raceId, callerDoc().data, access());
     }
     function racePermission(action, raceId) { return permission(action) && raceScope(raceId); }
     function changed(fields) { return request.resource.data.diff(resource.data).affectedKeys().hasAny(fields); }
@@ -185,6 +210,75 @@ block('match /system/highlightsConfig',`match /system/highlightsConfig {
       allow update: if permission('highlights.settings')
         && (!changed(['pinPodiumFirst','filterRaceId','hideExpired']) || permission('highlights.playlist'));
       allow delete: if isSuperAdmin();
+    }
+
+    function canAccessPresetData(presetData) {
+      return isSuperAdmin()
+        || callerDoc().data.role == 'admin'
+        || presetData.ownerUid == request.auth.uid
+        || request.auth.uid in presetData.get('editorIds', []);
+    }
+
+    function canAccessPreset(presetId) {
+      return exists(/databases/$(database)/documents/routePresets/$(presetId))
+        && canAccessPresetData(get(/databases/$(database)/documents/routePresets/$(presetId)).data);
+    }
+
+    match /routePresets/{presetId} {
+      allow read: if permission('routes.view') && canAccessPresetData(resource.data);
+      allow create: if isValidId(presetId) && permission('routes.create') && request.resource.data.ownerUid == request.auth.uid;
+      allow update: if permission('routes.edit') && canAccessPresetData(resource.data)
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && (!changed(['archived']) || permission('routes.archive'));
+      allow delete: if isSuperAdmin();
+
+      match /drafts/{draftId} {
+        allow read: if permission('routes.view') && canAccessPreset(presetId);
+        allow create, update: if isValidId(draftId) && permission('routes.edit') && canAccessPreset(presetId);
+        allow delete: if isSuperAdmin();
+
+        match /markers/{markerId} {
+          allow read: if permission('routes.view') && canAccessPreset(presetId);
+          allow create, update: if isValidId(markerId) && permission('routes.edit') && canAccessPreset(presetId);
+          allow delete: if isSuperAdmin() || (permission('routes.edit') && canAccessPreset(presetId));
+        }
+      }
+
+      match /versions/{versionId} {
+        allow read: if permission('routes.view') && canAccessPreset(presetId);
+        allow create: if isValidId(versionId) && permission('routes.publish') && canAccessPreset(presetId);
+        allow update, delete: if false;
+      }
+    }
+
+    match /races/{raceId}/routeBindings/{distanceId} {
+      allow read: if true;
+      allow create, update: if isValidId(distanceId) && racePermission('routes.assign', raceId);
+      allow delete: if isSuperAdmin() && raceScope(raceId);
+    }
+
+    match /publishedRaceRoutes/{publicationId} {
+      allow get, list: if resource.data.get('status', '') == 'published' || permission('routes.view');
+      allow create, update: if isValidId(publicationId) && (permission('routes.publish') || permission('routes.assign'));
+      allow delete: if isSuperAdmin();
+    }
+
+    match /raceRouteCatalog/{entryId} {
+      allow read: if true;
+      allow create, update: if isValidId(entryId) && (permission('routes.publish') || permission('routes.assign'));
+      allow delete: if isSuperAdmin();
+    }
+
+    match /routeJobs/{jobId} {
+      allow read: if permission('routes.view');
+      allow create, update: if isValidId(jobId) && permission('routes.edit');
+      allow delete: if isSuperAdmin();
+    }
+
+    match /routeAudit/{eventId} {
+      allow read: if permission('routes.view');
+      allow create: if isValidId(eventId) && (permission('routes.edit') || permission('routes.publish') || permission('routes.assign') || permission('routes.archive'));
+      allow update, delete: if false;
     }`);
 // Social mutations retain their existing ownership/consent restrictions.
 const socialStart=source.indexOf('match /friendRequests/'),socialEnd=source.indexOf('// ========== SYSTEM');
@@ -197,12 +291,53 @@ for (const [path,name] of [['races','raceUpdateAllowed'],['runners','runnerUpdat
  const original=source.slice(allow+'allow update: if '.length,end);
  const expression=original.replaceAll('request.resource.data.diff(resource.data).affectedKeys()', 'fields')
    .replace(/changed\((\[[^\]]*\])\)/g,'fields.hasAny($1)')
-   .replace(/racePermission\('([^']+)', resource.data.raceId\)/g,"(permission('$1') && scoped)")
-   .replace(/permission\('([^']+)'\)/g,"permission('$1')");
+   .replace(/racePermission\('([^']+)', resource.data.raceId\)/g,"(permBase('$1', role, approved, p, o) && scoped)")
+   .replace(/permission\('([^']+)'\)/g,"permBase('$1', role, approved, p, o)")
+   .replace(/raceScope\(([^)]+)\)/g,"raceScopeForCaller($1, caller, acc)")
+   .replace(/isSuperAdmin\(\)/g,"(role == 'superadmin')");
  const parameter=path==='races'?'raceId':'regId';
- const helper=`function ${name}(${parameter}) {\n      let fields = request.resource.data.diff(resource.data).affectedKeys();\n      let scoped = ${path==='runners'?'raceScope(resource.data.raceId)':'true'};\n      return request.auth != null && access().status == 'active' && ${expression};\n    }\n    `;
+ const helper=`function ${name}(${parameter}) {
+      return request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && ${name}WithCaller(${parameter}, callerDoc().data);
+    }
+    function ${name}WithCaller(${parameter}, caller) {
+      let acc = accessForCaller(caller);
+      let role = caller.role;
+      let approved = caller.get('approved', false) == true;
+      let p = acc.get('permissions', {});
+      let o = acc.get('overrides', {});
+      let fields = request.resource.data.diff(resource.data).affectedKeys();
+      let scoped = ${path==='runners'?'raceScopeForCaller(resource.data.raceId, caller, acc)':'true'};
+      return acc.status == 'active' && ${expression};
+    }
+    `;
  source=source.slice(0,allow)+`allow update: if ${name}(${parameter})`+source.slice(end);
  const match=source.indexOf(`match /${path}/`);source=source.slice(0,match)+helper+source.slice(match);
+}
+{
+ const begin=source.indexOf('match /runners/{regId}'),allow=source.indexOf('allow create: if ',begin),end=source.indexOf(';',allow);
+ const original=source.slice(allow+'allow create: if '.length,end);
+ const trimmedOriginal=original.replace('isValidRunnerProfile(request.resource.data) && hasValidRegistrationId(regId, request.resource.data)\n        && ','');
+ const expression=trimmedOriginal
+   .replace(/racePermission\('([^']+)', ([^)]+)\)/g,"(permBase('$1', role, approved, p, o) && scoped)")
+   .replace(/permission\('([^']+)'\)/g,"permBase('$1', role, approved, p, o)");
+ const helper=`function runnerCreateAllowed(regId) {
+      return request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && isValidRunnerProfile(request.resource.data) && hasValidRegistrationId(regId, request.resource.data)
+        && runnerCreateAllowedWithCaller(callerDoc().data);
+    }
+    function runnerCreateAllowedWithCaller(caller) {
+      let acc = accessForCaller(caller);
+      let role = caller.role;
+      let approved = caller.get('approved', false) == true;
+      let p = acc.get('permissions', {});
+      let o = acc.get('overrides', {});
+      let scoped = raceScopeForCaller(request.resource.data.raceId, caller, acc);
+      return acc.status == 'active' && ${expression};
+    }
+    `;
+ source=source.slice(0,allow)+'allow create: if runnerCreateAllowed(regId)'+source.slice(end);
+ const match=source.indexOf('match /runners/{regId}');source=source.slice(0,match)+helper+source.slice(match);
 }
 for (const marker of ['function isAdmin()', 'function isStaff()', 'function isOrganizer()', 'function managesRace(raceId)']) block(marker, '');
 fs.writeFileSync('firestore.rules', '// Generated by scripts/build-access-rules.cjs; edit the generator and regenerate.\n'+source.replace(/[ \t]+$/gm,''));

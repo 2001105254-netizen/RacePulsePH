@@ -92,7 +92,6 @@
 .access-preset > span > span { color: var(--text-secondary); font-size: .9375rem; line-height: 1.6; }
 .access-preset > svg { color: var(--color-red-500); flex-shrink: 0; }
 .access-field { display: flex; flex-direction: column; gap: .5rem; font-size: .9375rem; font-weight: 600; min-width: 0; }
-.access-field select { min-height: 52px; width: 100%; min-width: 0; border: 1px solid var(--border-default); border-radius: 12px; padding: .75rem 2.25rem .75rem 1rem; color: var(--text-primary); background: var(--surface-card); font: inherit; font-size: 1rem; font-weight: 400; }
 .access-block > .access-field, .access-fields > .access-field { max-width: 560px; }
 .access-check-row { display: flex; align-items: flex-start; gap: 1rem; padding: 1rem 0; min-height: 64px; cursor: pointer; }
 .access-check-row > input, .access-filter-toggle input { appearance: none; position: relative; width: 44px; height: 44px; flex: 0 0 44px; padding: 0; margin: 0; background: transparent; border: 0; cursor: pointer; }

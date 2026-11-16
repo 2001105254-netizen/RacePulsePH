@@ -57,6 +57,7 @@ import QrScannerModal from './QrScannerModal';
 import DialogSurface from './ui/DialogSurface';
 import { useFeedback } from './ui/FeedbackProvider';
 import { AnimatedMetricValue, ValueSkeleton } from './ui/MotionPrimitives';
+import { Select } from './ui/Select';
 
 type MasterView = 'queue' | 'roster';
 
@@ -988,24 +989,26 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
         <label htmlFor="header_event_select" className="sr-only">
           Active race event for engraving
         </label>
-        <select
+        <Select
           id="header_event_select"
           value={selectedRaceId}
-          onChange={(event) => {
-            setSelectedRaceId(event.target.value);
+          onChange={(nextRaceId) => {
+            setSelectedRaceId(nextRaceId);
             setRunnerSearch('');
           }}
-          className="h-9 min-w-[160px] max-w-[210px] xl:max-w-[300px] rounded-lg border border-white/15 bg-white/10 px-3 text-xs font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 truncate"
-        >
-          <option value="" className="bg-[#141416] text-white">
-            All Events (Global Queue)
-          </option>
-          {sortedRaces.map((race) => (
-            <option key={race.id} value={race.id} className="bg-[#141416] text-white">
-              {race.name} ({race.date})
-            </option>
-          ))}
-        </select>
+          searchable={sortedRaces.length >= 6}
+          searchPlaceholder="Filter race events..."
+          surface="header"
+          size="sm"
+          className="w-auto min-w-[160px] max-w-[210px] xl:max-w-[300px]"
+          options={[
+            { value: '', label: 'All Events (Global Queue)' },
+            ...sortedRaces.map((race) => ({
+              value: race.id,
+              label: `${race.name} (${race.date})`,
+            })),
+          ]}
+        />
         {selectedRaceId && (
           <button
             type="button"
@@ -1402,22 +1405,25 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
               >
                 Race event
               </label>
-              <select
+              <Select
                 id="mobile_event_select"
                 value={selectedRaceId}
-                onChange={(event) => {
-                  setSelectedRaceId(event.target.value);
+                onChange={(nextRaceId) => {
+                  setSelectedRaceId(nextRaceId);
                   setRunnerSearch('');
                 }}
-                className="w-full min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-sm font-semibold text-[var(--text-primary)]"
-              >
-                <option value="">All Events (Global Queue)</option>
-                {sortedRaces.map((race) => (
-                  <option key={race.id} value={race.id}>
-                    {race.name} ({race.date})
-                  </option>
-                ))}
-              </select>
+                searchable={sortedRaces.length >= 6}
+                searchPlaceholder="Filter race events..."
+                surface="inset"
+                size="md"
+                options={[
+                  { value: '', label: 'All Events (Global Queue)' },
+                  ...sortedRaces.map((race) => ({
+                    value: race.id,
+                    label: `${race.name} (${race.date})`,
+                  })),
+                ]}
+              />
             </div>
 
             <div className="flex flex-wrap items-center gap-2">

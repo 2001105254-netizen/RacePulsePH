@@ -12,6 +12,7 @@ import { hasRaceBibTemplate } from '../lib/raceBib';
 import { ensureRaceBibCustomFont, raceBibFontFamily } from '../lib/raceBibFont';
 import { useAndroidBackHandler } from '../lib/capacitorAndroid';
 import DialogSurface from './ui/DialogSurface';
+import { Select } from './ui/Select';
 import { QRCodeSVG } from 'qrcode.react';
 import { Flag, Trash2, Plus, Save, Pencil, RefreshCw, Users2, FileDown, ImagePlus, X, QrCode, Copy, Download, MapPinned, Upload } from 'lucide-react';
 
@@ -596,6 +597,8 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
   const storeRouteGpx = async (raceId: string): Promise<string> => {
     if (!routeGpxFile) return routeGpxUrl;
     if (editingId && !can('race.artwork')) return routeGpxUrl;
+    const { parseGpxRoute } = await import('../lib/gpxRoute');
+    parseGpxRoute(await routeGpxFile.text());
     const fileRef = storageRef(storage, `race-assets/${actorUid}/${raceId}/route-${Date.now()}.gpx`);
     await uploadBytes(fileRef, routeGpxFile, {
       contentType: 'application/gpx+xml',
@@ -864,22 +867,26 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
               <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Organizer team</p>
               <p className="text-xs text-[var(--text-secondary)] mt-1">{canManageOrganizerTeam ? 'Add approved organizers who can edit this race, view registrations, assign chips, and run timing. The account that created the race remains the primary owner.' : 'You are a collaborator on this race. The primary organizer manages the organizer team.'}</p>
             </div>
-            <select
+            <Select
+              aria-label="Add an approved organizer"
               value=""
-              onChange={(event) => {
-                const organizerId = event.target.value;
+              placeholder={approvedOrganizers.length ? 'Add an approved organizer...' : 'No other approved organizer accounts available'}
+              onChange={(organizerId) => {
                 if (organizerId) setOrganizerIds((current) => current.includes(organizerId) ? current : [...current, organizerId]);
               }}
               disabled={(!canManageOrganizerTeam || organizerIds.length >= 20) || (!!editingId && !can('race.team'))}
-              className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-60"
-            >
-              <option value="">{approvedOrganizers.length ? 'Add an approved organizer...' : 'No other approved organizer accounts available'}</option>
-              {approvedOrganizers
+              searchable={approvedOrganizers.length >= 6}
+              searchPlaceholder="Filter approved organizers..."
+              surface="card"
+              size="md"
+              triggerClassName="text-xs"
+              options={approvedOrganizers
                 .filter((organizer) => !organizerIds.includes(organizer.uid))
-                .map((organizer) => (
-                  <option key={organizer.uid} value={organizer.uid}>{organizer.displayName} ({organizer.email})</option>
-                ))}
-            </select>
+                .map((organizer) => ({
+                  value: organizer.uid,
+                  label: `${organizer.displayName} (${organizer.email})`,
+                }))}
+            />
             {organizerIds.length > 0 ? (
               <div className="flex flex-wrap gap-2">
                 {organizerIds.map((organizerId) => {
@@ -918,15 +925,20 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
             </label>
             {onlinePaymentEnabled && (
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Payment processing fee</label>
-                <select disabled={(!!editingId && !can('payment.configure'))}
+                <label htmlFor="race-setup-fee-mode" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Payment processing fee</label>
+                <Select
+                  id="race-setup-fee-mode"
+                  disabled={(!!editingId && !can('payment.configure'))}
                   value={paymentFeeMode}
-                  onChange={(e) => setPaymentFeeMode(e.target.value as 'absorbed' | 'passed_on')}
-                  className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
-                >
-                  <option value="absorbed">Organizer absorbs the fee: runner pays the listed price</option>
-                  <option value="passed_on">Pass fee to runner: checkout adds PayMongo's fee</option>
-                </select>
+                  onChange={(value) => setPaymentFeeMode(value as 'absorbed' | 'passed_on')}
+                  surface="card"
+                  size="md"
+                  triggerClassName="text-xs"
+                  options={[
+                    { value: 'absorbed', label: 'Organizer absorbs the fee: runner pays the listed price' },
+                    { value: 'passed_on', label: "Pass fee to runner: checkout adds PayMongo's fee" },
+                  ]}
+                />
               </div>
             )}
             <div className="border-t border-[var(--border-default)] pt-3">
@@ -1017,12 +1029,24 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
           </div>
 
           <div className="rounded-[16px] border border-[var(--border-default)] bg-[var(--surface-inset)]/40 p-4">
-            <div className="flex items-start gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-red-500/10 text-red-700 dark:text-red-400"><MapPinned className="h-5 w-5" /></span>
-              <div>
-                <h4 className="text-sm font-semibold text-[var(--text-primary)]">Runner route, GPX</h4>
-                <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">Upload the official GPX route. Runners can open it from the event page and view the route with its recorded elevation.</p>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-red-500/10 text-red-700 dark:text-red-400"><MapPinned className="h-5 w-5" /></span>
+                <div>
+                  <h4 className="text-sm font-semibold text-[var(--text-primary)]">Runner route, GPX</h4>
+                  <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">Upload the official GPX route or use Route Studio to assign per-distance courses, checkpoints, and photo landmarks.</p>
+                </div>
               </div>
+              <a
+                href="/route-studio"
+                onClick={(e) => {
+                  e.preventDefault();
+                  window.dispatchEvent(new CustomEvent('racepulse:navigate', { detail: { url: '/route-studio' } }));
+                }}
+                className="inline-flex min-h-11 shrink-0 items-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-red-700 hover:border-red-600/50 dark:text-red-400"
+              >
+                Open Route Studio
+              </a>
             </div>
             <input disabled={(!!editingId && !can('race.artwork'))} ref={routeGpxInputRef} type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml" onChange={handleRouteGpxSelected} className="hidden" />
             {routeGpxUrl || routeGpxFile ? (
@@ -1073,7 +1097,26 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                     <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Color <input disabled={(!!editingId && !can('race.bibs'))} type="color" value={bibNumberColor} onChange={(e) => setBibNumberColor(e.target.value)} className="w-11 h-11 p-1 border border-[var(--border-default)] rounded-lg cursor-pointer bg-transparent" /> <span className="font-mono">{bibNumberColor}</span></label>
                     <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Border <input disabled={(!!editingId && !can('race.bibs'))} type="color" value={bibNumberStrokeColor} onChange={(e) => setBibNumberStrokeColor(e.target.value)} className="w-11 h-11 p-1 border border-[var(--border-default)] rounded-lg cursor-pointer bg-transparent" /> <span className="font-mono">{bibNumberStrokeColor}</span></label>
                     <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Border thickness <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="0" max="1.5" step="0.1" value={bibNumberStrokeWidth} onChange={(e) => setBibNumberStrokeWidth(Number(e.target.value))} className="flex-1 accent-red-600" /> {bibNumberStrokeWidth.toFixed(1)}</label>
-                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Font <select disabled={(!!editingId && !can('race.bibs'))} value={bibNumberFont} onChange={(e) => setBibNumberFont(e.target.value as RaceBibFont)} className="flex-1 min-h-11 glass-inset px-2 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-red-500/50"><option value="mono">Timing Mono</option><option value="display">Racing Bold</option><option value="condensed">Condensed</option><option value="sans">Clean Sans</option><option value="custom" disabled={!raceBibCustomFont}>Uploaded Custom Font</option></select></label>
+                    <div className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">
+                      <label htmlFor="setup-bib-number-font" className="shrink-0">Font</label>
+                      <Select
+                        id="setup-bib-number-font"
+                        disabled={(!!editingId && !can('race.bibs'))}
+                        value={bibNumberFont}
+                        onChange={(value) => setBibNumberFont(value as RaceBibFont)}
+                        surface="card"
+                        size="md"
+                        className="flex-1"
+                        triggerClassName="text-xs"
+                        options={[
+                          { value: 'mono', label: 'Timing Mono' },
+                          { value: 'display', label: 'Racing Bold' },
+                          { value: 'condensed', label: 'Condensed' },
+                          { value: 'sans', label: 'Clean Sans' },
+                          { value: 'custom', label: 'Uploaded Custom Font', disabled: !raceBibCustomFont },
+                        ]}
+                      />
+                    </div>
                   </div>
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)] mb-2">Runner name position</p>
@@ -1083,7 +1126,26 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                     <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Color <input type="color" value={runnerNameColor} onChange={(e) => setRunnerNameColor(e.target.value)} className="w-11 h-11 p-1 border border-[var(--border-default)] rounded-lg cursor-pointer bg-transparent" /> <span className="font-mono">{runnerNameColor}</span></label>
                     <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Border <input type="color" value={runnerNameStrokeColor} onChange={(e) => setRunnerNameStrokeColor(e.target.value)} className="w-11 h-11 p-1 border border-[var(--border-default)] rounded-lg cursor-pointer bg-transparent" /> <span className="font-mono">{runnerNameStrokeColor}</span></label>
                     <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Border thickness <input type="range" min="0" max="1.5" step="0.1" value={runnerNameStrokeWidth} onChange={(e) => setRunnerNameStrokeWidth(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameStrokeWidth.toFixed(1)}</label>
-                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Font <select disabled={(!!editingId && !can('race.bibs'))} value={runnerNameFont} onChange={(e) => setRunnerNameFont(e.target.value as RaceBibFont)} className="flex-1 min-h-11 glass-inset px-2 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-red-500/50"><option value="display">Racing Bold</option><option value="sans">Clean Sans</option><option value="mono">Timing Mono</option><option value="condensed">Condensed</option><option value="custom" disabled={!raceBibCustomFont}>Uploaded Custom Font</option></select></label>
+                    <div className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">
+                      <label htmlFor="setup-runner-name-font" className="shrink-0">Font</label>
+                      <Select
+                        id="setup-runner-name-font"
+                        disabled={(!!editingId && !can('race.bibs'))}
+                        value={runnerNameFont}
+                        onChange={(value) => setRunnerNameFont(value as RaceBibFont)}
+                        surface="card"
+                        size="md"
+                        className="flex-1"
+                        triggerClassName="text-xs"
+                        options={[
+                          { value: 'display', label: 'Racing Bold' },
+                          { value: 'sans', label: 'Clean Sans' },
+                          { value: 'mono', label: 'Timing Mono' },
+                          { value: 'condensed', label: 'Condensed' },
+                          { value: 'custom', label: 'Uploaded Custom Font', disabled: !raceBibCustomFont },
+                        ]}
+                      />
+                    </div>
                   </div>
                   <div className="sm:col-span-2 rounded-xl border border-amber-500/25 bg-amber-500/[0.04] p-3">
                     <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-primary)]"><input disabled={(!!editingId && !can('race.bibs'))} type="checkbox" checked={showRaffleNumber} onChange={(e) => setShowRaffleNumber(e.target.checked)} className="rp-checkbox shrink-0" /> Print raffle number at the bottom <span className="normal-case font-medium text-[var(--text-secondary)]">(same as bib number)</span></label>
@@ -1093,7 +1155,26 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                         <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)]">X <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="5" max="95" value={raffleNumberX} onChange={(e) => setRaffleNumberX(Number(e.target.value))} className="flex-1 accent-amber-500" /> {raffleNumberX}%</label>
                         <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Y <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="5" max="95" value={raffleNumberY} onChange={(e) => setRaffleNumberY(Number(e.target.value))} className="flex-1 accent-amber-500" /> {raffleNumberY}%</label>
                         <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Size <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="3" max="16" step="0.5" value={raffleNumberSize} onChange={(e) => setRaffleNumberSize(Number(e.target.value))} className="flex-1 accent-amber-500" /> {raffleNumberSize}</label>
-                        <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Font <select disabled={(!!editingId && !can('race.bibs'))} value={raffleNumberFont} onChange={(e) => setRaffleNumberFont(e.target.value as RaceBibFont)} className="flex-1 min-h-11 glass-inset px-2 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-amber-500/50"><option value="mono">Timing Mono</option><option value="display">Racing Bold</option><option value="condensed">Condensed</option><option value="sans">Clean Sans</option><option value="custom" disabled={!raceBibCustomFont}>Uploaded Custom Font</option></select></label>
+                        <div className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">
+                          <label htmlFor="setup-raffle-font" className="shrink-0">Font</label>
+                          <Select
+                            id="setup-raffle-font"
+                            disabled={(!!editingId && !can('race.bibs'))}
+                            value={raffleNumberFont}
+                            onChange={(value) => setRaffleNumberFont(value as RaceBibFont)}
+                            surface="card"
+                            size="md"
+                            className="flex-1"
+                            triggerClassName="text-xs"
+                            options={[
+                              { value: 'mono', label: 'Timing Mono' },
+                              { value: 'display', label: 'Racing Bold' },
+                              { value: 'condensed', label: 'Condensed' },
+                              { value: 'sans', label: 'Clean Sans' },
+                              { value: 'custom', label: 'Uploaded Custom Font', disabled: !raceBibCustomFont },
+                            ]}
+                          />
+                        </div>
                       </div>
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-widest text-amber-700 dark:text-amber-400 mb-2">Raffle style</p>
@@ -1225,17 +1306,22 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
               {checkpoints.map((cp, idx) => (
                 <div key={cp.id} className="glass-inset p-3 flex flex-wrap items-center gap-2">
                   <span className="text-xs font-mono text-[var(--text-secondary)] w-5 shrink-0">{idx + 1}.</span>
-                  <select disabled={(!!editingId && !can('race.categories'))}
-                    value={cp.type}
-                    onChange={(e) => updateCheckpoint(idx, { type: e.target.value as CheckpointType, cutoffMinutes: e.target.value === 'intermediate' ? cp.cutoffMinutes : '' })}
-                    className="min-h-11 glass-inset px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                  <Select
                     aria-label="Checkpoint type"
-                  >
-                    <option value="checkin">Check-In</option>
-                    <option value="start">Start</option>
-                    <option value="intermediate">Intermediate</option>
-                    <option value="finish">Finish</option>
-                  </select>
+                    disabled={(!!editingId && !can('race.categories'))}
+                    value={cp.type}
+                    onChange={(value) => updateCheckpoint(idx, { type: value as CheckpointType, cutoffMinutes: value === 'intermediate' ? cp.cutoffMinutes : '' })}
+                    surface="card"
+                    size="md"
+                    className="w-auto min-w-[140px]"
+                    triggerClassName="text-xs uppercase tracking-wide"
+                    options={[
+                      { value: 'checkin', label: 'Check-In' },
+                      { value: 'start', label: 'Start' },
+                      { value: 'intermediate', label: 'Intermediate' },
+                      { value: 'finish', label: 'Finish' },
+                    ]}
+                  />
                   <input disabled={(!!editingId && !can('race.categories'))}
                     type="text"
                     required
@@ -1406,14 +1492,20 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
             <div className="space-y-2">
               {ageCategories.map((cat, idx) => (
                 <div key={cat.id} className="flex items-center gap-2">
-                  <select disabled={(!!editingId && !can('race.categories'))}
+                  <Select
+                    aria-label="Age category gender"
+                    disabled={(!!editingId && !can('race.categories'))}
                     value={cat.gender}
-                    onChange={(e) => updateAgeCategory(idx, { gender: e.target.value as Gender })}
-                    className="min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
-                  >
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                  </select>
+                    onChange={(value) => updateAgeCategory(idx, { gender: value as Gender })}
+                    surface="inset"
+                    size="md"
+                    className="w-auto min-w-[104px]"
+                    triggerClassName="text-xs"
+                    options={[
+                      { value: 'male', label: 'Male' },
+                      { value: 'female', label: 'Female' },
+                    ]}
+                  />
                   <input disabled={(!!editingId && !can('race.categories'))}
                     type="number"
                     required
@@ -1714,19 +1806,31 @@ function FreeSlotsDialog({ race, onClose }: FreeSlotsDialogProps) {
         <button type="button" onClick={onClose} disabled={creating} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg p-2 text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 disabled:opacity-40" aria-label="Close Free Slots"><X className="w-5 h-5" aria-hidden="true" /></button>
       </div>
 
-      <div className="mt-5 grid grid-cols-1 sm:grid-cols-[1fr_8rem_7rem] gap-2">
-        <label className="block">
-          <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Distance</span>
-          <select value={distanceLabel} onChange={(event) => setDistanceLabel(event.target.value)} disabled={(creating) || (!can('roster.slots'))} className="w-full min-h-11 glass-inset px-3 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50">
-            {race.distances.map((distance) => <option key={distance.id} value={distance.label}>{distance.label}</option>)}
-          </select>
-        </label>
-        <label className="block">
-          <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Entry type</span>
-          <select value={entryCategory} onChange={(event) => setEntryCategory(event.target.value as RaceEntryCategory)} disabled={(creating) || (!can('roster.slots'))} className="w-full min-h-11 glass-inset px-3 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50">
-            {supportedCategories.map((category) => <option key={category} value={category}>{entryCategoryLabels[category]}</option>)}
-          </select>
-        </label>
+      <div className="mt-5 grid grid-cols-1 sm:grid-cols-[1fr_8.5rem_7rem] gap-2">
+        <div>
+          <label htmlFor="free-slots-distance" className="mb-2 block text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Distance</label>
+          <Select
+            id="free-slots-distance"
+            value={distanceLabel}
+            onChange={setDistanceLabel}
+            disabled={(creating) || (!can('roster.slots'))}
+            surface="inset"
+            size="md"
+            options={race.distances.map((distance) => ({ value: distance.label, label: distance.label }))}
+          />
+        </div>
+        <div>
+          <label htmlFor="free-slots-entry-type" className="mb-2 block text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Entry type</label>
+          <Select
+            id="free-slots-entry-type"
+            value={entryCategory}
+            onChange={(value) => setEntryCategory(value as RaceEntryCategory)}
+            disabled={(creating) || (!can('roster.slots'))}
+            surface="inset"
+            size="md"
+            options={supportedCategories.map((category) => ({ value: category, label: entryCategoryLabels[category] }))}
+          />
+        </div>
         <label className="block">
           <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Slots</span>
           <input type="number" min="1" max="100" step="1" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} disabled={creating} className="w-full min-h-11 glass-inset px-3 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50" />

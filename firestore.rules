@@ -7,42 +7,67 @@ service cloud.firestore {
     match /userAccess/{uid} { allow read: if request.auth != null && (request.auth.uid == uid || isSuperAdmin()); allow write: if false; }
     match /accessHistory/{id} { allow read, write: if false; }
     match /accessSystem/{id} { allow read: if isSuperAdmin(); allow write: if false; }
-    function access() {
+    function accessForCaller(caller) {
       return exists(/databases/$(database)/documents/userAccess/$(request.auth.uid))
         ? get(/databases/$(database)/documents/userAccess/$(request.auth.uid)).data
-        : {'status': 'active', 'scope': callerDoc().data.role in ['admin','superadmin'] ? 'all' : 'owned-assigned', 'raceIds': [], 'overrides': {}};
+        : {'status': 'active', 'scope': caller.role in ['admin','superadmin'] ? 'all' : 'owned-assigned', 'raceIds': [], 'overrides': {}};
     }
-    function preset(action) {
-      let role = callerDoc().data.role;
+    function access() {
+      return accessForCaller(callerDoc().data);
+    }
+    function presetForRole(role, action) {
       return role == 'superadmin' || (role == 'admin' && !action.matches('personal[.].*') && action != 'highlights.playlist')
         || (role == 'organizer' && !action.matches('engraving[.].*') && !action.matches('highlights[.].*') && action != 'users.view' && action != 'timing.correct')
         || (role == 'runner' && action.matches('personal[.].*'));
     }
-    function rawPermission(action) { return access().get('overrides', {}).get(action, preset(action)) == true; }
+    function preset(action) {
+      return presetForRole(callerDoc().data.role, action);
+    }
+    function directAction(p, o, role, action) {
+      return (action in p ? p[action] : (action in o ? o[action] : presetForRole(role, action))) == true;
+    }
+    function permBase(action, role, approved, p, o) {
+      return (role != 'organizer' || approved || action == 'personal.register')
+        && (role == 'superadmin' || directAction(p, o, role, action));
+    }
+    function actionDepsOk(p, o, role, action) {
+      return (action in ['highlights.manage','highlights.settings'] ? directAction(p, o, role, 'highlights.view') : true)
+        && (action != 'highlights.playlist' || (directAction(p, o, role, 'highlights.view') && directAction(p, o, role, 'highlights.settings')))
+        && (action in ['routes.create','routes.edit','routes.media','routes.archive'] ? directAction(p, o, role, 'routes.view') : true)
+        && (action != 'routes.publish' || (directAction(p, o, role, 'routes.view') && directAction(p, o, role, 'routes.edit')))
+        && (action != 'routes.assign' || (directAction(p, o, role, 'routes.view') && directAction(p, o, role, 'race.view')));
+    }
+    function callerHasAction(acc, role, action) {
+      return directAction(acc.get('permissions', {}), acc.get('overrides', {}), role, action);
+    }
     function fallbackPermission(action) {
-      let a = access();
-      let p = a.get('permissions', {});
-      let o = a.get('overrides', {});
-      return (action in p ? p[action] : (action in o ? o[action] : preset(action))) == true;
+      return callerHasAction(access(), callerDoc().data.role, action);
+    }
+    function permissionForCaller(action, caller, acc) {
+      let role = caller.role;
+      let p = acc.get('permissions', {});
+      let o = acc.get('overrides', {});
+      return acc.status == 'active'
+        && (role != 'organizer' || caller.get('approved', false) == true || action.matches('personal[.].*'))
+        && (role == 'superadmin'
+          || (directAction(p, o, role, action)
+            && (!(action in ['highlights.manage','highlights.settings','highlights.playlist','routes.create','routes.edit','routes.media','routes.publish','routes.assign','routes.archive'])
+              || actionDepsOk(p, o, role, action))));
     }
     function permission(action) {
       return request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && access().status == 'active'
-        && (callerDoc().data.role != 'organizer' || callerDoc().data.get('approved', false) == true || action.matches('personal[.].*'))
-        // The active Super Admin must not be locked out by a stale saved
-        // permission map after a role promotion. Existing userAccess records
-        // created before new permission keys were added fall back to overrides/preset.
-        && (callerDoc().data.role == 'superadmin'
-          || (fallbackPermission(action)
-            && (!action.matches('highlights[.].*') || fallbackPermission('highlights.view'))));
+        && permissionForCaller(action, callerDoc().data, access());
     }
-    function raceScope(raceId) {
+    function raceScopeForCaller(raceId, caller, acc) {
       let race = get(/databases/$(database)/documents/races/$(raceId)).data;
       // Super Admin remains global even if an older userAccess document has
       // an obsolete selected/owned scope.
-      return callerDoc().data.role == 'superadmin' || access().scope == 'all'
-        || (access().scope == 'selected' && raceId in access().raceIds)
-        || (access().scope == 'owned-assigned' && (race.createdBy == request.auth.uid || request.auth.uid in race.get('organizerIds', [])));
+      return caller.role == 'superadmin' || acc.scope == 'all'
+        || (acc.scope == 'selected' && raceId in acc.raceIds)
+        || (acc.scope == 'owned-assigned' && (race.createdBy == request.auth.uid || request.auth.uid in race.get('organizerIds', [])));
+    }
+    function raceScope(raceId) {
+      return raceScopeForCaller(raceId, callerDoc().data, access());
     }
     function racePermission(action, raceId) { return permission(action) && raceScope(raceId); }
     function changed(fields) { return request.resource.data.diff(resource.data).affectedKeys().hasAny(fields); }
@@ -362,27 +387,36 @@ service cloud.firestore {
     // ========== RACES & CHECKPOINTS ==========
 
     function raceUpdateAllowed(raceId) {
+      return request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && raceUpdateAllowedWithCaller(raceId, callerDoc().data);
+    }
+    function raceUpdateAllowedWithCaller(raceId, caller) {
+      let acc = accessForCaller(caller);
+      let role = caller.role;
+      let approved = caller.get('approved', false) == true;
+      let p = acc.get('permissions', {});
+      let o = acc.get('overrides', {});
       let fields = request.resource.data.diff(resource.data).affectedKeys();
       let scoped = true;
-      return request.auth != null && access().status == 'active' && raceScope(raceId) && request.resource.data.createdBy == resource.data.createdBy && request.resource.data.createdAt == resource.data.createdAt
+      return acc.status == 'active' && raceScopeForCaller(raceId, caller, acc) && request.resource.data.createdBy == resource.data.createdBy && request.resource.data.createdAt == resource.data.createdAt
         && (!fields.hasAny(['livestreamUrl']) || request.resource.data.get('livestreamUrl', '') == '' || isSafeHttpUrl(request.resource.data.livestreamUrl))
         && (!fields.hasAny(['routeMapUrl']) || request.resource.data.get('routeMapUrl', '') == '' || isSafeHttpUrl(request.resource.data.routeMapUrl))
         && (!fields.hasAny(['routeGpxUrl']) || request.resource.data.get('routeGpxUrl', '') == '' || isSafeStorageOrHttpsUrl(request.resource.data.routeGpxUrl))
         && fields.hasOnly(['name','date','inclusions','checkpoints','ageCategories','youngestRunnerAwardEnabled','oldestRunnerAwardEnabled','distances','entryCategories','registrationOpen','registrationCloseDate','onlinePaymentEnabled','paymentFeeMode','manualPaymentEnabled','manualPaymentInstructions','manualPaymentQrImage','posterImage','inclusionImage','routeGpxUrl','routeGpxFileName','routeGpxUploadedAt','raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','raceBibTemplatesByEntryCategory','raceBibShowRaffleNumber','raceBibShowQrCode','organizerIds','gunStartTime','waveStartTimes','completedAt','liveBroadcastEnabled','livestreamUrl','routeMapUrl','finishReviewWindowMs','disqualifiedBibs'])
-        && (!fields.hasAny(['finishReviewWindowMs']) || (permission('timing.correct') && request.resource.data.finishReviewWindowMs is number && request.resource.data.finishReviewWindowMs >= 0 && request.resource.data.finishReviewWindowMs <= 60000))
-        && (!fields.hasAny(['disqualifiedBibs']) || ((permission('timing.correct') || permission('timing.scan')) && request.resource.data.disqualifiedBibs is map && request.resource.data.disqualifiedBibs.size() <= 500))
-        && (!fields.hasAny(['name','date','inclusions']) || permission('race.edit'))
-        && (!fields.hasAny(['checkpoints','ageCategories','youngestRunnerAwardEnabled','oldestRunnerAwardEnabled','entryCategories']) || permission('race.categories'))
-        && (!fields.hasAny(['distances']) || (permission('race.categories') && permission('payment.configure')))
-        && (!fields.hasAny(['registrationOpen','registrationCloseDate']) || permission('race.registration') || (permission('timing.finish') && fields.hasAny(['completedAt']) && request.resource.data.registrationOpen == false))
-        && (!fields.hasAny(['onlinePaymentEnabled','paymentFeeMode','manualPaymentEnabled','manualPaymentInstructions','manualPaymentQrImage']) || permission('payment.configure'))
-        && (!fields.hasAny(['posterImage','inclusionImage','routeGpxUrl','routeGpxFileName','routeGpxUploadedAt']) || permission('race.artwork'))
-        && (!fields.hasAny(['raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','raceBibTemplatesByEntryCategory','raceBibShowRaffleNumber','raceBibShowQrCode']) || permission('race.bibs'))
-        && (!fields.hasAny(['organizerIds']) || (permission('race.team') && (resource.data.createdBy == request.auth.uid || isSuperAdmin())))
-        && (!fields.hasAny(['liveBroadcastEnabled']) || permission('hub.publish'))
-        && (!fields.hasAny(['livestreamUrl','routeMapUrl']) || permission('hub.manage'))
-        && (!fields.hasAny(['completedAt']) || (request.resource.data.get('completedAt', null) == null ? permission('timing.reopen') : permission('timing.finish') && getAfter(/databases/$(database)/documents/liveResults/$(raceId)).data.updatedAt == request.resource.data.completedAt))
-        && (!fields.hasAny(['gunStartTime','waveStartTimes']) || permission('timing.reset') || (permission('timing.start') && !resource.data.get('waveStartTimes', {}).diff(request.resource.data.get('waveStartTimes', {})).affectedKeys().hasAny(resource.data.get('waveStartTimes', {}).keys()) && resource.data.get('gunStartTime', null) == null));
+        && (!fields.hasAny(['finishReviewWindowMs']) || (permBase('timing.correct', role, approved, p, o) && request.resource.data.finishReviewWindowMs is number && request.resource.data.finishReviewWindowMs >= 0 && request.resource.data.finishReviewWindowMs <= 60000))
+        && (!fields.hasAny(['disqualifiedBibs']) || ((permBase('timing.correct', role, approved, p, o) || permBase('timing.scan', role, approved, p, o)) && request.resource.data.disqualifiedBibs is map && request.resource.data.disqualifiedBibs.size() <= 500))
+        && (!fields.hasAny(['name','date','inclusions']) || permBase('race.edit', role, approved, p, o))
+        && (!fields.hasAny(['checkpoints','ageCategories','youngestRunnerAwardEnabled','oldestRunnerAwardEnabled','entryCategories']) || permBase('race.categories', role, approved, p, o))
+        && (!fields.hasAny(['distances']) || (permBase('race.categories', role, approved, p, o) && permBase('payment.configure', role, approved, p, o)))
+        && (!fields.hasAny(['registrationOpen','registrationCloseDate']) || permBase('race.registration', role, approved, p, o) || (permBase('timing.finish', role, approved, p, o) && fields.hasAny(['completedAt']) && request.resource.data.registrationOpen == false))
+        && (!fields.hasAny(['onlinePaymentEnabled','paymentFeeMode','manualPaymentEnabled','manualPaymentInstructions','manualPaymentQrImage']) || permBase('payment.configure', role, approved, p, o))
+        && (!fields.hasAny(['posterImage','inclusionImage','routeGpxUrl','routeGpxFileName','routeGpxUploadedAt']) || permBase('race.artwork', role, approved, p, o))
+        && (!fields.hasAny(['raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','raceBibTemplatesByEntryCategory','raceBibShowRaffleNumber','raceBibShowQrCode']) || permBase('race.bibs', role, approved, p, o))
+        && (!fields.hasAny(['organizerIds']) || (permBase('race.team', role, approved, p, o) && (resource.data.createdBy == request.auth.uid || (role == 'superadmin'))))
+        && (!fields.hasAny(['liveBroadcastEnabled']) || permBase('hub.publish', role, approved, p, o))
+        && (!fields.hasAny(['livestreamUrl','routeMapUrl']) || permBase('hub.manage', role, approved, p, o))
+        && (!fields.hasAny(['completedAt']) || (request.resource.data.get('completedAt', null) == null ? permBase('timing.reopen', role, approved, p, o) : permBase('timing.finish', role, approved, p, o) && getAfter(/databases/$(database)/documents/liveResults/$(raceId)).data.updatedAt == request.resource.data.completedAt))
+        && (!fields.hasAny(['gunStartTime','waveStartTimes']) || permBase('timing.reset', role, approved, p, o) || (permBase('timing.start', role, approved, p, o) && !resource.data.get('waveStartTimes', {}).diff(request.resource.data.get('waveStartTimes', {})).affectedKeys().hasAny(resource.data.get('waveStartTimes', {}).keys()) && resource.data.get('gunStartTime', null) == null));
     }
     match /races/{raceId} {
       allow read: if true;
@@ -517,27 +551,38 @@ service cloud.firestore {
     }
 
     function selfRegistrationAllowed(data) {
-      let race = get(/databases/$(database)/documents/races/$(data.raceId)).data;
-      let raceDistances = race.get('distances', []);
-      let priceFree = raceDistances.size() > 0
-        ? (isKnownRaceDistance(raceDistances, data.distance) && !distanceRequiresPayment(raceDistances, data.distance))
-        : (!race.get('onlinePaymentEnabled', false) && !race.get('manualPaymentEnabled', false));
       return exists(/databases/$(database)/documents/races/$(data.raceId))
-        && race.get('registrationOpen', true)
+        && selfRegistrationWithRace(data, get(/databases/$(database)/documents/races/$(data.raceId)).data);
+    }
+
+    function selfRegistrationWithRace(data, race) {
+      let raceDistances = race.get('distances', []);
+      return race.get('registrationOpen', true)
         && isKnownRaceDistance(raceDistances, data.distance)
-        && (createsManualPaymentReservation(data) || (hasNoPaymentMetadata(data) && priceFree));
+        && (
+          (hasNoPaymentMetadata(data)
+            && (raceDistances.size() > 0
+              ? !distanceRequiresPayment(raceDistances, data.distance)
+              : (!race.get('onlinePaymentEnabled', false) && !race.get('manualPaymentEnabled', false))))
+          || createsManualPaymentReservationForRace(data, race, raceDistances)
+        );
     }
 
     function createsManualPaymentReservation(data) {
-      let raceExists = exists(/databases/$(database)/documents/races/$(data.raceId));
-      let race = get(/databases/$(database)/documents/races/$(data.raceId)).data;
-      let raceDistances = race.get('distances', []);
+      return exists(/databases/$(database)/documents/races/$(data.raceId))
+        && createsManualPaymentReservationForRace(
+          data,
+          get(/databases/$(database)/documents/races/$(data.raceId)).data,
+          get(/databases/$(database)/documents/races/$(data.raceId)).data.get('distances', [])
+        );
+    }
+
+    function createsManualPaymentReservationForRace(data, race, raceDistances) {
       return data.paymentStatus == 'pending'
         && data.paymentMethod == 'manual'
         && data.paymentAmount is number && data.paymentAmount >= 0
         && data.paymentReference is string && data.paymentReference.size() >= 4 && data.paymentReference.size() <= 100
         && !data.keys().hasAny(['paymentId', 'paymentPaidAt'])
-        && raceExists
         && race.manualPaymentEnabled == true
         && isKnownRaceDistance(raceDistances, data.distance)
         && manualAmountCoversDistance(raceDistances, data.distance, data.paymentAmount);
@@ -585,24 +630,46 @@ service cloud.firestore {
     // Doc id is {uid}_{raceId} - one entry per registration, so a runner can hold
     // many concurrent race registrations instead of a single overwritten profile.
     function runnerUpdateAllowed(regId) {
+      return request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && runnerUpdateAllowedWithCaller(regId, callerDoc().data);
+    }
+    function runnerUpdateAllowedWithCaller(regId, caller) {
+      let acc = accessForCaller(caller);
+      let role = caller.role;
+      let approved = caller.get('approved', false) == true;
+      let p = acc.get('permissions', {});
+      let o = acc.get('overrides', {});
       let fields = request.resource.data.diff(resource.data).affectedKeys();
-      let scoped = raceScope(resource.data.raceId);
-      return request.auth != null && access().status == 'active' && isValidRunnerProfile(request.resource.data) && hasValidRegistrationId(regId, request.resource.data)
+      let scoped = raceScopeForCaller(resource.data.raceId, caller, acc);
+      return acc.status == 'active' && isValidRunnerProfile(request.resource.data) && hasValidRegistrationId(regId, request.resource.data)
         && request.resource.data.uid == resource.data.uid && request.resource.data.raceId == resource.data.raceId && request.resource.data.createdAt == resource.data.createdAt
         && (organizerConfirmsManualPayment() || (paymentMetadataUnchanged()
           && fields.hasOnly(['fullName','gender','age','ageNotProvided','shirtSize','emergencyContactName','emergencyContactPhone','entryCategory','teamName','teamMembers','distance','bibNumber','chipId','startsAfterBib','kitClaimedAt'])
-          && (!fields.hasAny(['chipId']) || (permission('roster.chips') && scoped))
-          && (!fields.hasAny(['bibNumber']) || (permission('roster.bibs') && scoped))
-          && (!fields.hasAny(['startsAfterBib']) || (permission('roster.edit') && scoped))
-          && (!fields.hasAny(['kitClaimedAt']) || (permission('roster.kits') && scoped))
-          && (!fields.hasAny(['fullName','gender','age','ageNotProvided','shirtSize','emergencyContactName','emergencyContactPhone','entryCategory','teamName','teamMembers','distance']) || (permission('roster.edit') && scoped) || (permission('personal.register') && resource.data.uid == request.auth.uid && (!fields.hasAny(['distance','entryCategory']) || resource.data.get('paymentStatus', '') == '')))));
+          && (!fields.hasAny(['chipId']) || (permBase('roster.chips', role, approved, p, o) && scoped))
+          && (!fields.hasAny(['bibNumber']) || (permBase('roster.bibs', role, approved, p, o) && scoped))
+          && (!fields.hasAny(['startsAfterBib']) || (permBase('roster.edit', role, approved, p, o) && scoped))
+          && (!fields.hasAny(['kitClaimedAt']) || (permBase('roster.kits', role, approved, p, o) && scoped))
+          && (!fields.hasAny(['fullName','gender','age','ageNotProvided','shirtSize','emergencyContactName','emergencyContactPhone','entryCategory','teamName','teamMembers','distance']) || (permBase('roster.edit', role, approved, p, o) && scoped) || (permBase('personal.register', role, approved, p, o) && resource.data.uid == request.auth.uid && (!fields.hasAny(['distance','entryCategory']) || resource.data.get('paymentStatus', '') == '')))));
+    }
+    function runnerCreateAllowed(regId) {
+      return request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && isValidRunnerProfile(request.resource.data) && hasValidRegistrationId(regId, request.resource.data)
+        && runnerCreateAllowedWithCaller(callerDoc().data);
+    }
+    function runnerCreateAllowedWithCaller(caller) {
+      let acc = accessForCaller(caller);
+      let role = caller.role;
+      let approved = caller.get('approved', false) == true;
+      let p = acc.get('permissions', {});
+      let o = acc.get('overrides', {});
+      let scoped = raceScopeForCaller(request.resource.data.raceId, caller, acc);
+      return acc.status == 'active' && (hasNoPaymentMetadata(request.resource.data) || createsManualPaymentReservation(request.resource.data))
+        && !request.resource.data.keys().hasAny(['kitClaimedAt','chipId','startsAfterBib'])
+        && ((permBase('roster.add', role, approved, p, o) && scoped) || (permBase('roster.import', role, approved, p, o) && scoped) || (request.resource.data.get('isFreeSlot', false) && (permBase('roster.slots', role, approved, p, o) && scoped)) || (permBase('personal.register', role, approved, p, o) && request.resource.data.uid == request.auth.uid && !request.resource.data.get('isFreeSlot', false) && selfRegistrationAllowed(request.resource.data)));
     }
     match /runners/{regId} {
       allow read: if racePermission('roster.view', resource.data.raceId) || (isSignedIn() && resource.data.uid == request.auth.uid && (permission('personal.register') || permission('personal.results') || permission('personal.bibs') || permission('personal.certificates')));
-      allow create: if isValidRunnerProfile(request.resource.data) && hasValidRegistrationId(regId, request.resource.data)
-        && (hasNoPaymentMetadata(request.resource.data) || createsManualPaymentReservation(request.resource.data))
-        && !request.resource.data.keys().hasAny(['kitClaimedAt','chipId','startsAfterBib'])
-        && (racePermission('roster.add', request.resource.data.raceId) || racePermission('roster.import', request.resource.data.raceId) || (request.resource.data.get('isFreeSlot', false) && racePermission('roster.slots', request.resource.data.raceId)) || (permission('personal.register') && request.resource.data.uid == request.auth.uid && !request.resource.data.get('isFreeSlot', false) && selfRegistrationAllowed(request.resource.data)));
+      allow create: if runnerCreateAllowed(regId);
       allow update: if runnerUpdateAllowed(regId);
       allow delete: if (isSuperAdmin() && raceScope(resource.data.raceId)) || racePermission('roster.remove', resource.data.raceId) || (permission('personal.register') && resource.data.uid == request.auth.uid && resource.data.get('paymentStatus', '') != 'paid' && !resource.data.keys().hasAny(['chipId','kitClaimedAt']));
     }
@@ -758,6 +825,75 @@ service cloud.firestore {
       allow update: if permission('highlights.settings')
         && (!changed(['pinPodiumFirst','filterRaceId','hideExpired']) || permission('highlights.playlist'));
       allow delete: if isSuperAdmin();
+    }
+
+    function canAccessPresetData(presetData) {
+      return isSuperAdmin()
+        || callerDoc().data.role == 'admin'
+        || presetData.ownerUid == request.auth.uid
+        || request.auth.uid in presetData.get('editorIds', []);
+    }
+
+    function canAccessPreset(presetId) {
+      return exists(/databases/$(database)/documents/routePresets/$(presetId))
+        && canAccessPresetData(get(/databases/$(database)/documents/routePresets/$(presetId)).data);
+    }
+
+    match /routePresets/{presetId} {
+      allow read: if permission('routes.view') && canAccessPresetData(resource.data);
+      allow create: if isValidId(presetId) && permission('routes.create') && request.resource.data.ownerUid == request.auth.uid;
+      allow update: if permission('routes.edit') && canAccessPresetData(resource.data)
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && (!changed(['archived']) || permission('routes.archive'));
+      allow delete: if isSuperAdmin();
+
+      match /drafts/{draftId} {
+        allow read: if permission('routes.view') && canAccessPreset(presetId);
+        allow create, update: if isValidId(draftId) && permission('routes.edit') && canAccessPreset(presetId);
+        allow delete: if isSuperAdmin();
+
+        match /markers/{markerId} {
+          allow read: if permission('routes.view') && canAccessPreset(presetId);
+          allow create, update: if isValidId(markerId) && permission('routes.edit') && canAccessPreset(presetId);
+          allow delete: if isSuperAdmin() || (permission('routes.edit') && canAccessPreset(presetId));
+        }
+      }
+
+      match /versions/{versionId} {
+        allow read: if permission('routes.view') && canAccessPreset(presetId);
+        allow create: if isValidId(versionId) && permission('routes.publish') && canAccessPreset(presetId);
+        allow update, delete: if false;
+      }
+    }
+
+    match /races/{raceId}/routeBindings/{distanceId} {
+      allow read: if true;
+      allow create, update: if isValidId(distanceId) && racePermission('routes.assign', raceId);
+      allow delete: if isSuperAdmin() && raceScope(raceId);
+    }
+
+    match /publishedRaceRoutes/{publicationId} {
+      allow get, list: if resource.data.get('status', '') == 'published' || permission('routes.view');
+      allow create, update: if isValidId(publicationId) && (permission('routes.publish') || permission('routes.assign'));
+      allow delete: if isSuperAdmin();
+    }
+
+    match /raceRouteCatalog/{entryId} {
+      allow read: if true;
+      allow create, update: if isValidId(entryId) && (permission('routes.publish') || permission('routes.assign'));
+      allow delete: if isSuperAdmin();
+    }
+
+    match /routeJobs/{jobId} {
+      allow read: if permission('routes.view');
+      allow create, update: if isValidId(jobId) && permission('routes.edit');
+      allow delete: if isSuperAdmin();
+    }
+
+    match /routeAudit/{eventId} {
+      allow read: if permission('routes.view');
+      allow create: if isValidId(eventId) && (permission('routes.edit') || permission('routes.publish') || permission('routes.assign') || permission('routes.archive'));
+      allow update, delete: if false;
     }
   }
 }

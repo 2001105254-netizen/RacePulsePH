@@ -6,6 +6,7 @@ import { db } from '../firebase';
 import { embeddableMapUrl, safeExternalUrl, youtubeEmbedUrl } from '../lib/liveBroadcast';
 import { SAFE_IFRAME_SANDBOX } from '../lib/security';
 import { PublicLiveResults, Race } from '../types';
+import { Select } from './ui/Select';
 
 interface PublicLiveRaceHubProps {
   races: Race[];
@@ -78,12 +79,19 @@ export default function PublicLiveRaceHub({ races }: PublicLiveRaceHubProps) {
             </div>
           </div>
           {races.length > 1 && (
-            <label className="block sm:w-64">
-              <span className="sr-only">Choose live race</span>
-              <select value={activeRaceId} onChange={(event) => setActiveRaceId(event.target.value)} className="w-full min-h-11 glass-inset px-3 py-2 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50">
-                {races.map((race) => <option key={race.id} value={race.id}>{race.name}</option>)}
-              </select>
-            </label>
+            <div className="sm:w-64">
+              <label htmlFor="public-live-race-select" className="sr-only">Choose live race</label>
+              <Select
+                id="public-live-race-select"
+                value={activeRaceId}
+                onChange={setActiveRaceId}
+                searchable={races.length >= 6}
+                searchPlaceholder="Filter live races..."
+                surface="inset"
+                size="md"
+                options={races.map((race) => ({ value: race.id, label: race.name }))}
+              />
+            </div>
           )}
         </div>
       </div>
@@ -109,6 +117,18 @@ export default function PublicLiveRaceHub({ races }: PublicLiveRaceHubProps) {
           )}
 
           <h4 className="pt-2 text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2"><MapPinned className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> Course map</h4>
+          {activeRace.routeGpxUrl && (
+            <a
+              href={`/?race=${encodeURIComponent(activeRace.id)}&view=course`}
+              onClick={(e) => {
+                e.preventDefault();
+                window.dispatchEvent(new CustomEvent('racepulse:navigate', { detail: { url: `/?race=${encodeURIComponent(activeRace.id)}&view=course` } }));
+              }}
+              className="min-h-11 glass-inset px-5 py-3 text-sm font-semibold text-red-700 dark:text-red-400 hover:border-red-700/40 dark:hover:border-red-400/40 transition flex items-center justify-center gap-2"
+            >
+              <MapPinned className="w-4 h-4" aria-hidden="true" /> Open interactive Route Explorer
+            </a>
+          )}
           {mapEmbed ? (
             <iframe title={`${activeRace.name} course map`} src={mapEmbed} sandbox={SAFE_IFRAME_SANDBOX} referrerPolicy="strict-origin-when-cross-origin" className="w-full aspect-video rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)]" loading="lazy" />
           ) : mapUrl ? (

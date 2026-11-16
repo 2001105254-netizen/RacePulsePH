@@ -39,6 +39,7 @@ import {
 
 const PublicLiveRaceHub = lazy(() => import('./PublicLiveRaceHub'));
 const PublicRaceResults = lazy(() => import('./PublicRaceResults'));
+const RouteMap3D = lazy(() => import('./RouteMap3D'));
 import PodiumPulseReel from './PodiumPulseReel';
 
 interface PublicRaceLandingProps {
@@ -774,6 +775,22 @@ export default function PublicRaceLanding({
     setSelectedDistanceFilter('all');
   };
 
+  if (new URLSearchParams(window.location.search).get('view') === 'course') {
+    return (
+      <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-5xl flex-grow px-4 py-6 sm:px-6">
+        <a href={selectedRace ? `/?race=${encodeURIComponent(selectedRace.id)}` : '/'} className="inline-flex min-h-11 items-center font-semibold text-red-700 dark:text-red-400">
+          {selectedRace ? 'Back to race' : 'Browse races'}
+        </a>
+        <h1 className="mb-4 text-3xl font-semibold text-[var(--text-primary)]">{selectedRace ? `${selectedRace.name} course` : 'Race course'}</h1>
+        {selectedRace?.routeGpxUrl ? (
+          <Suspense fallback={<p role="status">Loading course viewer</p>}>
+            <RouteMap3D key={selectedRace.routeGpxUrl} gpxUrl={selectedRace.routeGpxUrl} fileName={selectedRace.routeGpxFileName} raceName={selectedRace.name} showProfile />
+          </Suspense>
+        ) : <p className="text-[var(--text-secondary)]" role="status">{loadState === 'loading' ? 'Loading race' : 'This race course is unavailable.'}</p>}
+      </main>
+    );
+  }
+
   return (
     <main
       id="main-content"
@@ -1376,26 +1393,38 @@ export default function PublicRaceLanding({
             </p>
           </div>
 
-          <Tabs
-            value={activeTab}
-            onValueChange={(val) => {
-              setActiveTab(val as 'upcoming' | 'completed');
-              setSelectedRaceId('');
-              syncRaceIdToUrl('');
-            }}
-            className="w-auto shrink-0"
-          >
-            <TabsList>
-              <TabsTrigger value="upcoming" className="min-h-11 gap-2">
-                <span>Upcoming</span>
-                <span className="font-mono">{activeRaces.length}</span>
-              </TabsTrigger>
-              <TabsTrigger value="completed" className="min-h-11 gap-2">
-                <span>Completed</span>
-                <span className="font-mono">{doneRaces.length}</span>
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <a
+              href="/routes"
+              onClick={(e) => {
+                e.preventDefault();
+                window.dispatchEvent(new CustomEvent('racepulse:navigate', { detail: { url: '/routes' } }));
+              }}
+              className="min-h-11 inline-flex items-center gap-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-red-700 hover:border-red-600/50 dark:text-red-400"
+            >
+              Route Explorer
+            </a>
+            <Tabs
+              value={activeTab}
+              onValueChange={(val) => {
+                setActiveTab(val as 'upcoming' | 'completed');
+                setSelectedRaceId('');
+                syncRaceIdToUrl('');
+              }}
+              className="w-auto shrink-0"
+            >
+              <TabsList>
+                <TabsTrigger value="upcoming" className="min-h-11 gap-2">
+                  <span>Upcoming</span>
+                  <span className="font-mono">{activeRaces.length}</span>
+                </TabsTrigger>
+                <TabsTrigger value="completed" className="min-h-11 gap-2">
+                  <span>Completed</span>
+                  <span className="font-mono">{doneRaces.length}</span>
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
         </div>
 
         {/* Tablet-Safe Search Bar + Horizontally Scrollable Distance Filter Row (No 7-chip cap) */}

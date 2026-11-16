@@ -20,6 +20,7 @@ export default defineConfig(() => {
               if (id.includes('preload-helper') || id.includes('commonjsHelpers')) return 'vendor-react';
               return undefined;
             }
+            if (id.includes('maplibre-gl') || id.includes('terra-draw')) return 'vendor-map';
             if (id.includes('firebase') || id.includes('@firebase')) return 'vendor-firebase';
             if (id.includes('xlsx')) return 'vendor-xlsx';
             if (id.includes('jspdf')) return 'vendor-pdf';
