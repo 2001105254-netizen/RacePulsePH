@@ -36,7 +36,7 @@ import { entryCategoryLabels, entryMemberCount, raceEntryCategories, runnerEntry
 import { isRaceRegistrationOpen } from '../../lib/raceRegistration';
 import { FriendProfile, Gender, Race, RaceEntryCategory, RunnerProfile } from '../../types';
 import { useAndroidBackHandler } from '../../lib/capacitorAndroid';
-import RouteMap3D from '../RouteMap3D';
+import EventCourseRunnerPanel from '../routes/EventCourseRunnerPanel';
 import DialogSurface from '../ui/DialogSurface';
 import { ValueSkeleton } from '../ui/MotionPrimitives';
 import { Select } from '../ui/Select';
@@ -1640,6 +1640,12 @@ export default function RunnerEventsPanel({
             {friendIdentity?.username && (
               <InviteFriendsToRace uid={uid} senderName={friendIdentity.displayName} race={selectedRace} />
             )}
+
+            <EventCourseRunnerPanel
+              race={selectedRace}
+              preferredDistance={distance !== 'Custom' ? distance : customDistance}
+              compact
+            />
           </aside>
         </div>
       </div>
@@ -2345,25 +2351,11 @@ export default function RunnerEventsPanel({
                     </p>
                   </div>
 
-                  {selectedRace.routeGpxUrl && (
-                    <>
-                      <a
-                        href={`/?race=${encodeURIComponent(selectedRace.id)}&view=course`}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          window.dispatchEvent(new CustomEvent('racepulse:navigate', { detail: { url: `/?race=${encodeURIComponent(selectedRace.id)}&view=course` } }));
-                        }}
-                        className="inline-flex min-h-11 items-center font-semibold text-red-700 dark:text-red-400"
-                      >
-                        Explore course and elevation
-                      </a>
-                      <RouteMap3D
-                        gpxUrl={selectedRace.routeGpxUrl}
-                        fileName={selectedRace.routeGpxFileName}
-                        raceName={selectedRace.name}
-                      />
-                    </>
-                  )}
+                  <EventCourseRunnerPanel
+                    race={selectedRace}
+                    preferredDistance={distanceFilter !== 'all' ? distanceFilter : distance}
+                    compact
+                  />
 
                   {friendIdentity?.username && (
                     <InviteFriendsToRace uid={uid} senderName={friendIdentity.displayName} race={selectedRace} />

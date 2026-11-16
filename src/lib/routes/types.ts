@@ -2,6 +2,8 @@ export type RouteSourceKind = 'gpx' | 'drawn' | 'gps-tracked' | 'mixed';
 
 export type RouteSurfaceType =
   | 'paved'
+  | 'dirt'
+  | 'grass'
   | 'gravel'
   | 'singletrack'
   | 'technical'

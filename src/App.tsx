@@ -66,7 +66,10 @@ const RouteStudioWrapper = lazy(async () => {
     }) {
       function GuardedStudio() {
         const { can } = useAccess();
-        if (!can('routes.view') && !can('race.view')) {
+        if (
+          profile.role === 'runner' ||
+          (!can('routes.create') && !can('routes.edit') && !can('routes.publish') && !can('routes.assign'))
+        ) {
           return (
             <main id="main-content" tabIndex={-1} className="mx-auto max-w-xl px-4 py-16 text-center space-y-4">
               <h1 className="text-2xl font-semibold text-[var(--text-primary)]">Route Studio access restricted</h1>

@@ -207,6 +207,8 @@ export function computeSurfaceAndGradientBreakdown(route: ProcessedRoute): {
 } {
   const surfaceDist: Record<RouteSurfaceType, number> = {
     paved: 0,
+    dirt: 0,
+    grass: 0,
     gravel: 0,
     singletrack: 0,
     technical: 0,
@@ -247,11 +249,13 @@ export function computeSurfaceAndGradientBreakdown(route: ProcessedRoute): {
 
   const totalM = Math.max(1, route.distanceM);
   const surfaceLabels: Record<RouteSurfaceType, string> = {
-    paved: 'Paved Road',
-    gravel: 'Gravel / Fire Road',
-    singletrack: 'Singletrack',
-    technical: 'Technical Rock/Roots',
-    boardwalk: 'Stairs / Boardwalk',
+    paved: 'Road (Paved / Asphalt)',
+    dirt: 'Off-Road (Dirt / Earth)',
+    grass: 'Off-Road (Grass / Field)',
+    gravel: 'Off-Road (Gravel / Fire Road)',
+    singletrack: 'Off-Road (Dirt Singletrack)',
+    technical: 'Off-Road (Rocky / Roots)',
+    boardwalk: 'Boardwalk / Stairs',
   };
   const surfaceBreakdown: SurfaceBreakdownItem[] = (Object.keys(surfaceLabels) as RouteSurfaceType[])
     .filter((k) => surfaceDist[k] > 0)
@@ -295,6 +299,8 @@ export function computePaceMultiplier(
 
   const surfacePenalty: Record<RouteSurfaceType, number> = {
     paved: 1.0,
+    dirt: 1.09,
+    grass: 1.1,
     gravel: 1.05,
     singletrack: 1.12,
     technical: 1.24,
@@ -507,6 +513,17 @@ export function buildCourseAnalytics(
     surfaceBreakdown
       .filter((s) => s.surface === 'singletrack' || s.surface === 'technical')
       .reduce((sum, s) => sum + s.pct, 0);
+  const offRoadPct =
+    surfaceBreakdown
+      .filter(
+        (s) =>
+          s.surface === 'dirt' ||
+          s.surface === 'grass' ||
+          s.surface === 'gravel' ||
+          s.surface === 'singletrack' ||
+          s.surface === 'technical',
+      )
+      .reduce((sum, s) => sum + s.pct, 0);
   const mudMeters = (scenarioCounts['mud-hazard'] || 0) + (scenarioCounts['river-crossing'] || 0);
   const steepWallPct = gradientBreakdown.find((g) => g.bucket === 'wall')?.pct || 0;
   const estFinishMin = Math.round(runningMinutes);
@@ -520,10 +537,10 @@ export function buildCourseAnalytics(
     shoeCategory = 'Aggressive Trail Shoes (Sticky Wet-Rock Grip)';
     lugDepthMm = '4.5 to 6.0 mm multi-directional lugs';
     reasons.push('Technical rock/roots or mud/river crossings detected on course.');
-  } else if (techPct >= 10 || (surfaceBreakdown.some((s) => s.surface === 'gravel' && s.pct >= 20))) {
-    shoeCategory = 'Door-to-Trail / Hybrid Gravel Trainer';
+  } else if (techPct >= 10 || offRoadPct >= 20) {
+    shoeCategory = 'Door-to-Trail / Hybrid Gravel & Dirt Trainer';
     lugDepthMm = '3.0 to 4.0 mm hybrid lugs';
-    reasons.push('Mixed paved and dirt/gravel surface transitions favor versatile outsole grip.');
+    reasons.push('Mixed road and off-road (dirt, grass, or gravel) transitions favor versatile outsole grip.');
   } else {
     reasons.push('Predominantly runnable road surface favors road cushioning.');
   }

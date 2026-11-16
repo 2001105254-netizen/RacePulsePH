@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, onSnapshot, query, setDoc, where } from 'firebase/firestore';
 import { auth, db } from '../../firebase';
 import type { Race } from '../../types';
 import { fetchGpxText, parseGpxRoute } from '../gpxRoute';
@@ -1231,6 +1231,166 @@ export async function ensurePilotCoursesSeeded(): Promise<void> {
   return pilotSeedPromise;
 }
 
+function toValidFirestoreId(raw: string, fallbackPrefix = 'id'): string {
+  const cleaned = raw.replace(/[^a-zA-Z0-9_-]/g, '_');
+  if (cleaned.length > 0 && cleaned.length <= 64) return cleaned;
+  let hash = 2166136261;
+  for (let i = 0; i < raw.length; i += 1) {
+    hash ^= raw.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  const suffix = (hash >>> 0).toString(36);
+  const head = (cleaned || fallbackPrefix).slice(0, Math.max(8, 63 - suffix.length));
+  return `${head}_${suffix}`.slice(0, 64);
+}
+
+function sanitizeForFirestore<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function persistPublicationToCloud(params: {
+  publication: PublishedRaceRoute;
+  catalogEntry?: RaceRouteCatalogEntry;
+  binding?: RaceRouteBinding;
+}): void {
+  if (typeof window === 'undefined' || !auth.currentUser) return;
+  const { publication, catalogEntry, binding } = params;
+  const pubDocId = toValidFirestoreId(publication.id, 'pub');
+  void setDoc(doc(db, 'publishedRaceRoutes', pubDocId), sanitizeForFirestore(publication), { merge: true }).catch(() => {});
+  if (catalogEntry) {
+    const catDocId = toValidFirestoreId(catalogEntry.id, 'cat');
+    void setDoc(doc(db, 'raceRouteCatalog', catDocId), sanitizeForFirestore(catalogEntry), { merge: true }).catch(() => {});
+  }
+  if (binding) {
+    const distDocId = toValidFirestoreId(binding.distanceId, 'dist');
+    void setDoc(
+      doc(db, 'races', binding.raceId, 'routeBindings', distDocId),
+      sanitizeForFirestore(binding),
+      { merge: true },
+    ).catch(() => {});
+  }
+}
+
+export function getPublishedCoursesForRace(raceId: string): PublishedRaceRoute[] {
+  const store = getRouteStoreSnapshot();
+  const seen = new Set<string>();
+  const results: PublishedRaceRoute[] = [];
+  for (const entry of Object.values(store.catalog)) {
+    if (entry.raceId !== raceId || entry.status !== 'published') continue;
+    const pub = store.publications[entry.currentPublicationId];
+    if (pub && pub.status === 'published' && !seen.has(pub.id)) {
+      seen.add(pub.id);
+      results.push(pub);
+    }
+  }
+  for (const binding of Object.values(store.bindings)) {
+    if (binding.raceId !== raceId) continue;
+    const pub = store.publications[binding.currentPublicationId];
+    if (pub && pub.status === 'published' && !seen.has(pub.id)) {
+      seen.add(pub.id);
+      results.push(pub);
+    }
+  }
+  return results.sort((a, b) => a.advertisedKm - b.advertisedKm || a.distanceLabel.localeCompare(b.distanceLabel));
+}
+
+export function subscribeRacePublishedCourses(
+  raceId: string,
+  onUpdate: (courses: PublishedRaceRoute[]) => void,
+): () => void {
+  let active = true;
+  let localCourses: PublishedRaceRoute[] = getPublishedCoursesForRace(raceId);
+  let remoteCatalogEntries: RaceRouteCatalogEntry[] = [];
+  const remotePublications = new Map<string, PublishedRaceRoute>();
+  const inFlightPubIds = new Set<string>();
+
+  const emit = () => {
+    if (!active) return;
+    const byDistance = new Map<string, PublishedRaceRoute>();
+    for (const c of localCourses) {
+      if (c.status === 'published') byDistance.set(c.distanceId, c);
+    }
+    for (const entry of remoteCatalogEntries) {
+      if (entry.raceId !== raceId || entry.status !== 'published') continue;
+      const pub = remotePublications.get(entry.currentPublicationId);
+      if (pub && pub.status === 'published') {
+        byDistance.set(pub.distanceId, pub);
+      }
+    }
+    const sorted = Array.from(byDistance.values()).sort(
+      (a, b) => a.advertisedKm - b.advertisedKm || a.distanceLabel.localeCompare(b.distanceLabel),
+    );
+    onUpdate(sorted);
+  };
+
+  emit();
+
+  const unsubLocal = subscribeRouteStore((store) => {
+    const nextLocal: PublishedRaceRoute[] = [];
+    const seen = new Set<string>();
+    for (const entry of Object.values(store.catalog)) {
+      if (entry.raceId !== raceId || entry.status !== 'published') continue;
+      const pub = store.publications[entry.currentPublicationId];
+      if (pub && pub.status === 'published' && !seen.has(pub.id)) {
+        seen.add(pub.id);
+        nextLocal.push(pub);
+      }
+    }
+    for (const binding of Object.values(store.bindings)) {
+      if (binding.raceId !== raceId) continue;
+      const pub = store.publications[binding.currentPublicationId];
+      if (pub && pub.status === 'published' && !seen.has(pub.id)) {
+        seen.add(pub.id);
+        nextLocal.push(pub);
+      }
+    }
+    localCourses = nextLocal;
+    emit();
+  });
+
+  const unsubRemote = onSnapshot(
+    query(collection(db, 'raceRouteCatalog'), where('raceId', '==', raceId), where('status', '==', 'published')),
+    (snap) => {
+      remoteCatalogEntries = snap.docs.map((d) => ({ ...(d.data() as RaceRouteCatalogEntry), id: d.id }));
+      for (const entry of remoteCatalogEntries) {
+        const pubId = entry.currentPublicationId;
+        if (!pubId || remotePublications.has(pubId) || inFlightPubIds.has(pubId)) continue;
+        const localPub = getRouteStoreSnapshot().publications[pubId];
+        if (localPub && localPub.status === 'published') {
+          remotePublications.set(pubId, localPub);
+          continue;
+        }
+        inFlightPubIds.add(pubId);
+        void getDoc(doc(db, 'publishedRaceRoutes', toValidFirestoreId(pubId, 'pub')))
+          .then((pubSnap) => {
+            if (!active) return;
+            if (pubSnap.exists()) {
+              const pub = { ...(pubSnap.data() as PublishedRaceRoute), id: pubSnap.id };
+              if (pub.status === 'published') {
+                remotePublications.set(pubId, pub);
+                emit();
+              }
+            }
+          })
+          .catch(() => {})
+          .finally(() => {
+            inFlightPubIds.delete(pubId);
+          });
+      }
+      emit();
+    },
+    () => {
+      // Offline / unauthenticated fallback keeps local courses intact
+    },
+  );
+
+  return () => {
+    active = false;
+    unsubLocal();
+    unsubRemote();
+  };
+}
+
 export function subscribePublishedCatalog(
   onUpdate: (entries: RaceRouteCatalogEntry[]) => void,
 ): () => void {
@@ -1283,7 +1443,7 @@ export async function loadPublishedCourse(
   let currentPubId = store.bindings[bindingKey]?.currentPublicationId || store.catalog[bindingKey]?.currentPublicationId;
 
   try {
-    const bindingSnap = await getDoc(doc(db, 'races', raceId, 'routeBindings', distanceId));
+    const bindingSnap = await getDoc(doc(db, 'races', raceId, 'routeBindings', toValidFirestoreId(distanceId, 'dist')));
     if (bindingSnap.exists()) {
       const data = bindingSnap.data() as RaceRouteBinding;
       if (data.currentPublicationId) currentPubId = data.currentPublicationId;
@@ -1299,7 +1459,7 @@ export async function loadPublishedCourse(
 
   let publication = store.publications[targetPubId] || null;
   try {
-    const pubSnap = await getDoc(doc(db, 'publishedRaceRoutes', targetPubId));
+    const pubSnap = await getDoc(doc(db, 'publishedRaceRoutes', toValidFirestoreId(targetPubId, 'pub')));
     if (pubSnap.exists()) {
       publication = { ...(pubSnap.data() as PublishedRaceRoute), id: pubSnap.id };
     }
@@ -1874,7 +2034,8 @@ export function bindAndPublishRaceRouteCommand(input: {
   }
 
   const now = new Date().toISOString();
-  const publicationId = `pub_${input.race.id}_${input.distanceId}_v${version.versionNumber}_${Date.now().toString(36)}`;
+  const rawPubId = `pub_${input.race.id}_${input.distanceId}_v${version.versionNumber}_${Date.now().toString(36)}`;
+  const publicationId = toValidFirestoreId(rawPubId, 'pub');
   const processed = processCanonicalGeometry(version.canonicalGeometry);
   const chapters: RouteChapter[] = deriveDefaultChapters(processed, mergedMarkers);
   const mapLayerProvenance = prepareCourseMapLayerManifest(version.canonicalGeometry, {
@@ -1972,6 +2133,7 @@ export function bindAndPublishRaceRouteCommand(input: {
   });
 
   saveToStorage(store);
+  persistPublicationToCloud({ publication, catalogEntry, binding });
   return { binding, publication, catalogEntry };
 }
 
@@ -1988,14 +2150,17 @@ export function withdrawPublicationCommand(input: {
   const store = structuredClone(getRouteStoreSnapshot());
   const pub = store.publications[input.publicationId];
   if (!pub) throw new Error('Publication not found.');
-  store.publications[input.publicationId] = {
+  const updatedPub: PublishedRaceRoute = {
     ...pub,
     status: 'withdrawn',
     withdrawalReason: reason,
   };
+  store.publications[input.publicationId] = updatedPub;
   const catKey = `${input.raceId}_${input.distanceId}`;
+  let updatedCat: RaceRouteCatalogEntry | undefined;
   if (store.catalog[catKey]) {
-    store.catalog[catKey] = { ...store.catalog[catKey], status: 'withdrawn' };
+    updatedCat = { ...store.catalog[catKey], status: 'withdrawn' };
+    store.catalog[catKey] = updatedCat;
   }
   appendAudit(store, {
     action: 'withdraw',
@@ -2007,6 +2172,7 @@ export function withdrawPublicationCommand(input: {
     reason,
   });
   saveToStorage(store);
+  persistPublicationToCloud({ publication: updatedPub, catalogEntry: updatedCat });
 }
 
 export function rollbackPublicationCommand(input: {
@@ -2035,8 +2201,9 @@ export function rollbackPublicationCommand(input: {
     withdrawalReason: undefined,
   };
   store.publications[target.id] = restored;
+  let updatedBinding: RaceRouteBinding | undefined;
   if (binding) {
-    store.bindings[bindingKey] = {
+    updatedBinding = {
       ...binding,
       currentPublicationId: target.id,
       versionId: target.versionId,
@@ -2045,14 +2212,17 @@ export function rollbackPublicationCommand(input: {
       updatedAt: new Date().toISOString(),
       updatedBy: input.actorUid,
     };
+    store.bindings[bindingKey] = updatedBinding;
   }
+  let updatedCat: RaceRouteCatalogEntry | undefined;
   if (store.catalog[bindingKey]) {
-    store.catalog[bindingKey] = {
+    updatedCat = {
       ...store.catalog[bindingKey],
       currentPublicationId: target.id,
       versionNumber: target.versionNumber,
       status: 'published',
     };
+    store.catalog[bindingKey] = updatedCat;
   }
   appendAudit(store, {
     action: 'rollback',
@@ -2065,6 +2235,11 @@ export function rollbackPublicationCommand(input: {
     reason: input.reason?.trim() || `Rolled back to v${target.versionNumber}`,
   });
   saveToStorage(store);
+  persistPublicationToCloud({
+    publication: restored,
+    catalogEntry: updatedCat,
+    binding: updatedBinding,
+  });
   return restored;
 }
 

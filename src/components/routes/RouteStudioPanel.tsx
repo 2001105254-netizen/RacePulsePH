@@ -214,6 +214,17 @@ export default function RouteStudioPanel({
 
   // Versioning, Race Binding, Publish, Withdraw & Migration State
   const [reviewNotes, setReviewNotes] = useState('');
+  const requestedUrlParamsRef = useRef<{ raceId: string; distanceId: string; applied: boolean }>(
+    (() => {
+      if (typeof window === 'undefined') return { raceId: '', distanceId: '', applied: true };
+      const params = new URLSearchParams(window.location.search);
+      return {
+        raceId: params.get('raceId') || '',
+        distanceId: params.get('distanceId') || '',
+        applied: false,
+      };
+    })(),
+  );
   const [targetRaceId, setTargetRaceId] = useState('');
   const [targetDistanceId, setTargetDistanceId] = useState('');
   const [selectedVersionId, setSelectedVersionId] = useState('');
@@ -340,6 +351,18 @@ export default function RouteStudioPanel({
     if (allRaces.length === 0) {
       if (targetRaceId) setTargetRaceId('');
       return;
+    }
+    if (!requestedUrlParamsRef.current.applied && requestedUrlParamsRef.current.raceId) {
+      const requestedRace = allRaces.find((r) => r.id === requestedUrlParamsRef.current.raceId);
+      if (requestedRace) {
+        requestedUrlParamsRef.current.applied = true;
+        setTargetRaceId(requestedRace.id);
+        const reqDist = requestedUrlParamsRef.current.distanceId;
+        if (reqDist && requestedRace.distances.some((d) => d.id === reqDist)) {
+          setTargetDistanceId(reqDist);
+        }
+        return;
+      }
     }
     if (!targetRaceId || !allRaces.some((r) => r.id === targetRaceId)) {
       setTargetRaceId(allRaces[0].id);
@@ -1227,10 +1250,129 @@ export default function RouteStudioPanel({
       setPublishReason('');
       setOverrideFreeze(false);
       setStatusNotice(
-        `Published ${res.publication.raceName} ${res.publication.distanceLabel} (v${res.publication.versionNumber}).`,
+        `Published ${res.publication.raceName} ${res.publication.distanceLabel} (v${res.publication.versionNumber}). Runners can now view this map and course stats on the event.`,
       );
     } catch (err) {
       setErrorNotice(err instanceof Error ? err.message : 'Could not publish course binding.');
+    }
+  };
+
+  const handleQuickAttachAndPublish = () => {
+    if (!targetRace || !targetDistanceId || !activePreset) {
+      setErrorNotice('Select an event and distance category first.');
+      return;
+    }
+    if (processedRoute.canonicalGeometry.isCanvasCleared || processedRoute.points.length < 2) {
+      setErrorNotice('Draw, paint, or import a route with at least 2 points before attaching it to the event.');
+      return;
+    }
+    setErrorNotice('');
+    try {
+      let workingMarkers = [...markers];
+      const hasStart = workingMarkers.some((m) => m.kind === 'start');
+      const hasFinish = workingMarkers.some((m) => m.kind === 'finish');
+      if (!hasStart) {
+        const startPt = processedRoute.points[0];
+        workingMarkers = [
+          {
+            id: `m_start_${Date.now().toString(36)}`,
+            kind: 'start',
+            name: 'Start',
+            description: 'Course start arch',
+            latitude: startPt.latitude,
+            longitude: startPt.longitude,
+            chainageM: 0,
+            segmentIndex: 0,
+            pointIndex: 0,
+            passNumber: 1,
+            offsetMeters: 0,
+            needsReview: false,
+            offCourseBlocked: false,
+            offCourseConfirmed: false,
+            services: ['Timing mat'],
+            photos: [],
+            visibility: 'public',
+          },
+          ...workingMarkers,
+        ];
+      }
+      if (!hasFinish) {
+        const lastIdx = processedRoute.points.length - 1;
+        const endPt = processedRoute.points[lastIdx];
+        const lastSegIdx = Math.max(0, processedRoute.canonicalSegments.length - 1);
+        const lastSegLen = Math.max(1, processedRoute.canonicalSegments[lastSegIdx]?.length || 1);
+        workingMarkers = [
+          ...workingMarkers,
+          {
+            id: `m_finish_${Date.now().toString(36)}`,
+            kind: 'finish',
+            name: 'Finish',
+            description: 'Course finish arch',
+            latitude: endPt.latitude,
+            longitude: endPt.longitude,
+            chainageM: processedRoute.distanceM,
+            segmentIndex: lastSegIdx,
+            pointIndex: lastSegLen - 1,
+            passNumber: 1,
+            offsetMeters: 0,
+            needsReview: false,
+            offCourseBlocked: false,
+            offCourseConfirmed: false,
+            services: ['Timing mat', 'Water'],
+            photos: [],
+            visibility: 'public',
+          },
+        ];
+      }
+
+      if (!hasStart || !hasFinish) {
+        setMarkers(workingMarkers);
+      }
+
+      const saved = savePresetDraftCommand({
+        actorUid: profile.uid,
+        actorName: profile.displayName || profile.email,
+        presetId: activePreset.id,
+        draftId: activePreset.latestDraftId,
+        expectedRevision,
+        title: draftTitle,
+        region: draftRegion,
+        geometry,
+        markers: workingMarkers,
+        sourceFileName,
+        editSummary: editSummary || `Attached to ${targetRace.name}`,
+      });
+      setExpectedRevision(saved.revision);
+      setDirty(false);
+
+      const ver = createPresetVersionCommand({
+        actorUid: profile.uid,
+        actorName: profile.displayName || profile.email,
+        presetId: activePreset.id,
+        draftId: activePreset.latestDraftId,
+        expectedRevision: saved.revision,
+        reviewNotes: reviewNotes || `Attached to ${targetRace.name}`,
+      });
+      setSelectedVersionId(ver.id);
+
+      const res = bindAndPublishRaceRouteCommand({
+        actorUid: profile.uid,
+        actorName: profile.displayName || profile.email,
+        race: targetRace,
+        distanceId: targetDistanceId,
+        presetId: activePreset.id,
+        versionId: ver.id,
+        checkpointLinks,
+        overrideFreeze,
+        reason: publishReason,
+      });
+      setPublishReason('');
+      setOverrideFreeze(false);
+      setStatusNotice(
+        `Attached and published to ${res.publication.raceName} (${res.publication.distanceLabel} v${res.publication.versionNumber}). Runners can now inspect the map and stats on the event.`,
+      );
+    } catch (err) {
+      setErrorNotice(err instanceof Error ? err.message : 'Could not attach and publish route.');
     }
   };
 
@@ -1686,10 +1828,18 @@ export default function RouteStudioPanel({
             <button
               type="button"
               onClick={handleSaveDraft}
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-red-700 px-4 text-xs font-semibold text-white hover:bg-red-600"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-4 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
             >
               <Save className="h-4 w-4" aria-hidden="true" />
               Save draft {dirty ? '*' : ''}
+            </button>
+            <button
+              type="button"
+              onClick={handleQuickAttachAndPublish}
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-red-700 px-4 text-xs font-semibold text-white hover:bg-red-600"
+            >
+              <Flag className="h-4 w-4" aria-hidden="true" />
+              Attach &amp; Publish to Event
             </button>
           </div>
         </div>
@@ -3265,6 +3415,13 @@ export default function RouteStudioPanel({
                 className="min-h-11 rounded-xl bg-red-700 px-4 text-xs font-semibold text-white hover:bg-red-600 disabled:opacity-50"
               >
                 Publish course to {targetDistanceId}
+              </button>
+              <button
+                type="button"
+                onClick={handleQuickAttachAndPublish}
+                className="min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-4 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+              >
+                Save, version &amp; attach draft to {targetDistanceId || 'event'}
               </button>
               {currentPublication && onNavigateUrl && (
                 <a

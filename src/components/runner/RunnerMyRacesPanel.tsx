@@ -33,7 +33,7 @@ import { ensureRaceBibCustomFont, raceBibFontFamily } from '../../lib/raceBibFon
 import { runnerDivisionLabel, runnerEntryCategory } from '../../lib/raceEntry';
 import { checkpointType, computeResults, getWaveStartTime } from '../../lib/timing';
 import { ChipRead, PublicLeaderboardEntry, PublicLiveResults, Race, RunnerProfile } from '../../types';
-import RouteMap3D from '../RouteMap3D';
+import EventCourseRunnerPanel from '../routes/EventCourseRunnerPanel';
 import { ValueSkeleton } from '../ui/MotionPrimitives';
 import RaceTimeText from '../ui/RaceTimeText';
 import {
@@ -514,20 +514,8 @@ function RunnerPassInspector({
         />
       )}
 
-      {activeRace?.routeGpxUrl && (
-        <div className="space-y-2">
-          <a
-            href={`/?race=${encodeURIComponent(activeRace.id)}&view=course`}
-            onClick={(e) => {
-              e.preventDefault();
-              window.dispatchEvent(new CustomEvent('racepulse:navigate', { detail: { url: `/?race=${encodeURIComponent(activeRace.id)}&view=course` } }));
-            }}
-            className="inline-flex min-h-11 items-center font-semibold text-red-700 dark:text-red-400"
-          >
-            Explore course and elevation
-          </a>
-          <RouteMap3D gpxUrl={activeRace.routeGpxUrl} fileName={activeRace.routeGpxFileName} raceName={activeRace.name} />
-        </div>
+      {activeRace && (
+        <EventCourseRunnerPanel race={activeRace} preferredDistance={runnerProfile.distance} />
       )}
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">

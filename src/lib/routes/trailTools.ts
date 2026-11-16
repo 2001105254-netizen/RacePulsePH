@@ -41,10 +41,12 @@ export interface GpsTrailState {
 }
 
 export const SURFACE_LABELS: Record<RouteSurfaceType, string> = {
-  paved: 'Paved Road',
-  gravel: 'Gravel / Fire Road',
-  singletrack: 'Singletrack Trail',
-  technical: 'Technical Rock / Roots',
+  paved: 'Road (Paved / Asphalt)',
+  dirt: 'Off-Road (Dirt / Earth)',
+  grass: 'Off-Road (Grass / Field)',
+  gravel: 'Off-Road (Gravel / Fire Road)',
+  singletrack: 'Off-Road (Dirt Singletrack)',
+  technical: 'Off-Road (Rocky / Roots)',
   boardwalk: 'Boardwalk / Stairs',
 };
 

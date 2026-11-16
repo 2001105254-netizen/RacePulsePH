@@ -4,6 +4,8 @@ import { collection, doc, onSnapshot, setDoc, updateDoc, deleteField, deleteDoc,
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { auth, db, storage } from '../firebase';
 import { resizeImageToDataUrl, resizeImageToDataUrlContain } from '../lib/image';
+import { subscribeRacePublishedCourses } from '../lib/routes/routeStore';
+import type { PublishedRaceRoute } from '../lib/routes/types';
 import { AgeCategory, CheckpointType, Gender, Race, RaceBibCustomFont, RaceBibFont, RaceBibTemplate, RaceDistance, RaceEntryCategory, RunnerProfile, UserProfile } from '../types';
 import { entryCategoryLabels, raceEntryCategories } from '../lib/raceEntry';
 import { generateRunnerRosterPdf } from '../lib/runnerReport';
@@ -194,6 +196,15 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
   const [bibDownloadRace, setBibDownloadRace] = useState<Race | null>(null);
   const [qrRace, setQrRace] = useState<Race | null>(null);
   const [freeSlotRace, setFreeSlotRace] = useState<Race | null>(null);
+  const [attachedCourses, setAttachedCourses] = useState<PublishedRaceRoute[]>([]);
+
+  useEffect(() => {
+    if (!editingId) {
+      setAttachedCourses([]);
+      return;
+    }
+    return subscribeRacePublishedCourses(editingId, setAttachedCourses);
+  }, [editingId]);
 
   useAndroidBackHandler(Boolean(qrRace), () => setQrRace(null));
   useAndroidBackHandler(Boolean(bibDownloadRace), () => {
@@ -1033,21 +1044,66 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
               <div className="flex items-start gap-3">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-red-500/10 text-red-700 dark:text-red-400"><MapPinned className="h-5 w-5" /></span>
                 <div>
-                  <h4 className="text-sm font-semibold text-[var(--text-primary)]">Runner route, GPX</h4>
-                  <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">Upload the official GPX route or use Route Studio to assign per-distance courses, checkpoints, and photo landmarks.</p>
+                  <h4 className="text-sm font-semibold text-[var(--text-primary)]">Runner route, GPX &amp; Route Studio maps</h4>
+                  <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">Upload the official GPX route or use Route Studio to attach per-distance courses with terrain surfaces, elevation, checkpoints, and photo landmarks.</p>
                 </div>
               </div>
               <a
-                href="/route-studio"
+                href={editingId ? `/route-studio?raceId=${encodeURIComponent(editingId)}` : '/route-studio'}
                 onClick={(e) => {
                   e.preventDefault();
-                  window.dispatchEvent(new CustomEvent('racepulse:navigate', { detail: { url: '/route-studio' } }));
+                  window.dispatchEvent(
+                    new CustomEvent('racepulse:navigate', {
+                      detail: { url: editingId ? `/route-studio?raceId=${encodeURIComponent(editingId)}` : '/route-studio' },
+                    }),
+                  );
                 }}
                 className="inline-flex min-h-11 shrink-0 items-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-red-700 hover:border-red-600/50 dark:text-red-400"
               >
-                Open Route Studio
+                {editingId ? 'Attach / Edit in Route Studio' : 'Open Route Studio'}
               </a>
             </div>
+            {editingId && (
+              <div className="mt-3 space-y-2">
+                {attachedCourses.length > 0 ? (
+                  attachedCourses.map((course) => (
+                    <div
+                      key={course.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-[12px] border border-emerald-500/25 bg-emerald-500/5 px-3 py-2.5 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-semibold text-[var(--text-primary)]">
+                          {course.distanceLabel} · {(course.measuredDistanceM / 1000).toFixed(2)} km · +{Math.round(course.elevationGainM)} m gain
+                        </p>
+                        <p className="text-[var(--text-secondary)]">
+                          Published v{course.versionNumber} · Visible to all runners on event details
+                        </p>
+                      </div>
+                      <a
+                        href={`/route-studio?raceId=${encodeURIComponent(editingId)}&distanceId=${encodeURIComponent(course.distanceId)}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          window.dispatchEvent(
+                            new CustomEvent('racepulse:navigate', {
+                              detail: {
+                                url: `/route-studio?raceId=${encodeURIComponent(editingId)}&distanceId=${encodeURIComponent(course.distanceId)}`,
+                              },
+                            }),
+                          );
+                        }}
+                        className="inline-flex min-h-9 items-center rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+                      >
+                        Edit course
+                      </a>
+                    </div>
+                  ))
+                ) : (
+                  <p className="rounded-[12px] border border-[var(--border-subtle)] bg-[var(--surface-card)] px-3 py-2 text-xs text-[var(--text-secondary)]">
+                    No Route Studio course attached yet. Open Route Studio above to draw or import a route, tag ground surfaces (road, dirt, grass, rocky), and click Attach &amp; Publish to Event.
+                  </p>
+                )}
+              </div>
+            )}
             <input disabled={(!!editingId && !can('race.artwork'))} ref={routeGpxInputRef} type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml" onChange={handleRouteGpxSelected} className="hidden" />
             {routeGpxUrl || routeGpxFile ? (
               <div className="mt-4 flex flex-col gap-3 rounded-[12px] border border-emerald-500/25 bg-emerald-500/5 p-3 sm:flex-row sm:items-center sm:justify-between">

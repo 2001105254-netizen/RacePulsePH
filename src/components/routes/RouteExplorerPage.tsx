@@ -1181,18 +1181,20 @@ export default function RouteExplorerPage({
                     <Layers className="h-4 w-4" aria-hidden="true" />
                     3D terrain (GLO-30)
                   </button>
-                  <button
-                    type="button"
-                    aria-pressed={simulateTileFailure}
-                    onClick={() => setSimulateTileFailure((v) => !v)}
-                    className={`min-h-11 rounded-xl border px-3 text-xs font-semibold transition ${
-                      simulateTileFailure
-                        ? 'border-amber-600 bg-amber-600 text-white'
-                        : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-secondary)] hover:border-red-600/50'
-                    }`}
-                  >
-                    {simulateTileFailure ? 'Restore tiles' : 'Test tile fallback'}
-                  </button>
+                  {canEditRoutes && (
+                    <button
+                      type="button"
+                      aria-pressed={simulateTileFailure}
+                      onClick={() => setSimulateTileFailure((v) => !v)}
+                      className={`min-h-11 rounded-xl border px-3 text-xs font-semibold transition ${
+                        simulateTileFailure
+                          ? 'border-amber-600 bg-amber-600 text-white'
+                          : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-secondary)] hover:border-red-600/50'
+                      }`}
+                    >
+                      {simulateTileFailure ? 'Restore tiles' : 'Test tile fallback'}
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1250,7 +1252,7 @@ export default function RouteExplorerPage({
                   <span>
                     Imagery: {publication?.mapLayerProvenance?.imagerySource || SENTINEL2_IMAGERY_SOURCE}
                   </span>
-                  {tileTelemetry && (
+                  {canEditRoutes && tileTelemetry && (
                     <span>
                       Imagery requests: {tileTelemetry.imageryRequestsCount} ({(tileTelemetry.imageryBytesTransferred / 1024).toFixed(1)} KB) · DEM requests: {tileTelemetry.demRequestsCount} ({(tileTelemetry.demBytesTransferred / 1024).toFixed(1)} KB)
                       {publication &&

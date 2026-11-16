@@ -15,6 +15,7 @@ import {
   createPresetVersionCommand,
   DEMO_BAGUIO_RACE,
   duplicatePresetCommand,
+  getPublishedCoursesForRace,
   getRouteStoreSnapshot,
   isDemoSeedEnabled,
   migrateLegacyRaceGpxCommand,
@@ -52,6 +53,7 @@ import {
   removeStartPointFromGeometry,
   sampleTerrainElevationForGeometry,
   smoothPaintedStroke,
+  SURFACE_LABELS,
 } from '../src/lib/routes/trailTools';
 import { buildCourseAnalytics } from '../src/lib/routes/courseAnalytics';
 import { matchRouteLocation } from '../src/lib/routes/routing';
@@ -826,4 +828,43 @@ test('Phase 1-4: Philippine archipelago clipping, GLO-30 Terrarium, Cebu & Bukid
   });
   assert.equal(outsideManifest.validation.passed, false);
   assert.equal(outsideManifest.validation.withinPhilippineBounds, false);
+});
+
+test('supports road, off-road dirt, grass, rocky surface analytics and per-race published course lookup', () => {
+  assert.match(SURFACE_LABELS.paved, /Road/i);
+  assert.match(SURFACE_LABELS.dirt, /Dirt/i);
+  assert.match(SURFACE_LABELS.grass, /Grass/i);
+  assert.match(SURFACE_LABELS.technical, /Rocky/i);
+
+  const mixedGeom = {
+    version: 1 as const,
+    sourceKind: 'drawn' as const,
+    segments: [
+      {
+        id: 'seg_mixed_ground',
+        name: 'Mixed Event Course',
+        sourceKind: 'drawn' as const,
+        points: [
+          { lat: 16.410, lon: 120.595, ele: 1450, surfaceType: 'paved' as const },
+          { lat: 16.414, lon: 120.599, ele: 1475, surfaceType: 'paved' as const },
+          { lat: 16.418, lon: 120.603, ele: 1510, surfaceType: 'dirt' as const },
+          { lat: 16.422, lon: 120.607, ele: 1545, surfaceType: 'grass' as const },
+          { lat: 16.426, lon: 120.611, ele: 1580, surfaceType: 'technical' as const },
+        ],
+      },
+    ],
+  };
+
+  const processed = processCanonicalGeometry(mixedGeom);
+  const analytics = buildCourseAnalytics(processed, []);
+  const surfaces = analytics.surfaceBreakdown.map((item) => item.surface);
+  assert.ok(surfaces.includes('paved'));
+  assert.ok(surfaces.includes('dirt'));
+  assert.ok(surfaces.includes('grass'));
+  assert.ok(surfaces.includes('technical'));
+  assert.ok(analytics.gear.shoeCategory.length > 0);
+
+  const cebuPublished = getPublishedCoursesForRace(PILOT_CEBU_RACE.id);
+  assert.equal(cebuPublished.length, 1);
+  assert.equal(cebuPublished[0].distanceId, '21k');
 });

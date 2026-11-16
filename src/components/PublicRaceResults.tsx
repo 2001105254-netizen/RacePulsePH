@@ -9,7 +9,7 @@ import { db } from '../firebase';
 import { downloadFinisherCertificate } from '../lib/finisherCertificate';
 import { isRaceRegistrationOpen } from '../lib/raceRegistration';
 import { PublicLeaderboardEntry, PublicLiveResults, Race, RunnerResult } from '../types';
-import RouteMap3D from './RouteMap3D';
+import EventCourseRunnerPanel from './routes/EventCourseRunnerPanel';
 
 interface PublicRaceResultsProps {
   race: Race;
@@ -184,21 +184,7 @@ export default function PublicRaceResults({ race, onRegister, registerLabel = 'S
       )}
 
       <div className={embedded ? 'space-y-4' : 'p-4 sm:p-6 space-y-4'}>
-        {race.routeGpxUrl && (
-          <>
-            <a
-              href={`/?race=${encodeURIComponent(race.id)}&view=course`}
-              onClick={(e) => {
-                e.preventDefault();
-                window.dispatchEvent(new CustomEvent('racepulse:navigate', { detail: { url: `/?race=${encodeURIComponent(race.id)}&view=course` } }));
-              }}
-              className="inline-flex min-h-11 items-center font-semibold text-red-700 dark:text-red-400"
-            >
-              Explore course and elevation
-            </a>
-            <RouteMap3D gpxUrl={race.routeGpxUrl} fileName={race.routeGpxFileName} raceName={race.name} />
-          </>
-        )}
+        <EventCourseRunnerPanel race={race} preferredDistance={distance !== 'all' ? distance : undefined} />
         {summary === undefined ? (
           <ResultsSkeletonList rows={5} />
         ) : summary === null || officialResults.length === 0 ? (

@@ -170,6 +170,8 @@ function colorForSurface(
   }
   if (scenario === 'stairs' || surface === 'boardwalk') return '#0284c7';
   if (surface === 'gravel') return '#d97706';
+  if (surface === 'dirt') return '#b45309';
+  if (surface === 'grass') return '#16a34a';
   if (surface === 'singletrack') return '#15803d';
   return theme === 'dark' ? '#d4d4d8' : '#3f3f46';
 }
