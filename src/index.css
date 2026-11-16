@@ -963,3 +963,61 @@ html::-webkit-scrollbar-thumb:active,
     color: var(--text-secondary);
   }
 }
+
+/* Visual decimal marker for 7-digit fractional race precision without altering raw string values */
+.rp-frac-time::before {
+  content: '.';
+}
+
+/* Scrollable single-row tabs with hidden scrollbar and dynamic edge fade */
+@property --rp-tab-fade-start {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --rp-tab-fade-end {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+.rp-tablist-scroll {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  --rp-tab-fade-start: 0px;
+  --rp-tab-fade-end: 0px;
+}
+
+.rp-tablist-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.rp-tablist-scroll > button {
+  flex: none;
+  scroll-snap-align: start;
+}
+
+@supports (mask-image: linear-gradient(to right, black, black)) {
+  .rp-tablist-scroll {
+    mask-image: linear-gradient(
+      to right,
+      transparent 0px,
+      black var(--rp-tab-fade-start),
+      black calc(100% - var(--rp-tab-fade-end)),
+      transparent 100%
+    );
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent 0px,
+      black var(--rp-tab-fade-start),
+      black calc(100% - var(--rp-tab-fade-end)),
+      transparent 100%
+    );
+    transition: --rp-tab-fade-start 160ms ease, --rp-tab-fade-end 160ms ease;
+  }
+}

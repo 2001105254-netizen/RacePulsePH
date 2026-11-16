@@ -22,6 +22,8 @@ function createUnsubscribeToken(secret, email) {
   return `${payload}.${sig}`;
 }
 
+const UNSUBSCRIBE_TOKEN_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
+
 function verifyUnsubscribeToken(secret, token) {
   if (typeof token !== 'string' || !token.includes('.')) return null;
   const [payload, sig] = token.split('.', 2);
@@ -32,7 +34,10 @@ function verifyUnsubscribeToken(secret, token) {
   if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) return null;
   try {
     const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    if (typeof parsed?.email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parsed.email)) return null;
+    if (typeof parsed?.email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(parsed.email)) return null;
+    if (typeof parsed?.iat !== 'number' || !Number.isFinite(parsed.iat)) return null;
+    const age = Date.now() - parsed.iat;
+    if (age > UNSUBSCRIBE_TOKEN_MAX_AGE_MS || parsed.iat > Date.now() + 60_000) return null;
     return parsed.email.trim().toLowerCase();
   } catch {
     return null;
@@ -73,9 +78,9 @@ async function purgeAndAnonymizeUserAccount({ db, auth, uid }) {
     db.collection('pendingRegistrations').where('uid', '==', uid).get(),
     db.collection('friendRequests').where('fromUid', '==', uid).get(),
     db.collection('friendRequests').where('toUid', '==', uid).get(),
-    db.collection('friendships').where('users', 'array-contains', uid).get(),
-    db.collection('raceInvites').where('senderUid', '==', uid).get(),
-    db.collection('raceInvites').where('recipientUid', '==', uid).get(),
+    db.collection('friendships').where('members', 'array-contains', uid).get(),
+    db.collection('raceInvites').where('fromUid', '==', uid).get(),
+    db.collection('raceInvites').where('toUid', '==', uid).get(),
     db.collection('payments').where('uid', '==', uid).get(),
     db.collection('orders').where('ownerUid', '==', uid).get(),
   ]);
@@ -191,22 +196,68 @@ exports.accountApi = onRequest({
   const auth = admin.auth();
   const secret = codeSecret.value();
 
+async function enforceUnsubscribeIpLimit(db, secret, ip) {
+  const normalizedIp = String(ip || 'unknown').trim().slice(0, 128);
+  const ipHash = crypto.createHmac('sha256', secret).update(`unsub_ip:${normalizedIp}`).digest('hex');
+  const ref = db.doc(`accountRateLimits/unsub_${ipHash}`);
+  const hourMs = 3600 * 1000;
+  await db.runTransaction(async (transaction) => {
+    const nowMs = Date.now();
+    const snap = await transaction.get(ref);
+    const prev = snap.exists ? snap.data() : {};
+    const inWindow = typeof prev.windowStart === 'number' && nowMs - prev.windowStart < hourMs;
+    if (inWindow && (prev.count || 0) >= 30) {
+      throw new AccountError(429, 'Too many requests. Please try again later.', 3600);
+    }
+    transaction.set(ref, {
+      windowStart: inWindow ? prev.windowStart : nowMs,
+      count: inWindow ? (prev.count || 0) + 1 : 1,
+      expiresAt: new Date(nowMs + hourMs),
+    });
+  });
+}
+
   try {
     // Unauthenticated RFC 8058 one-click unsubscribe GET or POST handler.
     if (route === '/unsubscribe' && (request.method === 'POST' || request.method === 'GET')) {
+      if (request.method === 'POST' && (!request.is('application/json') || (request.rawBody?.length || 0) > 8192 || !request.body || typeof request.body !== 'object' || Array.isArray(request.body))) {
+        throw new AccountError(400, 'Invalid unsubscribe request.');
+      }
+      await enforceUnsubscribeIpLimit(db, secret, request.ip);
       const tokenParam = request.method === 'GET' ? request.query?.token : request.body?.token;
       const emailParam = request.method === 'GET' ? request.query?.email : request.body?.email;
       const optIn = request.method === 'POST' && request.body?.marketingOptIn === true;
 
-      let targetEmail = tokenParam ? verifyUnsubscribeToken(secret, String(tokenParam)) : null;
-      if (tokenParam && !targetEmail) {
+      const tokenEmail = tokenParam ? verifyUnsubscribeToken(secret, String(tokenParam)) : null;
+      if (tokenParam && !tokenEmail) {
         throw new AccountError(400, 'This unsubscribe link is invalid or corrupted.');
       }
+      let targetEmail = tokenEmail;
       if (!targetEmail && typeof emailParam === 'string') {
-        targetEmail = emailParam.trim().toLowerCase();
+        const cleaned = emailParam.trim().toLowerCase();
+        if (cleaned.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(cleaned)) {
+          targetEmail = cleaned;
+        }
       }
       if (!targetEmail) {
         throw new AccountError(400, 'Provide a valid unsubscribe token or email address.');
+      }
+      if (optIn) {
+        let authorizedOptIn = Boolean(tokenEmail && tokenEmail === targetEmail);
+        if (!authorizedOptIn) {
+          const bearer = request.get('Authorization')?.match(/^Bearer (.+)$/)?.[1];
+          if (bearer) {
+            try {
+              const decoded = await auth.verifyIdToken(bearer, true);
+              authorizedOptIn = typeof decoded.email === 'string' && decoded.email.trim().toLowerCase() === targetEmail;
+            } catch {
+              authorizedOptIn = false;
+            }
+          }
+        }
+        if (!authorizedOptIn) {
+          throw new AccountError(403, 'Sign in or use your email unsubscribe link to opt back in.');
+        }
       }
 
       await applyMarketingPreference({ db, secret, email: targetEmail, marketingOptIn: optIn });
@@ -214,7 +265,7 @@ exports.accountApi = onRequest({
     }
 
     if (request.method !== 'POST') return response.status(405).json({ error: 'Use POST for account requests.' });
-    if (!request.is('application/json') || (request.rawBody?.length || 0) > 8192) {
+    if (!request.is('application/json') || (request.rawBody?.length || 0) > 8192 || !request.body || typeof request.body !== 'object' || Array.isArray(request.body)) {
       return response.status(400).json({ error: 'Invalid account request.' });
     }
 

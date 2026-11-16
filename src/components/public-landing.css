@@ -825,12 +825,69 @@
   50% { opacity: 0.58; }
 }
 
-/* Header Section Redirection & CSS Scrollspy (modern-web-guidance: scrollspy + navbar) */
-.landing-scrollspy-nav {
+/* Header Section Redirection & Adaptive Navigation (modern-web-guidance: navbar + css-layout) */
+.landing-menu-trigger {
+  anchor-name: --landing-menu-trigger;
+}
+
+.brand-nav[data-nav-measuring='true'] *,
+.brand-nav[data-nav-measuring='true'] *::before,
+.brand-nav[data-nav-measuring='true'] *::after {
+  transition: none !important;
+}
+
+.brand-nav[data-nav-tier='compact'] .brand-wordmark,
+.brand-nav[data-nav-tier='compact'] .header-register-btn,
+.brand-nav[data-nav-tier='compact'] .landing-trigger-medium,
+.brand-nav[data-nav-tier='medium'] .landing-trigger-compact,
+.brand-nav[data-nav-tier='medium'] .landing-menu-register-item,
+.brand-nav[data-nav-tier='wide'] .landing-menu-trigger,
+.brand-nav[data-nav-tier='wide'] .landing-menu-header,
+.brand-nav[data-nav-tier='wide'] .landing-menu-register-item {
+  display: none;
+}
+
+.brand-nav[data-nav-tier='medium'] .landing-brand-btn,
+.brand-nav[data-nav-tier='wide'] .landing-brand-btn {
+  justify-content: flex-start;
+  padding-inline: 8px;
+}
+
+/* Allow wrap only in compact mode as a 200% text-scale / ultra-narrow fallback */
+.brand-nav[data-nav-tier='compact'] .landing-header-row {
+  flex-wrap: wrap;
+}
+
+.brand-nav[data-nav-tier='compact'] .landing-primary-nav {
+  flex-wrap: wrap;
+}
+
+.brand-nav[data-nav-tier='wide'] .landing-sections-popover {
+  position: static;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  inline-size: auto;
+  max-inline-size: none;
+  block-size: auto;
+  max-block-size: none;
+  overflow: visible;
+  margin: 0;
+  margin-inline-end: 0.25rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  box-shadow: none;
+  list-style: none;
   scroll-target-group: auto;
 }
 
-.landing-scrollspy-link {
+.brand-nav[data-nav-tier='wide'] .landing-sections-popover::backdrop {
+  display: none;
+}
+
+.brand-nav[data-nav-tier='wide'] .landing-nav-link {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -839,13 +896,13 @@
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.82);
+  color: rgba(255, 255, 255, 0.86);
   text-decoration: none;
   white-space: nowrap;
   transition: color 160ms var(--ease-out-quart), background-color 160ms var(--ease-out-quart);
 }
 
-.landing-scrollspy-link::after {
+.brand-nav[data-nav-tier='wide'] .landing-nav-link::after {
   content: '';
   position: absolute;
   left: 12px;
@@ -859,30 +916,52 @@
   transition: transform 180ms var(--ease-out-quart);
 }
 
-.landing-scrollspy-link:hover,
-.landing-scrollspy-link:focus-visible {
+.brand-nav[data-nav-tier='wide'] .landing-nav-link:hover,
+.brand-nav[data-nav-tier='wide'] .landing-nav-link:focus-visible {
   color: #ffffff;
   background: rgba(255, 255, 255, 0.1);
 }
 
-.landing-scrollspy-link:is(:target-current, .target-current) {
+.brand-nav[data-nav-tier='wide'] .landing-nav-link.target-current {
   color: #ffffff;
   background: rgba(255, 255, 255, 0.14);
 }
 
-.landing-scrollspy-link:is(:target-current, .target-current)::after {
+.brand-nav[data-nav-tier='wide'] .landing-nav-link.target-current::after {
   transform: scaleX(1);
 }
 
-.landing-sections-popover:popover-open {
+.brand-nav[data-nav-tier='wide'] .landing-nav-check {
+  display: none;
+}
+
+.brand-nav:not([data-nav-tier='wide']) .landing-sections-popover {
+  list-style: none;
+  margin: 0;
+}
+
+.brand-nav:not([data-nav-tier='wide']) .landing-sections-popover:not(:is(:popover-open, .\:popover-open, .is-fallback-open)) {
+  display: none;
+}
+
+.brand-nav:not([data-nav-tier='wide']) .landing-sections-popover:is(:popover-open, .\:popover-open, .is-fallback-open) {
   position: fixed;
   inset: auto;
-  top: 64px;
-  right: 12px;
+  /* Absolute fallback when CSS Anchor Positioning is unsupported */
+  inset-block-start: calc(64px + var(--rp-safe-top));
+  inset-block-start: anchor(--landing-menu-trigger bottom);
+  inset-inline-end: max(12px, var(--rp-safe-right));
   margin: 0;
-  min-width: 224px;
-  max-width: calc(100vw - 24px);
+  margin-block-start: 0.25rem;
+  inline-size: min(82dvw, 17rem);
+  max-inline-size: calc(100dvw - 24px);
+  block-size: fit-content;
+  max-block-size: calc(100dvh - 5.5rem);
+  overflow: auto;
   padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: #18181b;
@@ -891,8 +970,63 @@
   z-index: 60;
 }
 
-.landing-sections-popover::backdrop {
+@media (prefers-reduced-motion: no-preference) {
+  .brand-nav:not([data-nav-tier='wide']) .landing-sections-popover {
+    opacity: 0;
+    translate: 0 -6px;
+    transition: opacity 150ms var(--ease-out-quart), translate 150ms var(--ease-out-quart), display 150ms, overlay 150ms;
+    transition-behavior: allow-discrete;
+  }
+
+  .brand-nav:not([data-nav-tier='wide']) .landing-sections-popover:is(:popover-open, .\:popover-open, .is-fallback-open) {
+    opacity: 1;
+    translate: 0 0;
+  }
+
+  @starting-style {
+    .brand-nav:not([data-nav-tier='wide']) .landing-sections-popover:is(:popover-open, .\:popover-open, .is-fallback-open) {
+      opacity: 0;
+      translate: 0 -6px;
+    }
+  }
+}
+
+.brand-nav:not([data-nav-tier='wide']) .landing-sections-popover::backdrop {
   background: oklch(0% 0 0 / 0.35);
+}
+
+.brand-nav:not([data-nav-tier='wide']) .landing-nav-link {
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #f4f4f5;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  transition: background-color 140ms var(--ease-out-quart), color 140ms var(--ease-out-quart);
+}
+
+.brand-nav:not([data-nav-tier='wide']) .landing-nav-link:hover,
+.brand-nav:not([data-nav-tier='wide']) .landing-nav-link:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.brand-nav:not([data-nav-tier='wide']) .landing-nav-link.target-current {
+  background: #b01e16;
+  color: #ffffff;
+}
+
+@media (forced-colors: active) {
+  .brand-nav[data-nav-tier='wide'] .landing-nav-link.target-current::after {
+    background: Highlight;
+  }
+  .brand-nav:not([data-nav-tier='wide']) .landing-nav-link.target-current {
+    outline: 2px solid Highlight;
+  }
 }
 
 .public-landing section[tabindex='-1']:focus {
@@ -919,8 +1053,8 @@
   .public-landing :is(.landing-intro, .landing-lookup) *,
   .public-landing :is(.landing-intro, .landing-lookup) *::before,
   .public-landing :is(.landing-intro, .landing-lookup) *::after,
-  .landing-scrollspy-link,
-  .landing-scrollspy-link::after {
+  .landing-nav-link,
+  .landing-nav-link::after {
     animation: none !important;
     transition: none !important;
     scroll-behavior: auto !important;

@@ -34,10 +34,16 @@ function parsePoint(point: Element): GpxRoutePoint | null {
   return { latitude, longitude, ...(Number.isFinite(elevation) ? { elevation } : {}) };
 }
 
+const MAX_GPX_BYTES = 8 * 1024 * 1024;
+const MAX_GPX_POINTS = 100_000;
+
 export function parseGpxRoute(source: string): GpxRoute {
+  if (source.length > MAX_GPX_BYTES) {
+    throw new Error('The GPX route file exceeds the 8 MB limit.');
+  }
   const document = new DOMParser().parseFromString(source, 'application/xml');
   if (document.querySelector('parsererror')) throw new Error('This GPX file could not be read. Export it again as a GPX track.');
-  const elements = Array.from(document.querySelectorAll('trkpt, rtept'));
+  const elements = Array.from(document.querySelectorAll('trkpt, rtept')).slice(0, MAX_GPX_POINTS);
   const points = elements.map(parsePoint).filter((point): point is GpxRoutePoint => point !== null);
   if (points.length < 2) throw new Error('The GPX file needs at least two route points.');
 
@@ -71,9 +77,26 @@ export function parseGpxRoute(source: string): GpxRoute {
   };
 }
 
+function isAllowedGpxUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol === 'https:') return true;
+    return parsed.protocol === 'http:' && (parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost');
+  } catch {
+    return false;
+  }
+}
+
 export async function loadGpxRoute(url: string, signal?: AbortSignal): Promise<GpxRoute> {
+  if (!isAllowedGpxUrl(url)) {
+    throw new Error('GPX routes must load over HTTPS.');
+  }
   const response = await fetch(url, { signal, cache: 'no-store' });
   if (!response.ok) throw new Error('The route file could not be downloaded.');
+  const contentLength = Number(response.headers.get('content-length') || 0);
+  if (Number.isFinite(contentLength) && contentLength > MAX_GPX_BYTES) {
+    throw new Error('The GPX route file exceeds the 8 MB limit.');
+  }
   return parseGpxRoute(await response.text());
 }
 

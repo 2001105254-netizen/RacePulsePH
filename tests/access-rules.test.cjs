@@ -106,6 +106,20 @@ test('disqualifiedBibs requires timing permission, race scope, and a map', async
 test('runnerHighlights and system/highlightsConfig enforce Highlights RBAC permissions', async()=>{
  const validHighlight={id:'hl_1',mode:'solo',runnerName:'Marco Reyes',bibNumber:'21-01',placement:'1st',distance:'21K',chipTime:'01:24:18',pace:'3:59 /km',raceName:'Manila Half',raceDate:'2026-11-10',photoUrl:'data:image/jpeg;base64,abc',borderPreset:'liquid-gold',cornerGeometry:'rounded',accentColor:'#f5b731',glowIntensity:75,surfaceFinish:'glossy',createdAt:'2026-11-10T00:00:00Z',updatedAt:'2026-11-10T00:00:00Z'};
  await assertSucceeds(setDoc(doc(db('admin'),'runnerHighlights','hl_1'),validHighlight));
+ await assertSucceeds(setDoc(doc(db('admin'),'runnerHighlights','hl_group'),{
+  ...validHighlight,
+  id:'hl_group',
+  mode:'group',
+  teamName:'Sugakod Relay',
+  groupPhotoLayout:'collage',
+  groupMembers:[{name:'Ana',bibNumber:'101',photoUrl:'data:image/jpeg;base64,a'},{name:'Ben',bibNumber:'102',photoUrl:'data:image/jpeg;base64,b'}],
+ }));
+ await assertFails(setDoc(doc(db('admin'),'runnerHighlights','hl_bad_group'),{
+  ...validHighlight,
+  id:'hl_bad_group',
+  mode:'group',
+  groupPhotoLayout:'invalid',
+ }));
  await assertSucceeds(getDoc(doc(env.unauthenticatedContext().firestore(),'runnerHighlights','hl_1')));
  await assertFails(setDoc(doc(db('organizer'),'runnerHighlights','hl_org'),{...validHighlight,id:'hl_org'}));
  await assertFails(setDoc(doc(db('runner'),'runnerHighlights','hl_run'),{...validHighlight,id:'hl_run'}));
@@ -131,4 +145,17 @@ test('runnerHighlights and system/highlightsConfig enforce Highlights RBAC permi
  await assertFails(setDoc(doc(db('admin'),'runnerHighlights','hl_denied'),{...validHighlight,id:'hl_denied'}));
  await env.withSecurityRulesDisabled(ctx=>setDoc(doc(ctx.firestore(),'userAccess','admin'),{status:'active',scope:'all',raceIds:[],overrides:{'highlights.view':false},permissions:{'race.view':true}}));
  await assertFails(setDoc(doc(db('admin'),'runnerHighlights','hl_view_denied'),{...validHighlight,id:'hl_view_denied'}));
+ await assertFails(setDoc(doc(db('superadmin'),'runnerHighlights','hl_xss_photo'),{...validHighlight,id:'hl_xss_photo',photoUrl:'data:image/svg+xml;base64,PHN2Zz4='}));
+});
+test('friendDirectory prevents hijacking another UID handle and runner rules block paid self-registration bypass',async()=>{
+ await env.withSecurityRulesDisabled(async ctx=>{
+  const root=ctx.firestore();
+  await setDoc(doc(root,'users','alice'),{uid:'alice',role:'runner',approved:false,email:'alice@example.com',displayName:'Alice',createdAt:'2026-01-01'});
+  await setDoc(doc(root,'usernameIndex','alice'),{username:'alice',uid:'alice',email:'alice@example.com',createdAt:'2026-01-01'});
+  await setDoc(doc(root,'friendDirectory','alice'),{uid:'alice',username:'alice',displayName:'Alice'});
+  await setDoc(doc(root,'races','paid_race'),{id:'paid_race',name:'Paid Run',createdBy:'organizer',status:'published',distances:[{label:'10K',km:10,price:500}]});
+ });
+ await assertFails(setDoc(doc(env.authenticatedContext('runner',{email_verified:true}).firestore(),'friendDirectory','alice'),{uid:'runner',username:'alice',displayName:'Hijacked'}));
+ await assertFails(setDoc(doc(env.authenticatedContext('runner',{email_verified:true}).firestore(),'runners','runner_paid_race'),{uid:'runner',raceId:'paid_race',distance:'10K',bibNumber:'10-001',paymentStatus:'paid',registeredAt:'2026-01-01'}));
+ await assertFails(setDoc(doc(env.authenticatedContext('runner',{email_verified:true}).firestore(),'bibCounters','paid_race_10K'),{raceId:'paid_race',count:250}));
 });

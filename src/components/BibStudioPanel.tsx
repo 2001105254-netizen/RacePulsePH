@@ -4,6 +4,7 @@ import { Race, RaceBibFont, RaceBibLayout, RaceBibTemplate, RunnerProfile } from
 import { generateRaceBibsPdf } from '../lib/raceBibPdf';
 import { resizeImageToDataUrl } from '../lib/image';
 import { raceBibFontFamily } from '../lib/raceBibFont';
+import { MAX_ROSTER_ROWS, MAX_XLSX_BYTES, assertSafeImportFile, stripUnsafeKeys } from '../lib/security';
 
 type StudioRow = { id: string; fullName: string; bibNumber: string; distance: string };
 
@@ -82,11 +83,14 @@ export default function BibStudioPanel() {
   const readRoster = async (file: File) => {
     setMessage('');
     try {
+      assertSafeImportFile(file, MAX_XLSX_BYTES, /\.(xlsx|xls|csv)$/i, 'Choose an Excel (.xlsx/.xls) or CSV file.');
       const XLSX = await import('xlsx');
       const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       if (!worksheet) throw new Error('No worksheet was found in that file.');
-      const parsed = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '' });
+      const parsed = stripUnsafeKeys(
+        XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '' }).slice(0, MAX_ROSTER_ROWS),
+      );
       const { entries, rejected } = parseRoster(parsed, hideRunnerNames);
       if (entries.length === 0) throw new Error(`No valid rows found. Use ${hideRunnerNames ? 'Race Bib Number and Distance' : 'Full Name, Race Bib Number, and Distance'} columns.`);
       setRows(entries);

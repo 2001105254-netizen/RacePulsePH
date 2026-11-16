@@ -164,20 +164,22 @@ service cloud.firestore {
     }
 
     function hasSafeProfileDetails(data) {
-      return (!data.keys().hasAny(['nickname']) || (data.nickname is string && data.nickname.size() <= 30))
-        && (!data.keys().hasAny(['photoURL']) || (data.photoURL is string && data.photoURL.size() <= 100000))
-        && (!data.keys().hasAny(['coverURL']) || (data.coverURL is string && data.coverURL.size() <= 150000))
-        && (!data.keys().hasAny(['coverPreset']) || (data.coverPreset is string && data.coverPreset.size() <= 40))
-        && (!data.keys().hasAny(['bio']) || (data.bio is string && data.bio.size() <= 160))
-        && (!data.keys().hasAny(['location']) || (data.location is string && data.location.size() <= 80))
-        && (!data.keys().hasAny(['runClub']) || (data.runClub is string && data.runClub.size() <= 80))
-        && (!data.keys().hasAny(['favoriteDistance']) || (data.favoriteDistance is string && data.favoriteDistance.size() <= 30))
-        && (!data.keys().hasAny(['socialLink']) || (data.socialLink is string && data.socialLink.size() <= 160))
-        && (!data.keys().hasAny(['emergencyContactName']) || (data.emergencyContactName is string && data.emergencyContactName.size() <= 100))
-        && (!data.keys().hasAny(['emergencyContactPhone']) || (data.emergencyContactPhone is string && data.emergencyContactPhone.size() <= 30))
-        && (!data.keys().hasAny(['shirtSize']) || (data.shirtSize is string && data.shirtSize.size() <= 20))
-        && (!data.keys().hasAny(['medicalNotes']) || (data.medicalNotes is string && data.medicalNotes.size() <= 600))
-        && (!data.keys().hasAny(['username']) || isValidUsername(data.username));
+      return (!data.keys().hasAny(['nickname']) || data.nickname == null || (data.nickname is string && data.nickname.size() <= 30))
+        && (!data.keys().hasAny(['photoURL']) || data.photoURL == null || (data.photoURL is string && data.photoURL.size() <= 100000))
+        && (!data.keys().hasAny(['coverURL']) || data.coverURL == null || (data.coverURL is string && data.coverURL.size() <= 150000))
+        && (!data.keys().hasAny(['coverPreset']) || data.coverPreset == null || (data.coverPreset is string && data.coverPreset.size() <= 40))
+        && (!data.keys().hasAny(['bio']) || data.bio == null || (data.bio is string && data.bio.size() <= 160))
+        && (!data.keys().hasAny(['location']) || data.location == null || (data.location is string && data.location.size() <= 80))
+        && (!data.keys().hasAny(['runClub']) || data.runClub == null || (data.runClub is string && data.runClub.size() <= 80))
+        && (!data.keys().hasAny(['favoriteDistance']) || data.favoriteDistance == null || (data.favoriteDistance is string && data.favoriteDistance.size() <= 30))
+        && (!data.keys().hasAny(['socialLink']) || data.socialLink == null || (data.socialLink is string && data.socialLink.size() <= 160))
+        && (!data.keys().hasAny(['emergencyContactName']) || data.emergencyContactName == null || (data.emergencyContactName is string && data.emergencyContactName.size() <= 100))
+        && (!data.keys().hasAny(['emergencyContactPhone']) || data.emergencyContactPhone == null || (data.emergencyContactPhone is string && data.emergencyContactPhone.size() <= 30))
+        && (!data.keys().hasAny(['shirtSize']) || data.shirtSize == null || (data.shirtSize is string && data.shirtSize.size() <= 20))
+        && (!data.keys().hasAny(['medicalNotes']) || data.medicalNotes == null || (data.medicalNotes is string && data.medicalNotes.size() <= 600))
+        && (!data.keys().hasAny(['username']) || data.username == null || data.username == '' || isValidUsername(data.username))
+        && (!data.keys().hasAny(['marketingOptIn']) || data.marketingOptIn == null || data.marketingOptIn is bool)
+        && (!data.keys().hasAny(['marketingUpdatedAt']) || data.marketingUpdatedAt == null || (data.marketingUpdatedAt is string && data.marketingUpdatedAt.size() <= 60));
     }
 
     match /users/{uid} {
@@ -187,9 +189,12 @@ service cloud.firestore {
         && request.resource.data.role in ['runner','organizer','superadmin']
         && request.resource.data.uid == uid && request.resource.data.email == request.auth.token.email;
       allow update: if request.auth != null && request.auth.uid == uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName','nickname','photoURL','emergencyContactName','emergencyContactPhone','shirtSize','medicalNotes','username'])
+        && !isRemovedAccount(uid)
+        && (!exists(/databases/$(database)/documents/userAccess/$(uid)) || get(/databases/$(database)/documents/userAccess/$(uid)).data.get('status', 'active') == 'active')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName','nickname','photoURL','coverURL','coverPreset','bio','location','runClub','favoriteDistance','socialLink','emergencyContactName','emergencyContactPhone','shirtSize','medicalNotes','username','marketingOptIn','marketingUpdatedAt'])
         && request.resource.data.displayName is string && request.resource.data.displayName.size() >= 1 && request.resource.data.displayName.size() <= 100
-        && hasSafeProfileDetails(request.resource.data) && hasValidUsernameBinding(uid, request.resource.data);
+        && hasSafeProfileDetails(request.resource.data)
+        && (!changed(['username']) || ((!resource.data.keys().hasAny(['username']) || resource.data.username == null || resource.data.username == '') && hasValidUsernameBinding(uid, request.resource.data)));
       allow delete: if request.auth != null && request.auth.uid == uid && resource.data.role != 'superadmin';
     }
 
@@ -201,6 +206,8 @@ service cloud.firestore {
       allow get: if true;
       allow list: if false;
       allow create: if isSignedIn()
+        && request.auth.token.email_verified == true
+        && !isRemovedAccount(request.auth.uid)
         && username == request.resource.data.username
         && isValidUsername(username)
         && request.resource.data.keys().hasOnly(['username', 'uid', 'email', 'createdAt'])
@@ -236,27 +243,47 @@ service cloud.firestore {
     // Username search uses a direct document read, not a query, to avoid
     // directory enumeration. This directory deliberately excludes email.
     match /friendDirectory/{username} {
-      allow get: if isSignedIn();
+      allow get: if isSignedIn() && !isRemovedAccount(request.auth.uid);
       allow list: if false;
-      allow create, update: if isSignedIn()
+      allow create: if isSignedIn()
+        && !isRemovedAccount(request.auth.uid)
+        && (request.auth.token.email_verified == true
+          || exists(/databases/$(database)/documents/users/$(request.auth.uid)))
+        && (!exists(/databases/$(database)/documents/userAccess/$(request.auth.uid))
+          || get(/databases/$(database)/documents/userAccess/$(request.auth.uid)).data.get('status', 'active') == 'active')
         && request.resource.data.uid == request.auth.uid
+        && existsAfter(/databases/$(database)/documents/usernameIndex/$(username))
+        && getAfter(/databases/$(database)/documents/usernameIndex/$(username)).data.uid == request.auth.uid
+        && isSafeFriendProfile(request.resource.data, request.auth.uid, username);
+      allow update: if isSignedIn()
+        && !isRemovedAccount(request.auth.uid)
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid
+        && (!exists(/databases/$(database)/documents/userAccess/$(request.auth.uid))
+          || get(/databases/$(database)/documents/userAccess/$(request.auth.uid)).data.get('status', 'active') == 'active')
         && isSafeFriendProfile(request.resource.data, request.auth.uid, username);
       allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
     }
 
     match /friendProfiles/{uid} {
-      allow get: if isSignedIn() && (request.auth.uid == uid || isFriendOf(uid));
+      allow get: if isSignedIn() && !isRemovedAccount(request.auth.uid) && (request.auth.uid == uid || isFriendOf(uid));
       allow list: if false;
       allow create, update: if isSignedIn()
+        && !isRemovedAccount(request.auth.uid)
+        && (!exists(/databases/$(database)/documents/userAccess/$(request.auth.uid))
+          || get(/databases/$(database)/documents/userAccess/$(request.auth.uid)).data.get('status', 'active') == 'active')
         && request.auth.uid == uid
         && isSafeFriendProfile(request.resource.data, uid, request.resource.data.username);
       allow delete: if isSignedIn() && request.auth.uid == uid;
     }
 
     match /friendActivities/{uid} {
-      allow get: if isSignedIn() && (request.auth.uid == uid || isFriendOf(uid));
+      allow get: if isSignedIn() && !isRemovedAccount(request.auth.uid) && (request.auth.uid == uid || isFriendOf(uid));
       allow list: if false;
       allow create, update: if isSignedIn() && request.auth.uid == uid
+        && !isRemovedAccount(request.auth.uid)
+        && (!exists(/databases/$(database)/documents/userAccess/$(request.auth.uid))
+          || get(/databases/$(database)/documents/userAccess/$(request.auth.uid)).data.get('status', 'active') == 'active')
         && request.resource.data.keys().hasOnly(['uid', 'recentRaces', 'updatedAt'])
         && request.resource.data.uid == uid
         && request.resource.data.recentRaces is list && request.resource.data.recentRaces.size() <= 6
@@ -335,29 +362,35 @@ service cloud.firestore {
     // ========== RACES & CHECKPOINTS ==========
 
     function raceUpdateAllowed(raceId) {
-      let p = access().get('permissions', {});
       let fields = request.resource.data.diff(resource.data).affectedKeys();
       let scoped = true;
       return request.auth != null && access().status == 'active' && raceScope(raceId) && request.resource.data.createdBy == resource.data.createdBy && request.resource.data.createdAt == resource.data.createdAt
+        && (!fields.hasAny(['livestreamUrl']) || request.resource.data.get('livestreamUrl', '') == '' || isSafeHttpUrl(request.resource.data.livestreamUrl))
+        && (!fields.hasAny(['routeMapUrl']) || request.resource.data.get('routeMapUrl', '') == '' || isSafeHttpUrl(request.resource.data.routeMapUrl))
+        && (!fields.hasAny(['routeGpxUrl']) || request.resource.data.get('routeGpxUrl', '') == '' || isSafeStorageOrHttpsUrl(request.resource.data.routeGpxUrl))
         && fields.hasOnly(['name','date','inclusions','checkpoints','ageCategories','youngestRunnerAwardEnabled','oldestRunnerAwardEnabled','distances','entryCategories','registrationOpen','registrationCloseDate','onlinePaymentEnabled','paymentFeeMode','manualPaymentEnabled','manualPaymentInstructions','manualPaymentQrImage','posterImage','inclusionImage','routeGpxUrl','routeGpxFileName','routeGpxUploadedAt','raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','raceBibTemplatesByEntryCategory','raceBibShowRaffleNumber','raceBibShowQrCode','organizerIds','gunStartTime','waveStartTimes','completedAt','liveBroadcastEnabled','livestreamUrl','routeMapUrl','finishReviewWindowMs','disqualifiedBibs'])
-        && (!fields.hasAny(['finishReviewWindowMs']) || (p.get('timing.correct', false) && request.resource.data.finishReviewWindowMs is number && request.resource.data.finishReviewWindowMs >= 0 && request.resource.data.finishReviewWindowMs <= 60000))
-        && (!fields.hasAny(['disqualifiedBibs']) || ((p.get('timing.correct', false) || p.get('timing.scan', false)) && request.resource.data.disqualifiedBibs is map && request.resource.data.disqualifiedBibs.size() <= 500))
-        && (!fields.hasAny(['name','date','inclusions']) || p.get('race.edit', false))
-        && (!fields.hasAny(['checkpoints','ageCategories','youngestRunnerAwardEnabled','oldestRunnerAwardEnabled','entryCategories']) || p.get('race.categories', false))
-        && (!fields.hasAny(['distances']) || (p.get('race.categories', false) && p.get('payment.configure', false)))
-        && (!fields.hasAny(['registrationOpen','registrationCloseDate']) || p.get('race.registration', false) || (p.get('timing.finish', false) && fields.hasAny(['completedAt']) && request.resource.data.registrationOpen == false))
-        && (!fields.hasAny(['onlinePaymentEnabled','paymentFeeMode','manualPaymentEnabled','manualPaymentInstructions','manualPaymentQrImage']) || p.get('payment.configure', false))
-        && (!fields.hasAny(['posterImage','inclusionImage','routeGpxUrl','routeGpxFileName','routeGpxUploadedAt']) || p.get('race.artwork', false))
-        && (!fields.hasAny(['raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','raceBibTemplatesByEntryCategory','raceBibShowRaffleNumber','raceBibShowQrCode']) || p.get('race.bibs', false))
-        && (!fields.hasAny(['organizerIds']) || (p.get('race.team', false) && (resource.data.createdBy == request.auth.uid || isSuperAdmin())))
-        && (!fields.hasAny(['liveBroadcastEnabled']) || p.get('hub.publish', false))
-        && (!fields.hasAny(['livestreamUrl','routeMapUrl']) || p.get('hub.manage', false))
-        && (!fields.hasAny(['completedAt']) || (request.resource.data.get('completedAt', null) == null ? p.get('timing.reopen', false) : p.get('timing.finish', false) && getAfter(/databases/$(database)/documents/liveResults/$(raceId)).data.updatedAt == request.resource.data.completedAt))
-        && (!fields.hasAny(['gunStartTime','waveStartTimes']) || p.get('timing.reset', false) || (p.get('timing.start', false) && !resource.data.get('waveStartTimes', {}).diff(request.resource.data.get('waveStartTimes', {})).affectedKeys().hasAny(resource.data.get('waveStartTimes', {}).keys()) && resource.data.get('gunStartTime', null) == null));
+        && (!fields.hasAny(['finishReviewWindowMs']) || (permission('timing.correct') && request.resource.data.finishReviewWindowMs is number && request.resource.data.finishReviewWindowMs >= 0 && request.resource.data.finishReviewWindowMs <= 60000))
+        && (!fields.hasAny(['disqualifiedBibs']) || ((permission('timing.correct') || permission('timing.scan')) && request.resource.data.disqualifiedBibs is map && request.resource.data.disqualifiedBibs.size() <= 500))
+        && (!fields.hasAny(['name','date','inclusions']) || permission('race.edit'))
+        && (!fields.hasAny(['checkpoints','ageCategories','youngestRunnerAwardEnabled','oldestRunnerAwardEnabled','entryCategories']) || permission('race.categories'))
+        && (!fields.hasAny(['distances']) || (permission('race.categories') && permission('payment.configure')))
+        && (!fields.hasAny(['registrationOpen','registrationCloseDate']) || permission('race.registration') || (permission('timing.finish') && fields.hasAny(['completedAt']) && request.resource.data.registrationOpen == false))
+        && (!fields.hasAny(['onlinePaymentEnabled','paymentFeeMode','manualPaymentEnabled','manualPaymentInstructions','manualPaymentQrImage']) || permission('payment.configure'))
+        && (!fields.hasAny(['posterImage','inclusionImage','routeGpxUrl','routeGpxFileName','routeGpxUploadedAt']) || permission('race.artwork'))
+        && (!fields.hasAny(['raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','raceBibTemplatesByEntryCategory','raceBibShowRaffleNumber','raceBibShowQrCode']) || permission('race.bibs'))
+        && (!fields.hasAny(['organizerIds']) || (permission('race.team') && (resource.data.createdBy == request.auth.uid || isSuperAdmin())))
+        && (!fields.hasAny(['liveBroadcastEnabled']) || permission('hub.publish'))
+        && (!fields.hasAny(['livestreamUrl','routeMapUrl']) || permission('hub.manage'))
+        && (!fields.hasAny(['completedAt']) || (request.resource.data.get('completedAt', null) == null ? permission('timing.reopen') : permission('timing.finish') && getAfter(/databases/$(database)/documents/liveResults/$(raceId)).data.updatedAt == request.resource.data.completedAt))
+        && (!fields.hasAny(['gunStartTime','waveStartTimes']) || permission('timing.reset') || (permission('timing.start') && !resource.data.get('waveStartTimes', {}).diff(request.resource.data.get('waveStartTimes', {})).affectedKeys().hasAny(resource.data.get('waveStartTimes', {}).keys()) && resource.data.get('gunStartTime', null) == null));
     }
     match /races/{raceId} {
       allow read: if true;
       allow create: if permission('race.create') && request.resource.data.createdBy == request.auth.uid && request.resource.data.id == raceId
+        && request.resource.data.get('createdAt', '') is string
+        && (!request.resource.data.keys().hasAny(['livestreamUrl']) || request.resource.data.livestreamUrl == '' || isSafeHttpUrl(request.resource.data.livestreamUrl))
+        && (!request.resource.data.keys().hasAny(['routeMapUrl']) || request.resource.data.routeMapUrl == '' || isSafeHttpUrl(request.resource.data.routeMapUrl))
+        && (!request.resource.data.keys().hasAny(['routeGpxUrl']) || request.resource.data.routeGpxUrl == '' || isSafeStorageOrHttpsUrl(request.resource.data.routeGpxUrl))
         && !request.resource.data.keys().hasAny(['gunStartTime','waveStartTimes','completedAt'])
         && (!request.resource.data.keys().hasAny(['posterImage','inclusionImage']) || permission('race.artwork'))
         && (!request.resource.data.keys().hasAny(['routeGpxUrl','routeGpxFileName','routeGpxUploadedAt']) || permission('race.artwork'))
@@ -425,14 +458,89 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(paymentFields());
     }
 
+    function isSafeHttpUrl(url) {
+      return url is string && url.size() >= 8 && url.size() <= 2048 && url.matches('^https?://[^\\s]+$');
+    }
+
+    function isSafeStorageOrHttpsUrl(url) {
+      return url is string && url.size() >= 8 && url.size() <= 2048
+        && url.matches('^(https://[^\\s]+|http://(127\\.0\\.0\\.1|localhost)(:[0-9]+)?/[^\\s]+)$');
+    }
+
+    function isKnownRaceDistance(distances, label) {
+      return distances.size() == 0
+        || (distances.size() > 0 && distances[0].label == label)
+        || (distances.size() > 1 && distances[1].label == label)
+        || (distances.size() > 2 && distances[2].label == label)
+        || (distances.size() > 3 && distances[3].label == label)
+        || (distances.size() > 4 && distances[4].label == label)
+        || (distances.size() > 5 && distances[5].label == label)
+        || (distances.size() > 6 && distances[6].label == label)
+        || (distances.size() > 7 && distances[7].label == label)
+        || (distances.size() > 8 && distances[8].label == label)
+        || (distances.size() > 9 && distances[9].label == label)
+        || (distances.size() > 10 && distances[10].label == label)
+        || (distances.size() > 11 && distances[11].label == label)
+        || distances.size() > 12;
+    }
+
+    function distanceRequiresPayment(distances, label) {
+      return (distances.size() > 0 && distances[0].label == label && distances[0].get('price', 0) > 0)
+        || (distances.size() > 1 && distances[1].label == label && distances[1].get('price', 0) > 0)
+        || (distances.size() > 2 && distances[2].label == label && distances[2].get('price', 0) > 0)
+        || (distances.size() > 3 && distances[3].label == label && distances[3].get('price', 0) > 0)
+        || (distances.size() > 4 && distances[4].label == label && distances[4].get('price', 0) > 0)
+        || (distances.size() > 5 && distances[5].label == label && distances[5].get('price', 0) > 0)
+        || (distances.size() > 6 && distances[6].label == label && distances[6].get('price', 0) > 0)
+        || (distances.size() > 7 && distances[7].label == label && distances[7].get('price', 0) > 0)
+        || (distances.size() > 8 && distances[8].label == label && distances[8].get('price', 0) > 0)
+        || (distances.size() > 9 && distances[9].label == label && distances[9].get('price', 0) > 0)
+        || (distances.size() > 10 && distances[10].label == label && distances[10].get('price', 0) > 0)
+        || (distances.size() > 11 && distances[11].label == label && distances[11].get('price', 0) > 0)
+        || distances.size() > 12;
+    }
+
+    function manualAmountCoversDistance(distances, label, amount) {
+      return !distanceRequiresPayment(distances, label)
+        || (distances.size() > 0 && distances[0].label == label && amount >= distances[0].get('price', 0))
+        || (distances.size() > 1 && distances[1].label == label && amount >= distances[1].get('price', 0))
+        || (distances.size() > 2 && distances[2].label == label && amount >= distances[2].get('price', 0))
+        || (distances.size() > 3 && distances[3].label == label && amount >= distances[3].get('price', 0))
+        || (distances.size() > 4 && distances[4].label == label && amount >= distances[4].get('price', 0))
+        || (distances.size() > 5 && distances[5].label == label && amount >= distances[5].get('price', 0))
+        || (distances.size() > 6 && distances[6].label == label && amount >= distances[6].get('price', 0))
+        || (distances.size() > 7 && distances[7].label == label && amount >= distances[7].get('price', 0))
+        || (distances.size() > 8 && distances[8].label == label && amount >= distances[8].get('price', 0))
+        || (distances.size() > 9 && distances[9].label == label && amount >= distances[9].get('price', 0))
+        || (distances.size() > 10 && distances[10].label == label && amount >= distances[10].get('price', 0))
+        || (distances.size() > 11 && distances[11].label == label && amount >= distances[11].get('price', 0));
+    }
+
+    function selfRegistrationAllowed(data) {
+      let race = get(/databases/$(database)/documents/races/$(data.raceId)).data;
+      let raceDistances = race.get('distances', []);
+      let priceFree = raceDistances.size() > 0
+        ? (isKnownRaceDistance(raceDistances, data.distance) && !distanceRequiresPayment(raceDistances, data.distance))
+        : (!race.get('onlinePaymentEnabled', false) && !race.get('manualPaymentEnabled', false));
+      return exists(/databases/$(database)/documents/races/$(data.raceId))
+        && race.get('registrationOpen', true)
+        && isKnownRaceDistance(raceDistances, data.distance)
+        && (createsManualPaymentReservation(data) || (hasNoPaymentMetadata(data) && priceFree));
+    }
+
     function createsManualPaymentReservation(data) {
+      let raceExists = exists(/databases/$(database)/documents/races/$(data.raceId));
+      let race = get(/databases/$(database)/documents/races/$(data.raceId)).data;
+      let raceDistances = race.get('distances', []);
       return data.paymentStatus == 'pending'
         && data.paymentMethod == 'manual'
         && data.paymentAmount is number && data.paymentAmount >= 0
         && data.paymentReference is string && data.paymentReference.size() >= 4 && data.paymentReference.size() <= 100
         && !data.keys().hasAny(['paymentId', 'paymentPaidAt'])
-        && exists(/databases/$(database)/documents/races/$(data.raceId))
-        && get(/databases/$(database)/documents/races/$(data.raceId)).data.manualPaymentEnabled == true;
+        && raceExists
+        && race.manualPaymentEnabled == true
+        && isKnownRaceDistance(raceDistances, data.distance)
+        && manualAmountCoversDistance(raceDistances, data.distance, data.paymentAmount);
     }
 
     function isValidRunnerProfile(data) {
@@ -477,27 +585,26 @@ service cloud.firestore {
     // Doc id is {uid}_{raceId} - one entry per registration, so a runner can hold
     // many concurrent race registrations instead of a single overwritten profile.
     function runnerUpdateAllowed(regId) {
-      let p = access().get('permissions', {});
       let fields = request.resource.data.diff(resource.data).affectedKeys();
       let scoped = raceScope(resource.data.raceId);
       return request.auth != null && access().status == 'active' && isValidRunnerProfile(request.resource.data) && hasValidRegistrationId(regId, request.resource.data)
         && request.resource.data.uid == resource.data.uid && request.resource.data.raceId == resource.data.raceId && request.resource.data.createdAt == resource.data.createdAt
         && (organizerConfirmsManualPayment() || (paymentMetadataUnchanged()
           && fields.hasOnly(['fullName','gender','age','ageNotProvided','shirtSize','emergencyContactName','emergencyContactPhone','entryCategory','teamName','teamMembers','distance','bibNumber','chipId','startsAfterBib','kitClaimedAt'])
-          && (!fields.hasAny(['chipId']) || (p.get('roster.chips', false) && scoped))
-          && (!fields.hasAny(['bibNumber']) || (p.get('roster.bibs', false) && scoped))
-          && (!fields.hasAny(['startsAfterBib']) || (p.get('roster.edit', false) && scoped))
-          && (!fields.hasAny(['kitClaimedAt']) || (p.get('roster.kits', false) && scoped))
-          && (!fields.hasAny(['fullName','gender','age','ageNotProvided','shirtSize','emergencyContactName','emergencyContactPhone','entryCategory','teamName','teamMembers','distance']) || (p.get('roster.edit', false) && scoped) || (p.get('personal.register', false) && resource.data.uid == request.auth.uid))));
+          && (!fields.hasAny(['chipId']) || (permission('roster.chips') && scoped))
+          && (!fields.hasAny(['bibNumber']) || (permission('roster.bibs') && scoped))
+          && (!fields.hasAny(['startsAfterBib']) || (permission('roster.edit') && scoped))
+          && (!fields.hasAny(['kitClaimedAt']) || (permission('roster.kits') && scoped))
+          && (!fields.hasAny(['fullName','gender','age','ageNotProvided','shirtSize','emergencyContactName','emergencyContactPhone','entryCategory','teamName','teamMembers','distance']) || (permission('roster.edit') && scoped) || (permission('personal.register') && resource.data.uid == request.auth.uid && (!fields.hasAny(['distance','entryCategory']) || resource.data.get('paymentStatus', '') == '')))));
     }
     match /runners/{regId} {
       allow read: if racePermission('roster.view', resource.data.raceId) || (isSignedIn() && resource.data.uid == request.auth.uid && (permission('personal.register') || permission('personal.results') || permission('personal.bibs') || permission('personal.certificates')));
       allow create: if isValidRunnerProfile(request.resource.data) && hasValidRegistrationId(regId, request.resource.data)
         && (hasNoPaymentMetadata(request.resource.data) || createsManualPaymentReservation(request.resource.data))
         && !request.resource.data.keys().hasAny(['kitClaimedAt','chipId','startsAfterBib'])
-        && (racePermission('roster.add', request.resource.data.raceId) || racePermission('roster.import', request.resource.data.raceId) || (request.resource.data.get('isFreeSlot', false) && racePermission('roster.slots', request.resource.data.raceId)) || (permission('personal.register') && request.resource.data.uid == request.auth.uid && !request.resource.data.get('isFreeSlot', false) && get(/databases/$(database)/documents/races/$(request.resource.data.raceId)).data.get('registrationOpen', true)));
+        && (racePermission('roster.add', request.resource.data.raceId) || racePermission('roster.import', request.resource.data.raceId) || (request.resource.data.get('isFreeSlot', false) && racePermission('roster.slots', request.resource.data.raceId)) || (permission('personal.register') && request.resource.data.uid == request.auth.uid && !request.resource.data.get('isFreeSlot', false) && selfRegistrationAllowed(request.resource.data)));
       allow update: if runnerUpdateAllowed(regId);
-      allow delete: if (isSuperAdmin() && raceScope(resource.data.raceId)) || racePermission('roster.remove', resource.data.raceId) || (permission('personal.register') && resource.data.uid == request.auth.uid);
+      allow delete: if (isSuperAdmin() && raceScope(resource.data.raceId)) || racePermission('roster.remove', resource.data.raceId) || (permission('personal.register') && resource.data.uid == request.auth.uid && resource.data.get('paymentStatus', '') != 'paid' && !resource.data.keys().hasAny(['chipId','kitClaimedAt']));
     }
 
     // Per race+distance sequence counters, incremented transactionally when a
@@ -514,9 +621,9 @@ service cloud.firestore {
 
     match /bibCounters/{counterId} {
       allow read: if permission('personal.register') || permission('roster.add') || permission('roster.slots');
-      // Counters contain no private data. Only monotonic increments are permitted.
-      allow create: if (permission('personal.register') || racePermission('roster.add', request.resource.data.raceId) || racePermission('roster.slots', request.resource.data.raceId)) && request.resource.data.keys().hasOnly(['count','raceId']) && request.resource.data.raceId is string && counterId.matches(request.resource.data.raceId + '_.*') && request.resource.data.count is int && request.resource.data.count > 0;
-      allow update: if (permission('personal.register') || racePermission('roster.add', request.resource.data.raceId) || racePermission('roster.slots', request.resource.data.raceId)) && request.resource.data.keys().hasOnly(['count','raceId']) && request.resource.data.raceId is string && counterId.matches(request.resource.data.raceId + '_.*') && request.resource.data.count is int && request.resource.data.count >= resource.data.count && request.resource.data.count <= resource.data.count + 1000;
+      // Counters contain no private data. Only bounded monotonic increments are permitted.
+      allow create: if request.resource.data.keys().hasOnly(['count','raceId']) && request.resource.data.raceId is string && counterId.matches(request.resource.data.raceId + '_.*') && request.resource.data.count is int && request.resource.data.count > 0 && exists(/databases/$(database)/documents/races/$(request.resource.data.raceId)) && ((permission('personal.register') && request.resource.data.count <= 20) || ((racePermission('roster.add', request.resource.data.raceId) || racePermission('roster.slots', request.resource.data.raceId)) && request.resource.data.count <= 5000));
+      allow update: if request.resource.data.keys().hasOnly(['count','raceId']) && request.resource.data.raceId is string && (!('raceId' in resource.data) || request.resource.data.raceId == resource.data.raceId) && counterId.matches(request.resource.data.raceId + '_.*') && request.resource.data.count is int && request.resource.data.count >= resource.data.count && ((permission('personal.register') && request.resource.data.count <= resource.data.count + 20) || ((racePermission('roster.add', request.resource.data.raceId) || racePermission('roster.slots', request.resource.data.raceId)) && request.resource.data.count <= resource.data.count + 5000));
     }
 
     // ========== TIMING CHIP READS ==========
@@ -577,6 +684,12 @@ service cloud.firestore {
 
     // ========== RUNNER HIGHLIGHTS MARQUEE (THE PODIUM PULSE SYSTEM) ==========
 
+    function isSafeHighlightPhoto(url) {
+      return url is string
+        && url.size() >= 1 && url.size() <= 900000
+        && url.matches('^(https://[^\\s]+|http://(127\\.0\\.0\\.1|localhost)(:[0-9]+)?/[^\\s]+|data:image/(jpeg|jpg|png|webp|gif|avif);base64,[A-Za-z0-9+/=]+)$');
+    }
+
     function isValidHighlight(data) {
       return data.keys().hasAll([
           'id', 'mode', 'runnerName', 'bibNumber', 'placement', 'distance',
@@ -585,7 +698,7 @@ service cloud.firestore {
           'surfaceFinish', 'createdAt', 'updatedAt'
         ])
         && data.id is string && data.id.size() >= 1 && data.id.size() <= 64
-        && data.mode in ['solo', 'duo']
+        && data.mode in ['solo', 'duo', 'group']
         && data.runnerName is string && data.runnerName.size() >= 1 && data.runnerName.size() <= 80
         && data.bibNumber is string && data.bibNumber.size() >= 1 && data.bibNumber.size() <= 24
         && data.placement is string && data.placement.size() >= 1 && data.placement.size() <= 40
@@ -594,7 +707,7 @@ service cloud.firestore {
         && data.pace is string && data.pace.size() >= 1 && data.pace.size() <= 30
         && data.raceName is string && data.raceName.size() >= 1 && data.raceName.size() <= 100
         && data.raceDate is string && data.raceDate.size() >= 1 && data.raceDate.size() <= 30
-        && data.photoUrl is string && data.photoUrl.size() >= 1 && data.photoUrl.size() <= 900000
+        && isSafeHighlightPhoto(data.photoUrl)
         && data.borderPreset in [
           'liquid-gold', 'cyber-hud', 'sonic-wave', 'holo-foil', 'carbon-minimal',
           'neon-circuit', 'obsidian-chrome', 'crimson-inferno', 'aurora-borealis',
@@ -612,7 +725,10 @@ service cloud.firestore {
         && (!data.keys().hasAny(['scrimStrength']) || (data.scrimStrength is number && data.scrimStrength >= 30 && data.scrimStrength <= 95))
         && (!data.keys().hasAny(['partnerName']) || (data.partnerName is string && data.partnerName.size() <= 80))
         && (!data.keys().hasAny(['partnerBibNumber']) || (data.partnerBibNumber is string && data.partnerBibNumber.size() <= 24))
-        && (!data.keys().hasAny(['partnerPhotoUrl']) || (data.partnerPhotoUrl is string && data.partnerPhotoUrl.size() <= 900000))
+        && (!data.keys().hasAny(['partnerPhotoUrl']) || data.partnerPhotoUrl == '' || isSafeHighlightPhoto(data.partnerPhotoUrl))
+        && (!data.keys().hasAny(['teamName']) || (data.teamName is string && data.teamName.size() <= 80))
+        && (!data.keys().hasAny(['groupPhotoLayout']) || data.groupPhotoLayout in ['collage', 'single'])
+        && (!data.keys().hasAny(['groupMembers']) || (data.groupMembers is list && data.groupMembers.size() <= 6))
         && (!data.keys().hasAny(['soloSplitTime']) || (data.soloSplitTime is string && data.soloSplitTime.size() <= 30))
         && (!data.keys().hasAny(['partnerSplitTime']) || (data.partnerSplitTime is string && data.partnerSplitTime.size() <= 30))
         && (!data.keys().hasAny(['combinedAvgPace']) || (data.combinedAvgPace is string && data.combinedAvgPace.size() <= 30))
@@ -622,6 +738,8 @@ service cloud.firestore {
         && (!data.keys().hasAny(['raceId']) || (data.raceId is string && data.raceId.size() <= 64))
         && (!data.keys().hasAny(['raceCode']) || (data.raceCode is string && data.raceCode.size() <= 30))
         && (!data.keys().hasAny(['badgeStamp']) || (data.badgeStamp is string && data.badgeStamp.size() <= 30))
+        && (!data.keys().hasAny(['achievements']) || (data.achievements is list && data.achievements.size() <= 10))
+        && (!data.keys().hasAny(['participatedEvents']) || (data.participatedEvents is list && data.participatedEvents.size() <= 12))
         && (!data.keys().hasAny(['pinned']) || data.pinned is bool)
         && (!data.keys().hasAny(['expiresAt']) || (data.expiresAt is string && data.expiresAt.size() <= 30))
         && (!data.keys().hasAny(['createdBy']) || (data.createdBy is string && data.createdBy.size() <= 128));

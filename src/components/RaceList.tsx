@@ -9,6 +9,7 @@ interface RaceListProps {
   races: Race[];
   onSelectRace: (raceId: string) => void;
   selectedRaceId?: string;
+  registeredRaceIds?: Set<string>;
   title?: string;
   subtitle?: string;
   actionLabel?: string;
@@ -20,6 +21,7 @@ export default function RaceList({
   races,
   onSelectRace,
   selectedRaceId,
+  registeredRaceIds,
   title = 'Race Events',
   subtitle = 'Choose an event to continue.',
   actionLabel = 'Select This Race',
@@ -27,15 +29,15 @@ export default function RaceList({
   emptyDescription = 'Check back once an Admin or Organizer sets one up.',
 }: RaceListProps) {
   return (
-    <div className="w-full space-y-5">
+    <div className="w-full space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 border-b border-[var(--border-default)] pb-3">
         <div>
-          <h2 className="text-xl sm:text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
+          <h2 className="text-lg sm:text-xl font-semibold font-display uppercase tracking-tight text-[var(--text-primary)]">
             {title}
           </h2>
           <p className="text-xs font-normal text-[var(--text-secondary)] mt-1">{subtitle}</p>
         </div>
-        <span className="text-xs font-mono font-semibold text-[var(--text-secondary)] tabular-nums self-start sm:self-end">
+        <span className="text-xs font-mono font-semibold text-[var(--text-secondary)] tabular-nums self-start sm:self-end px-2.5 py-1 rounded-md border border-[var(--border-default)] bg-[var(--surface-card)]">
           {races.length} {races.length === 1 ? 'event' : 'events'}
         </span>
       </div>
@@ -56,14 +58,20 @@ export default function RaceList({
         <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-4">
           {races.map((race) => {
             const isSelected = race.id === selectedRaceId;
+            const isRegistered = registeredRaceIds?.has(race.id) ?? false;
             const regOpen = isRaceRegistrationOpen(race);
             const isLive = !!race.liveBroadcastEnabled;
             const isCompleted = !!race.completedAt;
+            const leftBorderClass = isSelected || isRegistered
+              ? 'border-l-red-600'
+              : isCompleted
+              ? 'border-l-zinc-500'
+              : 'border-l-emerald-600';
 
             return (
               <Card
                 key={race.id}
-                className={`group overflow-hidden min-w-0 text-left transition-[border-color,transform] duration-150 border-[var(--border-default)] hover:border-red-600/60 flex flex-col justify-between ${
+                className={`group overflow-hidden min-w-0 text-left transition-[border-color,transform] duration-150 border-[var(--border-default)] border-l-4 ${leftBorderClass} hover:border-red-600/60 flex flex-col justify-between ${
                   isSelected ? 'ring-2 ring-red-600 border-red-600' : ''
                 }`}
               >
@@ -104,6 +112,11 @@ export default function RaceList({
                       ) : (
                         <Badge variant="muted" className="shadow-sm text-xs font-semibold uppercase">
                           Reg Closed
+                        </Badge>
+                      )}
+                      {isRegistered && (
+                        <Badge variant="default" className="shadow-sm text-xs font-semibold uppercase">
+                          Registered
                         </Badge>
                       )}
                     </div>

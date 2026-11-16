@@ -4,6 +4,9 @@ import App from './App.tsx';
 import FeedbackProvider from './components/ui/FeedbackProvider';
 import './index.css';
 
+const appFonts = document.querySelector<HTMLLinkElement>('#app-fonts');
+if (appFonts) appFonts.rel = 'stylesheet';
+
 // Keep the offline shell out of the local Vite server. This prevents a
 // previously cached module from causing a blank local page after source
 // changes. Any old RacePulse dev cache is removed once.

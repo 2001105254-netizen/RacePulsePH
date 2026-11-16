@@ -21,3 +21,9 @@ test('LAN reset requires protected authority and corrections cannot change read 
  assert.equal(authorize(operator,'POST','/api/chip-reads',{raceId:'race_a',recordedBy:'operator',bibNumber:'new'},{raceId:'race_a',recordedBy:'operator',bibNumber:'old'}),false);
  assert.equal(authorize({...operator,permissions:{...operator.permissions,'engraving.status':true}},'POST','/api/orders',{id:'ord1',status:'invalid_status'},{id:'ord1',status:'queued'}),false);
 });
+test('LAN blocks trailing-slash reset bypasses and unexpected subroutes',()=>{
+ assert.equal(authorize({...operator,permissions:{...operator.permissions,'engraving.create':true}},'POST','/api/orders/reset/',{status:'queued'}),false);
+ assert.equal(authorize(operator,'POST','/api/chip-reads/reset/',{raceId:'race_a',recordedBy:'operator'}),false);
+ assert.equal(authorize({...operator,authority:true,scope:'all'},'POST','/api/orders/reset/',{}),true);
+ assert.equal(authorize(operator,'POST','/api/orders/unexpected',{status:'queued'}),false);
+});

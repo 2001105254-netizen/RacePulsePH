@@ -41,3 +41,23 @@ test('bridge replay retains original receipt time, metadata and all burst events
  assert.equal(payload.events.length,505);
  assert.equal(payload.events.find(e=>e.id==='burst_0').monotonicTicks,event.monotonicTicks);
 });
+test('local HTTP enforces security headers, CORS allowlist, plain JSON bodies, and reset trailing slash blocks',async()=>{
+ const healthRes=await request('health');
+ assert.equal(healthRes.headers.get('x-content-type-options'),'nosniff');
+ assert.equal(healthRes.headers.get('x-frame-options'),'DENY');
+ assert.equal(healthRes.headers.get('cache-control'),'no-store');
+ assert.equal(healthRes.headers.get('x-powered-by'),null);
+
+ const evilCors=await fetch(`http://127.0.0.1:${port}/api/health`,{headers:{Origin:'https://evil.example'}});
+ assert.equal(evilCors.headers.get('access-control-allow-origin'),null);
+ const evilPreflight=await fetch(`http://127.0.0.1:${port}/api/orders`,{method:'OPTIONS',headers:{Origin:'https://evil.example'}});
+ assert.equal(evilPreflight.status,403);
+ const lanCors=await fetch(`http://127.0.0.1:${port}/api/health`,{headers:{Origin:'http://192.168.1.50:3000'}});
+ assert.equal(lanCors.headers.get('access-control-allow-origin'),'http://192.168.1.50:3000');
+
+ const arrayBody=await fetch(`http://127.0.0.1:${port}/api/orders`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer operator'},body:JSON.stringify([1,2,3])});
+ assert.equal(arrayBody.status,400);
+
+ const resetSlash=await request('orders/reset/','POST','operator',{id:'evil_reset',runnerName:'Test',bibNumber:'5-1',status:'queued'});
+ assert.equal(resetSlash.status,403);
+});

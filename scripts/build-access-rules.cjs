@@ -76,15 +76,22 @@ block('match /users/{uid}',`match /users/{uid} {
         && request.resource.data.role in ['runner','organizer','superadmin']
         && request.resource.data.uid == uid && request.resource.data.email == request.auth.token.email;
       allow update: if request.auth != null && request.auth.uid == uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName','nickname','photoURL','emergencyContactName','emergencyContactPhone','shirtSize','medicalNotes','username'])
+        && !isRemovedAccount(uid)
+        && (!exists(/databases/$(database)/documents/userAccess/$(uid)) || get(/databases/$(database)/documents/userAccess/$(uid)).data.get('status', 'active') == 'active')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName','nickname','photoURL','coverURL','coverPreset','bio','location','runClub','favoriteDistance','socialLink','emergencyContactName','emergencyContactPhone','shirtSize','medicalNotes','username','marketingOptIn','marketingUpdatedAt'])
         && request.resource.data.displayName is string && request.resource.data.displayName.size() >= 1 && request.resource.data.displayName.size() <= 100
-        && hasSafeProfileDetails(request.resource.data) && hasValidUsernameBinding(uid, request.resource.data);
+        && hasSafeProfileDetails(request.resource.data)
+        && (!changed(['username']) || ((!resource.data.keys().hasAny(['username']) || resource.data.username == null || resource.data.username == '') && hasValidUsernameBinding(uid, request.resource.data)));
       allow delete: if request.auth != null && request.auth.uid == uid && resource.data.role != 'superadmin';
     }`);
 block('match /removedAccounts/{uid}',`match /removedAccounts/{uid} { allow read: if isSuperAdmin(); allow write: if false; }`);
 block('match /races/{raceId}',`match /races/{raceId} {
       allow read: if true;
       allow create: if permission('race.create') && request.resource.data.createdBy == request.auth.uid && request.resource.data.id == raceId
+        && request.resource.data.get('createdAt', '') is string
+        && (!request.resource.data.keys().hasAny(['livestreamUrl']) || request.resource.data.livestreamUrl == '' || isSafeHttpUrl(request.resource.data.livestreamUrl))
+        && (!request.resource.data.keys().hasAny(['routeMapUrl']) || request.resource.data.routeMapUrl == '' || isSafeHttpUrl(request.resource.data.routeMapUrl))
+        && (!request.resource.data.keys().hasAny(['routeGpxUrl']) || request.resource.data.routeGpxUrl == '' || isSafeStorageOrHttpsUrl(request.resource.data.routeGpxUrl))
         && !request.resource.data.keys().hasAny(['gunStartTime','waveStartTimes','completedAt'])
         && (!request.resource.data.keys().hasAny(['posterImage','inclusionImage']) || permission('race.artwork'))
         && (!request.resource.data.keys().hasAny(['routeGpxUrl','routeGpxFileName','routeGpxUploadedAt']) || permission('race.artwork'))
@@ -92,6 +99,9 @@ block('match /races/{raceId}',`match /races/{raceId} {
         && (request.resource.data.get('organizerIds', []).size() == 0 || permission('race.team'))
         && (!(request.resource.data.get('onlinePaymentEnabled', false) || request.resource.data.get('manualPaymentEnabled', false)) || permission('payment.configure'));
       allow update: if raceScope(raceId) && request.resource.data.createdBy == resource.data.createdBy && request.resource.data.createdAt == resource.data.createdAt
+        && (!changed(['livestreamUrl']) || request.resource.data.get('livestreamUrl', '') == '' || isSafeHttpUrl(request.resource.data.livestreamUrl))
+        && (!changed(['routeMapUrl']) || request.resource.data.get('routeMapUrl', '') == '' || isSafeHttpUrl(request.resource.data.routeMapUrl))
+        && (!changed(['routeGpxUrl']) || request.resource.data.get('routeGpxUrl', '') == '' || isSafeStorageOrHttpsUrl(request.resource.data.routeGpxUrl))
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','date','inclusions','checkpoints','ageCategories','youngestRunnerAwardEnabled','oldestRunnerAwardEnabled','distances','entryCategories','registrationOpen','registrationCloseDate','onlinePaymentEnabled','paymentFeeMode','manualPaymentEnabled','manualPaymentInstructions','manualPaymentQrImage','posterImage','inclusionImage','routeGpxUrl','routeGpxFileName','routeGpxUploadedAt','raceBibTemplateImage','raceBibCustomFont','raceBibLayout','raceBibTemplatesByDistance','raceBibTemplatesByEntryCategory','raceBibShowRaffleNumber','raceBibShowQrCode','organizerIds','gunStartTime','waveStartTimes','completedAt','liveBroadcastEnabled','livestreamUrl','routeMapUrl','finishReviewWindowMs','disqualifiedBibs'])
         && (!changed(['finishReviewWindowMs']) || (permission('timing.correct') && request.resource.data.finishReviewWindowMs is number && request.resource.data.finishReviewWindowMs >= 0 && request.resource.data.finishReviewWindowMs <= 60000))
         && (!changed(['disqualifiedBibs']) || ((permission('timing.correct') || permission('timing.scan')) && request.resource.data.disqualifiedBibs is map && request.resource.data.disqualifiedBibs.size() <= 500))
@@ -115,7 +125,7 @@ block('match /runners/{regId}',`match /runners/{regId} {
       allow create: if isValidRunnerProfile(request.resource.data) && hasValidRegistrationId(regId, request.resource.data)
         && (hasNoPaymentMetadata(request.resource.data) || createsManualPaymentReservation(request.resource.data))
         && !request.resource.data.keys().hasAny(['kitClaimedAt','chipId','startsAfterBib'])
-        && (racePermission('roster.add', request.resource.data.raceId) || racePermission('roster.import', request.resource.data.raceId) || (request.resource.data.get('isFreeSlot', false) && racePermission('roster.slots', request.resource.data.raceId)) || (permission('personal.register') && request.resource.data.uid == request.auth.uid && !request.resource.data.get('isFreeSlot', false) && get(/databases/$(database)/documents/races/$(request.resource.data.raceId)).data.get('registrationOpen', true)));
+        && (racePermission('roster.add', request.resource.data.raceId) || racePermission('roster.import', request.resource.data.raceId) || (request.resource.data.get('isFreeSlot', false) && racePermission('roster.slots', request.resource.data.raceId)) || (permission('personal.register') && request.resource.data.uid == request.auth.uid && !request.resource.data.get('isFreeSlot', false) && selfRegistrationAllowed(request.resource.data)));
       allow update: if isValidRunnerProfile(request.resource.data) && hasValidRegistrationId(regId, request.resource.data)
         && request.resource.data.uid == resource.data.uid && request.resource.data.raceId == resource.data.raceId && request.resource.data.createdAt == resource.data.createdAt
         && (organizerConfirmsManualPayment() || (paymentMetadataUnchanged()
@@ -124,8 +134,8 @@ block('match /runners/{regId}',`match /runners/{regId} {
           && (!changed(['bibNumber']) || racePermission('roster.bibs', resource.data.raceId))
           && (!changed(['startsAfterBib']) || racePermission('roster.edit', resource.data.raceId))
           && (!changed(['kitClaimedAt']) || racePermission('roster.kits', resource.data.raceId))
-          && (!changed(['fullName','gender','age','ageNotProvided','shirtSize','emergencyContactName','emergencyContactPhone','entryCategory','teamName','teamMembers','distance']) || racePermission('roster.edit', resource.data.raceId) || (permission('personal.register') && resource.data.uid == request.auth.uid))));
-      allow delete: if (isSuperAdmin() && raceScope(resource.data.raceId)) || racePermission('roster.remove', resource.data.raceId) || (permission('personal.register') && resource.data.uid == request.auth.uid);
+          && (!changed(['fullName','gender','age','ageNotProvided','shirtSize','emergencyContactName','emergencyContactPhone','entryCategory','teamName','teamMembers','distance']) || racePermission('roster.edit', resource.data.raceId) || (permission('personal.register') && resource.data.uid == request.auth.uid && (!changed(['distance','entryCategory']) || resource.data.get('paymentStatus', '') == '')))));
+      allow delete: if (isSuperAdmin() && raceScope(resource.data.raceId)) || racePermission('roster.remove', resource.data.raceId) || (permission('personal.register') && resource.data.uid == request.auth.uid && resource.data.get('paymentStatus', '') != 'paid' && !resource.data.keys().hasAny(['chipId','kitClaimedAt']));
     }`);
 source=source.replace('    match /bibCounters/{counterId} {',`    // A server-side QR claim lets a Google Form/imported runner attach their
     // own physical bib to their personal account without exposing the roster.
@@ -139,9 +149,9 @@ source=source.replace('    match /bibCounters/{counterId} {',`    // A server-si
     match /bibCounters/{counterId} {`);
 block('match /bibCounters/{counterId}',`match /bibCounters/{counterId} {
       allow read: if permission('personal.register') || permission('roster.add') || permission('roster.slots');
-      // Counters contain no private data. Only monotonic increments are permitted.
-      allow create: if (permission('personal.register') || racePermission('roster.add', request.resource.data.raceId) || racePermission('roster.slots', request.resource.data.raceId)) && request.resource.data.keys().hasOnly(['count','raceId']) && request.resource.data.raceId is string && counterId.matches(request.resource.data.raceId + '_.*') && request.resource.data.count is int && request.resource.data.count > 0;
-      allow update: if (permission('personal.register') || racePermission('roster.add', request.resource.data.raceId) || racePermission('roster.slots', request.resource.data.raceId)) && request.resource.data.keys().hasOnly(['count','raceId']) && request.resource.data.raceId is string && counterId.matches(request.resource.data.raceId + '_.*') && request.resource.data.count is int && request.resource.data.count >= resource.data.count && request.resource.data.count <= resource.data.count + 1000;
+      // Counters contain no private data. Only bounded monotonic increments are permitted.
+      allow create: if request.resource.data.keys().hasOnly(['count','raceId']) && request.resource.data.raceId is string && counterId.matches(request.resource.data.raceId + '_.*') && request.resource.data.count is int && request.resource.data.count > 0 && exists(/databases/$(database)/documents/races/$(request.resource.data.raceId)) && ((permission('personal.register') && request.resource.data.count <= 20) || ((racePermission('roster.add', request.resource.data.raceId) || racePermission('roster.slots', request.resource.data.raceId)) && request.resource.data.count <= 5000));
+      allow update: if request.resource.data.keys().hasOnly(['count','raceId']) && request.resource.data.raceId is string && (!('raceId' in resource.data) || request.resource.data.raceId == resource.data.raceId) && counterId.matches(request.resource.data.raceId + '_.*') && request.resource.data.count is int && request.resource.data.count >= resource.data.count && ((permission('personal.register') && request.resource.data.count <= resource.data.count + 20) || ((racePermission('roster.add', request.resource.data.raceId) || racePermission('roster.slots', request.resource.data.raceId)) && request.resource.data.count <= resource.data.count + 5000));
     }`);
 block('match /chipReads/{readId}',`match /chipReads/{readId} {
       allow read: if racePermission('timing.view', resource.data.raceId) || (permission('personal.results') && ownsRecordedSplit(resource.data.raceId, resource.data.bibNumber));
@@ -187,10 +197,10 @@ for (const [path,name] of [['races','raceUpdateAllowed'],['runners','runnerUpdat
  const original=source.slice(allow+'allow update: if '.length,end);
  const expression=original.replaceAll('request.resource.data.diff(resource.data).affectedKeys()', 'fields')
    .replace(/changed\((\[[^\]]*\])\)/g,'fields.hasAny($1)')
-   .replace(/racePermission\('([^']+)', resource.data.raceId\)/g,"(p.get('$1', false) && scoped)")
-   .replace(/permission\('([^']+)'\)/g,"p.get('$1', false)");
+   .replace(/racePermission\('([^']+)', resource.data.raceId\)/g,"(permission('$1') && scoped)")
+   .replace(/permission\('([^']+)'\)/g,"permission('$1')");
  const parameter=path==='races'?'raceId':'regId';
- const helper=`function ${name}(${parameter}) {\n      let p = access().get('permissions', {});\n      let fields = request.resource.data.diff(resource.data).affectedKeys();\n      let scoped = ${path==='runners'?'raceScope(resource.data.raceId)':'true'};\n      return request.auth != null && access().status == 'active' && ${expression};\n    }\n    `;
+ const helper=`function ${name}(${parameter}) {\n      let fields = request.resource.data.diff(resource.data).affectedKeys();\n      let scoped = ${path==='runners'?'raceScope(resource.data.raceId)':'true'};\n      return request.auth != null && access().status == 'active' && ${expression};\n    }\n    `;
  source=source.slice(0,allow)+`allow update: if ${name}(${parameter})`+source.slice(end);
  const match=source.indexOf(`match /${path}/`);source=source.slice(0,match)+helper+source.slice(match);
 }

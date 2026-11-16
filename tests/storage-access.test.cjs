@@ -40,3 +40,10 @@ test('highlight asset uploads enforce highlights.manage permission and owner pat
  await assertSucceeds(uploadBytes(ref(env.authenticatedContext('storage_superadmin').storage(),'highlight-assets/storage_superadmin/hl_1/primary.jpg'),image,{contentType:'image/jpeg'}));
  await assertFails(uploadBytes(ref(env.authenticatedContext('storage_superadmin').storage(),'highlight-assets/someone_else/hl_1/primary.jpg'),image,{contentType:'image/jpeg'}));
 });
+test('SVG and executable file types are rejected across image and font storage paths',async()=>{
+ const svgBytes=new Uint8Array(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('storage_owner').storage(),'race-assets/storage_owner/storage_race/xss.svg'),svgBytes,{contentType:'image/svg+xml'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('storage_superadmin').storage(),'highlight-assets/storage_superadmin/hl_1/xss.svg'),svgBytes,{contentType:'image/svg+xml'}));
+ await assertSucceeds(uploadBytes(ref(env.authenticatedContext('storage_superadmin').storage(),'race-bib-fonts/storage_superadmin/custom.woff2'),image,{contentType:'font/woff2'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('storage_superadmin').storage(),'race-bib-fonts/storage_superadmin/evil.html'),svgBytes,{contentType:'text/html'}));
+});

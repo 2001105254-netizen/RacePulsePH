@@ -23,6 +23,7 @@ import { db } from '../firebase';
 import { useAccess, useScopedRacesState } from '../lib/access';
 import { embeddableMapUrl, safeExternalUrl, youtubeEmbedUrl } from '../lib/liveBroadcast';
 import { formatClockTime, formatDateTime, formatRaceTime } from '../lib/preciseTime';
+import { SAFE_IFRAME_SANDBOX } from '../lib/security';
 import { runnerDivisionLabel } from '../lib/raceEntry';
 import { computeResults, getCheckpointByType } from '../lib/timing';
 import { useWorkspaceHeader } from '../lib/workspaceHeader';
@@ -1783,6 +1784,8 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
                           title="Livestream preview"
                           src={streamEmbed}
                           className="w-full h-full border-0"
+                          sandbox={SAFE_IFRAME_SANDBOX}
+                          referrerPolicy="strict-origin-when-cross-origin"
                           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                           allowFullScreen
                         />
@@ -1818,6 +1821,8 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
                         title="Course map preview"
                         src={mapEmbed}
                         className="w-full h-full border-0"
+                        sandbox={SAFE_IFRAME_SANDBOX}
+                        referrerPolicy="strict-origin-when-cross-origin"
                         loading="lazy"
                       />
                     ) : externalMapHref ? (

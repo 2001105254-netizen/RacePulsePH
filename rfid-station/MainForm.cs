@@ -35,6 +35,15 @@ namespace RacePulseTimingStation
 
         private string SettingsPath
         {
+            get
+            {
+                var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                return Path.Combine(localAppData, "RacePulseTimingStation", "timing-station.config.json");
+            }
+        }
+
+        private string LegacySettingsPath
+        {
             get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "timing-station.config.json"); }
         }
 
@@ -236,7 +245,10 @@ namespace RacePulseTimingStation
             var config = new BridgeConfig();
             try
             {
-                if (File.Exists(SettingsPath)) config = _json.Deserialize<BridgeConfig>(File.ReadAllText(SettingsPath));
+                var sourcePath = File.Exists(SettingsPath)
+                    ? SettingsPath
+                    : (File.Exists(LegacySettingsPath) ? LegacySettingsPath : null);
+                if (sourcePath != null) config = _json.Deserialize<BridgeConfig>(File.ReadAllText(sourcePath));
             }
             catch (Exception ex)
             {
@@ -272,8 +284,11 @@ namespace RacePulseTimingStation
         private void SaveSettings(BridgeConfig config)
         {
             BridgeConfig.Validate(config);
+            var settingsDirectory = Path.GetDirectoryName(SettingsPath);
+            if (!string.IsNullOrEmpty(settingsDirectory))
+                Directory.CreateDirectory(settingsDirectory);
             File.WriteAllText(SettingsPath, _json.Serialize(config));
-            AddLog("Settings saved to timing-station.config.json.", false);
+            AddLog("Settings saved to user application data.", false);
         }
 
         private async Task TestReaderAsync()

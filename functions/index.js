@@ -123,7 +123,7 @@ function verifyWebhookSignature(request) {
   const timestamp = fields.t;
   const tsSeconds = Number(timestamp);
   const rawBody = Buffer.isBuffer(request.rawBody) ? request.rawBody.toString('utf8') : JSON.stringify(request.body || {});
-  if (!timestamp || !Number.isFinite(tsSeconds) || Math.abs(Date.now() / 1000 - tsSeconds) > 86400 || !rawBody) return false;
+  if (!timestamp || !Number.isFinite(tsSeconds) || Date.now() / 1000 - tsSeconds > 3600 || tsSeconds - Date.now() / 1000 > 300 || !rawBody) return false;
   const expected = crypto.createHmac('sha256', paymongoWebhookSecret.value()).update(`${timestamp}.${rawBody}`).digest('hex');
   const payload = request.body || {};
   const candidate = payload?.data?.attributes?.livemode ? fields.li : fields.te;
@@ -305,7 +305,7 @@ async function handleWebhook(request, response) {
       const paidAt = new Date().toISOString();
       const paidPayment = checkoutAttributes.payments?.find((entry) => entry?.attributes?.status === 'paid');
       const paymentMethod = paidPayment?.attributes?.source?.type || 'paymongo';
-      transaction.set(counterRef, { count: next }, { merge: true });
+      transaction.set(counterRef, { count: next, raceId: payment.raceId }, { merge: true });
       transaction.set(runnerRef, {
         uid: payment.uid,
         raceId: payment.raceId,
@@ -344,7 +344,7 @@ exports.paymentsApi = onRequest({
   response.set('Cache-Control', 'no-store');
   setCors(request, response);
   if (request.method === 'OPTIONS') return response.status(204).send('');
-  if (request.method === 'POST' && (!request.is('application/json') || (request.rawBody?.length || 0) > 65536)) {
+  if (request.method === 'POST' && (!request.is('application/json') || (request.rawBody?.length || 0) > 65536 || !request.body || typeof request.body !== 'object' || Array.isArray(request.body))) {
     return sendJson(response, 400, { error: 'Invalid request.' });
   }
   const path = (request.path || '/').replace(/\/+$/, '') || '/';

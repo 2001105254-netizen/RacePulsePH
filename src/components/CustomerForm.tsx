@@ -8,7 +8,19 @@ import { EngravingOrder, EngravingStatus } from '../types';
 import { Award, Clock, ArrowRight, CheckCircle, RefreshCw, XCircle, Wifi, WifiOff, AlertTriangle, User, Hash, MapPin, Trophy, MessageSquare, ChevronDown } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useAndroidBackHandler } from '../lib/capacitorAndroid';
+import { randomShortCode } from '../lib/security';
 import DialogSurface from './ui/DialogSurface';
+import RaceTimeText from './ui/RaceTimeText';
+
+export interface EngravingRacePrefill {
+  key: string;
+  label: string;
+  runnerName: string;
+  bibNumber: string;
+  distance: string;
+  finishingTime?: string;
+  rank?: string;
+}
 
 interface CustomerFormProps {
   onBackToRoleSelection: () => void;
@@ -16,6 +28,46 @@ interface CustomerFormProps {
   ownerUid?: string;
   initialRunnerName?: string;
   initialBibNumber?: string;
+  racePrefills?: EngravingRacePrefill[];
+  embedded?: boolean;
+}
+
+function resolveDistanceOption(raw?: string): { distance: string; customDistance: string } {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return { distance: 'Marathon', customDistance: '' };
+  const norm = trimmed.toUpperCase().replace(/\s+/g, '');
+  if (norm === 'MARATHON' || norm === '42K' || norm === '42KM' || norm === '42.195K' || norm === '42.195KM') {
+    return { distance: 'Marathon', customDistance: '' };
+  }
+  if (norm === 'HALFMARATHON' || norm === '21K' || norm === '21KM' || norm === '21.1K' || norm === '21.1KM') {
+    return { distance: 'Half Marathon', customDistance: '' };
+  }
+  if (norm === '10K' || norm === '10KM') {
+    return { distance: '10K', customDistance: '' };
+  }
+  if (norm === '5K' || norm === '5KM') {
+    return { distance: '5K', customDistance: '' };
+  }
+  return { distance: 'Custom', customDistance: trimmed.toUpperCase() };
+}
+
+function parseFinishingTimeParts(raw?: string): {
+  hour: string;
+  min: string;
+  sec: string;
+  fraction: string;
+} | null {
+  if (!raw) return null;
+  const formatted = formatRaceTime(raw);
+  const match = /^(\d{2,}):([0-5]\d):([0-5]\d)(?:\.(\d{1,7})|(\d{5}))?$/.exec(formatted.trim());
+  if (!match) return null;
+  const hourNum = Math.min(12, Math.max(0, parseInt(match[1], 10) || 0));
+  return {
+    hour: String(hourNum).padStart(2, '0'),
+    min: match[2],
+    sec: match[3],
+    fraction: (match[4] || match[5] || '00000').padEnd(5, '0').slice(0, 5),
+  };
 }
 
 export default function CustomerForm({
@@ -24,6 +76,8 @@ export default function CustomerForm({
   ownerUid,
   initialRunnerName = '',
   initialBibNumber = '',
+  racePrefills = [],
+  embedded = false,
 }: CustomerFormProps) {
   const { can } = useAccess();
   // Navigation / screen states
@@ -34,20 +88,57 @@ export default function CustomerForm({
   // Connection co-processing state
   const [lanConnected, setLanConnected] = useState<boolean | null>(null);
 
+  const defaultPrefill = racePrefills.find((p) => Boolean(p.finishingTime)) || racePrefills[0];
+  const initialDistance = resolveDistanceOption(defaultPrefill?.distance);
+  const initialTime = parseFinishingTimeParts(defaultPrefill?.finishingTime);
+
   // Form Fields
-  const [runnerName, setRunnerName] = useState(initialRunnerName);
-  const [bibNumber, setBibNumber] = useState(initialBibNumber);
-  const [distance, setDistance] = useState('Marathon');
-  const [customDistance, setCustomDistance] = useState('');
+  const [selectedPrefillKey, setSelectedPrefillKey] = useState(defaultPrefill?.key || '');
+  const [runnerName, setRunnerName] = useState(defaultPrefill?.runnerName || initialRunnerName);
+  const [bibNumber, setBibNumber] = useState(defaultPrefill?.bibNumber || initialBibNumber);
+  const [distance, setDistance] = useState(initialDistance.distance);
+  const [customDistance, setCustomDistance] = useState(initialDistance.customDistance);
 
   // Robust Finishing Time parts (hours, minutes, seconds selectors to avoid typos)
-  const [timeHour, setTimeHour] = useState('02');
-  const [timeMin, setTimeMin] = useState('45');
-  const [timeSec, setTimeSec] = useState('00');
-  const [timeFraction, setTimeFraction] = useState('00000');
+  const [timeHour, setTimeHour] = useState(initialTime?.hour || '02');
+  const [timeMin, setTimeMin] = useState(initialTime?.min || '45');
+  const [timeSec, setTimeSec] = useState(initialTime?.sec || '00');
+  const [timeFraction, setTimeFraction] = useState(initialTime?.fraction || '00000');
 
-  const [rank, setRank] = useState('');
+  const [rank, setRank] = useState(defaultPrefill?.rank || '');
   const [customInscription, setCustomInscription] = useState('');
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+
+  const hasEditedRef = useRef(false);
+  const runnerNameInputRef = useRef<HTMLInputElement>(null);
+  const bibNumberInputRef = useRef<HTMLInputElement>(null);
+  const customDistanceInputRef = useRef<HTMLInputElement>(null);
+
+  const applyPrefill = (prefill: EngravingRacePrefill) => {
+    setSelectedPrefillKey(prefill.key);
+    setRunnerName(prefill.runnerName);
+    setBibNumber(prefill.bibNumber);
+    const resolvedDist = resolveDistanceOption(prefill.distance);
+    setDistance(resolvedDist.distance);
+    setCustomDistance(resolvedDist.customDistance);
+    const parsedTime = parseFinishingTimeParts(prefill.finishingTime);
+    if (parsedTime) {
+      setTimeHour(parsedTime.hour);
+      setTimeMin(parsedTime.min);
+      setTimeSec(parsedTime.sec);
+      setTimeFraction(parsedTime.fraction);
+    }
+    setRank(prefill.rank || '');
+  };
+
+  useEffect(() => {
+    if (hasEditedRef.current || racePrefills.length === 0) return;
+    const preferred =
+      racePrefills.find((item) => item.key === selectedPrefillKey && item.finishingTime) ||
+      racePrefills.find((item) => Boolean(item.finishingTime)) ||
+      racePrefills[0];
+    if (preferred) applyPrefill(preferred);
+  }, [racePrefills, selectedPrefillKey]);
 
   // Stats for wait-time estimations
   const [activeQueueCount, setActiveQueueCount] = useState(0);
@@ -138,24 +229,27 @@ export default function CustomerForm({
 
   // Helper generator of 4-character uppercase code (unique)
   const generateShortCode = (): string => {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Avoid ambiguous letters O, I, 0, 1
-    let code = '';
-    for (let i = 0; i < 4; i++) {
-      code += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return code;
+    return randomShortCode(4);
   };
 
   // Submit form data
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitAttempted(true);
     setFormError('');
     if (!runnerName.trim()) {
       setFormError('Please enter your full name.');
+      runnerNameInputRef.current?.focus();
       return;
     }
     if (!bibNumber.trim()) {
       setFormError('Please enter your bib number.');
+      bibNumberInputRef.current?.focus();
+      return;
+    }
+    if (distance === 'Custom' && !customDistance.trim()) {
+      setFormError('Please enter your custom distance label.');
+      customDistanceInputRef.current?.focus();
       return;
     }
 
@@ -279,21 +373,28 @@ export default function CustomerForm({
   };
 
   return (
-    <div id="customer_flow_main" className="w-full max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-8 relative">
+    <div id="customer_flow_main" className={embedded ? 'w-full space-y-5 relative' : 'w-full max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-8 relative'}>
 
-      {/* Header Bar - frosted glass pill */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between glass-panel hero-glow px-4 sm:px-6 py-4 sm:py-5 mb-8 gap-4 animate-fadeIn">
-        <div className="text-left min-w-0 w-full">
-          <h1 className="heading-float text-2xl sm:text-3xl font-semibold tracking-tight font-display text-[var(--text-primary)] break-words [overflow-wrap:anywhere]">MEDAL PERSONALIZATION BOOTH</h1>
-          <div className="flex flex-wrap items-center gap-2 mt-1">
-            <p className="text-xs sm:text-sm text-[var(--text-secondary)]">Enter your race details carefully before confirming. Entries sync with the on-site laser station.</p>
+      {/* Header Bar */}
+      {embedded ? (
+        <div className="border border-[var(--border-default)] rounded-2xl bg-[var(--surface-card)] px-4 py-3 flex flex-wrap items-center justify-between gap-3 animate-fadeIn">
+          <div className="flex flex-wrap items-center gap-2.5 min-w-0">
+            <Award className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+            <h2 className="text-sm sm:text-base font-semibold font-display uppercase tracking-wider text-[var(--text-primary)] whitespace-nowrap">
+              Medal Personalization Booth
+            </h2>
+            <span className="text-xs text-[var(--text-secondary)] hidden sm:inline">
+              Preview and queue custom finisher medal engraving
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             {lanConnected !== null && (
-              <span className={`inline-flex max-w-full flex-wrap items-center gap-2 text-xs font-mono font-semibold tracking-wider uppercase px-3 py-1 rounded-full border ${
+              <span className={`inline-flex items-center gap-1.5 text-xs font-mono font-semibold tracking-wider uppercase px-2.5 py-1 rounded-full border ${
                 lanConnected
                   ? 'bg-emerald-500/10 border-emerald-600/30 text-emerald-700 dark:text-emerald-400'
                   : 'bg-red-500/10 border-red-600/30 text-red-700 dark:text-red-400'
               }`}>
-                <span className={`w-2 h-2 rounded-full ${lanConnected ? 'bg-emerald-600 dark:bg-emerald-400 motion-safe:animate-pulse' : 'bg-red-600 dark:bg-red-400 motion-safe:animate-ping'}`} aria-hidden="true"></span>
+                <span className={`w-2 h-2 rounded-full ${lanConnected ? 'bg-emerald-600 dark:bg-emerald-400 motion-safe:animate-pulse' : 'bg-red-600 dark:bg-red-400 motion-safe:animate-ping'}`} aria-hidden="true" />
                 {lanConnected ? (
                   <>
                     <Wifi className="w-3.5 h-3.5" aria-hidden="true" /> LAN Sync Linked
@@ -305,16 +406,50 @@ export default function CustomerForm({
                 )}
               </span>
             )}
+            <button
+              type="button"
+              onClick={onBackToRoleSelection}
+              className="min-h-9 px-3 py-1.5 rounded-lg border border-[var(--border-default)] bg-[var(--surface-elevated)] hover:border-red-600/40 text-xs font-semibold text-[var(--text-primary)] transition-colors flex items-center gap-1.5 shrink-0"
+            >
+              {backLabel}
+            </button>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onBackToRoleSelection}
-          className="min-h-11 w-full md:w-auto text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] glass-inset hover:bg-[var(--surface-hover)] font-semibold px-4 py-2 transition flex items-center justify-center gap-2 shrink-0"
-        >
-          {backLabel}
-        </button>
-      </div>
+      ) : (
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between glass-panel hero-glow px-4 sm:px-6 py-4 sm:py-5 mb-8 gap-4 animate-fadeIn">
+          <div className="text-left min-w-0 w-full">
+            <h1 className="heading-float text-2xl sm:text-3xl font-semibold tracking-tight font-display text-[var(--text-primary)] break-words [overflow-wrap:anywhere]">MEDAL PERSONALIZATION BOOTH</h1>
+            <div className="flex flex-wrap items-center gap-2 mt-1">
+              <p className="text-xs sm:text-sm text-[var(--text-secondary)]">Enter your race details carefully before confirming. Entries sync with the on-site laser station.</p>
+              {lanConnected !== null && (
+                <span className={`inline-flex max-w-full flex-wrap items-center gap-2 text-xs font-mono font-semibold tracking-wider uppercase px-3 py-1 rounded-full border ${
+                  lanConnected
+                    ? 'bg-emerald-500/10 border-emerald-600/30 text-emerald-700 dark:text-emerald-400'
+                    : 'bg-red-500/10 border-red-600/30 text-red-700 dark:text-red-400'
+                }`}>
+                  <span className={`w-2 h-2 rounded-full ${lanConnected ? 'bg-emerald-600 dark:bg-emerald-400 motion-safe:animate-pulse' : 'bg-red-600 dark:bg-red-400 motion-safe:animate-ping'}`} aria-hidden="true"></span>
+                  {lanConnected ? (
+                    <>
+                      <Wifi className="w-3.5 h-3.5" aria-hidden="true" /> LAN Sync Linked
+                    </>
+                  ) : (
+                    <>
+                      <WifiOff className="w-3.5 h-3.5" aria-hidden="true" /> Standalone Mode
+                    </>
+                  )}
+                </span>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onBackToRoleSelection}
+            className="min-h-11 w-full md:w-auto text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] glass-inset hover:bg-[var(--surface-hover)] font-semibold px-4 py-2 transition flex items-center justify-center gap-2 shrink-0"
+          >
+            {backLabel}
+          </button>
+        </div>
+      )}
 
       {viewState === 'form' ? (
         <div id="order_form_panel" className="grid grid-cols-1 lg:grid-cols-[minmax(0,7fr)_minmax(0,4fr)] gap-6 lg:gap-8 items-start">
@@ -333,6 +468,47 @@ export default function CustomerForm({
 
               <form onSubmit={handleSubmit} className="space-y-8" noValidate>
 
+                {racePrefills.length > 0 && (
+                  <div className="rounded-[20px] border border-[var(--border-default)] bg-[var(--surface-inset)] p-4 space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)]">
+                        Auto-filled from your race entry
+                      </span>
+                      {racePrefills.find((item) => item.key === selectedPrefillKey)?.finishingTime && (
+                        <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                          Official result linked
+                        </span>
+                      )}
+                    </div>
+                    {racePrefills.length === 1 ? (
+                      <p className="text-xs text-[var(--text-secondary)]">
+                        {racePrefills[0].label}
+                      </p>
+                    ) : (
+                      <label className="block">
+                        <span className="sr-only">Choose registered race to auto-fill engraving details</span>
+                        <select
+                          value={selectedPrefillKey}
+                          onChange={(e) => {
+                            const found = racePrefills.find((item) => item.key === e.target.value);
+                            if (found) {
+                              hasEditedRef.current = true;
+                              applyPrefill(found);
+                            }
+                          }}
+                          className="w-full min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50"
+                        >
+                          {racePrefills.map((item) => (
+                            <option key={item.key} value={item.key}>
+                              {item.label}{item.finishingTime ? ' (Official time)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                  </div>
+                )}
+
                 {/* Section 1: Runner Identity */}
                 <div role="group" aria-labelledby="section-runner-identity" className="space-y-4">
                   <div id="section-runner-identity" className="flex items-center gap-2 mb-1">
@@ -348,13 +524,15 @@ export default function CustomerForm({
                     <div className="relative">
                       <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] pointer-events-none" aria-hidden="true" />
                       <input
+                        ref={runnerNameInputRef}
                         id="runnerName"
                         type="text"
                         required
                         aria-required="true"
+                        aria-invalid={submitAttempted && !runnerName.trim()}
                         placeholder="EX: JUAN DELA CRUZ"
                         value={runnerName}
-                        onChange={(e) => setRunnerName(e.target.value.toUpperCase())}
+                        onChange={(e) => { hasEditedRef.current = true; setRunnerName(e.target.value.toUpperCase()); }}
                         className="w-full min-h-11 glass-inset pl-10 pr-4 py-3 text-sm font-semibold text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50 focus:border-red-700/60 transition"
                       />
                     </div>
@@ -369,13 +547,15 @@ export default function CustomerForm({
                     <div className="relative">
                       <Hash className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] pointer-events-none" aria-hidden="true" />
                       <input
+                        ref={bibNumberInputRef}
                         id="bibNumber"
                         type="text"
                         required
                         aria-required="true"
+                        aria-invalid={submitAttempted && !bibNumber.trim()}
                         placeholder="EX: 8842"
                         value={bibNumber}
-                        onChange={(e) => setBibNumber(e.target.value.replace(/[^a-zA-Z0-9-]/g, '').toUpperCase())}
+                        onChange={(e) => { hasEditedRef.current = true; setBibNumber(e.target.value.replace(/[^a-zA-Z0-9-]/g, '').toUpperCase()); }}
                         className="w-full min-h-11 glass-inset pl-10 pr-4 py-3 text-sm font-semibold text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50 focus:border-red-700/60 transition"
                       />
                     </div>
@@ -399,7 +579,7 @@ export default function CustomerForm({
                       <select
                         id="distance"
                         value={distance}
-                        onChange={(e) => setDistance(e.target.value)}
+                        onChange={(e) => { hasEditedRef.current = true; setDistance(e.target.value); }}
                         className="w-full min-h-11 appearance-none glass-inset pl-10 pr-10 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50 focus:border-red-700/60 transition"
                       >
                         <option value="Marathon"> 42KM</option>
@@ -419,13 +599,15 @@ export default function CustomerForm({
                         Enter Custom Distance Group / Label
                       </label>
                       <input
+                        ref={customDistanceInputRef}
                         id="customDistance"
                         type="text"
                         required
                         aria-required="true"
+                        aria-invalid={submitAttempted && distance === 'Custom' && !customDistance.trim()}
                         placeholder="EX: 15K TRAIL RUN or ULTRA 50K"
                         value={customDistance}
-                        onChange={(e) => setCustomDistance(e.target.value.toUpperCase())}
+                        onChange={(e) => { hasEditedRef.current = true; setCustomDistance(e.target.value.toUpperCase()); }}
                         className="w-full min-h-11 glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50 focus:border-red-700/60 transition animate-fadeIn"
                       />
                     </div>
@@ -444,7 +626,7 @@ export default function CustomerForm({
                         <select
                           id="timeHour"
                           value={timeHour}
-                          onChange={(e) => setTimeHour(e.target.value)}
+                          onChange={(e) => { hasEditedRef.current = true; setTimeHour(e.target.value); }}
                           className="w-full min-h-11 bg-[var(--surface-card)]/80 border border-[var(--border-default)] rounded-xl py-2 px-2 text-center font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50 text-sm"
                         >
                           {Array.from({ length: 13 }, (_, i) => String(i).padStart(2, '0')).map(h => (
@@ -461,7 +643,7 @@ export default function CustomerForm({
                         <select
                           id="timeMin"
                           value={timeMin}
-                          onChange={(e) => setTimeMin(e.target.value)}
+                          onChange={(e) => { hasEditedRef.current = true; setTimeMin(e.target.value); }}
                           className="w-full min-h-11 bg-[var(--surface-card)]/80 border border-[var(--border-default)] rounded-xl py-2 px-2 text-center font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50 text-sm"
                         >
                           {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0')).map(m => (
@@ -478,7 +660,7 @@ export default function CustomerForm({
                         <select
                           id="timeSec"
                           value={timeSec}
-                          onChange={(e) => setTimeSec(e.target.value)}
+                          onChange={(e) => { hasEditedRef.current = true; setTimeSec(e.target.value); }}
                           className="w-full min-h-11 bg-[var(--surface-card)]/80 border border-[var(--border-default)] rounded-xl py-2 px-2 text-center font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50 text-sm"
                         >
                           {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0')).map(s => (
@@ -487,11 +669,26 @@ export default function CustomerForm({
                         </select>
                       </div>
                     </div>
-                    <label htmlFor="timeFraction" className="flex flex-wrap items-center gap-2 text-xs mt-2">
-                      <span>Fractional seconds (five digits)</span>
-                      <input id="timeFraction" inputMode="numeric" pattern="[0-9]{1,5}" maxLength={5} value={timeFraction} onChange={event => setTimeFraction(event.target.value.replace(/[^0-9]/g, '').slice(0, 5))} className="w-24 max-w-full min-h-11 glass-inset p-2 font-mono" />
-                    </label>
-                    <p className="text-xs text-[var(--text-secondary)] mt-2">Time preview: {timeHour}:{timeMin}:{timeSec}{timeFraction.padEnd(5, '0')}</p>
+                    <p className="text-xs font-mono text-[var(--text-secondary)] mt-2">
+                      Engraved preview: <RaceTimeText value={`${timeHour}:${timeMin}:${timeSec}${timeFraction.padEnd(5, '0')}`} className="font-semibold text-[var(--text-primary)]" />
+                    </p>
+                    <details className="mt-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)]/60 px-3 py-2">
+                      <summary className="text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer select-none">
+                        Sub-second digits (optional, default .00000)
+                      </summary>
+                      <label htmlFor="timeFraction" className="flex flex-wrap items-center gap-2 text-xs mt-2">
+                        <span className="text-[var(--text-secondary)]">Five fractional digits</span>
+                        <input
+                          id="timeFraction"
+                          inputMode="numeric"
+                          pattern="[0-9]{1,5}"
+                          maxLength={5}
+                          value={timeFraction}
+                          onChange={event => { hasEditedRef.current = true; setTimeFraction(event.target.value.replace(/[^0-9]/g, '').slice(0, 5)); }}
+                          className="w-24 max-w-full min-h-11 glass-inset p-2 font-mono text-[var(--text-primary)]"
+                        />
+                      </label>
+                    </details>
                   </div>
                 </div>
 
@@ -831,7 +1028,7 @@ export default function CustomerForm({
               </div>
               <div>
                 <span className="text-[var(--text-secondary)] text-xs uppercase block mb-1">Finishing Time</span>
-                <span className="font-mono font-semibold text-[var(--text-primary)] block">{formatRaceTime(createdOrder?.finishingTime)}</span>
+                <span className="font-mono font-semibold text-[var(--text-primary)] block"><RaceTimeText value={createdOrder?.finishingTime} /></span>
               </div>
               {createdOrder?.rank && (
                 <div className="col-span-2 border-t border-[var(--border-subtle)] pt-3 mt-1">

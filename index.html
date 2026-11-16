@@ -36,55 +36,142 @@
     />
     <meta name="twitter:image" content="https://racepulseph.com/assets/hero-runners.webp" />
     <link rel="canonical" href="https://racepulseph.com/" />
+    <link rel="preload" as="image" href="/assets/racepulse-startup.webp" />
+    <script src="/startup.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
+      id="app-fonts"
       rel="preload"
       as="style"
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Space+Grotesk:wght@600;700&family=JetBrains+Mono:wght@400;600;700&display=swap"
     />
-    <link
-      rel="stylesheet"
-      media="print"
-      onload="this.media='all'"
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Space+Grotesk:wght@600;700&family=JetBrains+Mono:wght@400;600;700&display=swap"
-    />
-    <noscript>
-      <link
-        rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Space+Grotesk:wght@600;700&family=JetBrains+Mono:wght@400;600;700&display=swap"
-      />
-    </noscript>
     <link rel="icon" type="image/png" sizes="192x192" href="/assets/racepulse-mark-192.png" />
     <link rel="icon" type="image/png" sizes="512x512" href="/assets/racepulse-mark.png" />
     <link rel="shortcut icon" href="/assets/racepulse-mark-192.png" />
     <link rel="apple-touch-icon" href="/assets/racepulse-mark-192.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- Keep the first paint independent of the app stylesheet, including in the cached shell. -->
+    <style>
+      .startup-screen {
+        --startup-size: clamp(160px, 42vw, 208px);
+        position: fixed;
+        inset: 0;
+        box-sizing: border-box;
+        display: flex;
+        padding: 24px;
+        overflow: auto;
+        color-scheme: light dark;
+        color: #f5f5f7;
+        color: light-dark(oklch(24% 0.008 25), oklch(96% 0.004 25));
+        background: #0a0a0a;
+        background: light-dark(oklch(96.5% 0.008 25), oklch(14.48% 0 0));
+        font: 400 1rem/1.5 system-ui, sans-serif;
+        text-align: center;
+      }
+      [data-startup-theme="light"] .startup-screen { color-scheme: light; }
+      [data-startup-theme="dark"] .startup-screen { color-scheme: dark; }
+
+      .startup-identity {
+        display: grid;
+        justify-items: center;
+        gap: 24px;
+        width: min(100%, calc(var(--startup-size) + 24px));
+        margin: auto;
+      }
+      .startup-logo {
+        display: block;
+        width: min(100%, var(--startup-size));
+        height: auto;
+      }
+      .startup-pulse {
+        display: block;
+        width: 100%;
+        height: auto;
+        fill: none;
+        color: #ff3b30;
+        color: light-dark(oklch(52.71% 0.1943 29.42), oklch(65.42% 0.2321 28.66));
+        stroke-width: 2.5;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+      }
+      .startup-trace { stroke: currentColor; }
+      .startup-sweep { display: none; }
+      .startup-recovery p { margin: 0 0 12px; }
+      .startup-recovery button {
+        min-height: 44px;
+        padding: 8px 24px;
+        border: 1px solid currentColor;
+        border-radius: 12px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      .startup-recovery button:focus-visible {
+        outline: 2px solid currentColor;
+        outline-offset: 4px;
+      }
+
+      @media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
+        .startup-trace { stroke: light-dark(oklch(58% 0.038 25), oklch(57% 0.038 25)); }
+        .startup-sweep {
+          display: block;
+          animation: startup-heartbeat 1.6s linear -0.72s infinite;
+        }
+      }
+      @keyframes startup-heartbeat {
+        from { transform: translateX(-144px); }
+        to { transform: translateX(256px); }
+      }
+      @media (forced-colors: active) {
+        .startup-pulse { color: CanvasText; }
+      }
+      .startup-screen progress {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        overflow: hidden;
+        clip-path: inset(50%);
+      }
+    </style>
+    <noscript>
+      <style>.startup-screen .startup-pulse, .startup-screen progress { display: none }</style>
+    </noscript>
     <title>RacePulsePH | Philippine Race Timing, Bib Lookup, and Finisher Results</title>
   </head>
   <body>
     <div id="root">
-      <div
-        role="status"
-        style="
-          position: fixed;
-          inset: 0;
-          display: grid;
-          place-content: center;
-          gap: 16px;
-          text-align: center;
-          padding: 24px;
-          color-scheme: light dark;
-          background: #0a0a0a;
-          background: light-dark(#f5f5f7, #0a0a0a);
-          color: #f5f5f7;
-          color: light-dark(#0a0a0a, #f5f5f7);
-          font: 500 14px/1.5 system-ui, sans-serif;
-        "
-      >
-        <span>Starting RacePulsePH</span>
-        <noscript>Enable JavaScript to open RacePulsePH.</noscript>
-      </div>
+      <main class="startup-screen">
+        <div class="startup-identity">
+          <img class="startup-logo" src="/assets/racepulse-startup.webp" alt="RacePulsePH" width="528" height="536" />
+          <svg class="startup-pulse" viewBox="0 0 256 48" aria-hidden="true" focusable="false">
+            <defs>
+              <path id="startup-beat" d="M2 26 H74 Q78 26 81 23 Q86 16 90 23 Q92 26 96 26 H106 L112 31 L120 4 L127 43 L134 21 L138 26 H152 Q156 26 160 22 Q166 15 172 22 Q175 26 180 26 H254" />
+              <mask id="startup-signal" maskUnits="userSpaceOnUse" x="0" y="0" width="256" height="48">
+                <use href="#startup-beat" stroke="white" />
+              </mask>
+              <linearGradient id="startup-beam">
+                <stop stop-color="currentColor" stop-opacity="0" />
+                <stop offset=".28" stop-color="currentColor" />
+                <stop offset=".84" stop-color="currentColor" />
+                <stop offset="1" stop-color="currentColor" stop-opacity="0" />
+              </linearGradient>
+            </defs>
+            <use class="startup-trace" href="#startup-beat" />
+            <g mask="url(#startup-signal)">
+              <rect class="startup-sweep" width="144" height="48" fill="url(#startup-beam)" />
+            </g>
+          </svg>
+          <progress aria-label="Starting RacePulsePH"></progress>
+          <noscript>Enable JavaScript to open RacePulsePH.</noscript>
+          <div class="startup-recovery" hidden>
+            <p role="alert">RacePulsePH couldn’t open. Check your connection and try again.</p>
+            <button type="button">Try again</button>
+          </div>
+        </div>
+      </main>
     </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

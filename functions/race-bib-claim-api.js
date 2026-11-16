@@ -39,13 +39,48 @@ async function requireRunner(request) {
   return { db, uid: identity.uid };
 }
 
+const crypto = require('node:crypto');
+
 function readPayload(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw Object.assign(new Error('This race bib QR code is invalid.'), { status: 400 });
+  }
   const raceId = typeof body?.raceId === 'string' ? body.raceId.trim() : '';
   const bibNumber = typeof body?.bibNumber === 'string' ? body.bibNumber.trim().toUpperCase() : '';
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(raceId) || !bibNumber || bibNumber.length > 20) {
     throw Object.assign(new Error('This race bib QR code is invalid.'), { status: 400 });
   }
   return { raceId, bibNumber };
+}
+
+async function enforceClaimRateLimit(db, uid, ip) {
+  const hourMs = 3600 * 1000;
+  const uidHash = crypto.createHash('sha256').update(`claim_uid:${uid}`).digest('hex');
+  const ipHash = crypto.createHash('sha256').update(`claim_ip:${String(ip || 'unknown')}`).digest('hex');
+  await Promise.all([
+    db.runTransaction(async (tx) => {
+      const ref = db.doc(`accountRateLimits/claim_u_${uidHash}`);
+      const nowMs = Date.now();
+      const snap = await tx.get(ref);
+      const prev = snap.exists ? snap.data() : {};
+      const inWindow = typeof prev.windowStart === 'number' && nowMs - prev.windowStart < hourMs;
+      if (inWindow && (prev.count || 0) >= 20) {
+        throw Object.assign(new Error('Too many bib lookups. Please try again later.'), { status: 429 });
+      }
+      tx.set(ref, { windowStart: inWindow ? prev.windowStart : nowMs, count: inWindow ? (prev.count || 0) + 1 : 1, expiresAt: new Date(nowMs + hourMs) });
+    }),
+    db.runTransaction(async (tx) => {
+      const ref = db.doc(`accountRateLimits/claim_i_${ipHash}`);
+      const nowMs = Date.now();
+      const snap = await tx.get(ref);
+      const prev = snap.exists ? snap.data() : {};
+      const inWindow = typeof prev.windowStart === 'number' && nowMs - prev.windowStart < hourMs;
+      if (inWindow && (prev.count || 0) >= 40) {
+        throw Object.assign(new Error('Too many bib lookups from this network. Please try again later.'), { status: 429 });
+      }
+      tx.set(ref, { windowStart: inWindow ? prev.windowStart : nowMs, count: inWindow ? (prev.count || 0) + 1 : 1, expiresAt: new Date(nowMs + hourMs) });
+    }),
+  ]);
 }
 
 function safeRunner(source, uid) {
@@ -90,6 +125,7 @@ function publicResponse(race, runner, alreadyLinked = false) {
 
 async function preview(request, response) {
   const { db, uid } = await requireRunner(request);
+  await enforceClaimRateLimit(db, uid, request.ip);
   const { raceId, bibNumber } = readPayload(request.body);
   const raceSnapshot = await db.doc(`races/${raceId}`).get();
   if (!raceSnapshot.exists) throw Object.assign(new Error('This race event no longer exists.'), { status: 404 });
@@ -118,6 +154,7 @@ async function preview(request, response) {
 
 async function claim(request, response) {
   const { db, uid } = await requireRunner(request);
+  await enforceClaimRateLimit(db, uid, request.ip);
   const { raceId, bibNumber } = readPayload(request.body);
   const raceSnapshot = await db.doc(`races/${raceId}`).get();
   if (!raceSnapshot.exists) throw Object.assign(new Error('This race event no longer exists.'), { status: 404 });
@@ -173,7 +210,8 @@ exports.raceBibClaimApi = onRequest({ region: 'asia-southeast1', maxInstances: 2
     if (path === '/claim') return await claim(request, response);
     return response.status(404).json({ error: 'Route not found.' });
   } catch (error) {
-    console.warn('Race bib claim request failed:', error.message);
-    return response.status(error.status || 400).json({ error: error.message || 'Unable to process this race bib.' });
+    const status = typeof error?.status === 'number' && error.status >= 400 && error.status < 600 ? error.status : 500;
+    console.warn('Race bib claim request failed', { status });
+    return response.status(status).json({ error: status < 500 && error?.message ? error.message : 'Unable to process this race bib.' });
   }
 });

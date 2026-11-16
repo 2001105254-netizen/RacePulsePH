@@ -1,8 +1,9 @@
-import { formatDateTime, formatRaceTime, parseRaceDurationSeconds } from '../lib/preciseTime';
+import { formatDateTime, parseRaceDurationSeconds } from '../lib/preciseTime';
 import { useEffect, useMemo, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { Calendar, FileDown, Medal, Search, Trophy, UserPlus } from 'lucide-react';
+import { AlertTriangle, Calendar, FileDown, Medal, RefreshCw, Search, Trophy, UserPlus, X } from 'lucide-react';
 import { ResultsSkeletonList } from './ui/MotionPrimitives';
+import RaceTimeText from './ui/RaceTimeText';
 import { db } from '../firebase';
 import { downloadFinisherCertificate } from '../lib/finisherCertificate';
 import { isRaceRegistrationOpen } from '../lib/raceRegistration';
@@ -12,6 +13,7 @@ import RouteMap3D from './RouteMap3D';
 interface PublicRaceResultsProps {
   race: Race;
   onRegister: (raceId: string) => void;
+  registerLabel?: string;
 }
 
 function certificateResult(entry: PublicLeaderboardEntry): RunnerResult {
@@ -35,17 +37,21 @@ function certificateResult(entry: PublicLeaderboardEntry): RunnerResult {
 // Read-only results view. It deliberately reads only the compact public
 // `liveResults` record published by the timing console: never raw scan data or
 // runner contact details.
-export default function PublicRaceResults({ race, onRegister }: PublicRaceResultsProps) {
+export default function PublicRaceResults({ race, onRegister, registerLabel = 'Sign up to register' }: PublicRaceResultsProps) {
   const [summary, setSummary] = useState<PublicLiveResults | null | undefined>(undefined);
   const [search, setSearch] = useState('');
   const [distance, setDistance] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
+  const [certError, setCertError] = useState('');
 
   useEffect(() => {
     setSummary(undefined);
     setSearch('');
     setDistance('all');
     setCategoryFilter('all');
+    setDownloadingKey(null);
+    setCertError('');
     const unsubscribe = onSnapshot(doc(db, 'liveResults', race.id), (snapshot) => {
       setSummary(snapshot.exists() ? (snapshot.data() as PublicLiveResults) : null);
     }, (error) => {
@@ -54,6 +60,20 @@ export default function PublicRaceResults({ race, onRegister }: PublicRaceResult
     });
     return () => unsubscribe();
   }, [race.id]);
+
+  const handleDownloadCertificate = async (entry: PublicLeaderboardEntry) => {
+    const entryKey = `${entry.distance}_${entry.rank}_${entry.bibNumber}`;
+    setDownloadingKey(entryKey);
+    setCertError('');
+    try {
+      await downloadFinisherCertificate(race, entry, certificateResult(entry));
+    } catch {
+      const who = entry.isFreeSlot ? `Bib #${entry.bibNumber}` : entry.fullName;
+      setCertError(`Could not prepare the certificate for ${who}. Please try again.`);
+    } finally {
+      setDownloadingKey((curr) => (curr === entryKey ? null : curr));
+    }
+  };
 
   // Do not trust an old/stale leaderboard document on its own: the actual
   // race settings decide when results may become public. This hides any
@@ -150,7 +170,7 @@ export default function PublicRaceResults({ race, onRegister }: PublicRaceResult
           </div>
           {registrationOpen && (
             <button type="button" onClick={() => onRegister(race.id)} className="shrink-0 min-h-11 h-11 px-5 rounded-full font-semibold text-xs text-white bg-red-700 hover:bg-red-600 border border-[#3d0b09] dark:border-red-500/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.35)] transition-[background-color,transform] duration-150 flex items-center justify-center gap-2 motion-safe:active:scale-[0.97]">
-              <UserPlus className="w-4 h-4" aria-hidden="true" /> Sign up to register
+              <UserPlus className="w-4 h-4" aria-hidden="true" /> {registerLabel}
             </button>
           )}
         </div>
@@ -190,13 +210,13 @@ export default function PublicRaceResults({ race, onRegister }: PublicRaceResult
                 <div className="glass-inset px-3 py-2">
                   <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Fastest Finish</div>
                   <div className="mt-1 font-mono text-sm font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
-                    {raceStats.fastestTime ? formatRaceTime(raceStats.fastestTime) : '--:--:--'}
+                    <RaceTimeText value={raceStats.fastestTime} fallback="--:--:--" />
                   </div>
                 </div>
                 <div className="glass-inset px-3 py-2">
                   <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Median Finish</div>
                   <div className="mt-1 font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">
-                    {raceStats.medianTime ? formatRaceTime(raceStats.medianTime) : '--:--:--'}
+                    <RaceTimeText value={raceStats.medianTime} fallback="--:--:--" />
                   </div>
                 </div>
                 <div className="glass-inset px-3 py-2">
@@ -250,18 +270,67 @@ export default function PublicRaceResults({ race, onRegister }: PublicRaceResult
               </div>
             )}
 
+            {certError && (
+              <div
+                role="alert"
+                className="rounded-xl border border-red-700/30 bg-red-50 dark:bg-red-950/35 px-3 py-2.5 text-xs font-semibold text-red-700 dark:text-red-300 flex items-center justify-between gap-2"
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <span>{certError}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCertError('')}
+                  aria-label="Dismiss certificate error"
+                  className="min-h-11 min-w-11 shrink-0 rounded-lg inline-flex items-center justify-center hover:bg-red-500/10"
+                >
+                  <X className="w-4 h-4" aria-hidden="true" />
+                </button>
+              </div>
+            )}
+
             {filteredResults.length === 0 ? (
               <p className="glass-inset px-4 py-6 text-center text-xs text-[var(--text-secondary)]">No official result matches &ldquo;{search}&rdquo;.</p>
             ) : (
               <div className="space-y-2 max-h-[38rem] overflow-y-auto pr-1">
-                {filteredResults.map((entry) => (
-                  <div key={`${entry.distance}_${entry.rank}_${entry.bibNumber}`} className="glass-inset px-3 py-3 sm:px-4 flex items-center gap-3">
-                    <span className="w-8 text-center font-mono font-semibold text-red-700 dark:text-red-400 shrink-0">#{entry.overallRank ?? entry.rank}</span>
-                    <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-[var(--text-primary)]">{entry.isFreeSlot ? `Bib ${entry.bibNumber}` : entry.fullName}</span><span className="block mt-1 text-xs text-[var(--text-secondary)]">{entry.distance} · Bib #{entry.bibNumber}{entry.categoryRank ? ` · ${entry.categoryLabel || 'Category'} #${entry.categoryRank}` : ''}{entry.specialAgeAwards?.length ? ` · ${entry.specialAgeAwards.join(' / ')}` : ''}{entry.timingMethod === 'gun' ? ' · Gun time' : ''}</span></span>
-                    <span className="hidden sm:block shrink-0 font-mono text-sm font-semibold text-emerald-800 dark:text-emerald-300">{formatRaceTime(entry.finishTime)}{entry.finishReviewRequired && <span className="block text-xs text-amber-800 dark:text-amber-300">Provisional · finish review</span>}</span>
-                    <button type="button" onClick={() => downloadFinisherCertificate(race, entry, certificateResult(entry))} className="shrink-0 min-h-11 min-w-11 rounded-full border border-red-700/30 bg-red-500/10 text-red-700 dark:text-red-400 hover:bg-red-700 hover:text-white transition-all duration-150 flex items-center justify-center motion-safe:active:scale-95" title={`Download ${entry.isFreeSlot ? `Bib ${entry.bibNumber}` : entry.fullName}'s certificate`} aria-label={`Download certificate for ${entry.isFreeSlot ? `Bib ${entry.bibNumber}` : entry.fullName}`}><FileDown className="w-4 h-4" aria-hidden="true" /></button>
-                  </div>
-                ))}
+                {filteredResults.map((entry) => {
+                  const entryKey = `${entry.distance}_${entry.rank}_${entry.bibNumber}`;
+                  const isDownloading = downloadingKey === entryKey;
+                  const finisherLabel = entry.isFreeSlot ? `Bib ${entry.bibNumber}` : entry.fullName;
+                  return (
+                    <div key={entryKey} className="glass-inset px-3 py-3 sm:px-4 flex items-center gap-3">
+                      <span className="w-8 text-center font-mono font-semibold text-red-700 dark:text-red-400 shrink-0">#{entry.overallRank ?? entry.rank}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold text-[var(--text-primary)]">{finisherLabel}</span>
+                        <span className="block mt-1 text-xs text-[var(--text-secondary)]">
+                          {entry.distance} · Bib #{entry.bibNumber}
+                          {entry.categoryRank ? ` · ${entry.categoryLabel || 'Category'} #${entry.categoryRank}` : ''}
+                          {entry.specialAgeAwards?.length ? ` · ${entry.specialAgeAwards.join(' / ')}` : ''}
+                          {entry.timingMethod === 'gun' ? ' · Gun time' : ''}
+                        </span>
+                        <span className="sm:hidden block mt-1 font-mono text-xs font-semibold tabular-nums text-emerald-800 dark:text-emerald-300">
+                          <RaceTimeText value={entry.finishTime} />
+                          {entry.finishReviewRequired && <span className="ml-2 text-amber-800 dark:text-amber-300">Provisional · finish review</span>}
+                        </span>
+                      </span>
+                      <span className="hidden sm:block shrink-0 text-right font-mono text-sm font-semibold tabular-nums text-emerald-800 dark:text-emerald-300">
+                        <RaceTimeText value={entry.finishTime} />
+                        {entry.finishReviewRequired && <span className="block text-xs text-amber-800 dark:text-amber-300">Provisional · finish review</span>}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={isDownloading}
+                        onClick={() => handleDownloadCertificate(entry)}
+                        className="shrink-0 min-h-11 min-w-11 rounded-full border border-red-700/30 bg-red-500/10 text-red-700 dark:text-red-400 hover:bg-red-700 hover:text-white disabled:opacity-60 transition-all duration-150 flex items-center justify-center motion-safe:active:scale-95"
+                        title={`Download ${finisherLabel}'s certificate`}
+                        aria-label={`Download certificate for ${finisherLabel}`}
+                      >
+                        {isDownloading ? <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <FileDown className="w-4 h-4" aria-hidden="true" />}
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </>

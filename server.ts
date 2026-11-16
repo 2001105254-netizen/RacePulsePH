@@ -72,12 +72,73 @@ const FORBIDDEN_IDS = new Set([
 ]);
 const VALID_ORDER_STATUSES = new Set(['queued', 'inprogress', 'ready', 'completed']);
 
+const MAX_LOCAL_ORDERS = 25_000;
+const MAX_LOCAL_CHIP_READS = 100_000;
+const MAX_RFID_EVENTS = 100_000;
+const PRIVATE_LAN_ORIGIN_RE = /^https?:\/\/(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?$/i;
+const DEFAULT_ALLOWED_ORIGINS = new Set([
+  'https://racepulseph.web.app',
+  'https://racepulseph.firebaseapp.com',
+  'https://localhost',
+  'capacitor://localhost',
+]);
+
 function isValidRecordId(value: unknown): value is string {
   return typeof value === 'string' && VALID_ID_RE.test(value) && !FORBIDDEN_IDS.has(value);
 }
 
 function ownRecord<T>(store: Record<string, T>, id: unknown): T | undefined {
   return typeof id === 'string' && Object.hasOwn(store, id) ? store[id] : undefined;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function stripPrototypeKeys<T extends Record<string, unknown>>(obj: T): T {
+  const safe: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (!FORBIDDEN_IDS.has(key)) {
+      safe[key] = value;
+    }
+  }
+  return safe as T;
+}
+
+function sanitizeLog(value: unknown): string {
+  return String(value ?? '').replace(/[\r\n\x00-\x1f\x7f]/g, ' ').slice(0, 128);
+}
+
+function parseAllowedOrigins(): Set<string> {
+  const set = new Set(DEFAULT_ALLOWED_ORIGINS);
+  for (const item of (process.env.RACEPULSE_ALLOWED_ORIGINS || '').split(',')) {
+    const trimmed = item.trim();
+    if (trimmed) set.add(trimmed);
+  }
+  return set;
+}
+
+function isAllowedCorsOrigin(origin: string, extraOrigins: Set<string>): boolean {
+  return extraOrigins.has(origin) || PRIVATE_LAN_ORIGIN_RE.test(origin);
+}
+
+function loadJsonStore<T>(filePath: string, label: string): Record<string, T> {
+  const result: Record<string, T> = {};
+  try {
+    if (!fs.existsSync(filePath)) return result;
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const parsed = JSON.parse(raw);
+    if (!isPlainRecord(parsed)) return result;
+    for (const [key, value] of Object.entries(parsed)) {
+      if (isValidRecordId(key) && isPlainRecord(value)) {
+        result[key] = stripPrototypeKeys(value) as T;
+      }
+    }
+    console.log(`${label} Loaded ${Object.keys(result).length} records from storage.`);
+  } catch (e) {
+    console.warn(`${label} Failed to parse local store file, running with fresh store:`, e);
+  }
+  return result;
 }
 // Timing Station.exe runs the local server from Program Files, which Windows
 // intentionally protects from normal writes.  The desktop wrapper supplies a
@@ -94,25 +155,20 @@ const CHIP_READS_DB_FILE = path.join(DATA_DIRECTORY, "local_chip_reads.json");
 const RFID_EVENTS_DB_FILE = path.join(DATA_DIRECTORY, "local_rfid_events.json");
 
 // Load initial orders from a local JSON db file (handles on-site server restarts)
-let orders: Record<string, EngravingOrder> = {};
-try {
-  if (fs.existsSync(DB_FILE)) {
-    const raw = fs.readFileSync(DB_FILE, "utf-8");
-    orders = JSON.parse(raw);
-    console.log(`[Local Server DB] Loaded ${Object.keys(orders).length} orders from storage.`);
-  }
-} catch (e) {
-  console.warn("[Local Server DB] Failed to parse localdb file, running with fresh store:", e);
-  orders = {};
-}
+let orders: Record<string, EngravingOrder> = loadJsonStore<EngravingOrder>(DB_FILE, "[Local Server DB Orders]");
 
 function writeJsonAtomic(filePath: string, data: unknown): void {
   const serialized = JSON.stringify(data, null, 2);
-  const tmpFile = `${filePath}.tmp`;
+  const tmpFile = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
   try {
     fs.writeFileSync(tmpFile, serialized, "utf-8");
     fs.renameSync(tmpFile, filePath);
   } catch {
+    try {
+      fs.unlinkSync(tmpFile);
+    } catch {
+      // Ignore cleanup error if temp file was never created
+    }
     fs.writeFileSync(filePath, serialized, "utf-8");
   }
 }
@@ -126,17 +182,7 @@ function saveDB() {
 }
 
 // Load initial chip reads (timing checkpoint scans - manual today, RFID bridge later)
-let chipReads: Record<string, ChipRead> = {};
-try {
-  if (fs.existsSync(CHIP_READS_DB_FILE)) {
-    const raw = fs.readFileSync(CHIP_READS_DB_FILE, "utf-8");
-    chipReads = JSON.parse(raw);
-    console.log(`[Local Server DB] Loaded ${Object.keys(chipReads).length} chip reads from storage.`);
-  }
-} catch (e) {
-  console.warn("[Local Server DB] Failed to parse chip reads localdb file, running with fresh store:", e);
-  chipReads = {};
-}
+let chipReads: Record<string, ChipRead> = loadJsonStore<ChipRead>(CHIP_READS_DB_FILE, "[Local Server DB ChipReads]");
 
 function saveChipReadsDB() {
   try {
@@ -149,17 +195,7 @@ function saveChipReadsDB() {
 // Keep a small, durable hand-off queue between the Windows reader process and
 // the signed-in browser.  Events are pruned regularly so old race-day traffic
 // cannot be replayed on a later race.
-let rfidEvents: Record<string, RfidBridgeEvent> = {};
-try {
-  if (fs.existsSync(RFID_EVENTS_DB_FILE)) {
-    const raw = fs.readFileSync(RFID_EVENTS_DB_FILE, "utf-8");
-    rfidEvents = JSON.parse(raw);
-    console.log(`[RFID Bridge] Loaded ${Object.keys(rfidEvents).length} pending RFID events.`);
-  }
-} catch (e) {
-  console.warn("[RFID Bridge] Failed to parse local RFID event store, starting fresh:", e);
-  rfidEvents = {};
-}
+let rfidEvents: Record<string, RfidBridgeEvent> = loadJsonStore<RfidBridgeEvent>(RFID_EVENTS_DB_FILE, "[RFID Bridge]");
 
 function pruneRfidEvents(): void {
   const oldestAllowed = Date.now() - 12 * 60 * 60 * 1000;
@@ -183,17 +219,43 @@ function saveRfidEventsDB(): void {
 
 async function startServer() {
   const app = express();
+  const allowedOrigins = parseAllowedOrigins();
+  app.disable("x-powered-by");
+
+  // Security headers on all responses
+  app.use((req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("X-Permitted-Cross-Domain-Policies", "none");
+    if (req.path.startsWith("/api")) {
+      res.setHeader("Cache-Control", "no-store");
+    }
+    next();
+  });
 
   // Allow bounded JSON payloads
   app.use(express.json({ limit: "64kb" }));
 
-  // CORS Headers (so if they reference local server IP from another subnet, browser doesn't block it)
+  // Scoped CORS Headers (hosted domains, Capacitor localhost, and private RFC1918 LAN terminals)
   app.use((req, res, next) => {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    const origin = req.get("Origin");
+    if (origin) {
+      if (!isAllowedCorsOrigin(origin, allowedOrigins)) {
+        if (req.method === "OPTIONS") {
+          res.sendStatus(403);
+          return;
+        }
+        next();
+        return;
+      }
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-RacePulse-Bridge-Key");
+    }
     if (req.method === "OPTIONS") {
-      res.sendStatus(200);
+      res.sendStatus(204);
       return;
     }
     next();
@@ -210,7 +272,14 @@ async function startServer() {
   });
 
   app.use('/api', async (req, res, next) => {
-    const route = '/api' + req.path;
+    const cleanSubpath = req.path.replace(/\/+$/, '') || '/';
+    const route = '/api' + (cleanSubpath === '/' ? '' : cleanSubpath);
+    if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
+      if (!isPlainRecord(req.body)) {
+        return res.status(400).json({ error: 'Expected a JSON object body.' });
+      }
+      req.body = stripPrototypeKeys(req.body);
+    }
     if (route === '/api/rfid-events' && req.method === 'POST') {
       const expected = process.env.RACEPULSE_BRIDGE_KEY || '';
       const supplied = req.get('X-RacePulse-Bridge-Key') || '';
@@ -235,7 +304,8 @@ async function startServer() {
       const existing = route.startsWith('/api/orders')
         ? ownRecord(orders, id) || ownRecord(orders, bodyId)
         : ownRecord(chipReads, id) || ownRecord(chipReads, bodyId);
-      if (!lanPolicy.authorize(session, req.method, route, { ...req.body, raceId: req.query.raceId || req.body?.raceId }, existing)) return res.status(403).json({ error: 'This action is disabled for your account or race.' });
+      const queryRaceId = typeof req.query.raceId === 'string' ? req.query.raceId : undefined;
+      if (!lanPolicy.authorize(session, req.method, route, { ...(isPlainRecord(req.body) ? req.body : {}), raceId: queryRaceId || req.body?.raceId }, existing)) return res.status(403).json({ error: 'This action is disabled for your account or race.' });
       res.locals.accessSession = session;
       next();
     } catch { return res.status(503).json({ error: 'Authorization is unavailable. Captured scans remain queued.' }); }
@@ -257,9 +327,12 @@ async function startServer() {
       typeof orderData.runnerName !== "string" || !orderData.runnerName.trim() || orderData.runnerName.trim().length > 100 ||
       typeof orderData.bibNumber !== "string" || !orderData.bibNumber.trim() || orderData.bibNumber.trim().length > 20 ||
       (orderData.distance !== undefined && (typeof orderData.distance !== "string" || orderData.distance.trim().length > 50)) ||
+      (orderData.finishingTime !== undefined && (typeof orderData.finishingTime !== "string" || orderData.finishingTime.length > 32)) ||
       (orderData.status !== undefined && !VALID_ORDER_STATUSES.has(orderData.status)) ||
       (orderData.rank !== undefined && (typeof orderData.rank !== "string" || orderData.rank.trim().length > 50)) ||
-      (orderData.customInscription !== undefined && (typeof orderData.customInscription !== "string" || orderData.customInscription.trim().length > 150))
+      (orderData.customInscription !== undefined && (typeof orderData.customInscription !== "string" || orderData.customInscription.trim().length > 150)) ||
+      (orderData.createdAt !== undefined && (typeof orderData.createdAt !== "string" || orderData.createdAt.length > 64)) ||
+      (orderData.ownerUid !== undefined && (typeof orderData.ownerUid !== "string" || orderData.ownerUid.length > 128))
     ) {
       res.status(400).json({ error: "Missing or invalid required fields (id, runnerName, bibNumber, status)" });
       return;
@@ -267,13 +340,17 @@ async function startServer() {
 
     const orderId = orderData.id;
     const existing = ownRecord(orders, orderId);
+    if (!existing && Object.keys(orders).length >= MAX_LOCAL_ORDERS) {
+      res.status(507).json({ error: "Local order queue capacity reached." });
+      return;
+    }
     const timestamp = new Date().toISOString();
 
     const merged: EngravingOrder = {
       id: orderId,
       runnerName: orderData.runnerName.trim(),
       bibNumber: orderData.bibNumber.trim(),
-      distance: orderData.distance || (existing ? existing.distance : "Marathon"),
+      distance: orderData.distance?.trim() || (existing ? existing.distance : "Marathon"),
       finishingTime: formatRaceTime(orderData.finishingTime || (existing ? existing.finishingTime : "00:00:0000000")),
       status: orderData.status || (existing ? existing.status : "queued"),
       createdAt: existing ? existing.createdAt : (orderData.createdAt || timestamp),
@@ -286,19 +363,23 @@ async function startServer() {
     orders[orderId] = merged;
     saveDB();
 
-    console.log(`[Local Server DB] Order ${orderId} saved/updated for runner ${merged.runnerName}. Status: ${merged.status}`);
+    console.log(`[Local Server DB] Order ${sanitizeLog(orderId)} saved/updated for runner ${sanitizeLog(merged.runnerName)}. Status: ${merged.status}`);
     res.json({ success: true, order: merged });
   });
 
   // DELETE single order
   app.delete("/api/orders/:id", (req, res) => {
     const orderId = req.params.id;
+    if (!isValidRecordId(orderId)) {
+      res.status(400).json({ error: "Invalid order ID." });
+      return;
+    }
     const existing = ownRecord(orders, orderId);
     if (existing) {
       const removedName = existing.runnerName;
       delete orders[orderId];
       saveDB();
-      console.log(`[Local Server DB] Removed order ${orderId} for runner ${removedName}.`);
+      console.log(`[Local Server DB] Removed order ${sanitizeLog(orderId)} for runner ${sanitizeLog(removedName)}.`);
       res.json({ success: true, message: `Order ${orderId} deleted.` });
     } else {
       res.status(404).json({ error: "Order not found." });
@@ -331,9 +412,21 @@ async function startServer() {
       typeof readData.bibNumber !== "string" || !readData.bibNumber.trim() || readData.bibNumber.trim().length > 20 ||
       typeof readData.checkpointId !== "string" || !readData.checkpointId.trim() || readData.checkpointId.trim().length > 64 ||
       typeof readData.timestamp !== "string" || !readData.timestamp.trim() || readData.timestamp.length > 64 ||
+      (readData.chipId !== undefined && (typeof readData.chipId !== "string" || readData.chipId.trim().length > 128)) ||
+      (readData.bridgeEventId !== undefined && !isValidRecordId(readData.bridgeEventId)) ||
+      (readData.antenna !== undefined && (!Number.isInteger(readData.antenna) || readData.antenna < 1 || readData.antenna > 8)) ||
+      (readData.readerSequence !== undefined && (!Number.isSafeInteger(readData.readerSequence) || readData.readerSequence < 0)) ||
+      (readData.monotonicTicks !== undefined && (typeof readData.monotonicTicks !== "string" || readData.monotonicTicks.length > 32)) ||
+      (readData.monotonicFrequency !== undefined && (typeof readData.monotonicFrequency !== "string" || readData.monotonicFrequency.length > 32)) ||
+      (readData.clockSource !== undefined && (typeof readData.clockSource !== "string" || readData.clockSource.length > 64)) ||
       (readData.source !== undefined && readData.source !== "manual" && readData.source !== "rfid-bridge")
     ) {
       res.status(400).json({ error: "Missing or invalid required fields (id, raceId, bibNumber, checkpointId, timestamp)" });
+      return;
+    }
+
+    if (!ownRecord(chipReads, readData.id) && Object.keys(chipReads).length >= MAX_LOCAL_CHIP_READS) {
+      res.status(507).json({ error: "Local chip-reads capacity reached." });
       return;
     }
 
@@ -343,7 +436,7 @@ async function startServer() {
       raceId: readData.raceId,
       bibNumber: readData.bibNumber.trim(),
       chipId: readData.chipId?.trim() || undefined,
-      checkpointId: readData.checkpointId,
+      checkpointId: readData.checkpointId.trim(),
       timestamp: readData.timestamp,
       ...(readData.bridgeEventId ? { bridgeEventId: readData.bridgeEventId, antenna: readData.antenna, readerSequence: readData.readerSequence, monotonicTicks: readData.monotonicTicks, monotonicFrequency: readData.monotonicFrequency, clockSource: readData.clockSource } : {}),
       source: readData.source || 'manual',
@@ -354,13 +447,17 @@ async function startServer() {
     chipReads[record.id] = record;
     saveChipReadsDB();
 
-    console.log(`[Local Server DB] Chip read ${record.id} saved for bib ${record.bibNumber} @ checkpoint ${record.checkpointId}.`);
+    console.log(`[Local Server DB] Chip read ${sanitizeLog(record.id)} saved for bib ${sanitizeLog(record.bibNumber)} @ checkpoint ${sanitizeLog(record.checkpointId)}.`);
     res.json({ success: true, chipRead: record });
   });
 
   // DELETE single chip read
   app.delete("/api/chip-reads/:id", (req, res) => {
     const readId = req.params.id;
+    if (!isValidRecordId(readId)) {
+      res.status(400).json({ error: "Invalid chip read ID." });
+      return;
+    }
     if (ownRecord(chipReads, readId)) {
       delete chipReads[readId];
       saveChipReadsDB();
@@ -384,12 +481,13 @@ async function startServer() {
   // applies its normal runner/chip validation and offline-safe persistence.
   app.get("/api/rfid-events", (req, res) => {
     pruneRfidEvents();
+    const raceId = typeof req.query.raceId === 'string' ? req.query.raceId : '';
     const afterRaw = typeof req.query.after === 'string' ? req.query.after : '';
     const after = Date.parse(afterRaw);
     const events = Object.values(rfidEvents)
-      .filter((event) => event.raceId === req.query.raceId && (Number.isNaN(after) || Date.parse(event.receivedAt) >= after))
+      .filter((event) => event.raceId === raceId && (Number.isNaN(after) || Date.parse(event.receivedAt) >= after))
       .sort((a, b) => Date.parse(a.receivedAt) - Date.parse(b.receivedAt) || a.id.localeCompare(b.id));
-    res.json({ events: events.filter(event => event.raceId === req.query.raceId) });
+    res.json({ events });
   });
 
   app.post("/api/rfid-events", (req, res) => {
@@ -399,13 +497,26 @@ async function startServer() {
     const antenna = Number(eventData.antenna);
     const timestamp = typeof eventData.timestamp === 'string' ? eventData.timestamp : '';
 
-    if (!isValidRecordId(id) || !/^[0-9A-F]{8,128}$/.test(epc) || !Number.isInteger(antenna) || antenna < 1 || antenna > 8 || Number.isNaN(Date.parse(timestamp))) {
+    if (
+      !isValidRecordId(id) ||
+      !/^[0-9A-F]{8,128}$/.test(epc) ||
+      !Number.isInteger(antenna) || antenna < 1 || antenna > 8 ||
+      timestamp.length > 64 || Number.isNaN(Date.parse(timestamp)) ||
+      (eventData.readerSequence !== undefined && (!Number.isSafeInteger(eventData.readerSequence) || eventData.readerSequence < 0)) ||
+      (eventData.monotonicTicks !== undefined && (typeof eventData.monotonicTicks !== 'string' || !/^\d{1,30}$/.test(eventData.monotonicTicks))) ||
+      (eventData.monotonicFrequency !== undefined && (typeof eventData.monotonicFrequency !== 'string' || !/^\d{1,30}$/.test(eventData.monotonicFrequency)))
+    ) {
       res.status(400).json({ error: 'Expected valid id, hexadecimal EPC, antenna (1-8), and ISO timestamp.' });
       return;
     }
 
     const existingEvent = ownRecord(rfidEvents, id);
     if (existingEvent) { res.json({ success: true, event: existingEvent }); return; }
+    pruneRfidEvents();
+    if (Object.keys(rfidEvents).length >= MAX_RFID_EVENTS) {
+      res.status(507).json({ error: 'RFID event queue capacity reached.' });
+      return;
+    }
     const event: RfidBridgeEvent = {
       ...(Number.isSafeInteger(eventData.readerSequence) ? { readerSequence: eventData.readerSequence } : {}),
       ...(typeof eventData.monotonicTicks === 'string' ? { monotonicTicks: eventData.monotonicTicks } : {}),
@@ -420,7 +531,7 @@ async function startServer() {
     };
     rfidEvents[id] = event;
     saveRfidEventsDB();
-    console.log(`[RFID Bridge] EPC ${epc} received from ANT${antenna}.`);
+    console.log(`[RFID Bridge] EPC ${sanitizeLog(epc)} received from ANT${antenna}.`);
     res.status(201).json({ success: true, event });
   });
 

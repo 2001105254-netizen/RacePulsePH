@@ -106,12 +106,12 @@
 }
 
 .pp-card-slot.mode-card {
-  width: 276px;
+  width: min(100%, 276px);
   height: 356px;
 }
 
 .pp-card-slot.mode-pill {
-  width: 376px;
+  width: min(100%, 376px);
   height: 156px;
 }
 
@@ -565,6 +565,55 @@
   box-shadow: 0 0 12px var(--card-accent);
   z-index: 4;
   pointer-events: none;
+}
+
+/* Group Member Collage Grid (2-up, 3-up, 4-up) */
+.pp-group-collage {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  gap: 2px;
+  background: rgba(12, 12, 16, 0.94);
+}
+
+.pp-group-collage.count-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.pp-group-collage.count-3 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+
+.pp-group-collage.count-3 > .pp-collage-cell:first-child {
+  grid-row: span 2;
+}
+
+.pp-group-collage.count-4 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+
+.pp-collage-cell {
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+  background: #121216;
+}
+
+.pp-collage-cell img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 20%;
+  display: block;
+}
+
+.mode-pill .pp-group-collage {
+  width: 40%;
+  right: auto;
 }
 
 .pp-sync-badge {

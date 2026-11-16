@@ -3,6 +3,8 @@ import {
   clampNumber,
   deriveRaceCode,
   formatReadableDate,
+  getHighlightBibDisplay,
+  getHighlightDisplayTitle,
   parsePacePulseMs,
   sanitizeHexColor,
 } from '../lib/highlights';
@@ -48,16 +50,29 @@ const PodiumPulseCard = memo(function PodiumPulseCard({
   const pacePulseMs = parsePacePulseMs(highlight.mode === 'duo' ? (highlight.combinedAvgPace || highlight.pace) : highlight.pace);
   const raceCode = highlight.raceCode || deriveRaceCode(highlight.raceName, highlight.raceDate);
   const isDuo = highlight.mode === 'duo';
+  const isGroup = highlight.mode === 'group';
+  const modeBadgeLabel = isDuo ? 'DUO' : isGroup ? 'GROUP' : 'SOLO';
   const cardEffect = highlight.cardEffect || 'sheen-sweep';
   const headerStyle = highlight.headerStyle || 'crown-bezel';
 
-  const displayName = isDuo && highlight.partnerName
-    ? `${highlight.runnerName} & ${highlight.partnerName}`
-    : highlight.runnerName;
+  const groupMembers = highlight.groupMembers || [];
+  const collageMembers =
+    isGroup && highlight.groupPhotoLayout !== 'single'
+      ? groupMembers.filter((m) => m.photoUrl?.trim()).slice(0, 4)
+      : [];
+  const singleHeroPhotoUrl = highlight.photoUrl || collageMembers[0]?.photoUrl || '';
 
-  const displayBib = isDuo && highlight.partnerBibNumber
-    ? `#${highlight.bibNumber} / #${highlight.partnerBibNumber}`
-    : `#${highlight.bibNumber}`;
+  const displayName = getHighlightDisplayTitle(highlight);
+  const displayBib = getHighlightBibDisplay(highlight);
+  const combinedAchievements = [
+    ...(highlight.badgeStamp ? [highlight.badgeStamp.toUpperCase()] : []),
+    ...(highlight.achievements || []).map((a) => a.toUpperCase()),
+  ].filter((v, idx, arr) => Boolean(v) && arr.findIndex((x) => x.toLowerCase() === v.toLowerCase()) === idx);
+  const visibleFrontAchievements = combinedAchievements.slice(0, 2);
+  const extraAchievementCount = Math.max(0, combinedAchievements.length - visibleFrontAchievements.length);
+  const participatedEvents = highlight.participatedEvents || [];
+  const visibleFrontEvents = participatedEvents.slice(0, 2);
+  const extraEventsCount = Math.max(0, participatedEvents.length - visibleFrontEvents.length);
 
   useEffect(() => {
     return () => {
@@ -182,14 +197,14 @@ const PodiumPulseCard = memo(function PodiumPulseCard({
                   {highlight.placement}
                 </span>
                 <span className="inline-flex items-center gap-1.5 text-[11px] font-mono font-semibold text-zinc-100 shrink-0">
-                  <span>{isDuo ? 'DUO' : 'SOLO'}</span>
+                  <span>{modeBadgeLabel}</span>
                   <span style={{ color: secondaryAccent }}>{highlight.distance}</span>
                 </span>
               </header>
             )}
 
             <div className={`pp-photo-stage ${layoutMode === 'card' ? 'relative flex-1 min-h-0 overflow-hidden' : 'relative w-full h-full'}`}>
-              {/* Photo / Dual Split-Sync Layer */}
+              {/* Photo / Dual Split-Sync / Group Collage Layer */}
               <div className="pp-photo-layer">
                 {isDuo ? (
                   <>
@@ -223,10 +238,24 @@ const PodiumPulseCard = memo(function PodiumPulseCard({
                     </div>
                     <div className="pp-duo-slash" aria-hidden="true" />
                   </>
-                ) : highlight.photoUrl ? (
+                ) : isGroup && collageMembers.length >= 2 ? (
+                  <div className={`pp-group-collage count-${Math.min(4, collageMembers.length)}`}>
+                    {collageMembers.map((member, idx) => (
+                      <div key={`${member.name}-${idx}`} className="pp-collage-cell">
+                        <img
+                          src={member.photoUrl}
+                          alt={member.name}
+                          decoding="async"
+                          loading="lazy"
+                          draggable={false}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : singleHeroPhotoUrl ? (
                   <img
-                    src={highlight.photoUrl}
-                    alt={highlight.runnerName}
+                    src={singleHeroPhotoUrl}
+                    alt={displayName}
                     className="pp-photo-img"
                     decoding="async"
                     loading="lazy"
@@ -275,7 +304,7 @@ const PodiumPulseCard = memo(function PodiumPulseCard({
                         {highlight.placement}
                       </span>
                       <span className="pp-notch-pill px-2 py-0.5 rounded-md text-xs font-mono font-semibold text-white bg-black/80 border border-white/25 shrink-0">
-                        {isDuo ? 'DUO' : 'SOLO'} {highlight.distance}
+                        {modeBadgeLabel} {highlight.distance}
                       </span>
                     </div>
                   ) : (
@@ -293,22 +322,38 @@ const PodiumPulseCard = memo(function PodiumPulseCard({
                           {highlight.placement}
                         </span>
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono font-semibold text-zinc-100 bg-black/80 border border-white/20 shrink-0">
-                          {isDuo ? 'DUO' : 'SOLO'} {highlight.distance}
+                          {modeBadgeLabel} {highlight.distance}
                         </span>
                       </div>
                     )}
 
-                    {highlight.badgeStamp && (
-                      <span
-                        className="inline-block px-2 py-0.5 rounded text-[10px] font-mono font-semibold tracking-wider text-zinc-950 uppercase truncate max-w-full mb-1"
-                        style={{ backgroundColor: accent === '#000000' ? '#f5b731' : '#fde68a' }}
-                      >
-                        {highlight.badgeStamp}
-                      </span>
+                    {visibleFrontAchievements.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1 mb-1">
+                        {visibleFrontAchievements.map((ach, idx) => (
+                          <span
+                            key={`${ach}-${idx}`}
+                            className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold tracking-wide uppercase truncate max-w-[140px] ${
+                              idx === 0
+                                ? 'text-zinc-950'
+                                : 'text-amber-100 bg-black/75 border border-amber-300/45'
+                            }`}
+                            style={idx === 0 ? { backgroundColor: accent === '#000000' ? '#f5b731' : '#fde68a' } : undefined}
+                          >
+                            {ach}
+                          </span>
+                        ))}
+                        {extraAchievementCount > 0 && (
+                          <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold text-amber-200 bg-black/75 border border-white/20">
+                            +{extraAchievementCount}
+                          </span>
+                        )}
+                      </div>
                     )}
 
                     <p className="text-xs font-mono text-zinc-200 truncate">
-                      {highlight.raceName}
+                      {participatedEvents.length > 1
+                        ? `${highlight.raceName} · ${participatedEvents.length} events`
+                        : highlight.raceName}
                     </p>
                     <p className="font-display text-lg font-semibold text-white leading-tight truncate mt-0.5">
                       {displayName}
@@ -324,6 +369,29 @@ const PodiumPulseCard = memo(function PodiumPulseCard({
                       </span>
                     </div>
 
+                    {visibleFrontEvents.length > 0 && (
+                      <div className="mt-1.5 rounded-lg bg-black/65 border border-white/15 px-2 py-1 space-y-0.5 backdrop-blur-xs">
+                        {visibleFrontEvents.map((ev, idx) => (
+                          <div key={`${ev.raceName}-${idx}`} className="flex items-center justify-between gap-1.5 text-[10px] font-mono">
+                            <span className="text-zinc-200 truncate min-w-0">
+                              {ev.raceName} <span className="text-zinc-400">({ev.distance})</span>
+                            </span>
+                            <span
+                              className="shrink-0 px-1.5 py-0.2 rounded bg-white/10 text-white font-semibold"
+                              style={ev.placement === '1st' ? { color: '#fde68a' } : undefined}
+                            >
+                              {ev.placement}
+                            </span>
+                          </div>
+                        ))}
+                        {extraEventsCount > 0 && (
+                          <p className="text-[10px] font-mono text-zinc-300 text-right">
+                            +{extraEventsCount} more event{extraEventsCount === 1 ? '' : 's'}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     {/* State C: Secondary Telemetry Drawer */}
                     <div className="pp-secondary-drawer">
                       <div>
@@ -338,6 +406,20 @@ const PodiumPulseCard = memo(function PodiumPulseCard({
                               </span>
                               <span className="truncate">
                                 Bibs: <strong className="text-white font-semibold">{displayBib}</strong>
+                              </span>
+                              <span className="truncate text-right">
+                                {highlight.runClub || formatReadableDate(highlight.raceDate)}
+                              </span>
+                            </>
+                          ) : isGroup ? (
+                            <>
+                              {groupMembers.length > 0 && (
+                                <span className="col-span-2 truncate text-zinc-100">
+                                  Squad: <strong className="text-white font-semibold">{groupMembers.map((m) => m.name).join(', ')}</strong>
+                                </span>
+                              )}
+                              <span className="truncate">
+                                {groupMembers.length > 0 ? `${groupMembers.length} runners` : 'Group'}: <strong className="text-white font-semibold">{displayBib}</strong>
                               </span>
                               <span className="truncate text-right">
                                 {highlight.runClub || formatReadableDate(highlight.raceDate)}
@@ -376,7 +458,9 @@ const PodiumPulseCard = memo(function PodiumPulseCard({
                         {highlight.placement}
                       </span>
                       <span className="text-[11px] font-mono font-semibold text-zinc-200 shrink-0">
-                        {isDuo ? 'DUO' : 'SOLO'} {highlight.distance}
+                        {participatedEvents.length > 1
+                          ? `${participatedEvents.length} EVENTS · ${highlight.distance}`
+                          : `${modeBadgeLabel} ${highlight.distance}`}
                       </span>
                     </div>
 
@@ -385,7 +469,9 @@ const PodiumPulseCard = memo(function PodiumPulseCard({
                         {displayName}
                       </p>
                       <p className="text-xs font-mono text-zinc-300 truncate">
-                        {highlight.raceName}
+                        {visibleFrontAchievements[0]
+                          ? `${visibleFrontAchievements[0]} · ${highlight.raceName}`
+                          : highlight.raceName}
                       </p>
                     </div>
 

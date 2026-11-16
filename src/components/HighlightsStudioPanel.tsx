@@ -1,16 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Award,
+  CalendarDays,
   ChevronDown,
-  Copy,
   Database,
-  Edit3,
   Eye,
+  FileText,
   Flame,
   Globe,
   Layers,
-  Pin,
-  PinOff,
+  Palette,
   Plus,
   RotateCcw,
   Save,
@@ -18,7 +17,11 @@ import {
   Sliders,
   Sparkles,
   Trash2,
+  Trophy,
   Upload,
+  UserCheck,
+  UserPlus,
+  Users,
   X,
 } from 'lucide-react';
 import { useAccess } from '../lib/access';
@@ -34,9 +37,11 @@ import {
   DEFAULT_MARQUEE_CONFIG,
   deleteRunnerHighlight,
   deriveRaceCode,
+  deriveRunnerAchievements,
   DirectoryRunner,
+  entriesToParticipatedEvents,
   formatHighlightClockTime,
-  formatReadableDate,
+  getHighlightDisplayTitle,
   getRaceRankedEntries,
   HIGHLIGHT_BORDER_PRESETS,
   HIGHLIGHT_CAPS,
@@ -48,11 +53,12 @@ import {
   HIGHLIGHT_SURFACE_FINISHES,
   HighlightRunnerSortMode,
   HighlightRunnerSources,
-  isHighlightExpired,
+  HighlightUserAccountPhoto,
   normalizeRunnerKey,
   parseDistanceKm,
   parseDurationToSeconds,
   RankedRaceRunnerItem,
+  resolveRunnerAccountPhoto,
   RunnerRaceEntry,
   saveHighlightsMarqueeConfig,
   saveRunnerHighlight,
@@ -64,20 +70,35 @@ import {
 import {
   HighlightBorderPreset,
   HighlightCardLayoutMode,
+  HighlightGroupMember,
+  HighlightGroupPhotoLayout,
   HighlightsMarqueeConfig,
   Race,
   RunnerHighlight,
   RunnerResult,
   UserProfile,
 } from '../types';
+import DialogSurface from './ui/DialogSurface';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { useFeedback } from './ui/FeedbackProvider';
+import { isSafeRasterImageType } from '../lib/security';
 import PodiumPulseCard from './PodiumPulseCard';
 import PodiumPulseReel from './PodiumPulseReel';
 import HighlightSmartCropModal from './HighlightSmartCropModal';
+import FinisherDossierModal from './FinisherDossierModal';
+import HighlightCustomSelect from './highlights/HighlightCustomSelect';
+import CareerAchievementsEditor from './highlights/CareerAchievementsEditor';
+import PublishedHighlightsManager from './highlights/PublishedHighlightsManager';
+import MarqueeControlDeck from './highlights/MarqueeControlDeck';
 
 type StudioSubTab = 'studio' | 'published' | 'deck';
+type StudioComposerSection = 'athlete' | 'career' | 'style';
+
+type PhotoSlotTarget =
+  | { kind: 'primary' }
+  | { kind: 'partner' }
+  | { kind: 'group-member'; index: number };
 
 interface HighlightsStudioPanelProps {
   profile: UserProfile;
@@ -100,6 +121,12 @@ function createBlankDraft(uid: string): RunnerHighlight {
     partnerBibNumber: '',
     photoUrl: '',
     partnerPhotoUrl: '',
+    teamName: '',
+    groupPhotoLayout: 'collage',
+    groupMembers: [
+      { name: '', bibNumber: '', photoUrl: '' },
+      { name: '', bibNumber: '', photoUrl: '' },
+    ],
     placement: '1st',
     distance: '10K',
     chipTime: '',
@@ -125,6 +152,8 @@ function createBlankDraft(uid: string): RunnerHighlight {
     borderWidthPx: 3,
     scrimStrength: 78,
     badgeStamp: '',
+    achievements: [],
+    participatedEvents: [],
     pinned: false,
     expiresAt: '',
     createdBy: uid,
@@ -180,14 +209,18 @@ export default function HighlightsStudioPanel({
   const [previewHover, setPreviewHover] = useState(false);
   const [previewLayout, setPreviewLayout] = useState<HighlightCardLayoutMode>('card');
 
-  // Smart crop dialog state
+  // Smart crop dialog & account photo picker state
   const [cropSession, setCropSession] = useState<{
-    slot: 'primary' | 'partner';
+    target: PhotoSlotTarget;
     sourceUrl: string;
   } | null>(null);
+  const [accountPickerTarget, setAccountPickerTarget] = useState<PhotoSlotTarget | null>(null);
+  const [accountSearch, setAccountSearch] = useState('');
+  const accountSearchInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Published manager search filter
-  const [publishedSearch, setPublishedSearch] = useState('');
+  // Studio composer section & dossier inspector
+  const [composerSection, setComposerSection] = useState<StudioComposerSection>('athlete');
+  const [dossierItem, setDossierItem] = useState<RunnerHighlight | null>(null);
 
   // Landing page live marquee preview state
   const [includeDraftInLandingPreview, setIncludeDraftInLandingPreview] = useState(true);
@@ -196,6 +229,8 @@ export default function HighlightsStudioPanel({
 
   const primaryFileRef = useRef<HTMLInputElement | null>(null);
   const partnerFileRef = useRef<HTMLInputElement | null>(null);
+  const groupMemberFileRef = useRef<HTMLInputElement | null>(null);
+  const pendingGroupMemberIndexRef = useRef<number>(0);
 
   useEffect(() => {
     const unsubH = subscribeRunnerHighlights((items) => setHighlights(items));
@@ -251,6 +286,9 @@ export default function HighlightsStudioPanel({
             ...initialRunnerSources.userPhotosByUid,
             ...incoming.userPhotosByUid,
           },
+          userAccounts: incoming.userAccounts?.length
+            ? incoming.userAccounts
+            : initialRunnerSources.userAccounts,
         });
       },
     );
@@ -285,6 +323,42 @@ export default function HighlightsStudioPanel({
     return out;
   }, [runnerSources.chipReads, runnerSources.runners, races]);
 
+  const availableAccounts = useMemo<HighlightUserAccountPhoto[]>(() => {
+    const byUid = new Map<string, HighlightUserAccountPhoto>();
+    for (const acc of runnerSources.userAccounts || []) {
+      if (acc.photoURL) byUid.set(acc.uid, acc);
+    }
+    for (const reg of runnerSources.runners) {
+      if (!reg.uid) continue;
+      const url = runnerSources.userPhotosByUid[reg.uid];
+      if (url && !byUid.has(reg.uid)) {
+        byUid.set(reg.uid, {
+          uid: reg.uid,
+          displayName: reg.fullName || 'Runner',
+          photoURL: url,
+        });
+      }
+    }
+    for (const [uid, url] of Object.entries(runnerSources.userPhotosByUid || {})) {
+      if (url && !byUid.has(uid)) {
+        byUid.set(uid, { uid, displayName: `Account ${uid.slice(0, 8)}`, photoURL: url });
+      }
+    }
+    return Array.from(byUid.values()).sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }, [runnerSources.userAccounts, runnerSources.runners, runnerSources.userPhotosByUid]);
+
+  const filteredAccountChoices = useMemo(() => {
+    const q = accountSearch.trim().toLowerCase();
+    if (!q) return availableAccounts;
+    return availableAccounts.filter(
+      (acc) =>
+        acc.displayName.toLowerCase().includes(q) ||
+        (acc.nickname || '').toLowerCase().includes(q) ||
+        (acc.username || '').toLowerCase().includes(q) ||
+        acc.uid.toLowerCase().includes(q),
+    );
+  }, [availableAccounts, accountSearch]);
+
   const runnerDirectory = useMemo(
     () =>
       buildRunnerDirectory({
@@ -293,6 +367,7 @@ export default function HighlightsStudioPanel({
         liveResultsByRace: runnerSources.liveResultsByRace,
         computedResultsByRace,
         userPhotosByUid: runnerSources.userPhotosByUid,
+        userAccounts: availableAccounts,
       }),
     [
       runnerSources.runners,
@@ -300,6 +375,7 @@ export default function HighlightsStudioPanel({
       runnerSources.liveResultsByRace,
       computedResultsByRace,
       runnerSources.userPhotosByUid,
+      availableAccounts,
     ],
   );
 
@@ -519,25 +595,50 @@ export default function HighlightsStudioPanel({
     [highlights, config],
   );
 
-  const filteredPublished = useMemo(() => {
-    const q = publishedSearch.trim().toLowerCase();
-    if (!q) return orderedHighlights;
-    return orderedHighlights.filter(
-      (item) =>
-        item.runnerName.toLowerCase().includes(q) ||
-        (item.partnerName || '').toLowerCase().includes(q) ||
-        item.bibNumber.toLowerCase().includes(q) ||
-        item.raceName.toLowerCase().includes(q),
-    );
-  }, [orderedHighlights, publishedSearch]);
+  const matchedPrimaryAccount = useMemo(
+    () =>
+      resolveRunnerAccountPhoto({
+        uid: matchedActiveEntry?.uid || activeRunner?.uid,
+        fullName: draft.runnerName,
+        userPhotosByUid: runnerSources.userPhotosByUid,
+        userAccounts: availableAccounts,
+      }),
+    [matchedActiveEntry?.uid, activeRunner?.uid, draft.runnerName, runnerSources.userPhotosByUid, availableAccounts],
+  );
+
+  const matchedPartnerAccount = useMemo(() => {
+    const partnerRunner = draft.partnerName
+      ? runnerDirectory.find((r) => r.key === normalizeRunnerKey(draft.partnerName))
+      : undefined;
+    return resolveRunnerAccountPhoto({
+      uid: partnerRunner?.uid,
+      fullName: draft.partnerName,
+      userPhotosByUid: runnerSources.userPhotosByUid,
+      userAccounts: availableAccounts,
+    });
+  }, [draft.partnerName, runnerDirectory, runnerSources.userPhotosByUid, availableAccounts]);
 
   const livePreviewItem = useMemo<RunnerHighlight>(() => {
+    const previewMembers =
+      draft.mode === 'group'
+        ? (draft.groupMembers || [])
+            .map((m, idx) => ({
+              ...m,
+              name: m.name || `Member ${idx + 1}`,
+            }))
+            .slice(0, 6)
+        : undefined;
     return {
       ...draft,
-      runnerName: draft.runnerName || 'Runner Name',
-      bibNumber: draft.bibNumber || '1042',
+      runnerName:
+        draft.runnerName ||
+        (draft.mode === 'group' ? draft.teamName || previewMembers?.[0]?.name || 'Squad Highlight' : 'Runner Name'),
+      bibNumber:
+        draft.bibNumber ||
+        (draft.mode === 'group' ? previewMembers?.find((m) => m.bibNumber)?.bibNumber || '1042' : '1042'),
       partnerName: draft.mode === 'duo' ? draft.partnerName || 'Partner Name' : undefined,
       partnerBibNumber: draft.mode === 'duo' ? draft.partnerBibNumber || '1043' : undefined,
+      groupMembers: previewMembers,
       chipTime: draft.chipTime || '00:41:18',
       pace: draft.pace || '4:08 /km',
       raceName: draft.raceName || 'RacePulsePH Classic',
@@ -558,27 +659,155 @@ export default function HighlightsStudioPanel({
     return [livePreviewItem, ...highlights.filter((item) => item.id !== livePreviewItem.id)];
   }, [highlights, includeDraftInLandingPreview, editingId, livePreviewItem]);
 
-  const handleSelectFile = (slot: 'primary' | 'partner', e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSelectFile = (target: PhotoSlotTarget, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      notify({ title: 'Unsupported file', message: 'Select a JPG, PNG, or WebP photo.', tone: 'error' });
+    if (!isSafeRasterImageType(file.type, file.name)) {
+      notify({ title: 'Unsupported file', message: 'Select a JPG, PNG, WebP, GIF, or AVIF photo.', tone: 'error' });
+      return;
+    }
+    if (file.size > 15 * 1024 * 1024) {
+      notify({ title: 'Photo too large', message: 'Select a photo smaller than 15 MB.', tone: 'error' });
       return;
     }
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === 'string') {
-        setCropSession({ slot, sourceUrl: reader.result });
+        setCropSession({ target, sourceUrl: reader.result });
       }
     };
     reader.readAsDataURL(file);
+  };
+
+  const applyPhotoToSlot = (target: PhotoSlotTarget, url: string, account?: HighlightUserAccountPhoto) => {
+    setDraft((prev) => {
+      if (target.kind === 'primary') {
+        return {
+          ...prev,
+          photoUrl: url,
+          runnerName: !prev.runnerName.trim() && account ? account.displayName.slice(0, HIGHLIGHT_CAPS.runnerName) : prev.runnerName,
+        };
+      }
+      if (target.kind === 'partner') {
+        return {
+          ...prev,
+          partnerPhotoUrl: url,
+          partnerName: !prev.partnerName?.trim() && account ? account.displayName.slice(0, HIGHLIGHT_CAPS.runnerName) : prev.partnerName,
+        };
+      }
+      const nextMembers = [...(prev.groupMembers || [])];
+      const existing = nextMembers[target.index] || { name: '' };
+      nextMembers[target.index] = {
+        ...existing,
+        photoUrl: url,
+        name: !existing.name.trim() && account ? account.displayName.slice(0, HIGHLIGHT_CAPS.runnerName) : existing.name,
+        uid: account?.uid || existing.uid,
+      };
+      return {
+        ...prev,
+        groupMembers: nextMembers,
+      };
+    });
+  };
+
+  const handleOpenAccountPicker = (target: PhotoSlotTarget) => {
+    setAccountSearch('');
+    setAccountPickerTarget(target);
+  };
+
+  const handleSwitchHighlightMode = (nextMode: 'solo' | 'duo' | 'group') => {
+    setDraft((prev) => {
+      if (nextMode !== 'group') {
+        return { ...prev, mode: nextMode };
+      }
+      const existingMembers = prev.groupMembers || [];
+      const hasAnyPopulated = existingMembers.some((m) => m.name.trim() || m.bibNumber?.trim() || m.photoUrl?.trim());
+      if (hasAnyPopulated) {
+        return {
+          ...prev,
+          mode: 'group',
+          groupPhotoLayout: prev.groupPhotoLayout || 'collage',
+        };
+      }
+      const seeded: HighlightGroupMember[] = [];
+      if (prev.runnerName.trim() || prev.bibNumber.trim() || prev.photoUrl.trim()) {
+        seeded.push({
+          name: prev.runnerName,
+          bibNumber: prev.bibNumber,
+          photoUrl: prev.photoUrl,
+        });
+      }
+      if (prev.partnerName?.trim() || prev.partnerBibNumber?.trim() || prev.partnerPhotoUrl?.trim()) {
+        seeded.push({
+          name: prev.partnerName || '',
+          bibNumber: prev.partnerBibNumber || '',
+          photoUrl: prev.partnerPhotoUrl || '',
+        });
+      }
+      while (seeded.length < 2) {
+        seeded.push({ name: '', bibNumber: '', photoUrl: '' });
+      }
+      return {
+        ...prev,
+        mode: 'group',
+        groupPhotoLayout: prev.groupPhotoLayout || 'collage',
+        groupMembers: seeded,
+      };
+    });
+  };
+
+  const handleAddGroupMember = () => {
+    setDraft((prev) => {
+      const current = prev.groupMembers || [];
+      if (current.length >= 6) return prev;
+      return {
+        ...prev,
+        groupMembers: [...current, { name: '', bibNumber: '', photoUrl: '' }],
+      };
+    });
+  };
+
+  const handleUpdateGroupMember = (index: number, patch: Partial<HighlightGroupMember>) => {
+    setDraft((prev) => {
+      const next = [...(prev.groupMembers || [])];
+      const current = next[index] || { name: '' };
+      next[index] = { ...current, ...patch };
+      return { ...prev, groupMembers: next };
+    });
+  };
+
+  const handleRemoveGroupMember = (index: number) => {
+    setDraft((prev) => {
+      const current = prev.groupMembers || [];
+      if (current.length <= 1) return prev;
+      return {
+        ...prev,
+        groupMembers: current.filter((_, i) => i !== index),
+      };
+    });
   };
 
   const applyRunnerRaceEntry = (entry: RunnerRaceEntry, runner: DirectoryRunner) => {
     setSelectedRunnerKey(runner.key);
     setDraft((prev) => {
       const useDuo = entry.entryCategory === 'duo' && Boolean(entry.partnerName);
+      const useGroup = entry.entryCategory === 'trio' || entry.entryCategory === 'group';
+      const primaryAccountUrl = entry.photoUrl || runner.photoUrl || '';
+      const groupMembersFromEntry: HighlightGroupMember[] = useGroup
+        ? entry.teamMembers && entry.teamMembers.length > 0
+          ? entry.teamMembers.slice(0, 6)
+          : [{ name: runner.fullName, bibNumber: entry.bibNumber, photoUrl: primaryAccountUrl || undefined, uid: entry.uid || runner.uid }]
+        : prev.groupMembers || [];
+      const firstGroupPhoto = groupMembersFromEntry.find((m) => m.photoUrl)?.photoUrl || primaryAccountUrl;
+
+      const participatedEvents = entriesToParticipatedEvents(runner.entries);
+      const achievements = deriveRunnerAchievements(
+        runner.entries,
+        entry.placement,
+        prev.badgeStamp,
+      );
+
       return {
         ...prev,
         runnerName: runner.fullName.slice(0, HIGHLIGHT_CAPS.runnerName),
@@ -593,21 +822,32 @@ export default function HighlightsStudioPanel({
         raceName: entry.raceName.slice(0, HIGHLIGHT_CAPS.raceName),
         raceDate: entry.raceDate,
         raceCode: entry.raceCode,
-        photoUrl: !prev.photoUrl && (entry.photoUrl || runner.photoUrl) ? (entry.photoUrl || runner.photoUrl || '') : prev.photoUrl,
+        photoUrl: !prev.photoUrl && (firstGroupPhoto || primaryAccountUrl) ? firstGroupPhoto || primaryAccountUrl : prev.photoUrl,
+        participatedEvents,
+        achievements,
         ...(useDuo
           ? {
               mode: 'duo' as const,
               partnerName: (entry.partnerName || '').slice(0, HIGHLIGHT_CAPS.runnerName),
               partnerBibNumber: (entry.partnerBibNumber || '').slice(0, HIGHLIGHT_CAPS.bibNumber),
+              partnerPhotoUrl:
+                !prev.partnerPhotoUrl && entry.partnerPhotoUrl ? entry.partnerPhotoUrl : prev.partnerPhotoUrl,
               soloSplitTime: entry.chipTime || prev.soloSplitTime,
               partnerSplitTime: entry.partnerSplitTime || prev.partnerSplitTime,
               combinedAvgPace: entry.combinedAvgPace || entry.pace || prev.combinedAvgPace,
             }
-          : prev.mode === 'duo'
+          : useGroup
             ? {
-                soloSplitTime: entry.chipTime || '',
+                mode: 'group' as const,
+                teamName: (entry.teamName || prev.teamName || '').slice(0, HIGHLIGHT_CAPS.teamName),
+                groupPhotoLayout: prev.groupPhotoLayout || ('collage' as HighlightGroupPhotoLayout),
+                groupMembers: groupMembersFromEntry,
               }
-            : {}),
+            : prev.mode === 'duo'
+              ? {
+                  soloSplitTime: entry.chipTime || '',
+                }
+              : {}),
       };
     });
   };
@@ -796,21 +1036,62 @@ export default function HighlightsStudioPanel({
       });
       return;
     }
-    if (!draft.photoUrl) {
-      notify({ title: 'Photo required', message: 'Upload and crop a runner photo first.', tone: 'error' });
-      return;
-    }
-    if (draft.mode === 'duo' && !draft.partnerPhotoUrl) {
-      notify({ title: 'Second photo required', message: 'Duo highlights require both runner photos.', tone: 'error' });
-      return;
-    }
-    if (!draft.runnerName.trim() || !draft.bibNumber.trim() || !draft.chipTime.trim() || !draft.raceName.trim()) {
-      notify({ title: 'Missing details', message: 'Enter runner name, bib, finish time, and race event.', tone: 'error' });
-      return;
-    }
-    if (draft.mode === 'duo' && !draft.partnerName?.trim()) {
-      notify({ title: 'Partner name required', message: 'Enter the second runner name for Duo mode.', tone: 'error' });
-      return;
+
+    const isGroup = draft.mode === 'group';
+    const populatedMembers = isGroup
+      ? (draft.groupMembers || []).filter(
+          (m) => m.name.trim() || m.bibNumber?.trim() || m.photoUrl?.trim(),
+        )
+      : [];
+    const fallbackGroupPhoto = isGroup
+      ? draft.photoUrl || populatedMembers.find((m) => m.photoUrl?.trim())?.photoUrl?.trim() || ''
+      : '';
+
+    if (isGroup) {
+      if (draft.groupPhotoLayout === 'single' && !fallbackGroupPhoto) {
+        notify({
+          title: 'Group photo required',
+          message: 'Upload or attach a group photo before publishing.',
+          tone: 'error',
+        });
+        return;
+      }
+      if (draft.groupPhotoLayout !== 'single' && !fallbackGroupPhoto) {
+        notify({
+          title: 'Photo required',
+          message: 'Attach at least one member photo or switch to Single Group Photo.',
+          tone: 'error',
+        });
+        return;
+      }
+      const hasTitle = Boolean(
+        draft.teamName?.trim() || populatedMembers.some((m) => m.name.trim()) || draft.runnerName.trim(),
+      );
+      if (!hasTitle || !draft.chipTime.trim() || !draft.raceName.trim()) {
+        notify({
+          title: 'Missing group details',
+          message: 'Enter a squad name or member names, finish time, and race event.',
+          tone: 'error',
+        });
+        return;
+      }
+    } else {
+      if (!draft.photoUrl) {
+        notify({ title: 'Photo required', message: 'Upload or attach a runner photo first.', tone: 'error' });
+        return;
+      }
+      if (draft.mode === 'duo' && !draft.partnerPhotoUrl) {
+        notify({ title: 'Second photo required', message: 'Duo highlights require both runner photos.', tone: 'error' });
+        return;
+      }
+      if (!draft.runnerName.trim() || !draft.bibNumber.trim() || !draft.chipTime.trim() || !draft.raceName.trim()) {
+        notify({ title: 'Missing details', message: 'Enter runner name, bib, finish time, and race event.', tone: 'error' });
+        return;
+      }
+      if (draft.mode === 'duo' && !draft.partnerName?.trim()) {
+        notify({ title: 'Partner name required', message: 'Enter the second runner name for Duo mode.', tone: 'error' });
+        return;
+      }
     }
 
     setSavingHighlight(true);
@@ -818,25 +1099,51 @@ export default function HighlightsStudioPanel({
       const targetId = editingId || draft.id || `hl_${Date.now().toString(36)}`;
       let finalPrimaryUrl = draft.photoUrl;
       let finalPartnerUrl = draft.partnerPhotoUrl;
+      let finalGroupMembers = draft.groupMembers;
 
-      if (finalPrimaryUrl.startsWith('data:')) {
+      if (finalPrimaryUrl && finalPrimaryUrl.startsWith('data:')) {
         finalPrimaryUrl = await uploadHighlightAsset(profile.uid, targetId, 'primary', finalPrimaryUrl);
       }
       if (draft.mode === 'duo' && finalPartnerUrl && finalPartnerUrl.startsWith('data:')) {
         finalPartnerUrl = await uploadHighlightAsset(profile.uid, targetId, 'partner', finalPartnerUrl);
       }
+      if (isGroup && Array.isArray(draft.groupMembers)) {
+        finalGroupMembers = await Promise.all(
+          draft.groupMembers.map(async (member, idx) => {
+            const url = (member.photoUrl || '').trim();
+            if (url && url.startsWith('data:')) {
+              const uploaded = await uploadHighlightAsset(profile.uid, targetId, `member-${idx + 1}`, url);
+              return { ...member, photoUrl: uploaded };
+            }
+            return member;
+          }),
+        );
+        if (!finalPrimaryUrl) {
+          finalPrimaryUrl = finalGroupMembers.find((m) => m.photoUrl?.trim())?.photoUrl?.trim() || '';
+        }
+      }
+
+      const resolvedRunnerName = isGroup
+        ? draft.runnerName.trim() || draft.teamName?.trim() || populatedMembers[0]?.name.trim() || 'Group Finisher'
+        : draft.runnerName;
+      const resolvedBibNumber = isGroup
+        ? draft.bibNumber.trim() || populatedMembers.find((m) => m.bibNumber?.trim())?.bibNumber?.trim() || 'TEAM'
+        : draft.bibNumber;
 
       const saved = await saveRunnerHighlight({
         ...draft,
         id: targetId,
+        runnerName: resolvedRunnerName,
+        bibNumber: resolvedBibNumber,
         photoUrl: finalPrimaryUrl,
         partnerPhotoUrl: finalPartnerUrl,
+        groupMembers: isGroup ? finalGroupMembers : undefined,
         createdBy: draft.createdBy || profile.uid,
       });
 
       notify({
         title: editingId ? 'Highlight updated' : 'Highlight published',
-        message: `${saved.runnerName} is now scheduled for the Podium Highlights reel.`,
+        message: `${getHighlightDisplayTitle(saved)} is now scheduled for the Podium Highlights reel.`,
         tone: 'success',
       });
       setEditingId(null);
@@ -844,6 +1151,7 @@ export default function HighlightsStudioPanel({
       setRunnerDropdownOpen(false);
       setPartnerDropdownOpen(false);
       setStudioDistanceFilter('all');
+      setComposerSection('athlete');
       setDraft(createBlankDraft(profile.uid));
     } catch (err) {
       notify({
@@ -862,8 +1170,16 @@ export default function HighlightsStudioPanel({
     setRunnerDropdownOpen(false);
     setPartnerDropdownOpen(false);
     setStudioDistanceFilter('all');
+    setComposerSection('athlete');
     setDraft({
       ...item,
+      achievements: item.achievements ? [...item.achievements] : [],
+      participatedEvents: item.participatedEvents ? [...item.participatedEvents] : [],
+      groupPhotoLayout: item.groupPhotoLayout || 'collage',
+      groupMembers:
+        item.mode === 'group' && (!item.groupMembers || item.groupMembers.length === 0)
+          ? [{ name: item.runnerName, bibNumber: item.bibNumber, photoUrl: item.photoUrl }]
+          : item.groupMembers,
       secondaryAccentColor: item.secondaryAccentColor || '#ff3b30',
       cardEffect: item.cardEffect || 'sheen-sweep',
       headerStyle: item.headerStyle || 'crown-bezel',
@@ -880,9 +1196,13 @@ export default function HighlightsStudioPanel({
     setRunnerDropdownOpen(false);
     setPartnerDropdownOpen(false);
     setStudioDistanceFilter('all');
+    setComposerSection('athlete');
     setDraft({
       ...item,
       id: `hl_${Date.now().toString(36)}`,
+      achievements: item.achievements ? [...item.achievements] : [],
+      participatedEvents: item.participatedEvents ? [...item.participatedEvents] : [],
+      groupPhotoLayout: item.groupPhotoLayout || 'collage',
       secondaryAccentColor: item.secondaryAccentColor || '#ff3b30',
       cardEffect: item.cardEffect || 'sheen-sweep',
       headerStyle: item.headerStyle || 'crown-bezel',
@@ -976,7 +1296,7 @@ export default function HighlightsStudioPanel({
             <span>Podium Highlights Studio</span>
           </h1>
           <p className="text-xs sm:text-sm text-[var(--text-secondary)] mt-1">
-            Publish collectible Solo &amp; Duo finisher cards and tune the landing page marquee physics.
+            Publish collectible Solo, Duo &amp; Group finisher cards and tune the landing page marquee physics.
           </p>
         </div>
 
@@ -1020,23 +1340,88 @@ export default function HighlightsStudioPanel({
         </div>
       )}
 
-      {/* TAB 1: 3-PANEL STUDIO */}
+      {/* TAB 1: SYNERGIZED STUDIO WORKSPACE */}
       {subTab === 'studio' && (
         <form onSubmit={handleSaveHighlight} className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
-          {/* LEFT PANEL: Required Source Race, Rank-Sorted Runner Picker & Upload */}
-          <section className="xl:col-span-4 glass-panel p-4 sm:p-5 space-y-4" aria-label="Race source and runner selection">
-            <div className="flex items-center justify-between gap-2 border-b border-[var(--border-default)] pb-2.5">
-              <h2 className="font-display text-base font-semibold text-[var(--text-primary)]">
-                1. Race Source &amp; Ranked Finisher
-              </h2>
-              <div className="inline-flex rounded-xl border border-[var(--border-default)] p-1 bg-[var(--surface-inset)]">
-                {(['solo', 'duo'] as const).map((mode) => (
+          {/* Hidden File Inputs kept mounted across composer sections */}
+          <input
+            ref={primaryFileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => handleSelectFile({ kind: 'primary' }, e)}
+          />
+          <input
+            ref={partnerFileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => handleSelectFile({ kind: 'partner' }, e)}
+          />
+          <input
+            ref={groupMemberFileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) =>
+              handleSelectFile({ kind: 'group-member', index: pendingGroupMemberIndexRef.current }, e)
+            }
+          />
+
+          {/* LEFT + CENTER COMPOSER: Stepped Athlete, Career & Frame FX */}
+          <div className="xl:col-span-8 glass-panel p-4 sm:p-5 space-y-5 min-w-0">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--border-default)] pb-3">
+              <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Studio composer sections">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={composerSection === 'athlete'}
+                  onClick={() => setComposerSection('athlete')}
+                  className={chipBtn(composerSection === 'athlete')}
+                >
+                  <Users className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>1. Athlete &amp; Timing</span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={composerSection === 'career'}
+                  onClick={() => setComposerSection('career')}
+                  className={chipBtn(composerSection === 'career')}
+                >
+                  <Trophy className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>
+                    2. Events &amp; Achievements
+                    {((draft.achievements?.length || 0) + (draft.participatedEvents?.length || 0)) > 0
+                      ? ` (${draft.achievements?.length || 0}/${draft.participatedEvents?.length || 0})`
+                      : ''}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={composerSection === 'style'}
+                  onClick={() => setComposerSection('style')}
+                  className={chipBtn(composerSection === 'style')}
+                >
+                  <Palette className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>3. Frame &amp; Visual FX</span>
+                </button>
+              </div>
+
+              <div
+                role="group"
+                aria-label="Highlight entry category"
+                className="inline-flex rounded-xl border border-[var(--border-default)] p-1 bg-[var(--surface-inset)] self-start sm:self-auto"
+              >
+                {(['solo', 'duo', 'group'] as const).map((mode) => (
                   <button
                     key={mode}
                     type="button"
                     disabled={!canManage}
-                    onClick={() => setDraft((prev) => ({ ...prev, mode }))}
-                    className={`min-h-9 px-3 rounded-lg text-xs font-mono font-semibold uppercase transition ${
+                    aria-pressed={draft.mode === mode}
+                    onClick={() => handleSwitchHighlightMode(mode)}
+                    className={`min-h-10 px-3 rounded-lg text-xs font-mono font-semibold uppercase transition ${
                       draft.mode === mode
                         ? 'bg-red-700 text-white'
                         : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
@@ -1048,100 +1433,108 @@ export default function HighlightsStudioPanel({
               </div>
             </div>
 
-            {/* Required Source Race Selector & Distance Filter */}
-            <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3.5 space-y-3">
-              <div className="space-y-1">
+            {composerSection === 'athlete' && (
+              <section className="space-y-4" aria-label="Race source and runner selection">
                 <div className="flex items-center justify-between gap-2">
-                  <label htmlFor="hl-race-link" className="text-xs font-mono font-semibold text-[var(--text-primary)]">
-                    Source Race Event {races.length > 0 ? '(Required)' : ''}
-                  </label>
+                  <h2 className="font-display text-base font-semibold text-[var(--text-primary)]">
+                    Race Source &amp; Ranked Finisher
+                  </h2>
                   <span className="text-[11px] font-mono text-[var(--text-secondary)]">
-                    {rankedRaceEntries.length} in view
+                    {rankedRaceEntries.length} finishers in view
                   </span>
                 </div>
-                <select
-                  id="hl-race-link"
-                  required={races.length > 0}
-                  disabled={!canManage || races.length === 0}
-                  value={draft.raceId}
-                  onChange={(e) => handleLinkedRaceChange(e.target.value)}
-                  className="w-full h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-sm text-[var(--text-primary)]"
-                >
-                  {races.length === 0 ? (
-                    <option value="">No synced races found</option>
-                  ) : (
-                    races.map((race) => (
-                      <option key={race.id} value={race.id}>
-                        {race.name} ({race.date}) · {raceRunnerCounts[race.id] || 0} runners
-                      </option>
-                    ))
-                  )}
-                </select>
-              </div>
 
-              {raceFilterDistances.length > 0 && (
-                <div className="space-y-1.5">
-                  <span className="block text-[11px] font-mono text-[var(--text-secondary)]">
-                    Distance Filter
-                  </span>
-                  <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter race runners by distance">
-                    <button
-                      type="button"
-                      disabled={!canManage}
-                      onClick={() => setStudioDistanceFilter('all')}
-                      className={`min-h-9 px-2.5 rounded-lg border text-xs font-mono transition ${
-                        studioDistanceFilter === 'all'
-                          ? 'bg-red-700 text-white border-red-800'
-                          : 'bg-[var(--surface-card)] text-[var(--text-secondary)] border-[var(--border-default)] hover:text-[var(--text-primary)]'
-                      }`}
-                    >
-                      All
-                    </button>
-                    {raceFilterDistances.map((dist) => {
-                      const activeDist = studioDistanceFilter.toLowerCase() === dist.toLowerCase();
-                      return (
+                {/* Required Source Race Selector & Distance Filter */}
+                <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3.5 space-y-3">
+                  <HighlightCustomSelect
+                    id="hl-race-link"
+                    label={races.length > 0 ? 'Source Race Event (Required)' : 'Source Race Event'}
+                    value={draft.raceId}
+                    disabled={!canManage || races.length === 0}
+                    searchable
+                    searchPlaceholder="Filter race events by name or date..."
+                    placeholder="Select synced race event"
+                    options={
+                      races.length === 0
+                        ? [{ value: '', label: 'No synced races found', disabled: true }]
+                        : races.map((race) => ({
+                            value: race.id,
+                            label: race.name,
+                            sublabel: race.date,
+                            badge: `${raceRunnerCounts[race.id] || 0} runners`,
+                            accentDot: race.id === draft.raceId ? '#dc2626' : undefined,
+                          }))
+                    }
+                    onChange={handleLinkedRaceChange}
+                  />
+
+                  {raceFilterDistances.length > 0 && (
+                    <div className="space-y-1.5">
+                      <span className="block text-[11px] font-mono text-[var(--text-secondary)]">
+                        Distance Filter
+                      </span>
+                      <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter race runners by distance">
                         <button
-                          key={dist}
                           type="button"
                           disabled={!canManage}
-                          onClick={() => {
-                            setStudioDistanceFilter(dist);
-                            if (!selectedRunnerKey) {
-                              handleDistanceChange(dist);
-                            }
-                          }}
+                          onClick={() => setStudioDistanceFilter('all')}
                           className={`min-h-9 px-2.5 rounded-lg border text-xs font-mono transition ${
-                            activeDist
+                            studioDistanceFilter === 'all'
                               ? 'bg-red-700 text-white border-red-800'
                               : 'bg-[var(--surface-card)] text-[var(--text-secondary)] border-[var(--border-default)] hover:text-[var(--text-primary)]'
                           }`}
                         >
-                          {dist}
+                          All
                         </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+                        {raceFilterDistances.map((dist) => {
+                          const activeDist = studioDistanceFilter.toLowerCase() === dist.toLowerCase();
+                          return (
+                            <button
+                              key={dist}
+                              type="button"
+                              disabled={!canManage}
+                              onClick={() => {
+                                setStudioDistanceFilter(dist);
+                                if (!selectedRunnerKey) {
+                                  handleDistanceChange(dist);
+                                }
+                              }}
+                              className={`min-h-9 px-2.5 rounded-lg border text-xs font-mono transition ${
+                                activeDist
+                                  ? 'bg-red-700 text-white border-red-800'
+                                  : 'bg-[var(--surface-card)] text-[var(--text-secondary)] border-[var(--border-default)] hover:text-[var(--text-primary)]'
+                              }`}
+                            >
+                              {dist}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
-              {/* Sort Mode + Top Ranked Quick-Picks */}
-              <div className="flex items-center justify-between gap-2 pt-1 border-t border-[var(--border-default)]">
-                <label htmlFor="hl-runner-sort" className="text-[11px] font-mono text-[var(--text-secondary)]">
-                  Order Directory By
-                </label>
-                <select
-                  id="hl-runner-sort"
-                  disabled={!canManage}
-                  value={runnerSortBy}
-                  onChange={(e) => setRunnerSortBy(e.target.value as HighlightRunnerSortMode)}
-                  className="h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 text-xs font-mono text-[var(--text-primary)]"
-                >
-                  <option value="rank">Rank (1st -&gt; Nth)</option>
-                  <option value="time">Fastest Finish Time</option>
-                  <option value="name">Name (A-Z)</option>
-                  <option value="bib">Bib Number</option>
-                </select>
-              </div>
+                  {/* Sort Mode + Top Ranked Quick-Picks */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-[var(--border-default)]">
+                    <label htmlFor="hl-runner-sort" className="text-[11px] font-mono text-[var(--text-secondary)]">
+                      Order Directory By
+                    </label>
+                    <div className="w-full sm:w-56">
+                      <HighlightCustomSelect
+                        id="hl-runner-sort"
+                        ariaLabel="Order Directory By"
+                        compact
+                        disabled={!canManage}
+                        value={runnerSortBy}
+                        options={[
+                          { value: 'rank', label: 'Rank (1st to Nth)', badge: 'Default' },
+                          { value: 'time', label: 'Fastest Finish Time' },
+                          { value: 'name', label: 'Name (A-Z)' },
+                          { value: 'bib', label: 'Bib Number' },
+                        ]}
+                        onChange={(val) => setRunnerSortBy(val as HighlightRunnerSortMode)}
+                      />
+                    </div>
+                  </div>
 
               {podiumQuickPicks.length > 0 && (
                 <div className="space-y-1.5">
@@ -1178,71 +1571,28 @@ export default function HighlightsStudioPanel({
               )}
             </div>
 
-            {/* Hidden File Inputs */}
-            <input
-              ref={primaryFileRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => handleSelectFile('primary', e)}
-            />
-            <input
-              ref={partnerFileRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => handleSelectFile('partner', e)}
-            />
-
-            {/* Single or Duo Upload Slots */}
-            <div className={`grid gap-3 ${draft.mode === 'duo' ? 'grid-cols-2' : 'grid-cols-1'}`}>
-              <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3 space-y-2">
-                <span className="block text-xs font-mono font-semibold text-[var(--text-secondary)]">
-                  {draft.mode === 'duo' ? 'Runner 1 Photo' : 'Runner Portrait'}
-                </span>
-                {draft.photoUrl && (
-                  <img
-                    src={draft.photoUrl}
-                    alt="Cropped primary runner"
-                    className="w-full h-28 object-cover rounded-lg border border-[var(--border-default)]"
-                  />
-                )}
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={!canManage}
-                    onClick={() => primaryFileRef.current?.click()}
-                    className="h-11 px-3 text-xs flex-1"
-                  >
-                    <Upload className="w-3.5 h-3.5" aria-hidden="true" />
-                    <span>{draft.photoUrl ? 'Replace' : 'Upload'}</span>
-                  </Button>
-                  {draft.photoUrl && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={!canManage}
-                      onClick={() => setCropSession({ slot: 'primary', sourceUrl: draft.photoUrl })}
-                      className="h-11 px-3 text-xs"
-                    >
-                      Crop
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              {draft.mode === 'duo' && (
+            {/* Single, Duo, or Group Single Upload Slots */}
+            {(draft.mode !== 'group' || draft.groupPhotoLayout === 'single') && (
+              <div className={`grid gap-3 ${draft.mode === 'duo' ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
                 <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3 space-y-2">
-                  <span className="block text-xs font-mono font-semibold text-[var(--text-secondary)]">
-                    Runner 2 Photo
-                  </span>
-                  {draft.partnerPhotoUrl && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-mono font-semibold text-[var(--text-secondary)]">
+                      {draft.mode === 'duo'
+                        ? 'Runner 1 Photo'
+                        : draft.mode === 'group'
+                          ? 'Single Group Photo'
+                          : 'Runner Portrait'}
+                    </span>
+                    {matchedPrimaryAccount.photoUrl && (
+                      <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400">
+                        Account photo found
+                      </span>
+                    )}
+                  </div>
+                  {draft.photoUrl && (
                     <img
-                      src={draft.partnerPhotoUrl}
-                      alt="Cropped partner runner"
+                      src={draft.photoUrl}
+                      alt="Selected primary highlight"
                       className="w-full h-28 object-cover rounded-lg border border-[var(--border-default)]"
                     />
                   )}
@@ -1252,30 +1602,375 @@ export default function HighlightsStudioPanel({
                       variant="outline"
                       size="sm"
                       disabled={!canManage}
-                      onClick={() => partnerFileRef.current?.click()}
+                      onClick={() => primaryFileRef.current?.click()}
                       className="h-11 px-3 text-xs flex-1"
                     >
                       <Upload className="w-3.5 h-3.5" aria-hidden="true" />
-                      <span>{draft.partnerPhotoUrl ? 'Replace' : 'Upload'}</span>
+                      <span>{draft.photoUrl ? 'Replace' : 'Upload'}</span>
                     </Button>
-                    {draft.partnerPhotoUrl && (
+                    {draft.photoUrl && (
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
                         disabled={!canManage}
-                        onClick={() =>
-                          setCropSession({ slot: 'partner', sourceUrl: draft.partnerPhotoUrl || '' })
-                        }
+                        onClick={() => setCropSession({ target: { kind: 'primary' }, sourceUrl: draft.photoUrl })}
                         className="h-11 px-3 text-xs"
                       >
                         Crop
                       </Button>
                     )}
                   </div>
+
+                  {(matchedPrimaryAccount.photoUrl || canViewUsers || availableAccounts.length > 0) && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {matchedPrimaryAccount.photoUrl && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={!canManage}
+                          onClick={() =>
+                            applyPhotoToSlot(
+                              { kind: 'primary' },
+                              matchedPrimaryAccount.photoUrl!,
+                              matchedPrimaryAccount.account,
+                            )
+                          }
+                          className="h-11 px-3 text-xs flex-1"
+                        >
+                          <img
+                            src={matchedPrimaryAccount.photoUrl}
+                            alt=""
+                            className="w-5 h-5 rounded-full object-cover border border-[var(--border-default)] shrink-0"
+                          />
+                          <span>
+                            {draft.photoUrl === matchedPrimaryAccount.photoUrl
+                              ? 'Account Photo Active'
+                              : 'Use Account Photo'}
+                          </span>
+                        </Button>
+                      )}
+                      {(canViewUsers || availableAccounts.length > 0) && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={!canManage || availableAccounts.length === 0}
+                          onClick={() => handleOpenAccountPicker({ kind: 'primary' })}
+                          className="h-11 px-3 text-xs"
+                        >
+                          <UserCheck className="w-3.5 h-3.5" aria-hidden="true" />
+                          <span>Account Photo</span>
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+
+                {draft.mode === 'duo' && (
+                  <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-mono font-semibold text-[var(--text-secondary)]">
+                        Runner 2 Photo
+                      </span>
+                      {matchedPartnerAccount.photoUrl && (
+                        <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400">
+                          Account photo found
+                        </span>
+                      )}
+                    </div>
+                    {draft.partnerPhotoUrl && (
+                      <img
+                        src={draft.partnerPhotoUrl}
+                        alt="Selected partner runner"
+                        className="w-full h-28 object-cover rounded-lg border border-[var(--border-default)]"
+                      />
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={!canManage}
+                        onClick={() => partnerFileRef.current?.click()}
+                        className="h-11 px-3 text-xs flex-1"
+                      >
+                        <Upload className="w-3.5 h-3.5" aria-hidden="true" />
+                        <span>{draft.partnerPhotoUrl ? 'Replace' : 'Upload'}</span>
+                      </Button>
+                      {draft.partnerPhotoUrl && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={!canManage}
+                          onClick={() =>
+                            setCropSession({ target: { kind: 'partner' }, sourceUrl: draft.partnerPhotoUrl || '' })
+                          }
+                          className="h-11 px-3 text-xs"
+                        >
+                          Crop
+                        </Button>
+                      )}
+                    </div>
+
+                    {(matchedPartnerAccount.photoUrl || canViewUsers || availableAccounts.length > 0) && (
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {matchedPartnerAccount.photoUrl && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={!canManage}
+                            onClick={() =>
+                              applyPhotoToSlot(
+                                { kind: 'partner' },
+                                matchedPartnerAccount.photoUrl!,
+                                matchedPartnerAccount.account,
+                              )
+                            }
+                            className="h-11 px-3 text-xs flex-1"
+                          >
+                            <img
+                              src={matchedPartnerAccount.photoUrl}
+                              alt=""
+                              className="w-5 h-5 rounded-full object-cover border border-[var(--border-default)] shrink-0"
+                            />
+                            <span>
+                              {draft.partnerPhotoUrl === matchedPartnerAccount.photoUrl
+                                ? 'Account Photo Active'
+                                : 'Use Account Photo'}
+                            </span>
+                          </Button>
+                        )}
+                        {(canViewUsers || availableAccounts.length > 0) && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={!canManage || availableAccounts.length === 0}
+                            onClick={() => handleOpenAccountPicker({ kind: 'partner' })}
+                            className="h-11 px-3 text-xs"
+                          >
+                            <UserCheck className="w-3.5 h-3.5" aria-hidden="true" />
+                            <span>Account Photo</span>
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Group Setup & Members */}
+            {draft.mode === 'group' && (
+              <fieldset className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3.5 space-y-3">
+                <legend className="px-1.5 text-xs font-mono font-semibold text-[var(--text-primary)] inline-flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
+                  <span>Group Setup &amp; Members</span>
+                </legend>
+
+                <div className="space-y-1.5">
+                  <span className="block text-xs font-mono text-[var(--text-secondary)]">Group Photo Layout</span>
+                  <div className="grid grid-cols-2 gap-2" role="group" aria-label="Group photo layout">
+                    <button
+                      type="button"
+                      disabled={!canManage}
+                      aria-pressed={(draft.groupPhotoLayout || 'collage') === 'collage'}
+                      onClick={() => setDraft((p) => ({ ...p, groupPhotoLayout: 'collage' }))}
+                      className={chipBtn((draft.groupPhotoLayout || 'collage') === 'collage')}
+                    >
+                      <span>Member Collage</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canManage}
+                      aria-pressed={draft.groupPhotoLayout === 'single'}
+                      onClick={() => setDraft((p) => ({ ...p, groupPhotoLayout: 'single' }))}
+                      className={chipBtn(draft.groupPhotoLayout === 'single')}
+                    >
+                      <span>Single Group Photo</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label htmlFor="hl-team-name" className="text-xs font-mono text-[var(--text-secondary)]">
+                    Group / Team Name
+                  </label>
+                  <Input
+                    id="hl-team-name"
+                    value={draft.teamName || ''}
+                    maxLength={HIGHLIGHT_CAPS.teamName}
+                    disabled={!canManage}
+                    placeholder="Sugakod Relay Squad"
+                    onChange={(e) => setDraft((p) => ({ ...p, teamName: e.target.value }))}
+                    className="h-11 text-sm"
+                  />
+                </div>
+
+                <div className="space-y-2 pt-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-mono font-semibold text-[var(--text-secondary)]">
+                      Members ({(draft.groupMembers || []).length}/6)
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={!canManage || (draft.groupMembers || []).length >= 6}
+                      onClick={handleAddGroupMember}
+                      className="h-11 px-3 text-xs"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" aria-hidden="true" />
+                      <span>Add Member</span>
+                    </Button>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {(draft.groupMembers || []).map((member, idx) => {
+                      const matchedMemberAcc = resolveRunnerAccountPhoto({
+                        uid: member.uid,
+                        fullName: member.name,
+                        userPhotosByUid: runnerSources.userPhotosByUid,
+                        userAccounts: availableAccounts,
+                      });
+                      const memberHasUrl = Boolean(member.photoUrl?.trim());
+                      return (
+                        <div
+                          key={`group-member-${idx}`}
+                          className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] p-2.5 space-y-2"
+                        >
+                          <div className="flex items-center gap-2">
+                            {memberHasUrl ? (
+                              <img
+                                src={member.photoUrl}
+                                alt={member.name || `Member ${idx + 1}`}
+                                className="w-11 h-11 rounded-lg object-cover border border-[var(--border-default)] shrink-0"
+                              />
+                            ) : (
+                              <div className="w-11 h-11 rounded-lg border border-dashed border-[var(--border-default)] bg-[var(--surface-inset)] flex items-center justify-center text-xs font-mono text-[var(--text-secondary)] shrink-0">
+                                {idx + 1}
+                              </div>
+                            )}
+
+                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 flex-1 min-w-0">
+                              <Input
+                                aria-label={`Member ${idx + 1} name`}
+                                value={member.name}
+                                maxLength={HIGHLIGHT_CAPS.runnerName}
+                                disabled={!canManage}
+                                placeholder={`Member ${idx + 1} name`}
+                                onChange={(e) => handleUpdateGroupMember(idx, { name: e.target.value })}
+                                className="sm:col-span-7 h-11 text-xs px-2.5"
+                              />
+                              <Input
+                                aria-label={`Member ${idx + 1} bib`}
+                                value={member.bibNumber || ''}
+                                maxLength={HIGHLIGHT_CAPS.bibNumber}
+                                disabled={!canManage}
+                                placeholder="Bib #"
+                                onChange={(e) => handleUpdateGroupMember(idx, { bibNumber: e.target.value })}
+                                className="sm:col-span-5 h-11 font-mono text-xs px-2.5"
+                              />
+                            </div>
+
+                            <button
+                              type="button"
+                              disabled={!canManage || (draft.groupMembers || []).length <= 1}
+                              onClick={() => handleRemoveGroupMember(idx)}
+                              aria-label={`Remove member ${idx + 1}`}
+                              className="min-h-11 min-w-11 shrink-0 rounded-lg border border-[var(--border-default)] flex items-center justify-center text-[var(--text-secondary)] hover:text-red-700 disabled:opacity-40"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                            </button>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={!canManage}
+                              onClick={() => {
+                                pendingGroupMemberIndexRef.current = idx;
+                                groupMemberFileRef.current?.click();
+                              }}
+                              className="h-11 px-3 text-xs"
+                            >
+                              <Upload className="w-3.5 h-3.5" aria-hidden="true" />
+                              <span>{memberHasUrl ? 'Replace' : 'Upload'}</span>
+                            </Button>
+
+                            {memberHasUrl && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={!canManage}
+                                onClick={() =>
+                                  setCropSession({
+                                    target: { kind: 'group-member', index: idx },
+                                    sourceUrl: member.photoUrl || '',
+                                  })
+                                }
+                                className="h-11 px-3 text-xs"
+                              >
+                                Crop
+                              </Button>
+                            )}
+
+                            {matchedMemberAcc.photoUrl && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={!canManage}
+                                onClick={() =>
+                                  applyPhotoToSlot(
+                                    { kind: 'group-member', index: idx },
+                                    matchedMemberAcc.photoUrl!,
+                                    matchedMemberAcc.account,
+                                  )
+                                }
+                                className="h-11 px-3 text-xs"
+                              >
+                                <img
+                                  src={matchedMemberAcc.photoUrl}
+                                  alt=""
+                                  className="w-4 h-4 rounded-full object-cover border border-[var(--border-default)] shrink-0"
+                                />
+                                <span>
+                                  {member.photoUrl === matchedMemberAcc.photoUrl
+                                    ? 'Account Photo Active'
+                                    : 'Use Account Photo'}
+                                </span>
+                              </Button>
+                            )}
+
+                            {(canViewUsers || availableAccounts.length > 0) && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={!canManage || availableAccounts.length === 0}
+                                onClick={() => handleOpenAccountPicker({ kind: 'group-member', index: idx })}
+                                className="h-11 px-3 text-xs"
+                              >
+                                <UserCheck className="w-3.5 h-3.5" aria-hidden="true" />
+                                <span>Account Photo</span>
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </fieldset>
+            )}
 
             {/* Runner Identity Fields */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1290,7 +1985,11 @@ export default function HighlightsStudioPanel({
               >
                 <div className="flex items-center justify-between gap-2">
                   <label htmlFor="hl-runner-name" className="text-xs font-mono text-[var(--text-secondary)]">
-                    {draft.mode === 'duo' ? 'Runner 1 Name' : 'Runner Name'}
+                    {draft.mode === 'duo'
+                      ? 'Runner 1 Name'
+                      : draft.mode === 'group'
+                        ? 'Lead Runner (Database Autofill)'
+                        : 'Runner Name'}
                   </label>
                   {activeRunner ? (
                     <span className="inline-flex items-center gap-1 text-[11px] font-mono text-emerald-700 dark:text-emerald-400">
@@ -1425,6 +2124,13 @@ export default function HighlightsStudioPanel({
                                 >
                                   {rankLabel}
                                 </span>
+                                {(entry.photoUrl || runner.photoUrl) && (
+                                  <img
+                                    src={entry.photoUrl || runner.photoUrl}
+                                    alt=""
+                                    className="w-5 h-5 rounded-full object-cover border border-[var(--border-default)] shrink-0"
+                                  />
+                                )}
                                 <span className="text-xs font-semibold text-[var(--text-primary)] truncate">
                                   {runner.fullName}
                                 </span>
@@ -1565,9 +2271,18 @@ export default function HighlightsStudioPanel({
                             }`}
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <span className="text-xs font-semibold text-[var(--text-primary)] truncate">
-                                {runner.fullName}
-                              </span>
+                              <div className="flex items-center gap-2 min-w-0">
+                                {(raceEntry?.photoUrl || runner.photoUrl) && (
+                                  <img
+                                    src={raceEntry?.photoUrl || runner.photoUrl}
+                                    alt=""
+                                    className="w-5 h-5 rounded-full object-cover border border-[var(--border-default)] shrink-0"
+                                  />
+                                )}
+                                <span className="text-xs font-semibold text-[var(--text-primary)] truncate">
+                                  {runner.fullName}
+                                </span>
+                              </div>
                               {raceEntry && (
                                 <span className="shrink-0 text-[10px] font-mono text-[var(--text-secondary)]">
                                   #{raceEntry.bibNumber} · {raceEntry.distance}
@@ -1603,17 +2318,19 @@ export default function HighlightsStudioPanel({
             )}
 
             {/* Placement & Distance */}
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <div className="space-y-1">
-                <label htmlFor="hl-placement" className="text-xs font-mono text-[var(--text-secondary)]">
-                  Placement
-                </label>
-                <select
+                <HighlightCustomSelect
                   id="hl-placement"
+                  label="Placement"
                   disabled={!canManage}
                   value={matchedPlacementOption}
-                  onChange={(e) => {
-                    if (e.target.value === 'custom') {
+                  options={[
+                    ...availablePlacements.map((pl) => ({ value: pl, label: pl })),
+                    { value: 'custom', label: 'Custom label' },
+                  ]}
+                  onChange={(val) => {
+                    if (val === 'custom') {
                       setDraft((p) => ({
                         ...p,
                         placement: availablePlacements.some(
@@ -1623,16 +2340,10 @@ export default function HighlightsStudioPanel({
                           : p.placement,
                       }));
                     } else {
-                      setDraft((p) => ({ ...p, placement: e.target.value }));
+                      setDraft((p) => ({ ...p, placement: val }));
                     }
                   }}
-                  className="w-full h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-sm text-[var(--text-primary)]"
-                >
-                  {availablePlacements.map((pl) => (
-                    <option key={pl} value={pl}>{pl}</option>
-                  ))}
-                  <option value="custom">Custom label</option>
-                </select>
+                />
                 {matchedPlacementOption === 'custom' && (
                   <Input
                     value={draft.placement}
@@ -1646,15 +2357,17 @@ export default function HighlightsStudioPanel({
                 )}
               </div>
               <div className="space-y-1">
-                <label htmlFor="hl-distance" className="text-xs font-mono text-[var(--text-secondary)]">
-                  Distance
-                </label>
-                <select
+                <HighlightCustomSelect
                   id="hl-distance"
+                  label="Distance"
                   disabled={!canManage}
                   value={matchedDistanceOption}
-                  onChange={(e) => {
-                    if (e.target.value === 'custom') {
+                  options={[
+                    ...availableDistances.map((d) => ({ value: d, label: d })),
+                    ...(!selectedRace ? [{ value: 'custom', label: 'Custom distance' }] : []),
+                  ]}
+                  onChange={(val) => {
+                    if (val === 'custom') {
                       setDraft((p) => ({
                         ...p,
                         distance: availableDistances.some(
@@ -1664,16 +2377,10 @@ export default function HighlightsStudioPanel({
                           : p.distance,
                       }));
                     } else {
-                      handleDistanceChange(e.target.value);
+                      handleDistanceChange(val);
                     }
                   }}
-                  className="w-full h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-sm font-mono text-[var(--text-primary)]"
-                >
-                  {availableDistances.map((d) => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                  {!selectedRace && <option value="custom">Custom distance</option>}
-                </select>
+                />
                 {!selectedRace && matchedDistanceOption === 'custom' && (
                   <Input
                     value={draft.distance}
@@ -1896,17 +2603,29 @@ export default function HighlightsStudioPanel({
               </div>
             </div>
           </section>
+            )}
 
-          {/* CENTER PANEL: Border, FX & Card Customizer */}
-          <section className="xl:col-span-4 glass-panel p-4 sm:p-5 space-y-4" aria-label="Border, FX and card customizer">
-            <div className="flex items-center justify-between gap-2 border-b border-[var(--border-default)] pb-2.5">
-              <h2 className="font-display text-base font-semibold text-[var(--text-primary)]">
-                2. Border, FX &amp; Card Customizer
-              </h2>
-              <span className="text-[11px] font-mono text-[var(--text-secondary)]">
-                {HIGHLIGHT_BORDER_PRESETS.length} borders · {HIGHLIGHT_CARD_EFFECTS.length} FX
-              </span>
-            </div>
+            {composerSection === 'career' && (
+              <CareerAchievementsEditor
+                draft={draft}
+                activeRunner={activeRunner}
+                canManage={canManage}
+                onUpdateDraft={setDraft}
+                onSelectPrimaryEntry={applyRunnerRaceEntry}
+              />
+            )}
+
+            {/* SECTION 3: Frame, FX & Card Customizer */}
+            {composerSection === 'style' && (
+              <section className="space-y-4" aria-label="Border, FX and card customizer">
+                <div className="flex items-center justify-between gap-2 border-b border-[var(--border-default)] pb-2.5">
+                  <h2 className="font-display text-base font-semibold text-[var(--text-primary)]">
+                    Frame, FX &amp; Card Customizer
+                  </h2>
+                  <span className="text-[11px] font-mono text-[var(--text-secondary)]">
+                    {HIGHLIGHT_BORDER_PRESETS.length} borders &bull; {HIGHLIGHT_CARD_EFFECTS.length} FX
+                  </span>
+                </div>
 
             {/* Header / Badge Layout */}
             <div className="space-y-1.5">
@@ -2204,14 +2923,56 @@ export default function HighlightsStudioPanel({
               </div>
             </div>
           </section>
+            )}
 
-          {/* RIGHT PANEL: Interactive Live Preview & Scheduling */}
-          <section className="xl:col-span-4 glass-panel p-4 sm:p-5 space-y-4" aria-label="Interactive live preview">
-            <div className="flex items-center justify-between gap-2 border-b border-[var(--border-default)] pb-2.5">
+            {/* Stepped Composer Footer Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-[var(--border-default)]">
+              <div className="text-[11px] font-mono text-[var(--text-secondary)]">
+                {composerSection === 'athlete' && 'Step 1 of 3: Select event, finisher, and timing'}
+                {composerSection === 'career' && 'Step 2 of 3: Attach achievements & participated races'}
+                {composerSection === 'style' && 'Step 3 of 3: Customize border preset, accents & finish'}
+              </div>
+              <div className="flex items-center gap-2">
+                {composerSection !== 'athlete' && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setComposerSection(composerSection === 'style' ? 'career' : 'athlete')
+                    }
+                    className={chipBtn(false)}
+                  >
+                    <span>Back</span>
+                  </button>
+                )}
+                {composerSection !== 'style' && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setComposerSection(composerSection === 'athlete' ? 'career' : 'style')
+                    }
+                    className={chipBtn(true)}
+                  >
+                    <span>
+                      {composerSection === 'athlete'
+                        ? 'Next: Events & Achievements'
+                        : 'Next: Frame & Visual FX'}
+                    </span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT STICKY STAGE: Interactive Live Preview, Career Synergy & Publishing */}
+          <section
+            className="xl:col-span-4 xl:sticky xl:top-20 glass-panel p-4 sm:p-5 space-y-4"
+            aria-label="Interactive live preview"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-default)] pb-2.5">
               <h2 className="font-display text-base font-semibold text-[var(--text-primary)]">
-                3. Live Preview
+                Live Stage
               </h2>
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => setPreviewHover((v) => !v)}
@@ -2227,6 +2988,15 @@ export default function HighlightsStudioPanel({
                 >
                   <span>{previewLayout === 'pill' ? 'Pill' : 'Card'}</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setDossierItem(livePreviewItem)}
+                  className={chipBtn(false)}
+                  title="Open interactive Finisher Dossier view with all achievements and events"
+                >
+                  <FileText className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>Dossier</span>
+                </button>
               </div>
             </div>
 
@@ -2236,7 +3006,32 @@ export default function HighlightsStudioPanel({
                 highlight={livePreviewItem}
                 layoutMode={previewLayout}
                 isSpotlight={previewHover}
+                onSelect={() => setDossierItem(livePreviewItem)}
               />
+            </div>
+
+            {/* Single-Card Career & Placement Summary */}
+            <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono">
+                <span className="px-2 py-0.5 rounded bg-red-700/15 text-red-700 dark:text-red-300 font-semibold">
+                  {livePreviewItem.placement || 'Finisher'}
+                </span>
+                <span className="px-2 py-0.5 rounded border border-[var(--border-default)] text-[var(--text-secondary)] inline-flex items-center gap-1">
+                  <CalendarDays className="w-3 h-3" aria-hidden="true" />
+                  {(draft.participatedEvents || []).length || (draft.raceName ? 1 : 0)} events
+                </span>
+                <span className="px-2 py-0.5 rounded border border-[var(--border-default)] text-[var(--text-secondary)] inline-flex items-center gap-1">
+                  <Trophy className="w-3 h-3" aria-hidden="true" />
+                  {(draft.achievements || []).length} badges
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setComposerSection('career')}
+                className="text-xs font-semibold text-red-700 dark:text-red-400 hover:underline min-h-9 px-2"
+              >
+                Edit career
+              </button>
             </div>
 
             {/* Pin & Expiration Schedule */}
@@ -2292,6 +3087,7 @@ export default function HighlightsStudioPanel({
                   setRunnerDropdownOpen(false);
                   setPartnerDropdownOpen(false);
                   setStudioDistanceFilter('all');
+                  setComposerSection('athlete');
                   setDraft(createBlankDraft(profile.uid));
                 }}
                 className="h-11 px-4 text-xs"
@@ -2306,379 +3102,35 @@ export default function HighlightsStudioPanel({
 
       {/* TAB 2: PUBLISHED HIGHLIGHTS MANAGER */}
       {subTab === 'published' && (
-        <section className="glass-panel p-4 sm:p-5 space-y-4" aria-label="Published highlights manager">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <h2 className="font-display text-lg font-semibold text-[var(--text-primary)]">
-              Published Podium Cards
-            </h2>
-            <Input
-              type="search"
-              aria-label="Filter published highlights"
-              placeholder="Search runner, bib, or race"
-              value={publishedSearch}
-              onChange={(e) => setPublishedSearch(e.target.value)}
-              className="w-full sm:w-72 h-11 text-sm"
-            />
-          </div>
-
-          {filteredPublished.length === 0 ? (
-            <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-6 text-center space-y-3">
-              <p className="text-sm text-[var(--text-secondary)]">
-                {highlights.length === 0
-                  ? 'No highlights published yet. Use Highlight Studio to create your first collectible podium card.'
-                  : 'No highlights match your current search filter.'}
-              </p>
-              {highlights.length === 0 && canManage && (
-                <Button type="button" onClick={() => setSubTab('studio')} className="h-11 px-4 text-xs">
-                  <Plus className="w-4 h-4" aria-hidden="true" />
-                  <span>Create first highlight</span>
-                </Button>
-              )}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {filteredPublished.map((item) => {
-                const expired = isHighlightExpired(item);
-                const name =
-                  item.mode === 'duo' && item.partnerName
-                    ? `${item.runnerName} & ${item.partnerName}`
-                    : item.runnerName;
-
-                return (
-                  <div
-                    key={item.id}
-                    className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3.5 flex flex-col justify-between gap-3"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <img
-                        src={item.photoUrl}
-                        alt={item.runnerName}
-                        className="w-16 h-20 rounded-xl object-cover border border-[var(--border-default)] shrink-0 bg-zinc-900"
-                      />
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono">
-                          <span className="px-2 py-0.5 rounded bg-red-700 text-white font-semibold">
-                            {item.placement}
-                          </span>
-                          <span className="px-2 py-0.5 rounded border border-[var(--border-default)] text-[var(--text-secondary)]">
-                            {item.mode.toUpperCase()} {item.distance}
-                          </span>
-                          {item.pinned && (
-                            <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 font-semibold">
-                              PINNED
-                            </span>
-                          )}
-                          {expired && (
-                            <span className="px-2 py-0.5 rounded bg-zinc-500/20 text-zinc-600 dark:text-zinc-300">
-                              EXPIRED
-                            </span>
-                          )}
-                        </div>
-                        <p className="font-display font-semibold text-sm text-[var(--text-primary)] truncate">
-                          {name}
-                        </p>
-                        <p className="text-xs font-mono text-[var(--text-secondary)] truncate">
-                          {item.raceName} &bull; {item.chipTime} &bull; #{item.bibNumber}
-                        </p>
-                        <p className="text-[11px] font-mono text-[var(--text-secondary)] truncate">
-                          {formatReadableDate(item.raceDate)} &bull; {item.borderPreset}
-                        </p>
-                      </div>
-                    </div>
-
-                    {canManage && (
-                      <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[var(--border-default)]">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleEditHighlight(item)}
-                          className="h-10 px-3 text-xs"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" aria-hidden="true" />
-                          <span>Edit</span>
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleDuplicateHighlight(item)}
-                          className="h-10 px-3 text-xs"
-                        >
-                          <Copy className="w-3.5 h-3.5" aria-hidden="true" />
-                          <span>Duplicate</span>
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleTogglePin(item)}
-                          className="h-10 px-3 text-xs"
-                        >
-                          {item.pinned ? (
-                            <PinOff className="w-3.5 h-3.5" aria-hidden="true" />
-                          ) : (
-                            <Pin className="w-3.5 h-3.5" aria-hidden="true" />
-                          )}
-                          <span>{item.pinned ? 'Unpin' : 'Pin'}</span>
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleDeleteHighlight(item)}
-                          className="h-10 px-3 text-xs text-red-700 dark:text-red-400 sm:ml-auto"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                          <span>Delete</span>
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
+        <PublishedHighlightsManager
+          highlights={highlights}
+          orderedHighlights={orderedHighlights}
+          races={races}
+          canManage={canManage}
+          onCreateNew={() => {
+            setEditingId(null);
+            setComposerSection('athlete');
+            setSubTab('studio');
+          }}
+          onEdit={handleEditHighlight}
+          onDuplicate={handleDuplicateHighlight}
+          onTogglePin={handleTogglePin}
+          onDelete={handleDeleteHighlight}
+          onPreviewDossier={setDossierItem}
+        />
       )}
 
       {/* TAB 3: GLOBAL MARQUEE CONTROL DECK */}
       {subTab === 'deck' && (
-        <section className="grid grid-cols-1 lg:grid-cols-12 gap-5" aria-label="Global marquee control deck">
-          {/* Physics, Speed & Layout Controls */}
-          <div className="lg:col-span-7 glass-panel p-4 sm:p-5 space-y-5">
-            <h2 className="font-display text-lg font-semibold text-[var(--text-primary)] border-b border-[var(--border-default)] pb-2.5">
-              Velocity, Direction &amp; Geometry Controls
-            </h2>
-
-            {/* Cruise Velocity Slider */}
-            <div className="space-y-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-4">
-              <div className="flex items-center justify-between text-sm">
-                <label htmlFor="deck-speed" className="font-semibold text-[var(--text-primary)]">
-                  Cruise Velocity
-                </label>
-                <span className="font-mono text-sm font-semibold text-red-700 dark:text-red-400">
-                  {config.speedPxPerSec} px/sec
-                </span>
-              </div>
-              <input
-                id="deck-speed"
-                type="range"
-                min={10}
-                max={120}
-                step={2}
-                disabled={!canSettings}
-                value={config.speedPxPerSec}
-                onChange={(e) => setConfig((c) => ({ ...c, speedPxPerSec: Number(e.target.value) }))}
-                className="w-full accent-red-600 cursor-pointer"
-              />
-              <div className="flex justify-between text-[11px] font-mono text-[var(--text-secondary)]">
-                <span>10 px/s (Calm gallery)</span>
-                <span>60 px/s (Broadcast)</span>
-                <span>120 px/s (Sprint)</span>
-              </div>
-            </div>
-
-            {/* Hover Behavior */}
-            <div className="space-y-2">
-              <span className="block text-xs font-mono font-semibold text-[var(--text-secondary)]">
-                Card Hover Behavior
-              </span>
-              <div className="grid grid-cols-3 gap-2.5">
-                {([
-                  { id: 'stop', label: 'Full Stop (0%)' },
-                  { id: 'slow', label: 'Slow-Mo (20%)' },
-                  { id: 'keep', label: 'Keep Moving' },
-                ] as const).map((opt) => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    disabled={!canSettings}
-                    onClick={() => setConfig((c) => ({ ...c, hoverBehavior: opt.id }))}
-                    className={chipBtn(config.hoverBehavior === opt.id)}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Direction & Global Layout */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <span className="block text-xs font-mono font-semibold text-[var(--text-secondary)]">
-                  Flow Direction
-                </span>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    disabled={!canSettings}
-                    onClick={() => setConfig((c) => ({ ...c, direction: 'left' }))}
-                    className={chipBtn(config.direction === 'left')}
-                  >
-                    Left
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!canSettings}
-                    onClick={() => setConfig((c) => ({ ...c, direction: 'right' }))}
-                    className={chipBtn(config.direction === 'right')}
-                  >
-                    Right
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <span className="block text-xs font-mono font-semibold text-[var(--text-secondary)]">
-                  Global Card Layout
-                </span>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    disabled={!canSettings}
-                    onClick={() => setConfig((c) => ({ ...c, layoutMode: 'card' }))}
-                    className={chipBtn(config.layoutMode === 'card')}
-                  >
-                    Card (260x340)
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!canSettings}
-                    onClick={() => setConfig((c) => ({ ...c, layoutMode: 'pill' }))}
-                    className={chipBtn(config.layoutMode === 'pill')}
-                  >
-                    Pill (360x140)
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Gap & Edge Fade Sliders */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3.5">
-                <div className="flex items-center justify-between text-xs font-mono">
-                  <label htmlFor="deck-gap" className="text-[var(--text-secondary)]">Card Gap</label>
-                  <span className="font-semibold text-[var(--text-primary)]">{config.cardGapPx}px</span>
-                </div>
-                <input
-                  id="deck-gap"
-                  type="range"
-                  min={12}
-                  max={32}
-                  step={4}
-                  disabled={!canSettings}
-                  value={config.cardGapPx}
-                  onChange={(e) => setConfig((c) => ({ ...c, cardGapPx: Number(e.target.value) }))}
-                  className="w-full accent-red-600 cursor-pointer"
-                />
-              </div>
-
-              <div className="space-y-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3.5">
-                <div className="flex items-center justify-between text-xs font-mono">
-                  <label htmlFor="deck-fade" className="text-[var(--text-secondary)]">Edge Fade Mask</label>
-                  <span className="font-semibold text-[var(--text-primary)]">{config.edgeFadePx}px</span>
-                </div>
-                <input
-                  id="deck-fade"
-                  type="range"
-                  min={0}
-                  max={120}
-                  step={8}
-                  disabled={!canSettings}
-                  value={config.edgeFadePx}
-                  onChange={(e) => setConfig((c) => ({ ...c, edgeFadePx: Number(e.target.value) }))}
-                  className="w-full accent-red-600 cursor-pointer"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Smart Playlist Rules (Superadmin / highlights.playlist) */}
-          <div className="lg:col-span-5 glass-panel p-4 sm:p-5 flex flex-col justify-between gap-5">
-            <div className="space-y-4">
-              <div className="border-b border-[var(--border-default)] pb-2.5">
-                <h2 className="font-display text-lg font-semibold text-[var(--text-primary)]">
-                  Smart Playlist Rules
-                </h2>
-                <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-                  {canPlaylist
-                    ? 'Control podium prioritization, event filtering, and expiration rules.'
-                    : 'Managed by Super Admin or accounts granted Smart Playlist Rules permission.'}
-                </p>
-              </div>
-
-              <label className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3.5 cursor-pointer">
-                <div className="min-w-0">
-                  <span className="block text-sm font-semibold text-[var(--text-primary)]">
-                    Pin top podium finishers first
-                  </span>
-                  <span className="block text-xs text-[var(--text-secondary)]">
-                    Always place Record Holders, 1st, 2nd, and 3rd ahead of general highlights.
-                  </span>
-                </div>
-                <input
-                  type="checkbox"
-                  disabled={!canPlaylist}
-                  checked={config.pinPodiumFirst}
-                  onChange={(e) => setConfig((c) => ({ ...c, pinPodiumFirst: e.target.checked }))}
-                  className="w-5 h-5 accent-red-600 shrink-0"
-                />
-              </label>
-
-              <label className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3.5 cursor-pointer">
-                <div className="min-w-0">
-                  <span className="block text-sm font-semibold text-[var(--text-primary)]">
-                    Auto-hide expired highlights
-                  </span>
-                  <span className="block text-xs text-[var(--text-secondary)]">
-                    Automatically pull highlights once their scheduled expiration date passes.
-                  </span>
-                </div>
-                <input
-                  type="checkbox"
-                  disabled={!canPlaylist}
-                  checked={config.hideExpired}
-                  onChange={(e) => setConfig((c) => ({ ...c, hideExpired: e.target.checked }))}
-                  className="w-5 h-5 accent-red-600 shrink-0"
-                />
-              </label>
-
-              <div className="space-y-1.5">
-                <label htmlFor="playlist-race-filter" className="block text-xs font-mono font-semibold text-[var(--text-secondary)]">
-                  Filter Public Reel by Event
-                </label>
-                <select
-                  id="playlist-race-filter"
-                  disabled={!canPlaylist}
-                  value={config.filterRaceId}
-                  onChange={(e) => setConfig((c) => ({ ...c, filterRaceId: e.target.value }))}
-                  className="w-full h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-sm text-[var(--text-primary)]"
-                >
-                  <option value="">All published races</option>
-                  <option value="latest">Latest race event only</option>
-                  {races.map((race) => (
-                    <option key={race.id} value={race.id}>
-                      {race.name} ({race.date})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="pt-3 border-t border-[var(--border-default)] flex justify-end">
-              <Button
-                type="button"
-                disabled={!canSettings || savingConfig}
-                onClick={handleSaveDeck}
-                className="h-11 px-5 text-xs w-full sm:w-auto"
-              >
-                <Save className="w-4 h-4" aria-hidden="true" />
-                <span>{savingConfig ? 'Saving settings...' : 'Save Marquee Controls'}</span>
-              </Button>
-            </div>
-          </div>
-        </section>
+        <MarqueeControlDeck
+          config={config}
+          races={races}
+          canSettings={canSettings}
+          canPlaylist={canPlaylist}
+          savingConfig={savingConfig}
+          onChangeConfig={setConfig}
+          onSaveDeck={handleSaveDeck}
+        />
       )}
 
       {/* LANDING PAGE LIVE PREVIEW */}
@@ -2772,19 +3224,140 @@ export default function HighlightsStudioPanel({
       {cropSession && (
         <HighlightSmartCropModal
           sourceUrl={cropSession.sourceUrl}
-          label={cropSession.slot === 'partner' ? 'Runner 2 photo' : 'Runner 1 photo'}
-          aspectRatio={draft.mode === 'duo' ? 0.48 : 260 / 340}
-          targetWidth={draft.mode === 'duo' ? 320 : 520}
+          label={
+            cropSession.target.kind === 'partner'
+              ? 'Runner 2 photo'
+              : cropSession.target.kind === 'group-member'
+                ? `Group member ${cropSession.target.index + 1} photo`
+                : draft.mode === 'group'
+                  ? 'Group photo'
+                  : 'Runner 1 photo'
+          }
+          aspectRatio={
+            draft.mode === 'duo'
+              ? 0.48
+              : cropSession.target.kind === 'group-member'
+                ? 0.72
+                : 260 / 340
+          }
+          targetWidth={draft.mode === 'duo' ? 320 : cropSession.target.kind === 'group-member' ? 400 : 520}
           targetHeight={680}
           onCancel={() => setCropSession(null)}
           onConfirm={(croppedUrl) => {
-            setDraft((prev) =>
-              cropSession.slot === 'partner'
-                ? { ...prev, partnerPhotoUrl: croppedUrl }
-                : { ...prev, photoUrl: croppedUrl },
-            );
+            applyPhotoToSlot(cropSession.target, croppedUrl);
             setCropSession(null);
           }}
+        />
+      )}
+
+      {accountPickerTarget && (
+        <DialogSurface
+          titleId="hl-account-picker-title"
+          descriptionId="hl-account-picker-desc"
+          onRequestClose={() => setAccountPickerTarget(null)}
+          initialFocusRef={accountSearchInputRef as React.RefObject<HTMLElement>}
+          className="m-auto w-[min(94vw,520px)] max-h-[85vh] overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] p-0 shadow-2xl flex flex-col"
+        >
+          <div className="p-4 sm:p-5 border-b border-[var(--border-default)] flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-mono uppercase tracking-wider text-red-700 dark:text-red-400 font-semibold">
+                Runner Profile Picture
+              </p>
+              <h3 id="hl-account-picker-title" className="font-display text-lg font-semibold text-[var(--text-primary)] mt-0.5">
+                Attach Runner Account Photo
+              </h3>
+              <p id="hl-account-picker-desc" className="text-xs text-[var(--text-secondary)] mt-1">
+                {accountPickerTarget.kind === 'partner'
+                  ? 'Select a registered account avatar for Runner 2.'
+                  : accountPickerTarget.kind === 'group-member'
+                    ? `Select a registered account avatar for Group Member ${accountPickerTarget.index + 1}.`
+                    : 'Select a registered runner account avatar to attach directly.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAccountPickerTarget(null)}
+              aria-label="Close account photo picker"
+              className="min-h-11 min-w-11 shrink-0 rounded-full border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] flex items-center justify-center text-[var(--text-primary)]"
+            >
+              <X className="w-4 h-4" aria-hidden="true" />
+            </button>
+          </div>
+
+          <div className="p-4 border-b border-[var(--border-default)]">
+            <search>
+              <label htmlFor="hl-account-search" className="sr-only">
+                Search runner accounts by name or username
+              </label>
+              <div className="relative">
+                <Search className="w-4 h-4 text-[var(--text-secondary)] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
+                <Input
+                  ref={accountSearchInputRef}
+                  id="hl-account-search"
+                  value={accountSearch}
+                  placeholder="Search runner name, nickname, or @username..."
+                  onChange={(e) => setAccountSearch(e.target.value)}
+                  className="h-11 pl-10 pr-10 text-sm"
+                />
+                {accountSearch && (
+                  <button
+                    type="button"
+                    aria-label="Clear account search"
+                    onClick={() => setAccountSearch('')}
+                    className="min-h-11 min-w-11 absolute right-0 top-1/2 -translate-y-1/2 flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                  >
+                    <X className="w-4 h-4" aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+            </search>
+          </div>
+
+          <div className="p-3 overflow-y-auto flex-1 space-y-1.5">
+            {filteredAccountChoices.length === 0 ? (
+              <p className="py-8 text-center text-xs font-mono text-[var(--text-secondary)]">
+                {availableAccounts.length === 0
+                  ? 'No runner accounts with profile photos found yet.'
+                  : `No accounts match "${accountSearch.trim()}".`}
+              </p>
+            ) : (
+              filteredAccountChoices.map((acc) => (
+                <button
+                  key={acc.uid}
+                  type="button"
+                  onClick={() => {
+                    applyPhotoToSlot(accountPickerTarget, acc.photoURL, acc);
+                    setAccountPickerTarget(null);
+                  }}
+                  className="w-full min-h-14 px-3 py-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] flex items-center gap-3 text-left transition"
+                >
+                  <img
+                    src={acc.photoURL}
+                    alt={acc.displayName}
+                    className="w-10 h-10 rounded-full object-cover border border-[var(--border-default)] shrink-0 bg-zinc-900"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-[var(--text-primary)] truncate">
+                      {acc.displayName}
+                    </p>
+                    <p className="text-[11px] font-mono text-[var(--text-secondary)] truncate">
+                      {acc.username ? `@${acc.username}` : acc.nickname || acc.uid}
+                    </p>
+                  </div>
+                  <span className="shrink-0 px-2.5 py-1 rounded-lg bg-red-700 text-white text-[11px] font-mono font-semibold">
+                    Attach
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        </DialogSurface>
+      )}
+
+      {dossierItem && (
+        <FinisherDossierModal
+          highlight={dossierItem}
+          onClose={() => setDossierItem(null)}
         />
       )}
     </div>

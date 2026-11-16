@@ -36,6 +36,7 @@ function createAccountSecurity({ db, auth, sendCode, secret, now = Date.now }) {
   }
 
   async function requestCode({ purpose, email: inputEmail, uid, ip, name }) {
+    const startedAt = now();
     await rateLimit(ip);
     let user;
     let email;
@@ -79,6 +80,11 @@ function createAccountSecurity({ db, auth, sendCode, secret, now = Date.now }) {
         });
         throw new AccountError(503, 'Email delivery is temporarily unavailable. Please try again in a minute.', COOLDOWN / 1000);
       }
+    }
+    // Equalize password-reset latency in production so SMTP time cannot reveal whether an email exists.
+    if (purpose === 'reset' && now === Date.now) {
+      const remainingMs = 650 - (Date.now() - startedAt);
+      if (remainingMs > 0) await new Promise((resolve) => setTimeout(resolve, remainingMs));
     }
     // Unknown reset addresses get the same response and cooldown as real accounts.
     return { challengeId: id, expiresIn: CODE_TTL / 1000, retryAfter: COOLDOWN / 1000 };

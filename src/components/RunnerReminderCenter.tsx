@@ -165,39 +165,95 @@ export default function RunnerReminderCenter({ runnerProfiles }: { runnerProfile
   if (runnerProfiles.length === 0) return null;
 
   return (
-    <section className="glass-panel p-4 sm:p-5 space-y-3 animate-fadeIn">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 min-w-0">
+    <section
+      aria-label="Race day and kit updates"
+      className="border border-[var(--border-default)] rounded-2xl bg-[var(--surface-card)] px-4 py-3 space-y-2.5 animate-fadeIn"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex items-center gap-2.5 min-w-0">
           <BellRing className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
-          <div>
-            <h2 className="text-xs font-semibold font-display uppercase tracking-widest text-[var(--text-secondary)]">Race updates</h2>
-            <p className="text-xs text-[var(--text-secondary)] mt-1">{reminders.length ? `${reminders.length} reminder${reminders.length === 1 ? '' : 's'} for your races` : 'You’re all caught up'}</p>
-          </div>
+          <h2 className="text-xs font-semibold font-display uppercase tracking-wider text-[var(--text-primary)] whitespace-nowrap">
+            Race Day &amp; Kit Alerts
+          </h2>
+          <span className="font-mono text-xs font-semibold tabular-nums px-2 py-0.5 rounded-md bg-[var(--surface-inset)] border border-[var(--border-default)] text-[var(--text-primary)]">
+            {reminders.length}
+          </span>
+          <span className="text-xs text-[var(--text-secondary)] truncate hidden sm:inline">
+            {reminders.length
+              ? `${reminders.length} active reminder${reminders.length === 1 ? '' : 's'} across your registered races`
+              : 'All pre-race checkpoints and kits are up to date'}
+          </span>
         </div>
-        {notificationPermission === 'default' && (
-          <button type="button" onClick={() => void requestAlerts()} className="shrink-0 min-h-11 inline-flex items-center text-xs font-semibold uppercase tracking-wide px-4 py-2 rounded-full bg-red-700/10 text-red-700 dark:text-red-400 border border-red-700/25 dark:border-red-400/25 hover:bg-red-700 hover:text-white transition">Enable alerts</button>
-        )}
+
+        <div className="flex items-center gap-2 shrink-0">
+          {notificationPermission === 'granted' && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-600/25 text-emerald-700 dark:text-emerald-400">
+              <Bell className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              Browser Alerts On
+            </span>
+          )}
+          {notificationPermission === 'default' && (
+            <button
+              type="button"
+              onClick={() => void requestAlerts()}
+              className="min-h-9 inline-flex items-center text-xs font-semibold uppercase tracking-wide px-3.5 py-1.5 rounded-lg bg-red-700/10 text-red-700 dark:text-red-400 border border-red-700/25 dark:border-red-400/25 hover:bg-red-700 hover:text-white transition"
+            >
+              Enable Browser Alerts
+            </button>
+          )}
+        </div>
       </div>
 
       {reminders.length === 0 ? (
-        <div className="glass-inset px-3 py-3 text-xs text-[var(--text-secondary)] flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-700 dark:text-emerald-400 shrink-0" aria-hidden="true" /> No action needed right now.</div>
+        <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3.5 py-2.5 text-xs text-[var(--text-secondary)] flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-700 dark:text-emerald-400 shrink-0" aria-hidden="true" />
+          No action needed right now.
+        </div>
       ) : (
-        <div className="space-y-2">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-2.5">
           {reminders.slice(0, 4).map((reminder) => {
             const Icon = reminder.kind === 'result' ? Trophy : reminder.kind === 'kit' ? PackageCheck : CalendarDays;
-            const accent = reminder.kind === 'result' ? 'text-emerald-700 dark:text-emerald-400' : reminder.kind === 'kit' ? 'text-amber-800 dark:text-amber-300' : 'text-red-700 dark:text-red-400';
+            const iconColor =
+              reminder.kind === 'result'
+                ? 'text-emerald-700 dark:text-emerald-400'
+                : reminder.kind === 'kit'
+                ? 'text-amber-700 dark:text-amber-300'
+                : 'text-red-700 dark:text-red-400';
+            const leftBorder =
+              reminder.kind === 'result'
+                ? 'border-l-emerald-600'
+                : reminder.kind === 'kit'
+                ? 'border-l-amber-500'
+                : 'border-l-red-600';
             return (
-              <div key={reminder.id} className="glass-inset px-3 py-3 flex items-start gap-3">
-                <Icon className={`w-4 h-4 mt-1 shrink-0 ${accent}`} aria-hidden="true" />
-                <span className="min-w-0 flex-1"><span className="block text-xs font-semibold text-[var(--text-primary)]">{reminder.title}</span><span className="block text-xs text-[var(--text-secondary)] mt-1 leading-relaxed">{reminder.detail}</span></span>
-                <button type="button" onClick={() => dismiss(reminder.id)} title="Dismiss reminder" aria-label={`Dismiss ${reminder.title}`} className="min-h-11 min-w-11 -mr-2 flex items-center justify-center rounded-lg text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition shrink-0"><X className="w-4 h-4" aria-hidden="true" /></button>
+              <div
+                key={reminder.id}
+                className={`rounded-xl border border-[var(--border-default)] border-l-4 ${leftBorder} bg-[var(--surface-elevated)] px-3.5 py-2.5 flex items-center gap-3`}
+              >
+                <Icon className={`w-4 h-4 shrink-0 ${iconColor}`} aria-hidden="true" />
+                <div className="min-w-0 flex-1">
+                  <span className="block text-xs font-semibold text-[var(--text-primary)]">{reminder.title}</span>
+                  <span className="block text-xs text-[var(--text-secondary)] mt-0.5 leading-snug">{reminder.detail}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => dismiss(reminder.id)}
+                  title="Dismiss reminder"
+                  aria-label={`Dismiss ${reminder.title}`}
+                  className="min-h-9 min-w-9 flex items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-red-700 dark:hover:text-red-400 transition shrink-0"
+                >
+                  <X className="w-4 h-4" aria-hidden="true" />
+                </button>
               </div>
             );
           })}
-          {reminders.length > 4 && <p className="text-xs text-[var(--text-secondary)] text-center">+{reminders.length - 4} more reminders</p>}
+          {reminders.length > 4 && (
+            <p className="xl:col-span-2 text-xs text-[var(--text-secondary)] text-right font-mono">
+              +{reminders.length - 4} more reminders
+            </p>
+          )}
         </div>
       )}
-      {notificationPermission === 'granted' && <p className="text-xs text-emerald-700 dark:text-emerald-400 flex items-center gap-2"><Bell className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> Browser alerts enabled for this device.</p>}
     </section>
   );
 }

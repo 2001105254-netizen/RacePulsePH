@@ -19,9 +19,11 @@ import { Radio, ScanLine, Trophy, Clock, Wifi, WifiOff, QrCode, RefreshCw, Arrow
 import QrScannerModal from './QrScannerModal';
 import RaceList from './RaceList';
 import LiveRankingsScreen from './LiveRankingsScreen';
+import { buildBroadcastShortcutGuide, getDistanceLabelsForRace } from '../lib/liveRankings';
 import EntrySequencePanel from './EntrySequencePanel';
 import DialogSurface from './ui/DialogSurface';
 import { useFeedback } from './ui/FeedbackProvider';
+import { MAX_ROSTER_ROWS, MAX_ROSTER_SHEETS, MAX_XLSX_BYTES, assertSafeImportFile, stripUnsafeKeys } from '../lib/security';
 
 interface DequeuedFinisherRecord {
   bibNumber: string;
@@ -2421,9 +2423,11 @@ function parseRosterWorkbook(
   const skipped: string[] = [];
   let combinedTeams = 0;
 
-  for (const sheetName of workbook.SheetNames) {
+  for (const sheetName of workbook.SheetNames.slice(0, MAX_ROSTER_SHEETS)) {
     const sheet = workbook.Sheets[sheetName];
-    const rows = utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', raw: false });
+    const rows = stripUnsafeKeys(
+      utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', raw: false }),
+    );
     const headers = rows[0] || [];
     const nameColumn = headerIndex(headers, ['fullname', 'runnername', 'participantname', 'name']);
     const bibColumn = headerIndex(headers, ['racebibnumber', 'bibnumber', 'racebib', 'bib']);
@@ -2440,7 +2444,7 @@ function parseRosterWorkbook(
     if (nameColumn < 0 || bibColumn < 0 || distanceColumn < 0) continue;
     detectedSheets.push(sheetName);
 
-    rows.slice(1).forEach((row, index) => {
+    rows.slice(1, MAX_ROSTER_ROWS + 1).forEach((row, index) => {
       const sourceRow = index + 2;
       const fullName = spreadsheetText(row[nameColumn]);
       const bibNumber = normalizeImportBib(row[bibColumn]);
@@ -2730,9 +2734,10 @@ function RosterImportPanel({ race, runnerProfiles }: RosterImportPanelProps) {
     setFeedback(null);
     setPreview(null);
 
-    const supported = /\.(xlsx|xls|csv)$/i.test(file.name);
-    if (!supported) {
-      setFeedback({ type: 'error', text: 'Choose an Excel (.xlsx/.xls) or CSV file.' });
+    try {
+      assertSafeImportFile(file, MAX_XLSX_BYTES, /\.(xlsx|xls|csv)$/i, 'Choose an Excel (.xlsx/.xls) or CSV file.');
+    } catch (error: unknown) {
+      setFeedback({ type: 'error', text: error instanceof Error ? error.message : 'Choose an Excel (.xlsx/.xls) or CSV file.' });
       return;
     }
 
@@ -3140,7 +3145,7 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
           const currentCount = counterSnap.exists() ? Number(counterSnap.data().count || 0) : 0;
           const correctedSequence = Number(generatedMatch[1]);
           if (correctedSequence > currentCount) {
-            transaction.set(counterRef, { count: correctedSequence }, { merge: true });
+            transaction.set(counterRef, { raceId: race.id, count: correctedSequence }, { merge: true });
           }
         }
       });
@@ -4165,7 +4170,7 @@ interface RaceRankingsPanelProps {
   onDismissDequeued?: (bibNumber: string) => void;
 }
 
-function RaceRankingsPanel({
+export function RaceRankingsPanel({
   race,
   results,
   recentlyDequeued = [],
@@ -4612,6 +4617,45 @@ function RaceRankingsPanel({
             <p className="text-sm font-semibold text-rose-700 dark:text-rose-400">{invalidatedCount}</p>
             <p className="text-xs text-[var(--text-secondary)]">DQ / Out</p>
           </div>
+        </div>
+
+        <div className="glass-inset p-3.5 space-y-2.5 text-xs">
+          <div className="flex items-center gap-2 font-semibold text-[var(--text-primary)]">
+            <Keyboard className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+            <span>Broadcast keyboard shortcuts</span>
+          </div>
+          <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+            On-screen buttons stay hidden while presenting. Switch views on any keyboard (or exit with Android Back on touch screens):
+          </p>
+          {(() => {
+            const guide = buildBroadcastShortcutGuide(getDistanceLabelsForRace(race, results));
+            return (
+              <dl className="space-y-1.5">
+                {guide.distanceKeys.map((item) => (
+                  <div key={item.keys} className="flex items-center justify-between gap-2">
+                    <dt className="shrink-0 whitespace-nowrap">
+                      <kbd className="whitespace-nowrap rounded border border-[var(--border-strong)] bg-[var(--surface-card)] px-1.5 py-0.5 font-mono text-xs font-semibold text-[var(--text-primary)]">
+                        {item.keys}
+                      </kbd>
+                    </dt>
+                    <dd className="text-right text-[var(--text-secondary)]">{item.label}</dd>
+                  </div>
+                ))}
+                <div className="border-t border-[var(--border-subtle)] pt-1.5 space-y-1.5">
+                  {guide.navigationKeys.map((item) => (
+                    <div key={item.keys} className="flex items-center justify-between gap-2">
+                      <dt className="shrink-0 whitespace-nowrap">
+                        <kbd className="whitespace-nowrap rounded border border-[var(--border-strong)] bg-[var(--surface-card)] px-1.5 py-0.5 font-mono text-xs font-semibold text-[var(--text-primary)]">
+                          {item.keys}
+                        </kbd>
+                      </dt>
+                      <dd className="text-right text-[var(--text-secondary)]">{item.label}</dd>
+                    </div>
+                  ))}
+                </div>
+              </dl>
+            );
+          })()}
         </div>
 
         {(authority || can('timing.correct')) && (

@@ -29,14 +29,20 @@ service firebase.storage {
     }
     match /race-bib-fonts/{ownerUid}/{file} {
       allow read: if true;
-      allow create, update: if request.auth != null && request.auth.uid == ownerUid && can('race.bibs') && request.resource.size < 2 * 1024 * 1024;
+      allow create, update: if request.auth != null
+        && request.auth.uid == ownerUid
+        && can('race.bibs')
+        && file.matches('^[a-zA-Z0-9._-]+\\.(woff2|woff|ttf|otf|WOFF2|WOFF|TTF|OTF)$')
+        && request.resource.contentType != null
+        && request.resource.contentType.matches('^(font/(woff2|woff|ttf|otf|sfnt)|application/(font-woff|font-woff2|x-font-woff|x-font-ttf|x-font-otf|vnd\\.ms-opentype|octet-stream))$')
+        && request.resource.size < 2 * 1024 * 1024;
       allow delete: if request.auth != null && request.auth.uid == ownerUid && can('race.bibs');
     }
     match /race-assets/{ownerUid}/{raceId}/{file} {
       allow read: if true;
       function assetAction() { return file.matches('payment-qr.*') ? 'payment.configure' : file.matches('bib-.*') ? 'race.bibs' : 'race.artwork'; }
       function writeAllowed() { return request.auth != null && request.auth.uid == ownerUid && can(assetAction()) && (firestore.exists(/databases/(default)/documents/races/$(raceId)) ? scope(raceId) : can('race.create')); }
-      function isRaceImage() { return request.resource.contentType.matches('image/.*'); }
+      function isRaceImage() { return request.resource.contentType != null && request.resource.contentType.matches('image/(png|jpeg|jpg|webp|gif|avif)') && file.matches('^[a-zA-Z0-9._-]+\\.(png|jpg|jpeg|webp|gif|avif|PNG|JPG|JPEG|WEBP|GIF|AVIF)$'); }
       function isRouteGpx() {
         return file.matches('route-.*[.]gpx')
           && (request.resource.contentType.matches('application/gpx[+]xml')
@@ -44,7 +50,11 @@ service firebase.storage {
             || request.resource.contentType.matches('text/xml')
             || request.resource.contentType == 'application/octet-stream');
       }
-      allow create, update: if writeAllowed() && (isRaceImage() || isRouteGpx()) && request.resource.size < 8 * 1024 * 1024;
+      allow create, update: if writeAllowed()
+        && raceId.matches('^[a-zA-Z0-9_-]{1,64}$')
+        && file.matches('^[a-zA-Z0-9._-]+\\.[a-zA-Z0-9]+$')
+        && (isRaceImage() || (isRouteGpx() && file.matches('^[a-zA-Z0-9._-]+\\.(gpx|GPX)$')))
+        && request.resource.size < 8 * 1024 * 1024;
       allow delete: if writeAllowed();
     }
     function canHighlight(action) {
@@ -59,8 +69,14 @@ service firebase.storage {
     }
     match /highlight-assets/{ownerUid}/{highlightId}/{file} {
       allow read: if true;
-      allow create, update: if request.auth != null && request.auth.uid == ownerUid && canHighlight('highlights.manage')
-        && request.resource.contentType.matches('image/.*') && request.resource.size < 8 * 1024 * 1024;
+      allow create, update: if request.auth != null
+        && request.auth.uid == ownerUid
+        && canHighlight('highlights.manage')
+        && highlightId.matches('^[a-zA-Z0-9_-]{1,64}$')
+        && file.matches('^[a-zA-Z0-9._-]+\\.(png|jpg|jpeg|webp|gif|avif|PNG|JPG|JPEG|WEBP|GIF|AVIF)$')
+        && request.resource.contentType != null
+        && request.resource.contentType.matches('image/(png|jpeg|jpg|webp|gif|avif)')
+        && request.resource.size < 8 * 1024 * 1024;
       allow delete: if request.auth != null && request.auth.uid == ownerUid && canHighlight('highlights.manage');
     }
   }

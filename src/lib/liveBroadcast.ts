@@ -33,6 +33,7 @@ export function embeddableMapUrl(value?: string): string | undefined {
   const urlValue = safeExternalUrl(value);
   if (!urlValue) return undefined;
   const url = new URL(urlValue);
+  if (url.protocol !== 'https:') return undefined;
   const host = url.hostname.replace(/^www\./, '').toLowerCase();
   const isGoogleEmbed = (host === 'google.com' || host.endsWith('.google.com')) && url.pathname.startsWith('/maps/embed');
   const isOpenStreetMapEmbed = host.endsWith('openstreetmap.org') && url.pathname.startsWith('/export/embed.html');

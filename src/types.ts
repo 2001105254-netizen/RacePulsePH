@@ -401,7 +401,16 @@ export interface RunnerResult {
 
 // ========== RUNNER HIGHLIGHTS MARQUEE (THE PODIUM PULSE SYSTEM) ==========
 
-export type HighlightEntryMode = 'solo' | 'duo';
+export type HighlightEntryMode = 'solo' | 'duo' | 'group';
+
+export type HighlightGroupPhotoLayout = 'collage' | 'single';
+
+export interface HighlightGroupMember {
+  name: string;
+  bibNumber?: string;
+  photoUrl?: string;
+  uid?: string;
+}
 
 export type HighlightPlacement =
   | '1st'
@@ -458,6 +467,18 @@ export type HighlightHoverBehavior = 'stop' | 'slow' | 'keep';
 
 export type HighlightFlowDirection = 'left' | 'right';
 
+export interface HighlightParticipatedEvent {
+  raceId?: string;
+  raceName: string;
+  raceDate: string;
+  distance: string;
+  placement: HighlightPlacement | string;
+  chipTime?: string;
+  pace?: string;
+  bibNumber?: string;
+  rank?: number;
+}
+
 export interface RunnerHighlight {
   id: string;
   mode: HighlightEntryMode;
@@ -467,6 +488,9 @@ export interface RunnerHighlight {
   partnerBibNumber?: string;
   photoUrl: string;
   partnerPhotoUrl?: string;
+  teamName?: string;
+  groupPhotoLayout?: HighlightGroupPhotoLayout;
+  groupMembers?: HighlightGroupMember[];
   placement: HighlightPlacement | string;
   distance: string;
   chipTime: string;
@@ -492,6 +516,8 @@ export interface RunnerHighlight {
   borderWidthPx?: number;
   scrimStrength?: number;
   badgeStamp?: string;
+  achievements?: string[];
+  participatedEvents?: HighlightParticipatedEvent[];
   pinned?: boolean;
   expiresAt?: string;
   createdBy?: string;

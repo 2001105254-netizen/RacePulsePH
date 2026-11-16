@@ -1,5 +1,7 @@
 using System;
 using System.Linq;
+using System.Net;
+using System.Net.Sockets;
 
 namespace RacePulseRfidBridge
 {
@@ -20,12 +22,39 @@ namespace RacePulseRfidBridge
         {
             if (config == null || string.IsNullOrWhiteSpace(config.ReaderIp) || string.IsNullOrWhiteSpace(config.RacePulseEndpoint))
                 throw new InvalidOperationException("Reader IP and RacePulse endpoint are required.");
+            Uri endpointUri;
+            if (!Uri.TryCreate(config.RacePulseEndpoint.Trim(), UriKind.Absolute, out endpointUri) ||
+                (endpointUri.Scheme != Uri.UriSchemeHttp && endpointUri.Scheme != Uri.UriSchemeHttps))
+                throw new InvalidOperationException("RacePulse endpoint must be a valid http:// or https:// URL.");
+            if (!string.IsNullOrWhiteSpace(config.BridgeKey) && config.BridgeKey.Trim().Length < 32)
+                throw new InvalidOperationException("Bridge key must be at least 32 characters when configured.");
             if (config.ReaderPort < 1 || config.ReaderPort > 65535)
                 throw new InvalidOperationException("Reader port must be between 1 and 65535.");
             if (config.Antennas == null || config.Antennas.Length == 0 || config.Antennas.Any(antenna => antenna < 1 || antenna > 8))
                 throw new InvalidOperationException("Select at least one antenna from ANT1 through ANT8.");
             if (config.DedupeMilliseconds < 500)
                 throw new InvalidOperationException("Duplicate guard must be at least 500 milliseconds.");
+        }
+
+        public static void ValidateForDelivery(BridgeConfig config)
+        {
+            Validate(config);
+            if (string.IsNullOrWhiteSpace(config.BridgeKey) || config.BridgeKey.Trim().Length < 32)
+                throw new InvalidOperationException("Bridge key (32+ characters) is required before starting RFID delivery.");
+            var endpointUri = new Uri(config.RacePulseEndpoint.Trim(), UriKind.Absolute);
+            if (endpointUri.Scheme == Uri.UriSchemeHttp && !endpointUri.IsLoopback && !IsPrivateLanHost(endpointUri.Host))
+                throw new InvalidOperationException("Plain HTTP endpoints are allowed only on localhost or private LAN addresses; use HTTPS for remote hosts.");
+        }
+
+        private static bool IsPrivateLanHost(string host)
+        {
+            IPAddress address;
+            if (!IPAddress.TryParse(host, out address) || address.AddressFamily != AddressFamily.InterNetwork)
+                return false;
+            var bytes = address.GetAddressBytes();
+            return bytes[0] == 10 ||
+                   (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) ||
+                   (bytes[0] == 192 && bytes[1] == 168);
         }
     }
 

@@ -17,7 +17,7 @@ on:
         default: true
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ci-cd-release-${{ github.ref }}
@@ -66,7 +66,14 @@ jobs:
             tests/account-security.test.cjs \
             tests/timing-sequence.test.cjs \
             tests/lan-http.test.cjs \
+            tests/security-client.test.cjs \
             tests/release-version.test.cjs
+
+      - name: Verify Cloud Functions JavaScript syntax
+        run: |
+          for file in functions/*.js; do
+            node --check "$file"
+          done
 
       - name: Upload web distribution artifact
         uses: actions/upload-artifact@v7
@@ -79,6 +86,8 @@ jobs:
   android-release:
     name: Build signed RacePulsePH APK/AAB and publish GitHub Release
     needs: verify
+    permissions:
+      contents: write
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_release)
     runs-on: ubuntu-latest
     env:

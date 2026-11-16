@@ -22,7 +22,15 @@ function loadTs(filename) {
 }
 const root = path.resolve(__dirname, '..');
 const { computeResults } = loadTs(path.join(root, 'src/lib/timing.ts'));
-const { finishScanOrder } = loadTs(path.join(root, 'src/lib/liveRankings.ts'));
+const {
+  finishScanOrder,
+  computeRunnerPace,
+  formatGapToLeader,
+  formatBroadcastClock,
+  buildBroadcastCourseFeed,
+  buildDistanceDivisionViews,
+  buildBroadcastShortcutGuide,
+} = loadTs(path.join(root, 'src/lib/liveRankings.ts'));
 const { entrySequenceError } = loadTs(path.join(root, 'src/lib/entrySequence.ts'));
 const race = {
   id: 'race', name: 'Test Race', date: '2026-10-26',
@@ -148,17 +156,23 @@ test('link validation rejects self-links, cycles, branching, unknown bibs, and s
   assert.equal(entrySequenceError([solo, duo], 'D', 'S'), undefined);
 });
 
-test('live presentation renders navigation, official labels, and the linked-entry status', () => {
+test('live presentation renders control-free broadcast UI, shortcut guide hints, and linked-entry status', () => {
   const React = require('react');
   const { renderToStaticMarkup } = require('react-dom/server');
   const Screen = loadTs(path.join(root, 'src/components/LiveRankingsScreen.tsx')).default;
   const results = compute([solo, duo], [read('S', 'finish', 30)]);
   const html = renderToStaticMarkup(React.createElement(Screen, { race, results, onClose: () => {} }));
   assert.match(html, /aria-label="Live ranking views"/);
-  assert.match(html, /Previous distance/);
-  assert.match(html, /Next distance/);
+  assert.equal(/<button\b|<select\b|<input\b/i.test(html), false, 'LiveRankingsScreen must not render interactive controls');
+  assert.equal(html.includes('—'), false, 'LiveRankingsScreen UI must not contain em dashes');
+  assert.match(html, /All distances/);
   assert.match(html, /18K/);
-  assert.match(html, /Scan # is arrival order/);
+  assert.match(html, /5K/);
+  assert.match(html, /Esc/);
+  assert.match(html, /Champion/);
+  assert.match(html, /LEADER/);
+  assert.match(html, /SCAN #1/);
+  assert.match(html, /Finished/);
   assert.match(html, /Running/);
   assert.match(html, /5K Duo/);
   assert.match(html, /Michiron/);
@@ -363,4 +377,96 @@ test('finishers missing start scan or intermediate checkpoint are flagged for re
   assert.equal(byBib(results, 'A').missingIntermediateLabels, undefined);
   assert.equal(byBib(results, 'B').missingStartScan, true);
   assert.deepEqual(byBib(results, 'B').missingIntermediateLabels, ['Turnaround 5K']);
+});
+
+test('broadcast helpers compute pace, gaps, clocks, course telemetry, and shortcut guides', () => {
+  assert.equal(computeRunnerPace(1500, 5), '5:00/km');
+  assert.equal(computeRunnerPace(1602, 5), '5:20/km');
+  assert.equal(computeRunnerPace(undefined, 5), null);
+  assert.equal(computeRunnerPace(1500, 0), null);
+
+  assert.equal(formatGapToLeader(1500, 1500), 'LEADER');
+  assert.equal(formatGapToLeader(1500, 1611), '+01:51');
+  assert.equal(formatGapToLeader(1500, 5402), '+1:05:02');
+  assert.equal(formatGapToLeader(1500, 1500.25), '+0.25s');
+  assert.equal(formatBroadcastClock(3665), '01:01:05');
+
+  const guide = buildBroadcastShortcutGuide(['5K', '18K', '30K']);
+  assert.deepEqual(guide.distanceKeys.map((item) => item.keys), ['0 / A', '1', '2', '3']);
+  assert.ok(guide.navigationKeys.some((item) => item.keys === 'Esc'));
+
+  const trailCheckpoints = [
+    { id: 'start', label: 'Start', type: 'start', order: 0 },
+    { id: 'summit', label: 'Summit CP', type: 'intermediate', order: 1 },
+    { id: 'finish', label: 'Finish', type: 'finish', order: 2 },
+  ];
+  const r1 = runner('101', 'solo', { distance: '18K', gender: 'male' });
+  const r2 = runner('102', 'solo', { distance: '18K', gender: 'female' });
+  const r3 = runner('103', 'solo', { distance: '18K', gender: 'male' });
+  const results = computeResults(trailCheckpoints, [
+    { bibNumber: '101', checkpointId: 'start', timestamp: time(0) },
+    { bibNumber: '101', checkpointId: 'finish', timestamp: time(90) },
+    { bibNumber: '102', checkpointId: 'start', timestamp: time(0) },
+    { bibNumber: '102', checkpointId: 'summit', timestamp: time(55) },
+    { bibNumber: '103', checkpointId: 'start', timestamp: time(0) },
+  ], [r1, r2, r3], [], race);
+
+  const feed = buildBroadcastCourseFeed(results, { ...race, checkpoints: trailCheckpoints }, '18K');
+  assert.equal(feed.telemetry.registered, 3);
+  assert.equal(feed.telemetry.finished, 1);
+  assert.equal(feed.telemetry.onCourse, 2);
+  assert.equal(feed.telemetry.approaching, 1);
+  assert.equal(feed.approaching[0].result.bibNumber, '102');
+  assert.equal(feed.approaching[0].kind, 'approaching');
+  assert.equal(feed.approaching[0].checkpointLabel, 'Summit CP');
+
+  const views = buildDistanceDivisionViews(race, results, '18K');
+  assert.equal(views[0].results.length, 1);
+});
+
+test('broadcast SSR renders 4-place podium + chaser split and pre-finish active telemetry without controls', () => {
+  const React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const Screen = loadTs(path.join(root, 'src/components/LiveRankingsScreen.tsx')).default;
+
+  const singleDistRace = {
+    ...race,
+    distances: [{ id: '30k', label: '30K', km: 30, price: 0 }],
+    waveStartTimes: { '30K Solo': '2026-10-26T00:00:00Z' },
+  };
+  const runners6 = Array.from({ length: 6 }, (_, i) =>
+    runner(String(3001 + i), 'solo', { distance: '30K', fullName: `Runner ${i + 1}` }),
+  );
+  const reads6 = runners6.map((p, i) => ({ bibNumber: p.bibNumber, checkpointId: 'finish', timestamp: time(160 + i * 2) }));
+  const finishedResults = computeResults(singleDistRace.checkpoints, reads6, runners6, [], singleDistRace);
+  const podiumHtml = renderToStaticMarkup(React.createElement(Screen, { race: singleDistRace, results: finishedResults, onClose: () => {} }));
+  assert.equal(/<button\b|<select\b|<input\b/i.test(podiumHtml), false);
+  assert.equal(podiumHtml.includes('—'), false);
+  assert.match(podiumHtml, /Champion/);
+  assert.match(podiumHtml, /1st Runner-Up/);
+  assert.match(podiumHtml, /2nd Runner-Up/);
+  assert.match(podiumHtml, /3rd Runner-Up/);
+  assert.match(podiumHtml, /\+02:00/);
+  assert.match(podiumHtml, /#5/);
+  assert.match(podiumHtml, /#6/);
+
+  const midCheckpoints = [
+    { id: 'start', label: 'Start', type: 'start', order: 0 },
+    { id: 'cp1', label: 'Pre-Finish', type: 'intermediate', order: 1 },
+    { id: 'finish', label: 'Finish', type: 'finish', order: 2 },
+  ];
+  const activeResults = computeResults(midCheckpoints, [
+    { bibNumber: '3001', checkpointId: 'start', timestamp: time(0) },
+    { bibNumber: '3001', checkpointId: 'cp1', timestamp: time(85) },
+  ], runners6.slice(0, 2), [], { ...singleDistRace, checkpoints: midCheckpoints });
+  const preFinishHtml = renderToStaticMarkup(React.createElement(Screen, {
+    race: { ...singleDistRace, checkpoints: midCheckpoints },
+    results: activeResults,
+    onClose: () => {},
+  }));
+  assert.equal(/<button\b|<select\b|<input\b/i.test(preFinishHtml), false);
+  assert.equal(preFinishHtml.includes('—'), false);
+  assert.match(preFinishHtml, /On course/);
+  assert.match(preFinishHtml, /Approaching splits/);
+  assert.match(preFinishHtml, /Pre-Finish/);
 });

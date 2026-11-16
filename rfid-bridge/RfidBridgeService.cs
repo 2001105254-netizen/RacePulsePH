@@ -76,7 +76,7 @@ namespace RacePulseRfidBridge
             if (_isRunning)
                 throw new InvalidOperationException("Bridge is already listening.");
 
-            BridgeConfig.Validate(config);
+            BridgeConfig.ValidateForDelivery(config);
             _config = config;
             _stopSource = new CancellationTokenSource();
             try

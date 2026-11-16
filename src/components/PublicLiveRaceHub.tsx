@@ -4,6 +4,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { CirclePlay, ExternalLink, MapPinned, Radio, RefreshCw, Search, Trophy, Users2 } from 'lucide-react';
 import { db } from '../firebase';
 import { embeddableMapUrl, safeExternalUrl, youtubeEmbedUrl } from '../lib/liveBroadcast';
+import { SAFE_IFRAME_SANDBOX } from '../lib/security';
 import { PublicLiveResults, Race } from '../types';
 
 interface PublicLiveRaceHubProps {
@@ -91,9 +92,9 @@ export default function PublicLiveRaceHub({ races }: PublicLiveRaceHubProps) {
         <div className="space-y-4">
           <h4 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2"><CirclePlay className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> Race broadcast</h4>
           {streamEmbed ? (
-            <iframe title={`${activeRace.name} livestream`} src={streamEmbed} className="w-full aspect-video rounded-2xl border border-[var(--border-default)] bg-black" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
+            <iframe title={`${activeRace.name} livestream`} src={streamEmbed} sandbox={SAFE_IFRAME_SANDBOX} referrerPolicy="strict-origin-when-cross-origin" className="w-full aspect-video rounded-2xl border border-[var(--border-default)] bg-black" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
           ) : streamUrl ? (
-            <a href={streamUrl} target="_blank" rel="noreferrer" className="glass-inset min-h-40 px-5 py-6 flex flex-col items-center justify-center text-center gap-3 hover:border-red-500/40 transition">
+            <a href={streamUrl} target="_blank" rel="noopener noreferrer" className="glass-inset min-h-40 px-5 py-6 flex flex-col items-center justify-center text-center gap-3 hover:border-red-500/40 transition">
               <CirclePlay className="w-9 h-9 text-red-700 dark:text-red-400" aria-hidden="true" />
               <span className="text-sm font-semibold text-[var(--text-primary)]">Open the live broadcast</span>
               <span className="text-xs text-[var(--text-secondary)]">This provider opens in a new tab.</span>
@@ -109,9 +110,9 @@ export default function PublicLiveRaceHub({ races }: PublicLiveRaceHubProps) {
 
           <h4 className="pt-2 text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2"><MapPinned className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> Course map</h4>
           {mapEmbed ? (
-            <iframe title={`${activeRace.name} course map`} src={mapEmbed} className="w-full aspect-video rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)]" loading="lazy" />
+            <iframe title={`${activeRace.name} course map`} src={mapEmbed} sandbox={SAFE_IFRAME_SANDBOX} referrerPolicy="strict-origin-when-cross-origin" className="w-full aspect-video rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)]" loading="lazy" />
           ) : mapUrl ? (
-            <a href={mapUrl} target="_blank" rel="noreferrer" className="min-h-11 glass-inset px-5 py-3 text-sm font-semibold text-red-700 dark:text-red-400 hover:border-red-700/40 dark:hover:border-red-400/40 transition flex items-center justify-center gap-2">
+            <a href={mapUrl} target="_blank" rel="noopener noreferrer" className="min-h-11 glass-inset px-5 py-3 text-sm font-semibold text-red-700 dark:text-red-400 hover:border-red-700/40 dark:hover:border-red-400/40 transition flex items-center justify-center gap-2">
               <MapPinned className="w-4 h-4" /> Open course map <ExternalLink className="w-3.5 h-3.5" />
             </a>
           ) : (

@@ -1,5 +1,5 @@
 const CACHE_NAME = 'racepulseph-shell-v2';
-const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest'];
+const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/assets/racepulse-startup.webp', '/startup.js'];
 // A service worker is useful for the deployed PWA, but it can serve stale Vite
 // modules on localhost after a source edit. Clear and remove it automatically
 // in local development so the operator always sees the current app.
@@ -28,7 +28,13 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
-  if (IS_LOCAL_DEVELOPMENT || request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
+  if (
+    IS_LOCAL_DEVELOPMENT ||
+    request.method !== 'GET' ||
+    url.origin !== self.location.origin ||
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/__/')
+  ) return;
 
   // Navigation is network-first so a newly deployed app is picked up quickly;
   // when race-day connectivity drops, the last cached app shell still opens.
@@ -36,8 +42,11 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy));
+          const contentType = response.headers.get('content-type') || '';
+          if (response.ok && contentType.includes('text/html')) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy));
+          }
           return response;
         })
         .catch(() => caches.match('/index.html'))

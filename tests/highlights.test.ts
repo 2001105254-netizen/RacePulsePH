@@ -8,17 +8,24 @@ import {
   DEFAULT_MARQUEE_CONFIG,
   deriveHighlightPlacement,
   deriveRaceCode,
+  deriveRunnerAchievements,
+  entriesToParticipatedEvents,
   formatHighlightClockTime,
   formatHighlightDuration,
+  formatHighlightShareSummary,
+  getHighlightBibDisplay,
+  getHighlightDisplayTitle,
   isHighlightExpired,
   normalizeHighlightConfig,
   parseDistanceKm,
   parseDurationToSeconds,
   parsePacePulseMs,
+  resolveRunnerAccountPhoto,
   sanitizeHexColor,
   sanitizeHighlightPayload,
 } from '../src/lib/highlights.ts';
 import type { PublicLiveResults, Race, RunnerHighlight, RunnerProfile, RunnerResult } from '../src/types.ts';
+import type { RunnerRaceEntry } from '../src/lib/highlights.ts';
 
 function makeHighlight(overrides: Partial<RunnerHighlight> = {}): RunnerHighlight {
   return {
@@ -413,4 +420,207 @@ test('buildRunnerDirectory groups multi-race runner participations with per-race
   assert.ok(solo);
   assert.equal(solo.entries[0].bibNumber, '10-999');
   assert.equal(solo.entries[0].placement, '3rd');
+});
+
+test('sanitizeHighlightPayload supports group mode collage, member cap, and non-group stripping', () => {
+  const groupDraft = makeHighlight({
+    mode: 'group',
+    runnerName: '',
+    bibNumber: '',
+    photoUrl: '',
+    teamName: 'Sugakod Relay Squad',
+    groupPhotoLayout: 'collage',
+    groupMembers: [
+      { name: 'Ana Cruz', bibNumber: '10-101', photoUrl: 'data:image/jpeg;base64,ana', uid: 'u1' },
+      { name: 'Ben Reyes', bibNumber: '10-102', photoUrl: 'data:image/jpeg;base64,ben' },
+      { name: 'Cara Lim', bibNumber: '10-103' },
+      { name: 'Dan Uy', bibNumber: '10-104' },
+      { name: 'Eli Tan', bibNumber: '10-105' },
+      { name: 'Fay Go', bibNumber: '10-106' },
+      { name: 'Gil Ong', bibNumber: '10-107' },
+    ],
+  });
+
+  const cleanGroup = sanitizeHighlightPayload(groupDraft);
+  assert.equal(cleanGroup.mode, 'group');
+  assert.equal(cleanGroup.teamName, 'Sugakod Relay Squad');
+  assert.equal(cleanGroup.groupPhotoLayout, 'collage');
+  assert.equal(cleanGroup.groupMembers?.length, 6);
+  assert.equal(cleanGroup.photoUrl, 'data:image/jpeg;base64,ana');
+  assert.equal(cleanGroup.runnerName, 'Sugakod Relay Squad');
+  assert.equal(cleanGroup.bibNumber, '10-101');
+  assert.equal(getHighlightDisplayTitle(cleanGroup), 'Sugakod Relay Squad');
+  assert.equal(getHighlightBibDisplay(cleanGroup), '#10-101/#10-102/#10-103 +3');
+  assert.match(formatHighlightShareSummary(cleanGroup), /Sugakod Relay Squad.*Happy running ka Racepulse!/);
+
+  const soloSanitized = sanitizeHighlightPayload({
+    ...cleanGroup,
+    mode: 'solo',
+    runnerName: 'Solo Runner',
+    bibNumber: '99',
+  });
+  assert.equal(soloSanitized.mode, 'solo');
+  assert.equal('teamName' in soloSanitized, false);
+  assert.equal('groupPhotoLayout' in soloSanitized, false);
+  assert.equal('groupMembers' in soloSanitized, false);
+});
+
+test('resolveRunnerAccountPhoto and buildRunnerDirectory resolve walk-in accounts and trio/group squads', () => {
+  const userAccounts = [
+    { uid: 'acc_pat', displayName: 'Pat Santos', username: 'pats', photoURL: 'data:image/jpeg;base64,pat' },
+    { uid: 'acc_mia', displayName: 'Mia Sy', nickname: 'Mimi', photoURL: 'data:image/jpeg;base64,mia' },
+    { uid: 'acc_dup1', displayName: 'Alex Mendoza', photoURL: 'data:image/jpeg;base64,a1' },
+    { uid: 'acc_dup2', displayName: 'Alex Mendoza', photoURL: 'data:image/jpeg;base64,a2' },
+  ];
+
+  // Exact uid lookup
+  const byUid = resolveRunnerAccountPhoto({ uid: 'acc_pat', fullName: 'Someone', userAccounts });
+  assert.equal(byUid.photoUrl, 'data:image/jpeg;base64,pat');
+
+  // Walk-in synthetic uid falls back to unique name match
+  const walkinMatch = resolveRunnerAccountPhoto({ uid: 'walkin_123', fullName: 'pat santos', userAccounts });
+  assert.equal(walkinMatch.photoUrl, 'data:image/jpeg;base64,pat');
+  assert.equal(walkinMatch.account?.uid, 'acc_pat');
+
+  // Ambiguous duplicate names do not auto-attach wrong person photo
+  const ambiguous = resolveRunnerAccountPhoto({ uid: 'walkin_999', fullName: 'Alex Mendoza', userAccounts });
+  assert.equal(ambiguous.photoUrl, undefined);
+
+  const races: Race[] = [
+    {
+      id: 'race_squad',
+      name: 'Cebu Trio Challenge',
+      date: '2026-11-20',
+      distances: [{ id: 'd10', label: '10K', km: 10, price: 850 }],
+      checkpoints: [],
+      ageCategories: [],
+      inclusions: [],
+      createdBy: 'admin1',
+      createdAt: '2026-11-01T00:00:00Z',
+    },
+  ];
+  const runners: RunnerProfile[] = [
+    {
+      raceId: 'race_squad',
+      uid: 'acc_pat',
+      fullName: 'Pat Santos',
+      distance: '10K',
+      bibNumber: '10-501',
+      entryCategory: 'trio',
+      teamName: ' Cebu Flyers ',
+      gender: 'female',
+      age: 26,
+      createdAt: '2026-11-01T00:00:00Z',
+    },
+    {
+      raceId: 'race_squad',
+      uid: 'walkin_mia',
+      fullName: 'Mia Sy',
+      distance: '10K',
+      bibNumber: '10-502',
+      entryCategory: 'trio',
+      teamName: 'Cebu Flyers',
+      teamMembers: ['Pat Santos', 'Mia Sy', 'Leo Lim'],
+      gender: 'female',
+      age: 25,
+      createdAt: '2026-11-01T00:00:00Z',
+    },
+  ];
+
+  const dir = buildRunnerDirectory({
+    runners,
+    races,
+    liveResultsByRace: {},
+    userAccounts,
+  });
+
+  const pat = dir.find((r) => r.key === 'pat santos');
+  assert.ok(pat);
+  assert.equal(pat.photoUrl, 'data:image/jpeg;base64,pat');
+  assert.equal(pat.entries[0].teamMembers?.length, 3);
+  assert.deepEqual(
+    pat.entries[0].teamMembers?.map((m) => m.name),
+    ['Pat Santos', 'Mia Sy', 'Leo Lim'],
+  );
+  assert.equal(pat.entries[0].teamMembers?.[1].photoUrl, 'data:image/jpeg;base64,mia');
+});
+
+test('entriesToParticipatedEvents maps runner entries and derives career achievements', () => {
+  const entries: RunnerRaceEntry[] = [
+    {
+      raceId: 'r2',
+      raceName: 'Asturias Trail Quest',
+      raceDate: '2026-12-06',
+      raceCode: 'ATQ-26',
+      fullName: 'Pat Santos',
+      bibNumber: '408',
+      distance: '42K',
+      distanceKm: 42,
+      placement: '3rd',
+      chipTime: '04:05:12',
+      gunTime: '04:05:40',
+      pace: '5:49 /km',
+      splitPace: '05:00:00',
+      finishSeconds: 14712,
+      hasOfficialFinish: true,
+      rank: 3,
+    },
+    {
+      raceId: 'r1',
+      raceName: 'PERSEVERE RUN 2026',
+      raceDate: '2026-09-19',
+      raceCode: 'PRV-26',
+      fullName: 'Pat Santos',
+      bibNumber: '101',
+      distance: '21K',
+      distanceKm: 21,
+      placement: '1st Overall',
+      chipTime: '01:22:10',
+      gunTime: '01:22:15',
+      pace: '3:54 /km',
+      splitPace: '06:00:00',
+      finishSeconds: 4930,
+      hasOfficialFinish: true,
+      rank: 1,
+    },
+  ];
+
+  const participated = entriesToParticipatedEvents(entries);
+  assert.equal(participated.length, 2);
+  assert.equal(participated[0].raceName, 'Asturias Trail Quest');
+  assert.equal(participated[0].placement, '3rd');
+  assert.equal(participated[1].raceName, 'PERSEVERE RUN 2026');
+  assert.equal(participated[1].placement, '1st Overall');
+
+  const badges = deriveRunnerAchievements(entries, '1st Overall', 'SUB-1 HOUR');
+  assert.ok(badges.includes('SUB-1 HOUR'));
+  assert.ok(badges.includes('RACE CHAMPION'));
+  assert.ok(badges.includes('2X PODIUM'));
+  assert.ok(badges.includes('2 EVENTS COMPLETED'));
+  assert.ok(badges.includes('MULTI-DISTANCE'));
+});
+
+test('sanitizeHighlightPayload caps and strips achievements & participatedEvents', () => {
+  const dirty = makeHighlight({
+    achievements: Array.from({ length: 12 }, (_, i) => `  Badge ${i + 1} with extra long suffix text  `),
+    participatedEvents: Array.from({ length: 12 }, (_, i) => ({
+      raceId: `race_${i}`,
+      raceName: `Event Name ${i + 1} Championship`,
+      raceDate: `2026-0${Math.min(i + 1, 9)}-15`,
+      distance: '21K',
+      placement: i === 0 ? '1st' : 'Finisher',
+      chipTime: '01:30:00',
+      bibNumber: `${100 + i}`,
+    })),
+  });
+
+  const clean = sanitizeHighlightPayload(dirty);
+  assert.equal(clean.achievements?.length, 8);
+  assert.equal(clean.participatedEvents?.length, 8);
+  assert.ok((clean.achievements?.[0].length ?? 99) <= 28);
+  assert.equal(clean.participatedEvents?.[0].placement, '1st');
+
+  const summary = formatHighlightShareSummary(clean);
+  assert.match(summary, /\(8 events\)/);
+  assert.match(summary, /Badge 1 with extra long suff/);
 });

@@ -29,7 +29,7 @@ namespace RacePulseRfidBridge
                 }
 
                 var config = Json.Deserialize<BridgeConfig>(File.ReadAllText(configPath));
-                BridgeConfig.Validate(config);
+                BridgeConfig.ValidateForDelivery(config);
                 Console.CancelKeyPress += (sender, eventArgs) =>
                 {
                     eventArgs.Cancel = true;

@@ -19,37 +19,7 @@ interface PodiumPulseReelProps {
 }
 
 type ReelSlot =
-  | { kind: 'highlight'; item: RunnerHighlight; slotKey: string; index: number }
-  | { kind: 'placeholder'; slotKey: string; index: number };
-
-function PodiumPulsePlaceholder({ layoutMode }: { layoutMode: 'card' | 'pill' }) {
-  return (
-    <div
-      className={`pp-card-slot ${layoutMode === 'pill' ? 'mode-pill' : 'mode-card'}`}
-      aria-hidden="true"
-      data-testid="podium-placeholder-slot"
-    >
-      <div className="pp-card-placeholder">
-        <div className="flex items-center justify-between gap-2">
-          <span className="px-2 py-0.5 rounded text-[11px] font-mono text-[var(--text-secondary)] border border-[var(--border-default)] bg-[var(--surface-card)]">
-            OPEN SLOT
-          </span>
-          <span className="text-[11px] font-mono text-[var(--text-secondary)]">
-            PODIUM
-          </span>
-        </div>
-        <div className="space-y-1.5">
-          <div className="h-2.5 w-24 rounded bg-[var(--border-subtle)]" />
-          <div className="h-4 w-36 rounded bg-[var(--border-subtle)]" />
-          <div className="pt-1 flex items-center justify-between text-[11px] font-mono text-[var(--text-secondary)]">
-            <span>--:--:--</span>
-            <span>--:-- /km</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+  { kind: 'highlight'; item: RunnerHighlight; slotKey: string; index: number };
 
 export default function PodiumPulseReel({
   searchFocused = false,
@@ -157,27 +127,19 @@ export default function PodiumPulseReel({
     [rawHighlights, config],
   );
 
-  // Fill Set A beyond viewport width with blank placeholder slots instead of duplicating published highlights.
   const unitWidth = (config.layoutMode === 'pill' ? 376 : 276) + config.cardGapPx;
   const minSlots = Math.max(5, Math.ceil((Math.max(viewportWidth, 1280) + unitWidth) / unitWidth));
+  const needsMarquee = highlights.length >= minSlots;
 
   const setASlots = useMemo<ReelSlot[]>(() => {
-    if (highlights.length === 0) return [];
-    const slots: ReelSlot[] = highlights.map((item, idx) => ({
+    if (!needsMarquee) return [];
+    return highlights.map((item, idx) => ({
       kind: 'highlight',
       item,
       slotKey: `hl_${item.id}_${idx}`,
       index: idx,
     }));
-    for (let i = highlights.length; i < minSlots; i += 1) {
-      slots.push({
-        kind: 'placeholder',
-        slotKey: `ph_${i}`,
-        index: i,
-      });
-    }
-    return slots;
-  }, [highlights, minSlots]);
+  }, [highlights, needsMarquee]);
 
   const setWidth = setASlots.length * unitWidth;
   stateRef.current = {
@@ -378,7 +340,7 @@ export default function PodiumPulseReel({
           )}
         </div>
 
-        {highlights.length > 0 && (
+        {needsMarquee && (
           <div className="flex items-center gap-2 shrink-0">
             {searchFocused && (
               <span className="hidden sm:inline font-mono text-xs text-[var(--text-secondary)]">
@@ -447,6 +409,30 @@ export default function PodiumPulseReel({
             No runner highlights published yet. Featured finishers and podium performances posted by race administrators will stream here.
           </p>
         </div>
+      ) : !needsMarquee ? (
+        <div
+          className="flex flex-wrap items-stretch justify-start gap-4 sm:gap-5 py-2"
+          data-testid="podium-static-shelf"
+        >
+          {highlights.map((item, idx) => {
+            const slotKey = `st_${item.id}_${idx}`;
+            return (
+              <PodiumPulseCard
+                key={slotKey}
+                slotKey={slotKey}
+                highlight={item}
+                layoutMode={config.layoutMode}
+                isSpotlight={spotlightKey === slotKey}
+                holoHue={195 + ((idx * 47) % 140)}
+                staggerIndex={Math.min(idx, 7)}
+                animateEntrance
+                onSpotlightEnter={handleSpotlightEnter}
+                onSpotlightLeave={handleSpotlightLeave}
+                onSelect={handleSelectHighlight}
+              />
+            );
+          })}
+        </div>
       ) : (
         <div
           ref={viewportRef}
@@ -459,49 +445,41 @@ export default function PodiumPulseReel({
           }
         >
           <div ref={trackRef} className="pp-reel-track">
-            {/* Primary Set A: each published highlight rendered once, padded with blank placeholders */}
+            {/* Primary Set A */}
             <div className="pp-reel-group" data-testid="podium-reel-set-a">
-              {setASlots.map((slot) =>
-                slot.kind === 'placeholder' ? (
-                  <PodiumPulsePlaceholder key={`a_${slot.slotKey}`} layoutMode={config.layoutMode} />
-                ) : (
-                  <PodiumPulseCard
-                    key={`a_${slot.slotKey}`}
-                    slotKey={`a_${slot.slotKey}`}
-                    highlight={slot.item}
-                    layoutMode={config.layoutMode}
-                    isSpotlight={spotlightKey === `a_${slot.slotKey}`}
-                    holoHue={195 + ((slot.index * 47) % 140)}
-                    staggerIndex={Math.min(slot.index, 7)}
-                    animateEntrance
-                    onSpotlightEnter={handleSpotlightEnter}
-                    onSpotlightLeave={handleSpotlightLeave}
-                    onSelect={handleSelectHighlight}
-                  />
-                ),
-              )}
+              {setASlots.map((slot) => (
+                <PodiumPulseCard
+                  key={`a_${slot.slotKey}`}
+                  slotKey={`a_${slot.slotKey}`}
+                  highlight={slot.item}
+                  layoutMode={config.layoutMode}
+                  isSpotlight={spotlightKey === `a_${slot.slotKey}`}
+                  holoHue={195 + ((slot.index * 47) % 140)}
+                  staggerIndex={Math.min(slot.index, 7)}
+                  animateEntrance
+                  onSpotlightEnter={handleSpotlightEnter}
+                  onSpotlightLeave={handleSpotlightLeave}
+                  onSelect={handleSelectHighlight}
+                />
+              ))}
             </div>
 
             {/* Duplicate Set B for zero-seam infinite wrap (off-screen behind Set A) */}
             <div className="pp-reel-group" aria-hidden="true" data-testid="podium-reel-set-b">
-              {setASlots.map((slot) =>
-                slot.kind === 'placeholder' ? (
-                  <PodiumPulsePlaceholder key={`b_${slot.slotKey}`} layoutMode={config.layoutMode} />
-                ) : (
-                  <PodiumPulseCard
-                    key={`b_${slot.slotKey}`}
-                    slotKey={`b_${slot.slotKey}`}
-                    highlight={slot.item}
-                    layoutMode={config.layoutMode}
-                    isCloneSlot
-                    isSpotlight={spotlightKey === `b_${slot.slotKey}`}
-                    holoHue={195 + ((slot.index * 47) % 140)}
-                    onSpotlightEnter={handleSpotlightEnter}
-                    onSpotlightLeave={handleSpotlightLeave}
-                    onSelect={handleSelectHighlight}
-                  />
-                ),
-              )}
+              {setASlots.map((slot) => (
+                <PodiumPulseCard
+                  key={`b_${slot.slotKey}`}
+                  slotKey={`b_${slot.slotKey}`}
+                  highlight={slot.item}
+                  layoutMode={config.layoutMode}
+                  isCloneSlot
+                  isSpotlight={spotlightKey === `b_${slot.slotKey}`}
+                  holoHue={195 + ((slot.index * 47) % 140)}
+                  onSpotlightEnter={handleSpotlightEnter}
+                  onSpotlightLeave={handleSpotlightLeave}
+                  onSelect={handleSelectHighlight}
+                />
+              ))}
             </div>
           </div>
         </div>

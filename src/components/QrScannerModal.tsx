@@ -12,6 +12,7 @@ interface QrScannerModalProps {
   title?: string;
   subtitle?: string;
   instructions?: string;
+  manualPlaceholder?: string;
 }
 
 // Shared webcam/file QR reader used by both the Engraving desk (offline ticket sync)
@@ -24,6 +25,7 @@ export default function QrScannerModal({
   title = 'Live Ticket QR Reader',
   subtitle = 'STANDBY FOR RUNNER TICKET TRANSIT',
   instructions = "Point your webcam or laptop camera at the runner's QR code to read it instantly.",
+  manualPlaceholder = 'Paste race link or QR text (e.g. RPCHIPv1|...)',
 }: QrScannerModalProps) {
   const scannerId = "html5-qr-scanner-element";
   const [cameraActive, setCameraActive] = useState(false);
@@ -31,6 +33,8 @@ export default function QrScannerModal({
   const [cameraError, setCameraError] = useState('');
   const [scannerAttempt, setScannerAttempt] = useState(0);
   const [localFileError, setLocalFileError] = useState('');
+  const [manualValue, setManualValue] = useState('');
+  const [submittingManual, setSubmittingManual] = useState(false);
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   useAndroidBackHandler(true, onClose);
 
@@ -68,7 +72,7 @@ export default function QrScannerModal({
         }
 
         await html5QrCode.start(
-          rearCameraId || { facingMode: { ideal: "environment" } },
+          rearCameraId || { facingMode: "environment" },
           {
             fps: 8,
             aspectRatio: 1,
@@ -95,7 +99,7 @@ export default function QrScannerModal({
         // iPhone Safari showing a blank camera box after a failed startup.
         setCameraActive(true);
       } catch (err: any) {
-        console.error("Failed to start QR camera:", err);
+        console.warn("QR camera unavailable:", err);
         setCameraActive(false);
         const errMsg = err?.toString() || '';
         if (
@@ -144,6 +148,25 @@ export default function QrScannerModal({
     } catch (err: any) {
       console.error("Manual QR photo decoder failed: ", err);
       setLocalFileError("Unable to detect QR code from this image. Please click closer or ensure clear lighting.");
+    }
+  };
+
+  const handleManualSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = manualValue.trim();
+    if (!trimmed) {
+      setLocalFileError('Enter a RacePulse link or QR code text first.');
+      return;
+    }
+    setLocalFileError('');
+    setSubmittingManual(true);
+    try {
+      const ok = await onScanSuccess(trimmed);
+      if (ok) {
+        setManualValue('');
+      }
+    } finally {
+      setSubmittingManual(false);
     }
   };
 
@@ -245,6 +268,29 @@ export default function QrScannerModal({
                 className="sr-only"
               />
             </label>
+
+            <details className="rounded-[20px] border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-3">
+              <summary className="min-h-8 flex items-center justify-center text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer select-none">
+                Trouble scanning? Enter code or link manually
+              </summary>
+              <form onSubmit={handleManualSubmit} className="mt-3 flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={manualValue}
+                  onChange={(e) => setManualValue(e.target.value)}
+                  placeholder={manualPlaceholder}
+                  aria-label="Manual QR code text or registration link"
+                  className="min-w-0 flex-1 min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2 text-xs text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+                />
+                <button
+                  type="submit"
+                  disabled={submittingManual}
+                  className="min-h-11 shrink-0 rounded-xl bg-violet-700 hover:bg-violet-600 text-white px-4 py-2 text-xs font-semibold uppercase tracking-wider disabled:opacity-60 transition"
+                >
+                  {submittingManual ? 'Checking...' : 'Open'}
+                </button>
+              </form>
+            </details>
           </div>
 
           {/* Dynamic Alerts */}

@@ -48,6 +48,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { authenticatedFetch, useAccess, useScopedRaces } from '../lib/access';
+import { MAX_BACKUP_JSON_BYTES, assertSafeImportFile, randomShortCode, sanitizeCsvCell, stripUnsafeKeys } from '../lib/security';
 import { startLanJsonPoller } from '../lib/lanBridge';
 import { formatDateTime, formatRaceTime } from '../lib/preciseTime';
 import { useWorkspaceHeader } from '../lib/workspaceHeader';
@@ -558,14 +559,14 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
 
     const rows = sortedOrders.map((order, idx) => [
       idx + 1,
-      order.id,
-      `"${order.runnerName.replace(/"/g, '""')}"`,
-      `"${order.bibNumber.replace(/"/g, '""')}"`,
-      `"${formatRaceTime(order.finishingTime).replace(/"/g, '""')}"`,
-      `"${order.distance.replace(/"/g, '""')}"`,
-      `"${(order.rank || '').replace(/"/g, '""')}"`,
-      `"${(order.customInscription || '').replace(/"/g, '""')}"`,
-      order.status,
+      sanitizeCsvCell(order.id),
+      sanitizeCsvCell(order.runnerName),
+      sanitizeCsvCell(order.bibNumber),
+      sanitizeCsvCell(formatRaceTime(order.finishingTime)),
+      sanitizeCsvCell(order.distance),
+      sanitizeCsvCell(order.rank || ''),
+      sanitizeCsvCell(order.customInscription || ''),
+      sanitizeCsvCell(order.status),
     ]);
 
     const csvContent = [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
@@ -762,7 +763,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
           cancelLabel: 'Add separate entry',
         });
         if (!confirmOverwrite) {
-          targetId = `${scannedOrder.id}-${Math.floor(100 + Math.random() * 900)}`;
+          targetId = `${scannedOrder.id}-${randomShortCode(3, '0123456789')}`;
           scannedOrder.id = targetId;
         }
       }
@@ -804,20 +805,41 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
     setBackupSuccessMessage('');
     setBackupErrorMessage('');
     try {
+      assertSafeImportFile(file, MAX_BACKUP_JSON_BYTES, /\.json$/i, 'Invalid file type. Select a .json backup file.');
       const text = await file.text();
-      const imported = JSON.parse(text);
-      if (!Array.isArray(imported)) {
+      const parsed = stripUnsafeKeys(JSON.parse(text));
+      if (!Array.isArray(parsed)) {
         throw new Error('Invalid file content. Expected an array of engraving orders.');
       }
+      if (parsed.length > 5000) {
+        throw new Error('Backup contains too many rows (maximum 5,000 orders per import).');
+      }
 
+      const VALID_IMPORT_STATUSES = new Set(['queued', 'inprogress', 'ready', 'completed']);
       let count = 0;
-      for (const item of imported) {
-        if (!item.id || !item.runnerName || !item.bibNumber) continue;
-        await setDoc(doc(db, 'orders', item.id), {
-          ...item,
-          status: item.status || 'queued',
-          createdAt: item.createdAt || new Date().toISOString(),
-          updatedAt: item.updatedAt || new Date().toISOString(),
+      for (const rawItem of parsed) {
+        if (!rawItem || typeof rawItem !== 'object') continue;
+        const item = rawItem as Record<string, unknown>;
+        const id = typeof item.id === 'string' ? item.id.trim() : '';
+        const runnerName = typeof item.runnerName === 'string' ? item.runnerName.trim() : '';
+        const bibNumber = typeof item.bibNumber === 'string' ? item.bibNumber.trim() : '';
+        if (!/^[a-zA-Z0-9_-]{1,64}$/.test(id) || !runnerName || !bibNumber) continue;
+
+        const status = typeof item.status === 'string' && VALID_IMPORT_STATUSES.has(item.status)
+          ? item.status
+          : 'queued';
+        await setDoc(doc(db, 'orders', id), {
+          id,
+          runnerName: runnerName.slice(0, 100),
+          bibNumber: bibNumber.slice(0, 20),
+          distance: typeof item.distance === 'string' && item.distance.trim() ? item.distance.trim().slice(0, 50) : 'Marathon',
+          finishingTime: typeof item.finishingTime === 'string' ? item.finishingTime.slice(0, 32) : '00:00:0000000',
+          ...(typeof item.rank === 'string' && item.rank.trim() ? { rank: item.rank.trim().slice(0, 50) } : {}),
+          ...(typeof item.customInscription === 'string' && item.customInscription.trim() ? { customInscription: item.customInscription.trim().slice(0, 150) } : {}),
+          ...(typeof item.ownerUid === 'string' && item.ownerUid.trim() ? { ownerUid: item.ownerUid.trim().slice(0, 128) } : {}),
+          status,
+          createdAt: typeof item.createdAt === 'string' ? item.createdAt.slice(0, 64) : new Date().toISOString(),
+          updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt.slice(0, 64) : new Date().toISOString(),
         });
         count++;
       }

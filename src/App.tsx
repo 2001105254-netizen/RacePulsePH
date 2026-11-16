@@ -11,7 +11,7 @@ import { LEGAL_CONFIG, LEGAL_DOCUMENTS, type LegalDocKey } from './lib/legalConf
 import { exitAndroidApp, subscribeAndroidBackButton, syncAndroidSystemBars } from './lib/capacitorAndroid';
 import { WorkspaceHeaderProvider, useWorkspaceHeader } from './lib/workspaceHeader';
 import { UserProfile } from './types';
-import { Sun, Moon, RefreshCw, Clock3, LogOut, LogIn, UserPlus, ArrowLeft, ShieldCheck, ChevronUp, Compass } from 'lucide-react';
+import { Sun, Moon, RefreshCw, Clock3, LogOut, LogIn, UserPlus, ArrowLeft, ShieldCheck, ChevronUp, Compass, Menu, Check } from 'lucide-react';
 import { EMIL_EASE, ViewLoadingSkeleton, type NavDirection } from './components/ui/MotionPrimitives';
 
 // Lazy-load signed-in workspaces and authentication screens so public landing
@@ -161,7 +161,174 @@ function AppContent() {
   const [pendingRaceId, setPendingRaceId] = useState<string | null>(() => registrationRaceIdFromUrl());
   const [runnerSignupIntent, setRunnerSignupIntent] = useState(() => !!registrationRaceIdFromUrl());
   const [activeLandingSection, setActiveLandingSection] = useState<string>('finisher-lookup');
-  const sectionsPopoverRef = React.useRef<HTMLDivElement>(null);
+  const [landingNavTier, setLandingNavTier] = useState<'compact' | 'medium' | 'wide'>('compact');
+  const [landingMenuOpen, setLandingMenuOpen] = useState(false);
+  const headerRef = React.useRef<HTMLElement>(null);
+  const headerInnerRef = React.useRef<HTMLDivElement>(null);
+  const headerLeftRef = React.useRef<HTMLDivElement>(null);
+  const headerRightRef = React.useRef<HTMLDivElement>(null);
+  const sectionsPopoverRef = React.useRef<HTMLUListElement>(null);
+  const supportsNativePopover = React.useMemo(
+    () => typeof HTMLElement !== 'undefined' && Object.hasOwn(HTMLElement.prototype, 'popover'),
+    [],
+  );
+
+  const isLandingGuest = !authUser && guestScreen === 'landing';
+
+  const closeLandingMenu = useCallback(() => {
+    setLandingMenuOpen(false);
+    const popEl = sectionsPopoverRef.current as (HTMLUListElement & { hidePopover?: () => void }) | null;
+    if (supportsNativePopover && popEl && typeof popEl.hidePopover === 'function') {
+      try {
+        if (popEl.matches(':popover-open')) {
+          popEl.hidePopover();
+        }
+      } catch {
+        // Safe no-op when popover is already closed or removed in wide mode
+      }
+    }
+  }, [supportsNativePopover]);
+
+  React.useLayoutEffect(() => {
+    const headerEl = headerRef.current;
+    const innerEl = headerInnerRef.current;
+    const leftEl = headerLeftRef.current;
+    const rightEl = headerRightRef.current;
+    const popEl = sectionsPopoverRef.current as (HTMLUListElement & {
+      showPopover?: () => void;
+      hidePopover?: () => void;
+    }) | null;
+
+    if (!isLandingGuest || !headerEl || !innerEl || !leftEl || !rightEl || !popEl) {
+      if (headerEl) {
+        headerEl.removeAttribute('data-nav-tier');
+        headerEl.removeAttribute('data-nav-measuring');
+      }
+      return;
+    }
+
+    let rafId = 0;
+    let lastWidth = -1;
+
+    const measureTier = (force = false) => {
+      const currentWidth = innerEl.clientWidth;
+      if (!force && currentWidth === lastWidth) return;
+      lastWidth = currentWidth;
+
+      const wasNativeOpen = supportsNativePopover && popEl.matches(':popover-open');
+      headerEl.setAttribute('data-nav-measuring', 'true');
+
+      if (supportsNativePopover) {
+        if (wasNativeOpen && typeof popEl.hidePopover === 'function') {
+          try {
+            popEl.hidePopover();
+          } catch {
+            // Safe no-op
+          }
+        }
+        popEl.removeAttribute('popover');
+      }
+
+      const style = window.getComputedStyle(innerEl);
+      const padLeft = parseFloat(style.paddingLeft) || 0;
+      const padRight = parseFloat(style.paddingRight) || 0;
+      const colGap = parseFloat(style.columnGap) || 8;
+      const available = innerEl.clientWidth - padLeft - padRight;
+
+      const fitsCurrentLayout = () => {
+        const required = leftEl.getBoundingClientRect().width + colGap + rightEl.getBoundingClientRect().width;
+        return required <= available - 1;
+      };
+
+      headerEl.setAttribute('data-nav-tier', 'wide');
+      let nextTier: 'compact' | 'medium' | 'wide' = 'compact';
+      if (fitsCurrentLayout()) {
+        nextTier = 'wide';
+      } else {
+        if (supportsNativePopover) {
+          popEl.setAttribute('popover', 'auto');
+        }
+        headerEl.setAttribute('data-nav-tier', 'medium');
+        nextTier = fitsCurrentLayout() ? 'medium' : 'compact';
+      }
+
+      headerEl.setAttribute('data-nav-tier', nextTier);
+      if (nextTier === 'wide') {
+        if (supportsNativePopover) popEl.removeAttribute('popover');
+        setLandingMenuOpen(false);
+      } else {
+        if (supportsNativePopover) {
+          popEl.setAttribute('popover', 'auto');
+          if (wasNativeOpen && typeof popEl.showPopover === 'function') {
+            try {
+              popEl.showPopover();
+            } catch {
+              // Safe no-op
+            }
+          }
+        }
+      }
+
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        headerEl.removeAttribute('data-nav-measuring');
+      });
+
+      setLandingNavTier((prev) => (prev === nextTier ? prev : nextTier));
+    };
+
+    measureTier(true);
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => measureTier(false));
+      ro.observe(innerEl);
+    }
+    const onResize = () => measureTier(false);
+    window.addEventListener('resize', onResize, { passive: true });
+    let cancelled = false;
+    document.fonts?.ready?.then(() => {
+      if (!cancelled) measureTier(true);
+    });
+
+    return () => {
+      cancelled = true;
+      if (rafId) cancelAnimationFrame(rafId);
+      ro?.disconnect();
+      window.removeEventListener('resize', onResize);
+    };
+  }, [isLandingGuest, supportsNativePopover]);
+
+  useEffect(() => {
+    const popEl = sectionsPopoverRef.current;
+    if (!isLandingGuest || !popEl) return;
+
+    if (supportsNativePopover) {
+      const onToggle = (event: Event) => {
+        const nextOpen = (event as Event & { newState?: string }).newState === 'open';
+        setLandingMenuOpen(nextOpen);
+      };
+      popEl.addEventListener('toggle', onToggle);
+      return () => popEl.removeEventListener('toggle', onToggle);
+    }
+
+    if (!landingMenuOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setLandingMenuOpen(false);
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && !headerRef.current?.contains(target)) {
+        setLandingMenuOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('pointerdown', onPointerDown);
+    };
+  }, [isLandingGuest, supportsNativePopover, landingMenuOpen]);
 
   useEffect(() => {
     if (authUser || guestScreen !== 'landing') return;
@@ -213,15 +380,7 @@ function AppContent() {
       if (!targetEl) return;
       event.preventDefault();
       setActiveLandingSection(sectionId);
-
-      const popEl = sectionsPopoverRef.current as (HTMLDivElement & { hidePopover?: () => void }) | null;
-      if (popEl && typeof popEl.hidePopover === 'function') {
-        try {
-          popEl.hidePopover();
-        } catch {
-          // Safe no-op when popover is already closed
-        }
-      }
+      closeLandingMenu();
 
       const reduceMotion =
         typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -229,7 +388,7 @@ function AppContent() {
       targetEl.focus({ preventScroll: true });
       window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${sectionId}`);
     },
-    [],
+    [closeLandingMenu],
   );
 
   const navigateGuest = useCallback(
@@ -635,9 +794,20 @@ function AppContent() {
           <div className="ambient-glow fixed inset-0 -z-10 overflow-hidden pointer-events-none" />
 
           {/* Global Navigation - persistent charcoal brand bar on desktop; flows naturally on phone & short landscape screens */}
-          <nav className="z-40 brand-nav shrink-0" aria-label="Primary navigation">
-            <div className={`${isWorkspaceShell ? 'w-full px-3 sm:px-4 xl:px-6' : 'w-full max-w-[1600px] mx-auto pl-[max(0.75rem,var(--rp-safe-left))] pr-[max(0.75rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))]'} min-w-0 min-h-[64px] py-[8px] flex items-center justify-between gap-[6px] sm:gap-[12px]`}>
-              <div className={`flex items-center gap-[8px] ${isWorkspaceShell ? 'min-w-0 flex-1' : 'shrink-0'}`}>
+          <header
+            ref={headerRef}
+            data-landing-nav={isLandingGuest ? 'true' : undefined}
+            data-nav-tier={isLandingGuest ? landingNavTier : undefined}
+            className="z-40 brand-nav shrink-0"
+          >
+            <div
+              ref={headerInnerRef}
+              className={`${isWorkspaceShell ? 'w-full px-3 sm:px-4 xl:px-6' : 'w-full max-w-[1600px] mx-auto pl-[max(0.75rem,var(--rp-safe-left))] pr-[max(0.75rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))]'} landing-header-row min-w-0 min-h-[64px] py-[8px] flex items-center justify-between gap-[8px] sm:gap-[12px]`}
+            >
+              <div
+                ref={headerLeftRef}
+                className={`flex items-center gap-[8px] ${isWorkspaceShell ? 'min-w-0 flex-1' : 'shrink-0'}`}
+              >
                 {showBackButton && (
                   <button
                     type="button"
@@ -652,7 +822,11 @@ function AppContent() {
                 <button
                   type="button"
                   onClick={() => (!authUser ? navigateGuest('landing') : handleBack())}
-                  className="flex items-center justify-center min-[560px]:justify-start gap-[8px] min-w-[44px] shrink-0 min-h-[44px] rounded-xl p-[4px] min-[560px]:px-[8px] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                  className={`flex items-center justify-center gap-[8px] min-w-[44px] shrink-0 min-h-[44px] rounded-xl p-[4px] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 ${
+                    isLandingGuest
+                      ? 'landing-brand-btn'
+                      : 'min-[560px]:justify-start min-[560px]:px-[8px]'
+                  }`}
                   aria-label="RacePulsePH home"
                 >
                   <div className="w-[36px] h-[36px] rounded-[10px] border border-white/15 bg-transparent flex items-center justify-center p-[4px] transition-colors shrink-0">
@@ -664,7 +838,11 @@ function AppContent() {
                       className="w-full h-full object-contain"
                     />
                   </div>
-                  <span className="hidden min-w-0 truncate font-display font-semibold text-sm tracking-tight uppercase min-[560px]:inline text-white">
+                  <span
+                    className={`brand-wordmark min-w-0 truncate font-display font-semibold text-sm tracking-tight uppercase text-white ${
+                      isLandingGuest ? 'inline' : 'hidden min-[560px]:inline'
+                    }`}
+                  >
                     RacePulse<span className="text-red-500">PH</span>
                   </span>
                 </button>
@@ -679,7 +857,12 @@ function AppContent() {
                 )}
               </div>
 
-              <div className={`flex items-center justify-end gap-[4px] sm:gap-[8px] ${isWorkspaceShell ? 'min-w-0 shrink' : 'shrink-0 max-w-full'}`}>
+              <div
+                ref={headerRightRef}
+                className={`flex items-center justify-end gap-[8px] ${
+                  isWorkspaceShell ? 'min-w-0 shrink' : isLandingGuest ? 'shrink-0' : 'shrink-0 max-w-full'
+                }`}
+              >
                 {isWorkspaceShell && (
                   <div
                     ref={setRightSlotEl}
@@ -687,68 +870,74 @@ function AppContent() {
                     className="hidden lg:flex items-center gap-[8px] min-w-0 overflow-x-auto racepulse-horizontal-scroll"
                   />
                 )}
-                {!authUser && guestScreen === 'landing' && (
-                  <>
-                    <div className="landing-scrollspy-nav hidden md:inline-flex items-center gap-1 mr-1">
+                {isLandingGuest && (
+                  <nav aria-label="Primary" className="landing-primary-nav flex items-center gap-[8px]">
+                    <button
+                      type="button"
+                      popoverTarget={supportsNativePopover ? 'landing-sections-popover' : undefined}
+                      popoverTargetAction={supportsNativePopover ? 'toggle' : undefined}
+                      aria-controls="landing-sections-popover"
+                      aria-expanded={landingMenuOpen}
+                      onClick={!supportsNativePopover ? () => setLandingMenuOpen((open) => !open) : undefined}
+                      className="landing-menu-trigger min-h-[44px] px-[12px] rounded-full border border-white/15 bg-white/10 text-xs font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:border-red-500/50 hover:text-red-400 transition-colors duration-150 inline-flex items-center justify-center gap-[6px] motion-safe:active:scale-[0.97] whitespace-nowrap shrink-0"
+                    >
+                      <span className="landing-trigger-compact inline-flex items-center gap-[6px]">
+                        <Menu className="w-4 h-4 shrink-0 text-red-400" aria-hidden="true" />
+                        <span>Menu</span>
+                      </span>
+                      <span className="landing-trigger-medium inline-flex items-center gap-[6px]">
+                        <Compass className="w-4 h-4 shrink-0 text-red-400" aria-hidden="true" />
+                        <span>Sections</span>
+                      </span>
+                    </button>
+
+                    <ul
+                      id="landing-sections-popover"
+                      ref={sectionsPopoverRef}
+                      className={`landing-sections-popover ${!supportsNativePopover && landingMenuOpen ? 'is-fallback-open' : ''}`}
+                    >
+                      <li className="landing-menu-header px-3 py-1.5 text-xs font-semibold text-zinc-300" role="presentation">
+                        Explore page sections
+                      </li>
                       {LANDING_NAV_SECTIONS.map((section) => {
                         const isActive = activeLandingSection === section.id;
                         return (
-                          <a
-                            key={section.id}
-                            href={`#${section.id}`}
-                            onClick={(event) => handleLandingSectionClick(event, section.id)}
-                            aria-current={isActive ? 'true' : undefined}
-                            className={`landing-scrollspy-link ${isActive ? 'target-current' : ''}`}
-                          >
-                            {section.label}
-                          </a>
-                        );
-                      })}
-                    </div>
-
-                    <button
-                      type="button"
-                      popoverTarget="landing-sections-popover"
-                      popoverTargetAction="toggle"
-                      aria-label="Jump to page sections"
-                      className="md:hidden min-h-[44px] px-[8px] rounded-full border border-white/15 bg-white/10 text-[11px] font-semibold uppercase text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:border-red-500/50 hover:text-red-400 transition-all duration-150 inline-flex items-center justify-center gap-[4px] motion-safe:active:scale-[0.97]"
-                    >
-                      <Compass className="w-3.5 h-3.5 shrink-0 text-red-400" aria-hidden="true" />
-                      <span>Sections</span>
-                    </button>
-
-                    <div
-                      id="landing-sections-popover"
-                      ref={sectionsPopoverRef}
-                      popover="auto"
-                      className="landing-sections-popover md:hidden"
-                      aria-label="Page sections menu"
-                    >
-                      <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-                        Explore page sections
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        {LANDING_NAV_SECTIONS.map((section) => {
-                          const isActive = activeLandingSection === section.id;
-                          return (
+                          <li key={section.id}>
                             <a
-                              key={section.id}
                               href={`#${section.id}`}
                               onClick={(event) => handleLandingSectionClick(event, section.id)}
-                              aria-current={isActive ? 'true' : undefined}
-                              className={`min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors ${
-                                isActive
-                                  ? 'bg-red-700 text-white'
-                                  : 'text-zinc-100 hover:bg-white/10'
-                              }`}
+                              aria-current={isActive ? 'location' : undefined}
+                              className={`landing-nav-link ${isActive ? 'target-current' : ''}`}
                             >
                               <span>{section.label}</span>
-                              <span className="text-[10px] font-mono opacity-80">#{section.id}</span>
+                              {isActive && (
+                                <Check className="landing-nav-check w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                              )}
                             </a>
-                          );
-                        })}
-                      </div>
-                    </div>
+                          </li>
+                        );
+                      })}
+                      <li className="landing-menu-register-item mt-1.5 pt-2 border-t border-white/10">
+                        <a
+                          href="/register"
+                          onMouseEnter={() => {
+                            void import('./components/AuthGate');
+                          }}
+                          onFocus={() => {
+                            void import('./components/AuthGate');
+                          }}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            closeLandingMenu();
+                            navigateGuest('signup');
+                          }}
+                          className="min-h-[44px] px-3 py-2 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold border border-red-500/25 flex items-center justify-center gap-2 transition-colors"
+                        >
+                          <UserPlus className="w-4 h-4 shrink-0" aria-hidden="true" />
+                          <span>Register</span>
+                        </a>
+                      </li>
+                    </ul>
 
                     <button
                       type="button"
@@ -759,10 +948,10 @@ function AppContent() {
                         void import('./components/AuthGate');
                       }}
                       onClick={() => navigateGuest('login')}
-                      aria-label="Log in to your account"
-                      className="min-h-[44px] px-[8px] sm:px-[16px] rounded-full border border-white/15 bg-white/10 text-[11px] sm:text-xs font-semibold uppercase sm:tracking-wider text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:border-red-500/50 hover:text-red-400 transition-all duration-150 flex items-center justify-center gap-[4px] sm:gap-[8px] motion-safe:active:scale-[0.97] whitespace-nowrap"
+                      className="header-login-btn min-h-[44px] px-[12px] sm:px-[16px] rounded-full border border-white/15 bg-white/10 text-xs font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:border-red-500/50 hover:text-red-400 transition-colors duration-150 inline-flex items-center justify-center gap-[6px] sm:gap-[8px] motion-safe:active:scale-[0.97] whitespace-nowrap shrink-0"
                     >
-                      <LogIn className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" aria-hidden="true" /> <span>Log in</span>
+                      <LogIn className="w-4 h-4 shrink-0" aria-hidden="true" />
+                      <span>Log in</span>
                     </button>
                     <button
                       type="button"
@@ -773,19 +962,19 @@ function AppContent() {
                         void import('./components/AuthGate');
                       }}
                       onClick={() => navigateGuest('signup')}
-                      aria-label="Create a RacePulsePH account"
-                      className="min-h-[44px] px-[8px] sm:px-[16px] rounded-full bg-red-700 hover:bg-red-600 text-white text-[11px] sm:text-xs font-semibold uppercase sm:tracking-wider border border-red-500/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.35)] transition-all duration-150 flex items-center justify-center gap-[4px] sm:gap-[8px] motion-safe:active:scale-[0.97] whitespace-nowrap"
+                      className="header-register-btn min-h-[44px] px-[12px] sm:px-[16px] rounded-full bg-red-700 hover:bg-red-600 text-white text-xs font-semibold border border-red-500/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.35)] transition-colors duration-150 inline-flex items-center justify-center gap-[6px] sm:gap-[8px] motion-safe:active:scale-[0.97] whitespace-nowrap shrink-0"
                     >
-                      <UserPlus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" aria-hidden="true" /> <span>Register</span>
+                      <UserPlus className="w-4 h-4 shrink-0" aria-hidden="true" />
+                      <span>Register</span>
                     </button>
-                  </>
+                  </nav>
                 )}
                 <button
                   type="button"
                   onClick={toggleTheme}
                   title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-                  aria-label="Toggle color theme"
-                  className="w-[44px] h-[44px] rounded-full border border-white/15 bg-white/10 text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:text-red-400 hover:border-red-500/50 transition-all duration-150 flex items-center justify-center motion-safe:active:scale-95 overflow-hidden"
+                  aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                  className="header-theme-btn w-[44px] h-[44px] shrink-0 rounded-full border border-white/15 bg-white/10 text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:text-red-400 hover:border-red-500/50 transition-colors duration-150 flex items-center justify-center motion-safe:active:scale-95 overflow-hidden"
                 >
                   <AnimatePresence mode="wait" initial={false}>
                     {theme === 'dark' ? (
@@ -815,7 +1004,7 @@ function AppContent() {
                 </button>
               </div>
             </div>
-          </nav>
+          </header>
 
           <CookieConsentBanner
             preferencesRequestNonce={cookiePreferencesNonce}

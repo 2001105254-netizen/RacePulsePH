@@ -1,13 +1,21 @@
 # Live rankings and consecutive entries
 
-Open **Rankings → Present on Screen**. Select a distance (for example,
-18K), then a division or age category. The selection stays on screen until
-you change it. The arrow buttons move between distances; the search finds
-names, team members, or bib numbers.
+Open **Rankings → Present on Screen** to launch the broadcast display. To keep large venue TVs and spectator displays uncluttered, on-screen buttons, dropdowns, and search inputs stay hidden during presentation. Switch views exclusively with keyboard shortcuts (the exact hotkeys for your race distances also appear inside the Rankings dock before you launch):
 
-**All categories / Scan order** lists official finishers by their recorded
-finish timestamps across every distance. The scan number is arrival order;
-each colored division/age badge shows that entry's actual official placing.
+| Key | Action |
+| --- | --- |
+| `0` or `A` | Show **All distances** podiums and unified finish chute feed |
+| `1` to `9` | Jump directly to the matching race distance (ordered shortest to longest) |
+| `Left` / `Right` or `[` / `]` | Step to the previous or next distance view |
+| `Up` / `Down` or `C` | Cycle divisions and age categories within the active distance |
+| `Space` or `P` | Pause or resume auto-pagination for Ranks #5 and below |
+| `F` | Toggle browser fullscreen |
+| `H` or `?` | Show or hide the keyboard shortcut guide overlay |
+| `Esc` | Close the shortcut guide, or exit Live Rankings broadcast (Android Back also exits) |
+
+Each distance displays a **4-card podium spotlight** (Champion, 1st Runner-Up, 2nd Runner-Up, and 3rd Runner-Up) with official finish times, pace (`min/km`), and within-category gap-to-leader badges (`LEADER` / `+MM:SS`), separated from the **Live finish chute feed** (`SCAN #N` arrival order and `Approaching` / `Running` checkpoint alerts). Before the first finisher crosses, the screen shows verified `Registered`, `Started`, `On course`, and `Approaching splits` counters alongside live wave clocks.
+
+On **Consecutive entries**:
 
 ## Consecutive entries with separate bibs/chips
 

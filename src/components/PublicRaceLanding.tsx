@@ -28,7 +28,8 @@ import { Card, CardContent } from './ui/card';
 import { Input } from './ui/input';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { isRaceRegistrationOpen, philippineDate } from '../lib/raceRegistration';
-import { formatRaceTime, parseRaceDurationSeconds } from '../lib/preciseTime';
+import { parseRaceDurationSeconds } from '../lib/preciseTime';
+import RaceTimeText from './ui/RaceTimeText';
 import {
   CardSkeletonLoader,
   EMIL_EASE,
@@ -1293,7 +1294,7 @@ export default function PublicRaceLanding({
                                 </span>
                               )}
                               <span className="font-semibold text-emerald-700 dark:text-emerald-400">
-                                &bull; {formatRaceTime(entry.finishTime)}
+                                &bull; <RaceTimeText value={entry.finishTime} />
                               </span>
                             </p>
                           </div>
@@ -1752,12 +1753,12 @@ export default function PublicRaceLanding({
             <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
               Fastest &amp; Median Time
             </div>
-            <div className="font-mono text-base sm:text-xl font-semibold tabular-nums text-red-700 dark:text-red-400 break-all">
-              {runnerStatsSummary.fastestTime ? formatRaceTime(runnerStatsSummary.fastestTime) : '--:--:--'}
+            <div className="font-mono text-base sm:text-xl font-semibold tabular-nums text-red-700 dark:text-red-400 break-words">
+              <RaceTimeText value={runnerStatsSummary.fastestTime} fallback="--:--:--" />
             </div>
             <div className="text-xs font-mono tabular-nums text-[var(--text-secondary)]">
               {runnerStatsSummary.medianTime
-                ? `Median ${formatRaceTime(runnerStatsSummary.medianTime)}`
+                ? <>Median <RaceTimeText value={runnerStatsSummary.medianTime} /></>
                 : 'No finishes recorded'}
             </div>
           </div>
@@ -1788,7 +1789,7 @@ export default function PublicRaceLanding({
                       <div className="flex items-center gap-2 font-mono tabular-nums shrink-0 text-[var(--text-secondary)]">
                         {cut.fastestTime && (
                           <span className="text-emerald-700 dark:text-emerald-400">
-                            Best {formatRaceTime(cut.fastestTime)}
+                            Best <RaceTimeText value={cut.fastestTime} />
                           </span>
                         )}
                         <span className="font-semibold text-[var(--text-primary)]">
@@ -1895,7 +1896,7 @@ export default function PublicRaceLanding({
                         <div className="flex items-center gap-2 font-mono tabular-nums shrink-0">
                           {dist.fastestRaw && (
                             <span className="text-emerald-700 dark:text-emerald-400">
-                              Top {formatRaceTime(dist.fastestRaw)}
+                              Top <RaceTimeText value={dist.fastestRaw} />
                             </span>
                           )}
                           <span className="font-semibold text-[var(--text-primary)]">
@@ -1987,7 +1988,7 @@ export default function PublicRaceLanding({
                             {entry.bibNumber}
                           </span>
                           <span className="font-mono text-xs font-semibold px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-600/25 max-w-full break-words">
-                            {formatRaceTime(entry.finishTime)}
+                            <RaceTimeText value={entry.finishTime} />
                           </span>
                         </div>
 

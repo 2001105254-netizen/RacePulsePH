@@ -1,7 +1,8 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   query,
   runTransaction,
@@ -36,17 +37,18 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { changeAccountPassword, db, signOutUser, updateAccountDisplayName } from '../firebase';
+import { auth, changeAccountPassword, db, signOutUser, updateAccountDisplayName } from '../firebase';
 import { updateMarketingPreference } from '../lib/accountSecurity';
 import { useAndroidBackHandler } from '../lib/capacitorAndroid';
 import { resizeImageToDataUrl } from '../lib/image';
-import { formatRaceTime } from '../lib/preciseTime';
 import { subscribeSharedRaces } from '../lib/racesStore';
 import { computeResults } from '../lib/timing';
+import { sanitizeHttpUrl } from '../lib/security';
 import { ChipRead, Race, RunnerProfile, UserProfile } from '../types';
 import { PasswordResetFlow } from './AccountSecurity';
 import DeleteAccountModal from './DeleteAccountModal';
 import DialogSurface from './ui/DialogSurface';
+import RaceTimeText from './ui/RaceTimeText';
 
 interface AccountPrivacyModalProps {
   profile: UserProfile;
@@ -438,12 +440,47 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
   const closeRef = useRef<HTMLButtonElement>(null);
   const headerAvatarInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+  const profileTabsRef = useRef<HTMLElement>(null);
+  const tabButtonRefs = useRef<Partial<Record<ProfileTab, HTMLButtonElement | null>>>({});
   const tabEpochRef = useRef(0);
 
   const [activeTab, setActiveTab] = useState<ProfileTab>('overview');
   const [aboutCategory, setAboutCategory] = useState<AboutCategory>('overview');
   const [showCoverPicker, setShowCoverPicker] = useState(false);
   const [editingBioInline, setEditingBioInline] = useState(false);
+
+  const updateTabFades = useCallback(() => {
+    const nav = profileTabsRef.current;
+    if (!nav) return;
+    const maxScroll = Math.max(0, nav.scrollWidth - nav.clientWidth);
+    const hasLeft = nav.scrollLeft > 4;
+    const hasRight = nav.scrollLeft < maxScroll - 4;
+    nav.style.setProperty('--rp-tab-fade-start', hasLeft ? '20px' : '0px');
+    nav.style.setProperty('--rp-tab-fade-end', hasRight ? '24px' : '0px');
+  }, []);
+
+  useEffect(() => {
+    const nav = profileTabsRef.current;
+    if (!nav) return;
+    updateTabFades();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateTabFades) : null;
+    ro?.observe(nav);
+    window.addEventListener('resize', updateTabFades);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener('resize', updateTabFades);
+    };
+  }, [updateTabFades]);
+
+  useEffect(() => {
+    const btn = tabButtonRefs.current[activeTab];
+    if (btn && typeof btn.scrollIntoView === 'function') {
+      const reduced = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      btn.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'nearest', inline: 'nearest' });
+    }
+    const timer = window.setTimeout(updateTabFades, 180);
+    return () => window.clearTimeout(timer);
+  }, [activeTab, updateTabFades]);
 
   const switchTab = (nextTab: ProfileTab) => {
     tabEpochRef.current += 1;
@@ -621,27 +658,63 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
     }
   };
 
+  const syncFriendProfileCard = async (nextName: string, nextNickname: string, nextPhoto: string) => {
+    if (!profile.username) return;
+    try {
+      const friendBatch = writeBatch(db);
+      const usernameRef = doc(db, 'usernameIndex', profile.username);
+      const usernameSnap = await getDoc(usernameRef).catch(() => null);
+      if (usernameSnap && !usernameSnap.exists() && auth.currentUser?.emailVerified) {
+        friendBatch.set(usernameRef, {
+          username: profile.username,
+          uid: profile.uid,
+          email: auth.currentUser.email || profile.email,
+          createdAt: profile.createdAt || new Date().toISOString(),
+        });
+      }
+      const friendPayload: {
+        uid: string;
+        username: string;
+        displayName: string;
+        nickname: string;
+        photoURL?: string;
+        updatedAt: string;
+      } = {
+        uid: profile.uid,
+        username: profile.username,
+        displayName: nextName.trim() || profile.displayName,
+        nickname: nextNickname.trim().slice(0, 30),
+        updatedAt: new Date().toISOString(),
+      };
+      if (nextPhoto.length <= 100000) {
+        friendPayload.photoURL = nextPhoto;
+      }
+      friendBatch.set(doc(db, 'friendDirectory', profile.username), friendPayload, { merge: true });
+      friendBatch.set(doc(db, 'friendProfiles', profile.uid), friendPayload, { merge: true });
+      await friendBatch.commit();
+    } catch (syncErr) {
+      console.warn('Secondary friend directory card sync skipped:', syncErr);
+    }
+  };
+
   const saveProfileFields = async (partial: Partial<UserProfile>, successNotice: string) => {
     const requestEpoch = tabEpochRef.current;
     setErrorMessage('');
     setStatusMessage('');
     setSaving(true);
     try {
-      const batch = writeBatch(db);
-      batch.update(doc(db, 'users', profile.uid), partial);
-      if (profile.username && (partial.displayName !== undefined || partial.nickname !== undefined || partial.photoURL !== undefined)) {
-        const friendPayload = {
-          uid: profile.uid,
-          username: profile.username,
-          displayName: (partial.displayName ?? displayName).trim() || profile.displayName,
-          nickname: (partial.nickname ?? nickname).trim(),
-          photoURL: partial.photoURL ?? photoPreview,
-          updatedAt: new Date().toISOString(),
-        };
-        batch.set(doc(db, 'friendDirectory', profile.username), friendPayload, { merge: true });
-        batch.set(doc(db, 'friendProfiles', profile.uid), friendPayload, { merge: true });
+      const safeDisplayName = (partial.displayName ?? displayName.trim()) || profile.displayName || 'RacePulse Athlete';
+      await updateDoc(doc(db, 'users', profile.uid), {
+        ...partial,
+        displayName: safeDisplayName,
+      });
+      if (partial.displayName !== undefined || partial.nickname !== undefined || partial.photoURL !== undefined) {
+        await syncFriendProfileCard(
+          partial.displayName ?? displayName,
+          partial.nickname ?? nickname,
+          partial.photoURL ?? photoPreview,
+        );
       }
-      await batch.commit();
       if (tabEpochRef.current === requestEpoch) {
         setStatusMessage(successNotice);
       }
@@ -696,6 +769,11 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
       setErrorMessage('Location and Run Club must each be 80 characters or fewer.');
       return;
     }
+    const safeSocial = trimmedSocial ? sanitizeHttpUrl(trimmedSocial) : '';
+    if (trimmedSocial && !safeSocial) {
+      setErrorMessage('Social or athlete profile link must start with https:// or http://.');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -710,7 +788,7 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
         location: trimmedLocation,
         runClub: trimmedRunClub,
         favoriteDistance: trimmedDistance,
-        socialLink: trimmedSocial,
+        socialLink: safeSocial,
         shirtSize: trimmedShirt,
         emergencyContactName: trimmedEmergencyName,
         emergencyContactPhone: trimmedEmergencyPhone,
@@ -730,36 +808,32 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
           transaction.set(usernameRef, {
             username: nextUsername,
             uid: profile.uid,
-            email: profile.email,
+            email: auth.currentUser?.email || profile.email,
             createdAt: new Date().toISOString(),
           });
-          const friendPayload = {
+          const friendPayload: {
+            uid: string;
+            username: string;
+            displayName: string;
+            nickname: string;
+            photoURL?: string;
+            updatedAt: string;
+          } = {
             uid: profile.uid,
             username: nextUsername,
             displayName: trimmedName,
             nickname: trimmedNickname,
-            photoURL: photoPreview,
             updatedAt: new Date().toISOString(),
           };
+          if (photoPreview.length <= 100000) {
+            friendPayload.photoURL = photoPreview;
+          }
           transaction.set(doc(db, 'friendDirectory', nextUsername), friendPayload);
           transaction.set(doc(db, 'friendProfiles', profile.uid), friendPayload);
         });
       } else {
-        const batch = writeBatch(db);
-        batch.update(doc(db, 'users', profile.uid), profileUpdate);
-        if (profile.username) {
-          const friendPayload = {
-            uid: profile.uid,
-            username: profile.username,
-            displayName: trimmedName,
-            nickname: trimmedNickname,
-            photoURL: photoPreview,
-            updatedAt: new Date().toISOString(),
-          };
-          batch.set(doc(db, 'friendDirectory', profile.username), friendPayload, { merge: true });
-          batch.set(doc(db, 'friendProfiles', profile.uid), friendPayload, { merge: true });
-        }
-        await batch.commit();
+        await updateDoc(doc(db, 'users', profile.uid), profileUpdate);
+        await syncFriendProfileCard(trimmedName, trimmedNickname, photoPreview);
       }
 
       if (marketingOptIn !== Boolean(profile.marketingOptIn)) {
@@ -955,7 +1029,7 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
       <div className="px-4 sm:px-6 pb-4 border-b border-[var(--border-subtle)]">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
           <div className="flex flex-col sm:flex-row sm:items-end gap-4 min-w-0">
-            <div className="relative -mt-12 sm:-mt-16 w-24 h-24 sm:w-32 sm:h-32 shrink-0 self-start">
+            <div className={`relative ${showCoverPicker ? 'mt-3' : '-mt-12 sm:-mt-16'} w-24 h-24 sm:w-32 sm:h-32 shrink-0 self-start transition-[margin] duration-150`}>
               <div className="w-full h-full rounded-full overflow-hidden bg-red-700 text-white ring-4 ring-[var(--surface-card)] shadow-xl flex items-center justify-center font-display font-semibold text-3xl sm:text-4xl">
                 {photoPreview ? (
                   <img src={photoPreview} alt="" aria-hidden="true" className="w-full h-full object-cover" />
@@ -1012,8 +1086,14 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
           </div>
         </div>
 
-        {/* Facebook Horizontal Profile Tabs */}
-        <nav aria-label="Profile sections" className="mt-4 -mb-4 flex items-center gap-1 overflow-x-auto">
+        {/* Single-Row Scrollable Profile Tabs */}
+        <nav
+          ref={profileTabsRef}
+          onScroll={updateTabFades}
+          aria-label="Profile sections"
+          role="tablist"
+          className="rp-tablist-scroll mt-4 -mb-4 items-center gap-1"
+        >
           {(
             [
               { id: 'overview', label: 'Overview' },
@@ -1026,11 +1106,12 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
             return (
               <button
                 key={item.id}
+                ref={(el) => { tabButtonRefs.current[item.id] = el; }}
                 type="button"
                 role="tab"
                 aria-selected={isSelected}
                 onClick={() => switchTab(item.id)}
-                className={`min-h-11 px-4 py-2 text-xs sm:text-sm font-semibold whitespace-nowrap border-b-2 transition-colors ${
+                className={`min-h-11 px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold whitespace-nowrap border-b-2 transition-colors ${
                   isSelected
                     ? 'border-red-700 dark:border-red-400 text-red-700 dark:text-red-400'
                     : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-inset)] rounded-t-xl'
@@ -1274,7 +1355,7 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
                       <div>
                         <span className="block text-xs text-[var(--text-secondary)]">Finish</span>
                         <span className="text-base font-mono font-semibold text-[var(--text-primary)]">
-                          {formatRaceTime(recentResult.finishTime)}
+                          <RaceTimeText value={recentResult.finishTime} />
                         </span>
                       </div>
                     </div>
