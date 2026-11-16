@@ -94,8 +94,10 @@ jobs:
           restore-keys: |
             firebase-emulators-${{ runner.os }}-
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install root and Functions dependencies
+        run: |
+          npm ci
+          npm --prefix functions ci
 
       - name: Run Firestore and Storage security rules emulator tests
         run: |
