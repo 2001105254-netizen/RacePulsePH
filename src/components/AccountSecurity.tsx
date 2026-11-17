@@ -3,20 +3,32 @@ import { reload, type User } from 'firebase/auth';
 import { ArrowLeft, BookOpen, CheckCircle2, ChevronDown, Eye, EyeOff, Inbox, LogOut, Mail, Menu, Monitor, RefreshCw, ShieldCheck, Smartphone } from 'lucide-react';
 import { signOutUser } from '../firebase';
 import { AccountRequestError, completePasswordReset, confirmPasswordCode, confirmVerificationCode, getSignupDraft, requestPasswordCode, requestVerificationCode } from '../lib/accountSecurity';
+import { buildHumanFormSignals } from '../lib/botProtection';
+import { createActionCooldownStore } from '../lib/resilientFetch';
+import TurnstileChallenge from './TurnstileChallenge';
 
 const inputClass = 'w-full glass-inset px-4 py-3 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700 dark:focus:ring-red-400';
 const buttonClass = 'w-full min-h-11 py-3 px-5 rounded-[var(--radius-control)] bg-red-700 hover:bg-red-800 text-white font-display font-semibold text-xs uppercase tracking-widest transition flex items-center justify-center gap-2 disabled:bg-[var(--surface-inset)] disabled:border disabled:border-[var(--border-default)] disabled:text-[var(--text-secondary)] disabled:cursor-not-allowed';
+const accountCooldown = createActionCooldownStore('racepulse_acct_cd');
 
-function useCountdown() {
-  const [until, setUntil] = useState(0);
-  const [seconds, setSeconds] = useState(0);
+function useCountdown(persistKey?: string) {
+  const [until, setUntil] = useState(() => (persistKey ? Date.now() + accountCooldown.getRemainingSeconds(persistKey) * 1000 : 0));
+  const [seconds, setSeconds] = useState(() => (persistKey ? accountCooldown.getRemainingSeconds(persistKey) : 0));
   useEffect(() => {
     const update = () => setSeconds(Math.max(0, Math.ceil((until - Date.now()) / 1000)));
     update();
+    if (until <= Date.now()) return;
     const timer = window.setInterval(update, 1000);
     return () => window.clearInterval(timer);
   }, [until]);
-  return { seconds, start: (value: number) => { setUntil(Date.now() + value * 1000); setSeconds(value); } };
+  return {
+    seconds,
+    start: (value: number) => {
+      if (persistKey) accountCooldown.start(persistKey, value);
+      setUntil(Date.now() + value * 1000);
+      setSeconds(value);
+    },
+  };
 }
 
 function SecurityFrame({ title, detail, children }: { title: string; detail: React.ReactNode; children: React.ReactNode }) {
@@ -99,7 +111,10 @@ export function EmailVerificationScreen({ user, onVerified }: { user: User; onVe
   const [notice, setNotice] = useState('');
   const [operation, setOperation] = useState<'send' | 'confirm'>('send');
   const started = useRef(false);
-  const cooldown = useCountdown();
+  const submitLockRef = useRef(false);
+  const mountedAtRef = useRef(Date.now());
+  const [honeypot, setHoneypot] = useState('');
+  const cooldown = useCountdown(`verify:${user.uid}`);
 
   async function finishVerification() {
     await reload(user);
@@ -110,10 +125,13 @@ export function EmailVerificationScreen({ user, onVerified }: { user: User; onVe
   }
 
   async function sendCode() {
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
     setOperation('send');
     setBusy(true); setError(''); setNotice('');
     try {
-      const delivery = await requestVerificationCode(getSignupDraft(user.email || '')?.displayName);
+      const signals = buildHumanFormSignals(honeypot, mountedAtRef.current);
+      const delivery = await requestVerificationCode(getSignupDraft(user.email || '')?.displayName, signals);
       if (delivery.alreadyVerified) return await finishVerification();
       setChallengeId(delivery.challengeId || ''); setCode('');
       cooldown.start(delivery.retryAfter);
@@ -128,7 +146,7 @@ export function EmailVerificationScreen({ user, onVerified }: { user: User; onVe
         try { sessionStorage.removeItem(`racepulse_verification:${user.uid}`); } catch { /* Storage may be blocked. */ }
       }
       setError(error instanceof Error ? error.message : 'Could not send your code.');
-    } finally { setBusy(false); }
+    } finally { submitLockRef.current = false; setBusy(false); }
   }
 
   useEffect(() => {
@@ -143,14 +161,17 @@ export function EmailVerificationScreen({ user, onVerified }: { user: User; onVe
 
   async function confirm(event: React.FormEvent) {
     event.preventDefault();
+    if (submitLockRef.current) return;
     if (!challengeId) return void sendCode();
+    submitLockRef.current = true;
     setOperation('confirm');
     setBusy(true); setError(''); setNotice('');
     try {
-      await confirmVerificationCode(challengeId, code);
+      const signals = buildHumanFormSignals(honeypot, mountedAtRef.current);
+      await confirmVerificationCode(challengeId, code, signals);
       await finishVerification();
     } catch (error) { setError(error instanceof Error ? error.message : 'Could not verify your code.'); }
-    finally { setBusy(false); }
+    finally { submitLockRef.current = false; setBusy(false); }
   }
 
   return <div className="hero-glow flex-grow flex items-center justify-center px-4 py-12">
@@ -182,35 +203,47 @@ export function PasswordResetFlow({ initialEmail = '', onBack, onDone, backLabel
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const cooldown = useCountdown();
+  const [honeypot, setHoneypot] = useState('');
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileNonce, setTurnstileNonce] = useState(0);
+  const mountedAtRef = useRef(Date.now());
+  const submitLockRef = useRef(false);
+  const cooldown = useCountdown('password_reset');
 
   async function sendCode() {
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
     setBusy(true); setError('');
     try {
-      const delivery = await requestPasswordCode(email.trim());
+      const signals = buildHumanFormSignals(honeypot, mountedAtRef.current, turnstileToken);
+      const delivery = await requestPasswordCode(email.trim(), signals);
       setChallengeId(delivery.challengeId || ''); setCode('');
       cooldown.start(delivery.retryAfter); setStage('code');
     } catch (error) {
+      setTurnstileNonce((n) => n + 1);
       if (error instanceof AccountRequestError && error.retryAfter) cooldown.start(error.retryAfter);
       setError(error instanceof Error ? error.message : 'Could not send your code.');
-    } finally { setBusy(false); }
+    } finally { submitLockRef.current = false; setBusy(false); }
   }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (submitLockRef.current) return;
     if (stage === 'email') return void sendCode();
+    submitLockRef.current = true;
     setBusy(true); setError('');
     try {
+      const signals = buildHumanFormSignals(honeypot, mountedAtRef.current);
       if (stage === 'code') {
-        const result = await confirmPasswordCode(email.trim(), challengeId, code);
+        const result = await confirmPasswordCode(email.trim(), challengeId, code, signals);
         setResetToken(result.resetToken); setCode(''); setStage('password');
       } else if (stage === 'password') {
         if (password !== confirmation) throw new Error('Your passwords do not match.');
-        await completePasswordReset(resetToken, password);
+        await completePasswordReset(resetToken, password, signals);
         setPassword(''); setConfirmation(''); setResetToken(''); setStage('done');
       }
     } catch (error) { setError(error instanceof Error ? error.message : 'Could not reset your password.'); }
-    finally { setBusy(false); }
+    finally { submitLockRef.current = false; setBusy(false); }
   }
 
   const titles = { email: 'Forgot your password?', code: 'Check your inbox', password: 'Set a new password', done: "You're back on track" };
@@ -225,6 +258,13 @@ export function PasswordResetFlow({ initialEmail = '', onBack, onDone, backLabel
     {(stage === 'email' || stage === 'code') && <SpamGuidance />}
     {stage === 'done' ? <><CheckCircle2 className="text-red-700 dark:text-red-400" size={36} aria-hidden="true" /><button type="button" onClick={onDone || onBack} className={buttonClass}>Return to sign in</button></> : <form onSubmit={submit} className="space-y-4" aria-busy={busy}>
       {stage === 'email' && <div className="space-y-2"><label htmlFor="reset-email" className="block text-xs font-semibold text-[var(--text-secondary)]">Email address</label><input id="reset-email" type="email" autoComplete="email" autoFocus required maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} className={inputClass} placeholder="you@email.com" disabled={busy} /></div>}
+      {stage === 'email' && (
+        <div aria-hidden="true" style={{ position: 'absolute', left: '-9999px', width: '1px', height: '1px', overflow: 'hidden', opacity: 0, pointerEvents: 'none' }}>
+          <label htmlFor="reset-hp">Leave blank</label>
+          <input id="reset-hp" type="text" tabIndex={-1} autoComplete="off" value={honeypot} onChange={(e) => setHoneypot(e.target.value)} />
+        </div>
+      )}
+      {stage === 'email' && <TurnstileChallenge action="password_reset" resetNonce={turnstileNonce} onToken={setTurnstileToken} />}
       {stage === 'code' && <CodeInput code={code} setCode={setCode} disabled={busy} />}
       {stage === 'password' && <>
         <div className="space-y-2"><label htmlFor="new-password" className="block text-xs font-semibold text-[var(--text-secondary)]">New password</label><div className="relative"><input id="new-password" type={showPassword ? 'text' : 'password'} autoComplete="new-password" autoFocus required minLength={6} maxLength={128} value={password} onChange={(event) => setPassword(event.target.value)} className={`${inputClass} pr-12`} disabled={busy} /><button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} className="absolute right-1 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center rounded-xl text-[var(--text-secondary)] hover:text-[var(--text-primary)]">{showPassword ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}</button></div><p className="text-xs text-[var(--text-secondary)]">Use at least 6 characters. A longer, unique password is best.</p></div>

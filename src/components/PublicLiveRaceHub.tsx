@@ -1,8 +1,7 @@
 import { formatClockTime, formatRaceTime } from '../lib/preciseTime';
 import { useEffect, useMemo, useState } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
 import { CirclePlay, ExternalLink, MapPinned, Radio, RefreshCw, Search, Trophy, Users2 } from 'lucide-react';
-import { db } from '../firebase';
+import { subscribeLiveResultByRace } from '../lib/liveResultsStore';
 import { embeddableMapUrl, safeExternalUrl, youtubeEmbedUrl } from '../lib/liveBroadcast';
 import { SAFE_IFRAME_SANDBOX } from '../lib/security';
 import { PublicLiveResults, Race } from '../types';
@@ -31,13 +30,7 @@ export default function PublicLiveRaceHub({ races }: PublicLiveRaceHubProps) {
       return;
     }
     setSummary(undefined);
-    const unsubscribe = onSnapshot(doc(db, 'liveResults', activeRace.id), (snapshot) => {
-      setSummary(snapshot.exists() ? (snapshot.data() as PublicLiveResults) : null);
-    }, (error) => {
-      console.warn('Public live results listener failed:', error.message);
-      setSummary(null);
-    });
-    return () => unsubscribe();
+    return subscribeLiveResultByRace(activeRace.id, setSummary);
   }, [activeRace?.id]);
 
   if (!activeRace) return null;

@@ -16,6 +16,7 @@ interface PodiumPulseReelProps {
   overrideHighlights?: RunnerHighlight[];
   overrideConfig?: HighlightsMarqueeConfig;
   instanceId?: string;
+  staticCompanion?: React.ReactNode;
 }
 
 type ReelSlot =
@@ -27,6 +28,7 @@ export default function PodiumPulseReel({
   overrideHighlights,
   overrideConfig,
   instanceId,
+  staticCompanion,
 }: PodiumPulseReelProps) {
   const [subscribedHighlights, setSubscribedHighlights] = useState<RunnerHighlight[]>([]);
   const [subscribedLoaded, setSubscribedLoaded] = useState(false);
@@ -411,27 +413,34 @@ export default function PodiumPulseReel({
         </div>
       ) : !needsMarquee ? (
         <div
-          className="flex flex-wrap items-stretch justify-start gap-4 sm:gap-5 py-2"
+          className={
+            staticCompanion
+              ? 'landing-podium-shelf py-2'
+              : 'flex flex-wrap items-stretch justify-start gap-4 sm:gap-5 py-2'
+          }
           data-testid="podium-static-shelf"
         >
-          {highlights.map((item, idx) => {
-            const slotKey = `st_${item.id}_${idx}`;
-            return (
-              <PodiumPulseCard
-                key={slotKey}
-                slotKey={slotKey}
-                highlight={item}
-                layoutMode={config.layoutMode}
-                isSpotlight={spotlightKey === slotKey}
-                holoHue={195 + ((idx * 47) % 140)}
-                staggerIndex={Math.min(idx, 7)}
-                animateEntrance
-                onSpotlightEnter={handleSpotlightEnter}
-                onSpotlightLeave={handleSpotlightLeave}
-                onSelect={handleSelectHighlight}
-              />
-            );
-          })}
+          <div className={staticCompanion ? 'landing-podium-cards' : 'contents'}>
+            {highlights.map((item, idx) => {
+              const slotKey = `st_${item.id}_${idx}`;
+              return (
+                <PodiumPulseCard
+                  key={slotKey}
+                  slotKey={slotKey}
+                  highlight={item}
+                  layoutMode={config.layoutMode}
+                  isSpotlight={spotlightKey === slotKey}
+                  holoHue={195 + ((idx * 47) % 140)}
+                  staggerIndex={Math.min(idx, 7)}
+                  animateEntrance
+                  onSpotlightEnter={handleSpotlightEnter}
+                  onSpotlightLeave={handleSpotlightLeave}
+                  onSelect={handleSelectHighlight}
+                />
+              );
+            })}
+          </div>
+          {staticCompanion}
         </div>
       ) : (
         <div

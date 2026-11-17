@@ -612,11 +612,12 @@ export default function RunnerAllRacesPanel({
         <DialogSurface
           variant="sheet"
           dismissOnBackdropClick
+          maxWidthCss="56rem"
           titleId="runner_catalog_poster_lightbox"
           onRequestClose={() => setPosterLightbox(null)}
-          className="sm:inset-0 sm:m-auto h-fit sm:rounded-2xl w-full sm:w-[calc(100%-2rem)] max-w-4xl max-h-[90dvh] flex flex-col overflow-hidden border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)]"
+          bodyClassName="p-3 sm:p-4 space-y-3"
         >
-          <div className="p-3 sm:p-4 space-y-3">
+          <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <h2

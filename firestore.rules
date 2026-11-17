@@ -82,10 +82,11 @@ service cloud.firestore {
         || exists(/databases/$(database)/documents/users/$(request.auth.uid)));
     }
 
-    // One-time codes, reset grants, delivery limits and payment sessions are backend-only.
+    // One-time codes, reset grants, delivery limits, idempotency records and payment sessions are backend-only.
     match /accountChallenges/{id} { allow read, write: if false; }
     match /accountResetGrants/{id} { allow read, write: if false; }
     match /accountRateLimits/{id} { allow read, write: if false; }
+    match /routeIdempotency/{id} { allow read, write: if false; }
     match /payments/{id} { allow read, write: if false; }
     match /pendingRegistrations/{id} { allow read, write: if false; }
 

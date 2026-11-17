@@ -11,6 +11,17 @@ const accessPolicy = require('./access-policy');
 const admin = require('firebase-admin');
 const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret, defineString } = require('firebase-functions/params');
+const {
+  applyApiSecurityHeaders,
+  assertHumanFormSignals,
+  enforceRateLimit,
+  extractClientIp,
+  GuardError,
+  sendGuardError,
+  setScopedCors,
+  verifyAppCheckRequest,
+  verifyTurnstileRequest,
+} = require('./request-guard');
 
 admin.initializeApp();
 exports.accountApi = require('./auth-api').accountApi;
@@ -38,13 +49,7 @@ function sendJson(response, status, body) {
 }
 
 function setCors(request, response) {
-  const origin = request.get('origin');
-  if (origin && allowedOrigins.has(origin)) {
-    response.set('Access-Control-Allow-Origin', origin);
-    response.set('Vary', 'Origin');
-  }
-  response.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  response.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  setScopedCors(request, response, { allowedOrigins, methods: 'GET, POST, OPTIONS' });
 }
 
 function safeText(value, maxLength, field, required = true) {
@@ -160,9 +165,36 @@ async function createCheckout(request, response) {
   let decoded;
   let registration;
   try {
+    await verifyAppCheckRequest(request, { admin });
+    assertHumanFormSignals(request.body);
+    await verifyTurnstileRequest(request, { expectedAction: 'checkout' });
     decoded = await requireUser(request, 'personal.checkout');
+    const clientIp = extractClientIp(request);
+    await Promise.all([
+      enforceRateLimit({
+        db,
+        namespace: 'pay_chk_u',
+        identifier: decoded.uid,
+        limit: 8,
+        windowMs: 15 * 60 * 1000,
+        message: 'Too many checkout attempts. Please wait a few minutes before retrying.',
+        penaltyMultiplier: 1.5,
+      }),
+      enforceRateLimit({
+        db,
+        namespace: 'pay_chk_i',
+        identifier: clientIp,
+        limit: 30,
+        windowMs: 60 * 60 * 1000,
+        message: 'Too many checkout attempts from this network. Please try again later.',
+        penaltyMultiplier: 1.5,
+      }),
+    ]);
     registration = registrationFromRequest(request.body?.registration);
   } catch (error) {
+    if (error instanceof GuardError) {
+      return sendGuardError(response, error);
+    }
     return sendJson(response, 400, { error: error.message || 'Invalid registration.' });
   }
 
@@ -269,17 +301,47 @@ async function createCheckout(request, response) {
 
 async function getStatus(request, response, paymentId) {
   try {
+    await verifyAppCheckRequest(request, { admin });
     const decoded = await requireUser(request);
+    await enforceRateLimit({
+      db,
+      namespace: 'pay_stat_u',
+      identifier: decoded.uid,
+      limit: 45,
+      windowMs: 10 * 60 * 1000,
+      message: 'Too many payment status checks. Please wait a moment before refreshing.',
+      memoryOnly: true,
+    });
     const paymentSnapshot = await db.doc(`payments/${paymentId}`).get();
     if (!paymentSnapshot.exists || paymentSnapshot.data().uid !== decoded.uid) return sendJson(response, 404, { error: 'Payment not found.' });
     return sendJson(response, 200, publicPayment(paymentSnapshot.data()));
   } catch (error) {
+    if (error instanceof GuardError) {
+      return sendGuardError(response, error);
+    }
     return sendJson(response, 401, { error: 'Please sign in to view this payment.' });
   }
 }
 
 async function handleWebhook(request, response) {
-  if (!verifyWebhookSignature(request)) return sendJson(response, 401, { error: 'Invalid webhook signature.' });
+  const clientIp = extractClientIp(request);
+  if (!verifyWebhookSignature(request)) {
+    try {
+      await enforceRateLimit({
+        db,
+        namespace: 'pay_wh_bad',
+        identifier: clientIp,
+        limit: 20,
+        windowMs: 5 * 60 * 1000,
+        message: 'Too many invalid webhook signatures.',
+        memoryOnly: true,
+        penaltyMultiplier: 2,
+      });
+    } catch (error) {
+      return sendGuardError(response, error);
+    }
+    return sendJson(response, 401, { error: 'Invalid webhook signature.' });
+  }
   const event = request.body?.data?.attributes;
   if (event?.type !== 'checkout_session.payment.paid') return sendJson(response, 200, { received: true });
   const checkoutSession = event.data;
@@ -340,9 +402,11 @@ async function handleWebhook(request, response) {
 exports.paymentsApi = onRequest({
   region: 'asia-southeast1',
   maxInstances: 20,
+  concurrency: 80,
+  timeoutSeconds: 30,
   secrets: [paymongoSecretKey, paymongoWebhookSecret],
 }, async (request, response) => {
-  response.set('Cache-Control', 'no-store');
+  applyApiSecurityHeaders(response);
   setCors(request, response);
   if (request.method === 'OPTIONS') return response.status(204).send('');
   if (request.method === 'POST' && (!request.is('application/json') || (request.rawBody?.length || 0) > 65536 || !request.body || typeof request.body !== 'object' || Array.isArray(request.body))) {

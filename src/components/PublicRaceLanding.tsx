@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef, Suspense, lazy } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
 import { subscribeSharedRaces } from '../lib/racesStore';
+import { subscribeSharedLiveResults } from '../lib/liveResultsStore';
 import { AnimatePresence, m } from 'motion/react';
 import {
   Calendar,
@@ -18,9 +18,7 @@ import {
   Pause,
   Play,
   BarChart3,
-  Users,
 } from 'lucide-react';
-import { db } from '../firebase';
 import { PublicLeaderboardEntry, PublicLiveResults, Race, RunnerResult } from '../types';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -28,7 +26,6 @@ import { Card, CardContent } from './ui/card';
 import { Input } from './ui/input';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { isRaceRegistrationOpen, philippineDate } from '../lib/raceRegistration';
-import { parseRaceDurationSeconds } from '../lib/preciseTime';
 import RaceTimeText from './ui/RaceTimeText';
 import {
   CardSkeletonLoader,
@@ -36,6 +33,15 @@ import {
   RaceCardSkeletonGrid,
   ResultsSkeletonList,
 } from './ui/MotionPrimitives';
+import PublicLandingStatsSection from './PublicLandingStatsSection';
+import {
+  computePublicLandingBundle,
+  parseDistanceAndEntryCategory,
+  type PublicStatsEntryFilter,
+} from '../lib/publicLandingStats';
+import { entryCategoryLabels } from '../lib/raceEntry';
+import { subscribePublishedCatalog } from '../lib/routes/routeStore';
+import type { RaceRouteCatalogEntry } from '../lib/routes/types';
 
 const PublicLiveRaceHub = lazy(() => import('./PublicLiveRaceHub'));
 const PublicRaceResults = lazy(() => import('./PublicRaceResults'));
@@ -208,6 +214,11 @@ export default function PublicRaceLanding({
   const [certificateNotice, setCertificateNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
   const [heroOutOfView, setHeroOutOfView] = useState(false);
   const [heroLinesPaused, setHeroLinesPaused] = useState(false);
+  const [publishedRoutes, setPublishedRoutes] = useState<RaceRouteCatalogEntry[]>([]);
+  const [statsRaceId, setStatsRaceId] = useState<string>('all');
+  const [statsDistanceFilter, setStatsDistanceFilter] = useState<string>('all');
+  const [statsEntryFilter, setStatsEntryFilter] = useState<PublicStatsEntryFilter>('all');
+  const [bibDistanceFilter, setBibDistanceFilter] = useState<string>('all');
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const bibInputRef = useRef<HTMLInputElement>(null);
@@ -384,23 +395,22 @@ export default function PublicRaceLanding({
   }, []);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, 'liveResults'),
-      (snapshot) => {
-        const map: Record<string, PublicLiveResults> = {};
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data() as PublicLiveResults;
-          map[docSnap.id] = data;
-        });
-        setResultsByRaceId(map);
-        setResultsLoadState('ready');
-      },
-      (err) => {
-        console.warn('Public liveResults listener failed:', err.message);
+    return subscribeSharedLiveResults((map, loaded, err) => {
+      if (err) {
+        console.warn('Public liveResults listener failed:', err);
         setResultsLoadState('error');
+        return;
       }
-    );
-    return () => unsubscribe();
+      if (!loaded) return;
+      setResultsByRaceId(map);
+      setResultsLoadState('ready');
+    });
+  }, []);
+
+  useEffect(() => {
+    return subscribePublishedCatalog((entries) => {
+      setPublishedRoutes(entries);
+    });
   }, []);
 
   const today = philippineDate();
@@ -477,194 +487,123 @@ export default function PublicRaceLanding({
       .slice(0, 6);
   }, [allPublishedFinishers, bibQuery]);
 
-  // Top podium finishers across recent completed/live races for the Bib Showcase board
-  const featuredBibFinishers = useMemo<FinisherBibMatch[]>(() => {
-    const podiumOnly = allPublishedFinishers.filter(({ entry }) => (entry.overallRank ?? entry.rank) <= 3);
-    return (podiumOnly.length > 0 ? podiumOnly : allPublishedFinishers).slice(0, 6);
+  const bibAvailableDistances = useMemo(() => {
+    const set = new Set<string>();
+    for (const { entry } of allPublishedFinishers) {
+      const parsed = parseDistanceAndEntryCategory(entry.distance);
+      if (parsed.baseDistance) set.add(parsed.baseDistance);
+    }
+    return Array.from(set).sort((a, b) => {
+      const na = parseFloat(a);
+      const nb = parseFloat(b);
+      if (!Number.isNaN(na) && !Number.isNaN(nb) && na !== nb) return na - nb;
+      return a.localeCompare(b, undefined, { numeric: true });
+    });
   }, [allPublishedFinishers]);
+
+  // Diversified finisher bibs across races and base distances (no financial data)
+  const featuredBibFinishers = useMemo<FinisherBibMatch[]>(() => {
+    const filtered = allPublishedFinishers.filter(({ entry }) => {
+      if (bibDistanceFilter === 'all') return true;
+      return parseDistanceAndEntryCategory(entry.distance).baseDistance === bibDistanceFilter;
+    });
+    if (filtered.length === 0) return [];
+
+    const buckets = new Map<string, FinisherBibMatch[]>();
+    for (const item of filtered) {
+      const parsed = parseDistanceAndEntryCategory(item.entry.distance);
+      const bucketKey = `${item.race.id}::${parsed.baseDistance || item.entry.distance}`;
+      const list = buckets.get(bucketKey) || [];
+      list.push(item);
+      buckets.set(bucketKey, list);
+    }
+
+    const queues = Array.from(buckets.values()).map((items) =>
+      [...items].sort((a, b) => {
+        const ra = a.entry.overallRank ?? a.entry.rank;
+        const rb = b.entry.overallRank ?? b.entry.rank;
+        return ra - rb;
+      })
+    );
+
+    const diversified: FinisherBibMatch[] = [];
+    const indices = new Array(queues.length).fill(0);
+    while (diversified.length < 6) {
+      let pickedAny = false;
+      for (let q = 0; q < queues.length && diversified.length < 6; q += 1) {
+        const idx = indices[q];
+        if (idx < queues[q].length) {
+          diversified.push(queues[q][idx]);
+          indices[q] += 1;
+          pickedAny = true;
+        }
+      }
+      if (!pickedAny) break;
+    }
+    return diversified;
+  }, [allPublishedFinishers, bibDistanceFilter]);
 
   const heroSpotlightRaces = useMemo(
     () => (activeRaces.length > 0 ? activeRaces : doneRaces).slice(0, 2),
     [activeRaces, doneRaces]
   );
 
-  const runnerStatsSummary = useMemo(() => {
-    let totalRegistered = 0;
-    let totalStarted = 0;
-    let finishedFieldDenominator = 0;
-    const distanceMap = new Map<
-      string,
-      { label: string; raceCount: number; finisherCount: number; minPrice: number | null; fastestSecs: number | null; fastestRaw: string }
-    >();
+  const statsBundle = useMemo(
+    () =>
+      computePublicLandingBundle({
+        races,
+        resultsByRaceId,
+        routes: publishedRoutes,
+        selectedRaceId: statsRaceId,
+        distanceFilter: statsDistanceFilter,
+        entryCategoryFilter: statsEntryFilter,
+        todayStr: today,
+      }),
+    [races, resultsByRaceId, publishedRoutes, statsRaceId, statsDistanceFilter, statsEntryFilter, today]
+  );
 
-    for (const race of races) {
-      const summary = resultsByRaceId[race.id];
-      if (summary) {
-        totalRegistered += summary.totalRegistered || 0;
-        totalStarted += summary.totalStarted || 0;
-        const raceHasPublishedFinishers = (summary.officialResults?.length ?? 0) > 0;
-        if (raceHasPublishedFinishers) {
-          finishedFieldDenominator += Math.max(
-            summary.totalRegistered || 0,
-            summary.totalStarted || 0,
-            summary.officialResults?.length || 0,
-          );
-        }
-      }
-      for (const dist of race.distances || []) {
-        const label = dist.label?.trim().toUpperCase();
-        if (!label) continue;
-        const prev = distanceMap.get(label) || {
-          label,
-          raceCount: 0,
-          finisherCount: 0,
-          minPrice: null,
-          fastestSecs: null,
-          fastestRaw: '',
-        };
-        prev.raceCount += 1;
-        if (dist.price > 0 && (prev.minPrice === null || dist.price < prev.minPrice)) {
-          prev.minPrice = dist.price;
-        }
-        distanceMap.set(label, prev);
-      }
-    }
-
-    let chipTimedCount = 0;
-    let gunTimedCount = 0;
-    const allFinishTimes: Array<{ secs: number; raw: string }> = [];
-    const ageCutMap = new Map<string, { label: string; times: Array<{ secs: number; raw: string }>; totalCount: number }>();
-    const specialAwardWinners: Array<{
-      key: string;
-      raceName: string;
-      bibNumber: string;
-      displayName: string;
-      distance: string;
-      awards: string[];
-      finishTime: string;
-    }> = [];
-
-    for (const { race, entry } of allPublishedFinishers) {
-      if (entry.timingMethod === 'gun') gunTimedCount += 1;
-      else chipTimedCount += 1;
-
-      const parsedSecs = parseRaceDurationSeconds(entry.finishTime);
-      if (parsedSecs !== null) {
-        allFinishTimes.push({ secs: parsedSecs, raw: entry.finishTime });
-      }
-
-      const distKey = entry.distance?.trim().toUpperCase();
-      if (distKey) {
-        const prevDist = distanceMap.get(distKey) || {
-          label: distKey,
-          raceCount: 0,
-          finisherCount: 0,
-          minPrice: null,
-          fastestSecs: null,
-          fastestRaw: '',
-        };
-        prevDist.finisherCount += 1;
-        if (parsedSecs !== null && (prevDist.fastestSecs === null || parsedSecs < prevDist.fastestSecs)) {
-          prevDist.fastestSecs = parsedSecs;
-          prevDist.fastestRaw = entry.finishTime;
-        }
-        distanceMap.set(distKey, prevDist);
-      }
-
-      const cutLabel = entry.categoryLabel?.trim();
-      if (cutLabel) {
-        const prevCut = ageCutMap.get(cutLabel) || { label: cutLabel, times: [], totalCount: 0 };
-        prevCut.totalCount += 1;
-        if (parsedSecs !== null) {
-          prevCut.times.push({ secs: parsedSecs, raw: entry.finishTime });
-        }
-        ageCutMap.set(cutLabel, prevCut);
-      }
-
-      if (entry.specialAgeAwards && entry.specialAgeAwards.length > 0 && specialAwardWinners.length < 6) {
-        specialAwardWinners.push({
-          key: `${race.id}_${entry.bibNumber}`,
-          raceName: race.name,
-          bibNumber: entry.bibNumber,
-          displayName: entry.isFreeSlot ? `Bib ${entry.bibNumber}` : entry.fullName,
-          distance: entry.distance,
-          awards: entry.specialAgeAwards,
-          finishTime: entry.finishTime,
-        });
-      }
-    }
-
-    const totalFinishers = allPublishedFinishers.length;
-    allFinishTimes.sort((a, b) => a.secs - b.secs);
-    const fastestTime = allFinishTimes[0]?.raw ?? '';
-    const medianTime = allFinishTimes.length > 0 ? allFinishTimes[Math.floor(allFinishTimes.length / 2)].raw : '';
-
-    const ageCutStats = [...ageCutMap.values()]
-      .map((group) => {
-        const sorted = [...group.times].sort((a, b) => a.secs - b.secs);
-        return {
-          label: group.label,
-          count: group.totalCount,
-          pct: totalFinishers > 0 ? Math.round((group.totalCount / totalFinishers) * 100) : 0,
-          fastestTime: sorted[0]?.raw ?? '',
-          medianTime: sorted.length > 0 ? sorted[Math.floor(sorted.length / 2)].raw : '',
-        };
-      })
-      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-
-    const configuredDivisionMap = new Map<string, { label: string; gender: string; minAge: number; maxAge: number; raceCount: number }>();
-    for (const race of races) {
-      const seenInRace = new Set<string>();
-      for (const cat of race.ageCategories || []) {
-        const key = `${cat.label.trim().toLowerCase()}_${cat.minAge}_${cat.maxAge}_${cat.gender}`;
-        if (seenInRace.has(key)) continue;
-        seenInRace.add(key);
-        const prev = configuredDivisionMap.get(key) || {
-          label: cat.label,
-          gender: cat.gender,
-          minAge: cat.minAge,
-          maxAge: cat.maxAge,
-          raceCount: 0,
-        };
-        prev.raceCount += 1;
-        configuredDivisionMap.set(key, prev);
-      }
-    }
-
-    const configuredDivisions = [...configuredDivisionMap.values()].sort(
-      (a, b) => a.minAge - b.minAge || a.label.localeCompare(b.label),
-    );
-
-    const distanceStats = [...distanceMap.values()].sort((a, b) => {
-      const na = parseFloat(a.label);
-      const nb = parseFloat(b.label);
-      if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
-      return a.label.localeCompare(b.label);
+  const podiumShelfLeaders = useMemo<FinisherBibMatch[]>(() => {
+    if (allPublishedFinishers.length === 0) return [];
+    const picked: FinisherBibMatch[] = [];
+    const seenRace = new Set<string>();
+    const seenBucket = new Set<string>();
+    const sorted = [...allPublishedFinishers].sort((a, b) => {
+      const ra = a.entry.overallRank ?? a.entry.rank;
+      const rb = b.entry.overallRank ?? b.entry.rank;
+      if (ra !== rb) return ra - rb;
+      return new Date(b.race.date).getTime() - new Date(a.race.date).getTime();
     });
-
-    const denominator = finishedFieldDenominator > 0 ? finishedFieldDenominator : totalRegistered;
-    const completionRatePct =
-      denominator > 0 && totalFinishers > 0
-        ? Math.min(100, Math.round((totalFinishers / denominator) * 100))
-        : null;
-    const chipPct = totalFinishers > 0 ? Math.round((chipTimedCount / totalFinishers) * 100) : 0;
-
-    return {
-      totalRegistered,
-      totalStarted,
-      totalFinishers,
-      completionRatePct,
-      chipTimedCount,
-      gunTimedCount,
-      chipPct,
-      fastestTime,
-      medianTime,
-      ageCutStats,
-      configuredDivisions,
-      specialAwardWinners,
-      distanceStats,
-    };
-  }, [allPublishedFinishers, races, resultsByRaceId]);
+    // Pass 1: one top podium finisher per distinct race first
+    for (const item of sorted) {
+      if (seenRace.has(item.race.id)) continue;
+      seenRace.add(item.race.id);
+      const parsed = parseDistanceAndEntryCategory(item.entry.distance);
+      seenBucket.add(`${item.race.id}::${parsed.baseDistance || item.entry.distance}`);
+      picked.push(item);
+      if (picked.length >= 3) break;
+    }
+    // Pass 2: diversify across (race.id, baseDistance) buckets
+    if (picked.length < 3) {
+      for (const item of sorted) {
+        const parsed = parseDistanceAndEntryCategory(item.entry.distance);
+        const bucket = `${item.race.id}::${parsed.baseDistance || item.entry.distance}`;
+        if (seenBucket.has(bucket)) continue;
+        seenBucket.add(bucket);
+        picked.push(item);
+        if (picked.length >= 3) break;
+      }
+    }
+    if (picked.length < 3) {
+      for (const item of sorted) {
+        if (picked.some((p) => p.race.id === item.race.id && p.entry.bibNumber === item.entry.bibNumber && p.entry.distance === item.entry.distance)) {
+          continue;
+        }
+        picked.push(item);
+        if (picked.length >= 3) break;
+      }
+    }
+    return picked;
+  }, [allPublishedFinishers]);
 
   // Scroll to deep-linked ?race=<id> once races finish loading
   useEffect(() => {
@@ -707,6 +646,76 @@ export default function PublicRaceLanding({
     }
     handleSwitchToCompletedAndSearch();
   };
+
+  const publishedEventsCount = statsBundle.portfolio.filter((row) => row.finished > 0).length;
+  const podiumStaticCompanion =
+    podiumShelfLeaders.length > 0 ? (
+      <div className="landing-podium-companion glass-panel p-4 sm:p-5 flex flex-col justify-between gap-4 min-w-0">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+            Published podium leaders
+          </h3>
+          <span className="font-mono text-xs text-[var(--text-secondary)] tabular-nums">
+            {publishedEventsCount} published {publishedEventsCount === 1 ? 'event' : 'events'}
+          </span>
+        </div>
+
+        <ul className="divide-y divide-[var(--border-default)]">
+          {podiumShelfLeaders.map(({ race, entry }) => {
+            const parsedDist = parseDistanceAndEntryCategory(entry.distance);
+            const distLabel = parsedDist.baseDistance || entry.distance;
+            const entrySuffix =
+              parsedDist.entryCategory !== 'solo'
+                ? ` ${entryCategoryLabels[parsedDist.entryCategory]}`
+                : '';
+            const displayName = entry.isFreeSlot ? `Bib ${entry.bibNumber}` : entry.fullName;
+            return (
+              <li key={`companion_${race.id}_${entry.bibNumber}_${entry.distance}`}>
+                <button
+                  type="button"
+                  className="w-full min-h-11 py-2 px-2 -mx-2 rounded-lg text-left flex items-center justify-between gap-3 hover:bg-[var(--surface-inset)] transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-entry-action)]"
+                  onClick={() => handleViewHighlightLeaderboard(race.id)}
+                >
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-[var(--text-primary)] truncate">
+                      <span className="font-mono text-red-700 dark:text-red-400 mr-2">
+                        #{entry.overallRank ?? entry.rank}
+                      </span>
+                      <span>{displayName}</span>
+                    </div>
+                    <div className="text-xs font-mono text-[var(--text-secondary)] truncate">
+                      Bib {entry.bibNumber} · {distLabel}{entrySuffix} · {race.name}
+                    </div>
+                  </div>
+                  <span className="shrink-0 font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                    <RaceTimeText value={entry.finishTime} />
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[var(--border-default)]">
+          <div className="text-xs font-mono tabular-nums text-[var(--text-secondary)]">
+            <span>{statsBundle.overview.totalFinished.toLocaleString('en-PH')} official finishers</span>
+            {statsBundle.overview.finishRatePct !== null && (
+              <span> · {statsBundle.overview.finishRatePct}% finish rate</span>
+            )}
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-11 px-4 text-xs font-semibold gap-2 shrink-0"
+            onClick={() => scrollToSection('runner-statistics')}
+          >
+            <BarChart3 className="w-4 h-4 shrink-0" aria-hidden="true" />
+            <span>Full statistics</span>
+          </Button>
+        </div>
+      </div>
+    ) : undefined;
 
   const handleCloseSelectedRace = () => {
     setSelectedRaceId('');
@@ -1362,6 +1371,7 @@ export default function PublicRaceLanding({
       <PodiumPulseReel
         searchFocused={isBibSearchFocused || bibQuery.trim().length > 0}
         onViewLeaderboard={handleViewHighlightLeaderboard}
+        staticCompanion={podiumStaticCompanion}
       />
 
       {/* Live Timing Feed Spotlight (Conditional on active broadcast) */}
@@ -1706,252 +1716,23 @@ export default function PublicRaceLanding({
         )}
       </AnimatePresence>
 
-      {/* Runner & Age-Cut Statistics: Driven directly by published RacePulsePH event & finisher records */}
-      <section
-        id="runner-statistics"
-        tabIndex={-1}
-        className="landing-stats-section space-y-4 pt-5 border-t border-[var(--border-default)] scroll-mt-[84px]"
-        aria-labelledby="stats-section-heading"
-      >
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
-          <div className="space-y-1">
-            <h2 id="stats-section-heading" className="type-section text-[var(--text-primary)] inline-flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
-              <span>Runner &amp; age-cut statistics</span>
-            </h2>
-            <p className="type-lead text-[var(--text-secondary)]">
-              Published category splits, age divisions, finish rates, and distance turnout across RacePulsePH events.
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="default"
-            className="h-11 px-4 shrink-0"
-            onClick={() => scrollToSection('events-catalog')}
-          >
-            Browse race results
-          </Button>
-        </div>
+      {/* Runner & Event Statistics: Non-financial RacePulsePH analytics across Performance, Demographics, Operations, and Events */}
+      <PublicLandingStatsSection
+        bundle={statsBundle}
+        loadState={loadState}
+        resultsLoadState={resultsLoadState}
+        selectedRaceId={statsRaceId}
+        onSelectRaceId={(raceId) => setStatsRaceId(raceId)}
+        distanceFilter={statsDistanceFilter}
+        onDistanceFilterChange={(dist) => setStatsDistanceFilter(dist)}
+        entryFilter={statsEntryFilter}
+        onEntryFilterChange={(entry) => setStatsEntryFilter(entry)}
+        onBrowseRaces={() => scrollToSection('events-catalog')}
+        onOpenRaceResults={(raceId) => handleSelectRace(raceId)}
+      />
 
-        {/* Overview KPI Strip */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <div className="glass-inset p-3.5 space-y-1">
-            <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-              Registered Field
-            </div>
-            <div className="font-mono text-xl font-semibold tabular-nums text-[var(--text-primary)]">
-              {runnerStatsSummary.totalRegistered > 0
-                ? runnerStatsSummary.totalRegistered.toLocaleString('en-PH')
-                : '--'}
-            </div>
-            <div className="text-xs text-[var(--text-secondary)]">
-              Across {races.length} {races.length === 1 ? 'event' : 'events'}
-            </div>
-          </div>
-
-          <div className="glass-inset p-3.5 space-y-1">
-            <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-              Official Finishers
-            </div>
-            <div className="font-mono text-xl font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
-              {runnerStatsSummary.totalFinishers.toLocaleString('en-PH')}
-            </div>
-            <div className="text-xs font-mono tabular-nums text-[var(--text-secondary)]">
-              {runnerStatsSummary.completionRatePct !== null
-                ? `${runnerStatsSummary.completionRatePct}% finish rate`
-                : 'Published records'}
-            </div>
-          </div>
-
-          <div className="glass-inset p-3.5 space-y-1">
-            <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-              Chip vs. Gun Split
-            </div>
-            <div className="font-mono text-xl font-semibold tabular-nums text-[var(--text-primary)]">
-              {runnerStatsSummary.totalFinishers > 0 ? `${runnerStatsSummary.chipPct}% chip` : '--'}
-            </div>
-            <div className="text-xs font-mono tabular-nums text-[var(--text-secondary)]">
-              {runnerStatsSummary.totalFinishers > 0
-                ? `${runnerStatsSummary.chipTimedCount} chip / ${runnerStatsSummary.gunTimedCount} gun`
-                : 'Awaiting starts'}
-            </div>
-          </div>
-
-          <div className="glass-inset p-3.5 space-y-1 min-w-0">
-            <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-              Fastest &amp; Median Time
-            </div>
-            <div className="font-mono text-base sm:text-xl font-semibold tabular-nums text-red-700 dark:text-red-400 break-words">
-              <RaceTimeText value={runnerStatsSummary.fastestTime} fallback="--:--:--" />
-            </div>
-            <div className="text-xs font-mono tabular-nums text-[var(--text-secondary)]">
-              {runnerStatsSummary.medianTime
-                ? <>Median <RaceTimeText value={runnerStatsSummary.medianTime} /></>
-                : 'No finishes recorded'}
-            </div>
-          </div>
-        </div>
-
-        {/* 2-Column Deep Analytics: Age Cuts + Distance Field Breakdown */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Panel 1: Age Cuts & Special Divisions */}
-          <div className="glass-panel p-4 space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-[var(--text-primary)] inline-flex items-center gap-2">
-                <Users className="w-4 h-4 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
-                <span>Age cuts &amp; category divisions</span>
-              </h3>
-              <span className="font-mono text-xs text-[var(--text-secondary)] tabular-nums">
-                {runnerStatsSummary.ageCutStats.length > 0
-                  ? `${runnerStatsSummary.ageCutStats.length} active divisions`
-                  : `${runnerStatsSummary.configuredDivisions.length} configured`}
-              </span>
-            </div>
-
-            {runnerStatsSummary.ageCutStats.length > 0 ? (
-              <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
-                {runnerStatsSummary.ageCutStats.map((cut) => (
-                  <div key={cut.label} className="space-y-1">
-                    <div className="flex items-center justify-between gap-2 text-xs">
-                      <span className="font-semibold text-[var(--text-primary)] truncate">{cut.label}</span>
-                      <div className="flex items-center gap-2 font-mono tabular-nums shrink-0 text-[var(--text-secondary)]">
-                        {cut.fastestTime && (
-                          <span className="text-emerald-700 dark:text-emerald-400">
-                            Best <RaceTimeText value={cut.fastestTime} />
-                          </span>
-                        )}
-                        <span className="font-semibold text-[var(--text-primary)]">
-                          {cut.count} ({cut.pct}%)
-                        </span>
-                      </div>
-                    </div>
-                    <div className="h-2 w-full rounded-full bg-[var(--surface-inset)] overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-emerald-600 dark:bg-emerald-500 transition-all duration-200"
-                        style={{ width: `${Math.max(4, Math.min(100, cut.pct))}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : runnerStatsSummary.configuredDivisions.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {runnerStatsSummary.configuredDivisions.map((div) => (
-                  <span
-                    key={`${div.label}_${div.minAge}_${div.maxAge}_${div.gender}`}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 py-1.5 text-xs font-mono text-[var(--text-primary)]"
-                  >
-                    <span className="font-semibold">{div.label}</span>
-                    <span className="text-[var(--text-secondary)]">
-                      {div.minAge}-{div.maxAge}y ({div.gender === 'male' ? 'M' : 'F'})
-                    </span>
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <p className="glass-inset px-3 py-4 text-xs text-[var(--text-secondary)]">
-                Age-cut splits appear here once events publish category results or age brackets.
-              </p>
-            )}
-
-            {runnerStatsSummary.specialAwardWinners.length > 0 && (
-              <div className="pt-2 border-t border-[var(--border-default)] space-y-2">
-                <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-                  Special Age Recognition
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {runnerStatsSummary.specialAwardWinners.map((winner) => (
-                    <div
-                      key={winner.key}
-                      className="glass-inset px-3 py-2 flex items-center justify-between gap-2"
-                    >
-                      <div className="min-w-0">
-                        <div className="text-xs font-semibold text-[var(--text-primary)] truncate">
-                          {winner.displayName}
-                        </div>
-                        <div className="text-[11px] text-emerald-700 dark:text-emerald-400 truncate">
-                          {winner.awards.join(' / ')}
-                        </div>
-                      </div>
-                      <div className="font-mono text-xs tabular-nums text-[var(--text-secondary)] shrink-0">
-                        {winner.distance}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Panel 2: Distance Turnout & Capacity */}
-          <div className="glass-panel p-4 space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-[var(--text-primary)] inline-flex items-center gap-2">
-                <Flag className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" />
-                <span>Distance turnout &amp; pace benchmarks</span>
-              </h3>
-              <span className="font-mono text-xs text-[var(--text-secondary)] tabular-nums">
-                {runnerStatsSummary.distanceStats.length} distances
-              </span>
-            </div>
-
-            {runnerStatsSummary.distanceStats.length === 0 ? (
-              <p className="glass-inset px-3 py-4 text-xs text-[var(--text-secondary)]">
-                No race distances loaded yet.
-              </p>
-            ) : (
-              <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
-                {runnerStatsSummary.distanceStats.map((dist) => {
-                  const pct =
-                    runnerStatsSummary.totalFinishers > 0
-                      ? Math.round((dist.finisherCount / runnerStatsSummary.totalFinishers) * 100)
-                      : 0;
-                  return (
-                    <div key={dist.label} className="glass-inset p-2.5 space-y-1.5">
-                      <div className="flex items-center justify-between gap-2 text-xs">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="px-2 py-0.5 rounded-full border border-[var(--border-default)] bg-[var(--surface-card)] font-mono font-semibold text-[var(--text-primary)]">
-                            {dist.label}
-                          </span>
-                          <span className="text-[var(--text-secondary)] truncate">
-                            {dist.raceCount > 0
-                              ? `${dist.raceCount} ${dist.raceCount === 1 ? 'race' : 'races'}${
-                                  dist.minPrice !== null ? ` / from ₱${dist.minPrice.toLocaleString('en-PH')}` : ''
-                                }`
-                              : 'Official result division'}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2 font-mono tabular-nums shrink-0">
-                          {dist.fastestRaw && (
-                            <span className="text-emerald-700 dark:text-emerald-400">
-                              Top <RaceTimeText value={dist.fastestRaw} />
-                            </span>
-                          )}
-                          <span className="font-semibold text-[var(--text-primary)]">
-                            {dist.finisherCount > 0 ? `${dist.finisherCount} fin` : 'Upcoming'}
-                          </span>
-                        </div>
-                      </div>
-                      {dist.finisherCount > 0 && (
-                        <div className="h-1.5 w-full rounded-full bg-[var(--surface-card)] overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-red-600 dark:bg-red-500 transition-all duration-200"
-                            style={{ width: `${Math.max(4, Math.min(100, pct))}%` }}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* Official Finisher Bib Board: Driven by real published finishers instead of generic feature template cards */}
-      {featuredBibFinishers.length > 0 && (
+      {/* Official Finisher Bib Board: Diversified across races and distances */}
+      {allPublishedFinishers.length > 0 && (
         <section
           className="landing-bib-board space-y-4 pt-5 border-t border-[var(--border-default)]"
           aria-labelledby="bib-board-heading"
@@ -1962,7 +1743,7 @@ export default function PublicRaceLanding({
                 Recent official finisher bibs
               </h2>
               <p className="type-lead text-[var(--text-secondary)]">
-                Verified podium and official finisher records from published RacePulsePH events.
+                Verified podium and official finisher records across published RacePulsePH events.
               </p>
             </div>
             <Button
@@ -1972,10 +1753,38 @@ export default function PublicRaceLanding({
               className="h-11 px-5 self-start sm:self-auto shrink-0"
               onClick={handleSwitchToCompletedAndSearch}
             >
-              <span>Search all archives</span>
+              <span>Browse all finishers</span>
               <ArrowRight className="w-4 h-4" aria-hidden="true" />
             </Button>
           </div>
+
+          {bibAvailableDistances.length > 1 && (
+            <div
+              className="landing-stats-chip-group flex items-center gap-2 overflow-x-auto pb-1"
+              role="group"
+              aria-label="Filter official finisher bibs by distance"
+            >
+              <button
+                type="button"
+                onClick={() => setBibDistanceFilter('all')}
+                className={`${chipBase} ${bibDistanceFilter === 'all' ? chipActive : chipIdle}`}
+                aria-pressed={bibDistanceFilter === 'all'}
+              >
+                All distances
+              </button>
+              {bibAvailableDistances.map((dist) => (
+                <button
+                  key={`bib_dist_${dist}`}
+                  type="button"
+                  onClick={() => setBibDistanceFilter(dist)}
+                  className={`${chipBase} ${bibDistanceFilter === dist ? chipActive : chipIdle}`}
+                  aria-pressed={bibDistanceFilter === dist}
+                >
+                  {dist}
+                </button>
+              ))}
+            </div>
+          )}
 
           <ul
             className={`grid gap-4 ${
@@ -1990,6 +1799,18 @@ export default function PublicRaceLanding({
               const isDownloading = downloadingBibKey === bibKey;
               const isDownloaded = downloadedBibKey === bibKey;
               const displayName = entry.isFreeSlot ? `Bib ${entry.bibNumber}` : entry.fullName;
+              const parsedDist = parseDistanceAndEntryCategory(entry.distance);
+              const headerDist = parsedDist.baseDistance || entry.distance;
+              const headerFormat =
+                parsedDist.entryCategory !== 'solo'
+                  ? entryCategoryLabels[parsedDist.entryCategory]
+                  : '';
+              const timingLabel =
+                entry.timingMethod === 'gun'
+                  ? 'Gun timed'
+                  : entry.timingMethod === 'transition'
+                    ? 'Transition timed'
+                    : 'Chip timed';
 
               return (
                 <li
@@ -2005,7 +1826,10 @@ export default function PublicRaceLanding({
                           <span className="truncate">{race.name}</span>
                         </span>
                         <span className="flex items-center gap-2 shrink-0">
-                          <span>{entry.distance}</span>
+                          <span>
+                            {headerDist}
+                            {headerFormat ? ` · ${headerFormat}` : ''}
+                          </span>
                           <span className="w-2.5 h-2.5 rounded-full bg-black/35 border border-white/40 shrink-0" aria-hidden="true" />
                         </span>
                       </div>
@@ -2029,8 +1853,15 @@ export default function PublicRaceLanding({
                             Rank #{entry.overallRank ?? entry.rank} Overall
                             {entry.categoryRank ? ` · ${entry.categoryLabel || 'Category'} #${entry.categoryRank}` : ''}
                             {' · '}
+                            {timingLabel}
+                            {' · '}
                             {formatReadableRaceDate(race.date)}
                           </p>
+                          {entry.specialAgeAwards && entry.specialAgeAwards.length > 0 && (
+                            <p className="text-xs font-mono text-emerald-700 dark:text-emerald-400 truncate">
+                              {entry.specialAgeAwards.join(' · ')}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>

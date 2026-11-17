@@ -885,9 +885,10 @@ export default function CustomerForm({
               <DialogSurface
                 variant="sheet"
                 dismissOnBackdropClick
+                maxWidthCss="28rem"
                 titleId="engraving-qr-zoom-title"
                 onRequestClose={() => setIsQrMaximized(false)}
-                className="sm:inset-0 sm:m-auto h-fit rounded-t-[20px] sm:rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] p-4 sm:p-6 max-w-md w-full flex flex-col items-center text-center space-y-4"
+                bodyClassName="p-4 sm:p-6 flex flex-col items-center text-center space-y-4"
               >
                 <div className="w-full flex items-center justify-between gap-2">
                   <span className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase tracking-widest font-mono inline-flex items-center gap-1.5">
@@ -1084,9 +1085,11 @@ export default function CustomerForm({
         <DialogSurface
           alert
           variant="sheet"
+          maxWidthCss="28rem"
           titleId="cancel-medal-order-title"
           onRequestClose={() => setShowCancelConfirm(false)}
-          className="sm:inset-0 sm:m-auto h-fit rounded-t-[20px] sm:rounded-2xl border border-red-500/30 bg-[var(--surface-card)] text-[var(--text-primary)] p-4 sm:p-6 max-w-md w-full text-center space-y-4"
+          className="border-red-500/30"
+          bodyClassName="p-4 sm:p-6 text-center space-y-4"
         >
           <div className="mx-auto w-11 h-11 bg-red-500/10 text-red-700 dark:text-red-400 rounded-full flex items-center justify-center">
             <AlertTriangle className="w-5 h-5" aria-hidden="true" />

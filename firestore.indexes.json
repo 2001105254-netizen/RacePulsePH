@@ -1,4 +1,21 @@
 {
-  "indexes": [{ "collectionGroup": "accessHistory", "queryScope": "COLLECTION", "fields": [{"fieldPath":"targetUid","order":"ASCENDING"},{"fieldPath":"at","order":"DESCENDING"}] }],
+  "indexes": [
+    {
+      "collectionGroup": "accessHistory",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "targetUid", "order": "ASCENDING" },
+        { "fieldPath": "at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "runners",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "raceId", "order": "ASCENDING" },
+        { "fieldPath": "bibNumber", "order": "ASCENDING" }
+      ]
+    }
+  ],
   "fieldOverrides": []
 }

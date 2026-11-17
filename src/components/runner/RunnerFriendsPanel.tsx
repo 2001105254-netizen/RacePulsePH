@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { collection, doc, getDoc, onSnapshot, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
-import { Search, UserCheck, UserPlus, Users2, X } from 'lucide-react';
+import { collection, doc, getDoc, getDocs, onSnapshot, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { Check, Clock, RefreshCw, Search, UserCheck, UserPlus, Users2, X } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAccess } from '../../lib/access';
+import { AccountRequestError, searchRunnerFriends } from '../../lib/accountSecurity';
 import { FriendActivity, FriendProfile, UserProfile } from '../../types';
+import { ShimmerSweep } from '../ui/MotionPrimitives';
 import { usernamePattern } from './runnerUtils';
 import { RunnerQueueSkeleton } from './RunnerMobilePrimitives';
 
@@ -46,6 +48,25 @@ export interface RunnerFriendsPanelProps {
   desktopSearchRef?: React.RefObject<HTMLInputElement | null>;
 }
 
+function matchScoreForFallback(candidate: FriendProfile, normalizedQuery: string, tokens: string[]): number {
+  const username = (candidate.username || '').toLowerCase();
+  const displayName = (candidate.displayName || '').toLowerCase();
+  const nickname = (candidate.nickname || '').toLowerCase();
+  const words = `${displayName} ${nickname}`.split(/[\s._-]+/).filter(Boolean);
+
+  if (username && username === normalizedQuery) return 120;
+  if (username && username.startsWith(normalizedQuery)) return 100;
+  if (words.some((word) => word === normalizedQuery)) return 90;
+  if (words.some((word) => word.startsWith(normalizedQuery))) return 80;
+  if (username && username.includes(normalizedQuery)) return 70;
+  if (displayName.includes(normalizedQuery) || nickname.includes(normalizedQuery)) return 60;
+  if (tokens.length > 1) {
+    const searchable = `${username} ${displayName} ${nickname}`;
+    if (tokens.every((token) => searchable.includes(token))) return 55;
+  }
+  return 0;
+}
+
 export default function RunnerFriendsPanel({
   profile,
   onOpenRace,
@@ -58,19 +79,27 @@ export default function RunnerFriendsPanel({
 }: RunnerFriendsPanelProps) {
   const { can } = useAccess();
   const canInvites = can('personal.invites');
-  const [searchUsername, setSearchUsername] = useState('');
-  const [searchResult, setSearchResult] = useState<FriendProfile | null>(null);
+  const canViewUsers = can('users.view');
+  const [searchInput, setSearchInput] = useState('');
+  const [searchResults, setSearchResults] = useState<FriendProfile[]>([]);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [lastQuery, setLastQuery] = useState('');
   const [friends, setFriends] = useState<FriendProfile[]>([]);
   const [friendsLoaded, setFriendsLoaded] = useState(false);
   const [activities, setActivities] = useState<Record<string, FriendActivity>>({});
   const [incoming, setIncoming] = useState<FriendRequestRecord[]>([]);
   const [outgoing, setOutgoing] = useState<FriendRequestRecord[]>([]);
   const [invites, setInvites] = useState<RaceInviteRecord[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [sendingUid, setSendingUid] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
   const mobileFilterRef = useRef<HTMLInputElement>(null);
+  const searchLockRef = useRef(false);
+  const searchCooldownUntilRef = useRef(0);
+  const searchCacheRef = useRef<Map<string, { results: FriendProfile[]; expiresAt: number }>>(new Map());
 
   useEffect(
     () =>
@@ -189,58 +218,139 @@ export default function RunnerFriendsPanel({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [isDesktop, desktopSearchRef]);
 
-  const search = async () => {
-    const username = searchUsername.trim().toLowerCase();
+  const clearLookup = () => {
+    setSearchInput('');
+    setSearchResults([]);
+    setHasSearched(false);
+    setLastQuery('');
     setError('');
     setNotice('');
-    setSearchResult(null);
-    if (!usernamePattern.test(username)) {
-      setError('Enter an exact username (3 to 24 letters, numbers, dots, hyphens, or underscores).');
+  };
+
+  const search = async () => {
+    if (searchLockRef.current) return;
+    const normalizedQuery = searchInput.trim().replace(/^@+/, '').replace(/\s+/g, ' ').toLowerCase();
+    setError('');
+    setNotice('');
+    if (normalizedQuery.length < 2) {
+      setSearchResults([]);
+      setHasSearched(false);
+      setLastQuery('');
+      setError('Enter at least 2 characters of a name or @username.');
       return;
     }
-    setBusy(true);
+
+    const nowMs = Date.now();
+    const cached = searchCacheRef.current.get(normalizedQuery);
+    if (cached && cached.expiresAt > nowMs) {
+      setSearchResults(cached.results);
+      setLastQuery(normalizedQuery);
+      setHasSearched(true);
+      return;
+    }
+
+    if (nowMs < searchCooldownUntilRef.current) {
+      const waitSec = Math.max(1, Math.ceil((searchCooldownUntilRef.current - nowMs) / 1000));
+      setError(`Too many searches. Wait ${waitSec}s before searching again.`);
+      return;
+    }
+
+    setSearchResults([]);
+    searchLockRef.current = true;
+    setSearching(true);
     try {
-      const directory = await getDoc(doc(db, 'friendDirectory', username));
-      if (!directory.exists()) {
-        setError('No runner profile found for that username.');
-      } else if ((directory.data() as FriendProfile).uid === profile.uid) {
-        setError('That is your own profile.');
-      } else {
-        setSearchResult(directory.data() as FriendProfile);
+      const results = await searchRunnerFriends(normalizedQuery);
+      if (searchCacheRef.current.size > 25) searchCacheRef.current.clear();
+      searchCacheRef.current.set(normalizedQuery, { results, expiresAt: Date.now() + 30_000 });
+      setSearchResults(results);
+      setLastQuery(normalizedQuery);
+      setHasSearched(true);
+    } catch (err: unknown) {
+      if (err instanceof AccountRequestError && err.status === 429) {
+        const waitSec = err.retryAfter > 0 ? err.retryAfter : 15;
+        searchCooldownUntilRef.current = Date.now() + waitSec * 1000;
+        setError(err.message || `Too many searches. Wait ${waitSec}s before searching again.`);
+        return;
       }
-    } catch {
-      setError('Could not search right now. Please try again.');
+      if (err instanceof AccountRequestError && err.status === 404) {
+        try {
+          const fallbackMatches: Array<{ item: FriendProfile; score: number }> = [];
+          const tokens = normalizedQuery.split(' ').filter(Boolean);
+
+          if (canViewUsers) {
+            const usersSnap = await getDocs(collection(db, 'users'));
+            usersSnap.forEach((docSnap) => {
+              const user = docSnap.data() as UserProfile;
+              if (user.accessRemoved || user.uid === profile.uid) return;
+              const candidate: FriendProfile = {
+                uid: user.uid,
+                username: (user.username || '').trim().toLowerCase(),
+                displayName: (user.displayName || user.username || 'Runner').trim(),
+                ...(user.nickname?.trim() ? { nickname: user.nickname.trim() } : {}),
+                ...(user.photoURL ? { photoURL: user.photoURL } : {}),
+                updatedAt: user.createdAt || '',
+              };
+              const score = matchScoreForFallback(candidate, normalizedQuery, tokens);
+              if (score > 0) fallbackMatches.push({ item: candidate, score });
+            });
+          } else if (usernamePattern.test(normalizedQuery)) {
+            const directory = await getDoc(doc(db, 'friendDirectory', normalizedQuery));
+            if (directory.exists()) {
+              const entry = directory.data() as FriendProfile;
+              if (entry.uid !== profile.uid) {
+                fallbackMatches.push({ item: entry, score: 120 });
+              }
+            }
+          }
+
+          fallbackMatches.sort((a, b) => b.score - a.score || a.item.displayName.localeCompare(b.item.displayName));
+          setSearchResults(fallbackMatches.slice(0, 10).map((entry) => entry.item));
+          setLastQuery(normalizedQuery);
+          setHasSearched(true);
+          return;
+        } catch {
+          setError('Could not search right now. Please try again.');
+          return;
+        }
+      }
+      setError(err instanceof Error ? err.message : 'Could not search right now. Please try again.');
     } finally {
-      setBusy(false);
+      searchLockRef.current = false;
+      setSearching(false);
     }
   };
 
-  const sendFriendRequest = async () => {
-    if (!searchResult || !profile.username) return;
-    setBusy(true);
+  const sendFriendRequest = async (target: FriendProfile) => {
+    if (!profile.username) return;
+    if (!target.username) {
+      setError(`${target.displayName} has not set a @username yet.`);
+      return;
+    }
+    setSendingUid(target.uid);
     setError('');
+    setNotice('');
     try {
-      if (friends.some((friend) => friend.uid === searchResult.uid)) {
+      if (friends.some((friend) => friend.uid === target.uid)) {
         setNotice('You are already friends.');
         return;
       }
-      if (outgoing.some((request) => request.toUid === searchResult.uid)) {
+      if (outgoing.some((request) => request.toUid === target.uid)) {
         setNotice('Friend request already sent.');
         return;
       }
-      await setDoc(doc(db, 'friendRequests', `${profile.uid}_${searchResult.uid}`), {
+      await setDoc(doc(db, 'friendRequests', `${profile.uid}_${target.uid}`), {
         fromUid: profile.uid,
-        toUid: searchResult.uid,
+        toUid: target.uid,
         fromUsername: profile.username,
         fromDisplayName: profile.nickname || profile.displayName,
         status: 'pending',
         createdAt: new Date().toISOString(),
       } satisfies FriendRequestRecord);
-      setNotice(`Friend request sent to @${searchResult.username}.`);
+      setNotice(`Friend request sent to @${target.username}.`);
     } catch (err: any) {
       setError(err.message || 'Could not send the friend request.');
     } finally {
-      setBusy(false);
+      setSendingUid(null);
     }
   };
 
@@ -318,7 +428,7 @@ export default function RunnerFriendsPanel({
     <div
       id="runner_friends_main"
       data-split-pane={isSplitPane ? 'true' : 'false'}
-      className="w-full flex flex-col flex-1 min-h-0 overflow-y-auto overscroll-y-contain min-[600px]:overflow-hidden"
+      className="w-full flex flex-col flex-1 min-h-0 overflow-y-auto overscroll-y-contain rp-runner-scroll min-[600px]:overflow-hidden"
     >
       <div className="flex-1 min-h-0 flex flex-col min-[600px]:grid min-[600px]:grid-cols-[minmax(236px,38%)_minmax(0,1fr)] min-[920px]:grid-cols-[340px_minmax(0,1fr)]">
         {/* LEFT PANE: Lookup, Race Invitations, Incoming Friend Requests */}
@@ -327,7 +437,7 @@ export default function RunnerFriendsPanel({
           className="shrink-0 min-[600px]:shrink flex flex-col min-h-0 min-[600px]:h-full bg-[var(--surface-card)] min-[600px]:border-r border-b min-[600px]:border-b-0 border-[var(--border-default)] min-[600px]:overflow-hidden"
         >
           <div className="min-[600px]:flex-1 min-[600px]:min-h-0 min-[600px]:overflow-y-auto min-[600px]:overscroll-y-contain divide-y divide-[var(--border-subtle)]">
-            <div className="p-3 space-y-2.5">
+            <div className="p-3 space-y-3">
               <div className="flex items-start gap-2.5">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-700/10 text-red-700 dark:bg-red-500/10 dark:text-red-400">
                   <Users2 className="w-4 h-4" aria-hidden="true" />
@@ -337,7 +447,7 @@ export default function RunnerFriendsPanel({
                     Find Runner Friends
                   </h2>
                   <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
-                    Search exact username. Both runners confirm before sharing activity.
+                    Search by name or @username. Both runners confirm before sharing activity.
                   </p>
                 </div>
               </div>
@@ -351,67 +461,212 @@ export default function RunnerFriendsPanel({
               >
                 <div className="relative min-w-0 flex-1">
                   <label htmlFor="runner_friend_username_lookup" className="sr-only">
-                    Search exact runner username
+                    Search runners by name or username
                   </label>
+                  <Search
+                    className="pointer-events-none absolute left-3 top-1/2 w-4 h-4 -translate-y-1/2 text-[var(--text-secondary)]"
+                    aria-hidden="true"
+                  />
                   <input
                     id="runner_friend_username_lookup"
-                    value={searchUsername}
-                    onChange={(event) => setSearchUsername(event.target.value.toLowerCase())}
-                    placeholder="e.g. juan.runner"
-                    autoCapitalize="none"
+                    type="search"
+                    enterKeyHint="search"
+                    value={searchInput}
+                    onChange={(event) => setSearchInput(event.target.value)}
+                    placeholder="Name or @username (e.g. patrick)"
+                    autoCapitalize="words"
                     autoCorrect="off"
                     spellCheck={false}
-                    maxLength={24}
-                    className="w-full min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400"
+                    maxLength={64}
+                    className="w-full min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] pl-9 pr-11 text-sm font-normal text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400"
                   />
+                  {searchInput && (
+                    <button
+                      type="button"
+                      onClick={clearLookup}
+                      aria-label="Clear runner search"
+                      className="absolute right-0 top-1/2 -translate-y-1/2 min-h-11 min-w-11 flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                    >
+                      <X className="w-4 h-4" aria-hidden="true" />
+                    </button>
+                  )}
                 </div>
                 <button
                   type="submit"
-                  disabled={busy}
-                  className="min-h-11 rounded-xl bg-red-700 hover:bg-red-600 px-3.5 text-xs font-semibold uppercase tracking-wide text-white disabled:opacity-60 shrink-0"
+                  disabled={searching}
+                  className="min-h-11 rounded-xl bg-red-700 hover:bg-red-600 px-3 text-xs font-semibold uppercase tracking-wide text-white disabled:opacity-60 shrink-0"
                 >
-                  Search
+                  {searching ? 'Searching' : 'Search'}
                 </button>
               </form>
 
               {error && (
-                <p role="alert" className="text-xs font-semibold text-red-700 dark:text-red-400">
-                  {error}
-                </p>
+                <div role="alert" className="pt-2 border-t border-[var(--border-subtle)] flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold text-red-700 dark:text-red-400">{error}</p>
+                  {lastQuery.length >= 2 && (
+                    <button
+                      type="button"
+                      onClick={() => void search()}
+                      className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] shrink-0"
+                    >
+                      Retry
+                    </button>
+                  )}
+                </div>
               )}
+
               {notice && (
                 <p role="status" className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
                   {notice}
                 </p>
               )}
 
-              {searchResult && (
-                <div className="flex items-center justify-between gap-2 pt-2 border-t border-[var(--border-subtle)]">
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-red-700/10 dark:bg-red-500/10 font-semibold text-red-700 dark:text-red-400">
-                      {searchResult.photoURL ? (
-                        <img src={searchResult.photoURL} alt="" className="h-full w-full object-cover" />
-                      ) : (
-                        searchResult.displayName.charAt(0).toUpperCase()
-                      )}
-                    </span>
-                    <span className="min-w-0">
-                      <strong className="block truncate text-sm text-[var(--text-primary)]">
-                        {searchResult.nickname || searchResult.displayName}
-                      </strong>
-                      <small className="block text-xs font-mono text-[var(--text-secondary)] truncate">
-                        @{searchResult.username}
-                      </small>
-                    </span>
-                  </div>
+              {searching && (
+                <div
+                  role="status"
+                  aria-busy="true"
+                  aria-label="Searching runners"
+                  className="border-t border-[var(--border-subtle)] divide-y divide-[var(--border-subtle)]"
+                >
+                  {Array.from({ length: 3 }, (_, idx) => (
+                    <div key={idx} className="relative overflow-hidden min-h-14 py-2 flex items-center justify-between gap-3">
+                      <ShimmerSweep />
+                      <div className="flex min-w-0 flex-1 items-center gap-3">
+                        <div className="h-9 w-9 shrink-0 rounded-full bg-[var(--surface-inset)]" />
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <div className="h-3.5 w-32 max-w-[75%] rounded bg-[var(--surface-inset)]" />
+                          <div className="h-3 w-20 max-w-[50%] rounded bg-[var(--surface-inset)]" />
+                        </div>
+                      </div>
+                      <div className="h-11 w-20 shrink-0 rounded-xl bg-[var(--surface-inset)]" />
+                    </div>
+                  ))}
+                  <span className="sr-only">Searching runners...</span>
+                </div>
+              )}
+
+              {!searching && !error && hasSearched && searchResults.length === 0 && (
+                <div className="border-t border-[var(--border-subtle)] pt-3 text-center space-y-2">
+                  <p className="text-xs font-semibold text-[var(--text-primary)]">
+                    No runners match &ldquo;{lastQuery}&rdquo;
+                  </p>
+                  <p className="text-xs text-[var(--text-secondary)]">
+                    Try a first name, last name, or @username.
+                  </p>
                   <button
                     type="button"
-                    onClick={() => void sendFriendRequest()}
-                    disabled={busy}
-                    className="shrink-0 min-h-11 inline-flex items-center rounded-xl border border-red-700/35 bg-red-600/10 px-3 text-xs font-semibold uppercase tracking-wide text-red-700 dark:text-red-400 transition hover:bg-red-700 hover:text-white disabled:opacity-60"
+                    onClick={clearLookup}
+                    className="min-h-11 px-4 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)]"
                   >
-                    <UserPlus className="mr-1 inline h-3.5 w-3.5" aria-hidden="true" /> Add
+                    Clear search
                   </button>
+                </div>
+              )}
+
+              {!searching && searchResults.length > 0 && (
+                <div className="border-t border-[var(--border-subtle)] pt-2">
+                  <div className="flex items-center justify-between gap-2 pb-1">
+                    <p role="status" className="text-xs font-semibold text-[var(--text-secondary)] tabular-nums">
+                      {searchResults.length} {searchResults.length === 1 ? 'match' : 'matches'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={clearLookup}
+                      className="min-h-11 px-2 text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <ul role="list" aria-label="Runner search results" className="divide-y divide-[var(--border-subtle)]">
+                    {searchResults.map((candidate) => {
+                      const isFriend = friends.some((f) => f.uid === candidate.uid);
+                      const isRequested = outgoing.some((r) => r.toUid === candidate.uid);
+                      const incomingReq = incoming.find((r) => r.fromUid === candidate.uid);
+                      const isSending = sendingUid === candidate.uid;
+                      const primaryLabel = candidate.nickname && candidate.nickname !== candidate.displayName
+                        ? `${candidate.nickname} · ${candidate.displayName}`
+                        : candidate.displayName;
+
+                      return (
+                        <li key={candidate.uid} className="min-h-14 py-2 flex items-center justify-between gap-3">
+                          <div className="flex min-w-0 flex-1 items-center gap-3">
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-red-700/10 dark:bg-red-500/10 font-semibold text-red-700 dark:text-red-400">
+                              {candidate.photoURL ? (
+                                <img src={candidate.photoURL} alt="" width={36} height={36} className="h-full w-full object-cover" />
+                              ) : (
+                                candidate.displayName.charAt(0).toUpperCase()
+                              )}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <strong className="block truncate text-sm font-semibold text-[var(--text-primary)]">
+                                {primaryLabel}
+                              </strong>
+                              <small className="block truncate text-xs font-mono text-[var(--text-secondary)]">
+                                {candidate.username ? `@${candidate.username}` : 'No @username set'}
+                              </small>
+                            </span>
+                          </div>
+
+                          {isFriend ? (
+                            <button
+                              type="button"
+                              disabled
+                              aria-label={`${candidate.displayName} is already your friend`}
+                              className="shrink-0 min-h-11 min-w-11 inline-flex items-center justify-center gap-1 rounded-xl border border-emerald-600/35 bg-emerald-500/10 px-3 text-xs font-semibold text-emerald-800 dark:text-emerald-300"
+                            >
+                              <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                              <span>Friends</span>
+                            </button>
+                          ) : incomingReq ? (
+                            <button
+                              type="button"
+                              onClick={() => void respondToRequest(incomingReq, true)}
+                              disabled={busy}
+                              aria-label={`Accept friend request from ${candidate.displayName}`}
+                              className="shrink-0 min-h-11 min-w-11 inline-flex items-center justify-center gap-1 rounded-xl bg-emerald-700 hover:bg-emerald-800 px-3 text-xs font-semibold text-white disabled:opacity-60"
+                            >
+                              <UserCheck className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                              <span>Accept</span>
+                            </button>
+                          ) : isRequested ? (
+                            <button
+                              type="button"
+                              disabled
+                              aria-label={`Friend request pending for ${candidate.displayName}`}
+                              className="shrink-0 min-h-11 min-w-11 inline-flex items-center justify-center gap-1 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-xs font-semibold text-[var(--text-secondary)]"
+                            >
+                              <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                              <span>Requested</span>
+                            </button>
+                          ) : !candidate.username ? (
+                            <button
+                              type="button"
+                              disabled
+                              title="This runner needs to choose a @username in Profile before receiving friend requests."
+                              className="shrink-0 min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-secondary)]"
+                            >
+                              No handle
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => void sendFriendRequest(candidate)}
+                              disabled={isSending}
+                              aria-label={`Add ${candidate.displayName} as friend`}
+                              className="shrink-0 min-h-11 min-w-11 inline-flex items-center justify-center gap-1 rounded-xl border border-red-700/35 bg-red-600/10 px-3 text-xs font-semibold text-red-700 dark:text-red-400 transition hover:bg-red-700 hover:text-white disabled:opacity-60"
+                            >
+                              {isSending ? (
+                                <RefreshCw className="h-3.5 w-3.5 motion-safe:animate-spin shrink-0" aria-hidden="true" />
+                              ) : (
+                                <UserPlus className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                              )}
+                              <span>{isSending ? 'Adding...' : 'Add'}</span>
+                            </button>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
                 </div>
               )}
             </div>
@@ -544,7 +799,7 @@ export default function RunnerFriendsPanel({
                 <Users2 className="w-7 h-7 text-[var(--text-secondary)] mx-auto" aria-hidden="true" />
                 <p className="text-sm font-semibold text-[var(--text-primary)]">No connected friends yet</p>
                 <p className="text-xs text-[var(--text-secondary)] max-w-sm mx-auto">
-                  Search a runner&apos;s exact username above to send your first friend request.
+                  Search a runner&apos;s name or @username above to send your first friend request.
                 </p>
               </div>
             ) : visibleFriends.length === 0 ? (

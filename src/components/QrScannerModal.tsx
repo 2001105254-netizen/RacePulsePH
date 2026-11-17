@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { AlertTriangle, Camera, CheckCircle2, ShieldAlert, UploadCloud, X } from 'lucide-react';
-import { useAndroidBackHandler } from '../lib/capacitorAndroid';
 import DialogSurface from './ui/DialogSurface';
 
 interface QrScannerModalProps {
@@ -36,15 +35,6 @@ export default function QrScannerModal({
   const [manualValue, setManualValue] = useState('');
   const [submittingManual, setSubmittingManual] = useState(false);
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
-  useAndroidBackHandler(true, onClose);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
 
   useEffect(() => {
     let stopped = false;
@@ -174,9 +164,10 @@ export default function QrScannerModal({
     <DialogSurface
       variant="sheet"
       dismissOnBackdropClick
+      maxWidthCss="28rem"
       titleId="qr-scanner-modal-title"
       onRequestClose={onClose}
-      className="sm:inset-0 sm:m-auto h-fit bg-[var(--surface-card)] border border-[var(--border-default)] rounded-t-[20px] sm:rounded-2xl w-full sm:w-[calc(100%-2rem)] max-w-sm md:max-w-md max-h-[92dvh] overflow-y-auto p-0 flex flex-col"
+      bodyClassName="flex flex-col"
     >
       {/* Hidden container for file decoder */}
       <div id="temporary-file-qr-decoder" className="hidden" />

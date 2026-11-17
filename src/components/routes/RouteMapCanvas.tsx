@@ -8,6 +8,7 @@ import {
   Focus,
   Globe,
   Layers,
+  LocateFixed,
   Lock,
   Maximize2,
   Minimize2,
@@ -86,6 +87,10 @@ interface RouteMapCanvasProps {
   onToggleFullscreen?: () => void;
   studioOverlaySlot?: React.ReactNode;
   gpsLivePosition?: { lat: number; lon: number; accuracyM: number } | null;
+  locateStatus?: 'idle' | 'locating' | 'active' | 'denied' | 'unavailable' | 'error';
+  onLocateMe?: () => void;
+  onCenterOnUser?: () => void;
+  selectedMarkerOverlay?: React.ReactNode;
   imageryEnabled?: boolean;
   onToggleImagery?: (enabled: boolean) => void;
   is3DEnabled?: boolean;
@@ -222,6 +227,10 @@ function SchematicMapFallback({
   cursorVisible = true,
   editable = false,
   drawMode = 'view',
+  gpsLivePosition,
+  locateStatus = 'idle',
+  onLocateMe,
+  onCenterOnUser,
   onSelectMarker,
   onSelectChainage,
   onPlaceStartPoint,
@@ -233,6 +242,10 @@ function SchematicMapFallback({
   cursorVisible?: boolean;
   editable?: boolean;
   drawMode?: MapDrawMode;
+  gpsLivePosition?: { lat: number; lon: number; accuracyM: number } | null;
+  locateStatus?: 'idle' | 'locating' | 'active' | 'denied' | 'unavailable' | 'error';
+  onLocateMe?: () => void;
+  onCenterOnUser?: () => void;
   onSelectMarker?: (marker: RouteMarker) => void;
   onSelectChainage?: (chainageM: number, passNumber?: number) => void;
   onPlaceStartPoint?: (lat: number, lon: number) => Promise<boolean> | boolean | void;
@@ -250,6 +263,13 @@ function SchematicMapFallback({
   });
 
   const selPt = project(selection.latitude, selection.longitude);
+  const gpsPtRaw = gpsLivePosition ? project(gpsLivePosition.lat, gpsLivePosition.lon) : null;
+  const gpsPt = gpsPtRaw
+    ? {
+        x: Math.max(18, Math.min(width - 18, gpsPtRaw.x)),
+        y: Math.max(18, Math.min(height - 18, gpsPtRaw.y)),
+      }
+    : null;
   const canClickPlaceStart =
     editable &&
     Boolean(onPlaceStartPoint) &&
@@ -257,9 +277,26 @@ function SchematicMapFallback({
 
   return (
     <div className="relative flex h-full w-full flex-col justify-between overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)]">
-      <div className="flex items-center justify-between gap-2 border-b border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2 text-xs text-[var(--text-secondary)]">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2 text-xs text-[var(--text-secondary)]">
         <span>Course geometry overview (WebGL basemap unavailable in this environment)</span>
-        <span>{route.distanceKm.toFixed(2)} km</span>
+        <div className="flex items-center gap-2">
+          {onLocateMe && (
+            <button
+              type="button"
+              onClick={locateStatus === 'active' && onCenterOnUser ? onCenterOnUser : onLocateMe}
+              aria-pressed={locateStatus === 'active'}
+              className={`inline-flex min-h-8 items-center gap-1 rounded-lg border px-2 font-semibold ${
+                locateStatus === 'active'
+                  ? 'border-sky-600 bg-sky-600 text-white'
+                  : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600/50'
+              }`}
+            >
+              <LocateFixed className="h-3.5 w-3.5" aria-hidden="true" />
+              {locateStatus === 'locating' ? 'Locating...' : locateStatus === 'active' ? 'My spot active' : 'My location'}
+            </button>
+          )}
+          <span className="font-mono font-semibold text-[var(--text-primary)]">{route.distanceKm.toFixed(2)} km</span>
+        </div>
       </div>
       <svg
         viewBox={`0 0 ${width} ${height}`}
@@ -301,6 +338,7 @@ function SchematicMapFallback({
           const p = project(marker.latitude, marker.longitude);
           const color = markerColorForKind(marker.kind);
           const isSelected = marker.id === selectedMarkerId;
+          const photoCount = marker.photos?.length || 0;
           return (
             <g
               key={marker.id}
@@ -316,9 +354,18 @@ function SchematicMapFallback({
               <text textAnchor="middle" dy="0.35em" fill="#ffffff" fontSize="10" fontWeight="600">
                 {color.label}
               </text>
+              {photoCount > 0 && (
+                <circle cx={8} cy={-8} r={4} fill="#f59e0b" stroke="#ffffff" strokeWidth={1.5} />
+              )}
             </g>
           );
         })}
+        {gpsPt && (
+          <g transform={`translate(${gpsPt.x}, ${gpsPt.y})`}>
+            <circle r={13} fill="#2563eb" fillOpacity={0.22} stroke="#2563eb" strokeWidth={2} />
+            <circle r={5.5} fill="#2563eb" stroke="#ffffff" strokeWidth={2} />
+          </g>
+        )}
         {cursorVisible && (
           <circle cx={selPt.x} cy={selPt.y} r={8} fill="#ffffff" stroke="#dc2626" strokeWidth={3} />
         )}
@@ -348,6 +395,10 @@ export default function RouteMapCanvas({
   onToggleFullscreen,
   studioOverlaySlot,
   gpsLivePosition,
+  locateStatus = 'idle',
+  onLocateMe,
+  onCenterOnUser,
+  selectedMarkerOverlay,
   imageryEnabled,
   onToggleImagery,
   is3DEnabled,
@@ -887,17 +938,31 @@ export default function RouteMapCanvas({
     fitRouteBounds(true);
   }, [autoFitKey]);
 
-  // Trigger map resize cleanly after toggling fullscreen layout
+  // Trigger map resize cleanly after toggling fullscreen layout or when parent container/dialog resizes
   useEffect(() => {
     const map = mapRef.current;
+    const containerEl = containerRef.current;
     if (!map) return;
-    const raf = window.requestAnimationFrame(() => map.resize());
-    const timer = window.setTimeout(() => map.resize(), 80);
+    const safeResize = () => {
+      try {
+        map.resize();
+      } catch {
+        // Map torn down
+      }
+    };
+    const raf = window.requestAnimationFrame(safeResize);
+    const timer = window.setTimeout(safeResize, 80);
+    const observer =
+      typeof ResizeObserver !== 'undefined' && containerEl
+        ? new ResizeObserver(() => safeResize())
+        : null;
+    if (observer && containerEl) observer.observe(containerEl);
     return () => {
       window.cancelAnimationFrame(raf);
       window.clearTimeout(timer);
+      observer?.disconnect();
     };
-  }, [fullscreenActive]);
+  }, [fullscreenActive, styleLoadedNonce]);
 
   // Escape closes starting point menu or exits fullscreen; holding Spacebar temporarily enables hand pan
   useEffect(() => {
@@ -1076,10 +1141,12 @@ export default function RouteMapCanvas({
     markers.forEach((marker) => {
       const style = markerColorForKind(marker.kind);
       const isSelected = marker.id === selectedMarkerId;
+      const photoCount = marker.photos?.length || 0;
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'rp-map-marker';
       btn.style.cssText = [
+        `position: relative`,
         `min-width: 28px`,
         `height: 28px`,
         `padding: 0 7px`,
@@ -1094,9 +1161,31 @@ export default function RouteMapCanvas({
       ].join(';');
       btn.textContent =
         marker.passNumber > 1 ? `${style.label}${marker.passNumber}` : style.label;
+      if (photoCount > 0) {
+        const badge = document.createElement('span');
+        badge.setAttribute('aria-hidden', 'true');
+        badge.textContent = photoCount > 9 ? '+' : String(photoCount);
+        badge.style.cssText = [
+          'position: absolute',
+          'top: -5px',
+          'right: -5px',
+          'min-width: 14px',
+          'height: 14px',
+          'padding: 0 3px',
+          'border-radius: 9999px',
+          'background: #f59e0b',
+          'border: 1.5px solid #ffffff',
+          'color: #18181b',
+          'font: 700 9px/11px system-ui, sans-serif',
+          'text-align: center',
+        ].join(';');
+        btn.appendChild(badge);
+      }
+      const photoLabel = photoCount > 0 ? `, ${photoCount} snapshot${photoCount > 1 ? 's' : ''}` : '';
+      btn.title = `${marker.name} (${(marker.chainageM / 1000).toFixed(2)} km${photoLabel})`;
       btn.setAttribute(
         'aria-label',
-        `${marker.name} (${marker.kind}, ${(marker.chainageM / 1000).toFixed(2)} km, Pass ${marker.passNumber})`,
+        `${marker.name} (${marker.kind}, ${(marker.chainageM / 1000).toFixed(2)} km, Pass ${marker.passNumber}${photoLabel})`,
       );
       btn.addEventListener('click', (event) => {
         event.stopPropagation();
@@ -1709,6 +1798,10 @@ export default function RouteMapCanvas({
           cursorVisible={cursorVisible}
           editable={editable}
           drawMode={drawMode}
+          gpsLivePosition={gpsLivePosition}
+          locateStatus={locateStatus}
+          onLocateMe={onLocateMe}
+          onCenterOnUser={onCenterOnUser}
           onSelectMarker={onSelectMarker}
           onSelectChainage={onSelectChainage}
           onPlaceStartPoint={onPlaceStartPoint}
@@ -1854,14 +1947,14 @@ export default function RouteMapCanvas({
           </div>
         )}
 
-        {/* Top-right map zoom, fit, fullscreen, satellite, 3D terrain & preview controls */}
-        <div className="pointer-events-auto absolute right-3 top-3 z-10 flex flex-col gap-1.5">
+        {/* Top-right compact 2-column map zoom, fit, locate, fullscreen, satellite, 3D & preview controls */}
+        <div className="pointer-events-auto absolute right-2.5 top-2.5 z-10 grid grid-cols-2 gap-1.5">
           <button
             type="button"
             onClick={() => mapRef.current?.zoomIn({ duration: reducedMotion ? 0 : 180 })}
             aria-label="Zoom in map"
             title="Zoom in"
-            className="flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] shadow-sm hover:border-red-600/60 hover:text-red-700 dark:hover:text-red-400"
+            className="flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] shadow-sm hover:border-red-600/60 hover:text-red-700 dark:hover:text-red-400"
           >
             <Plus className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -1870,7 +1963,7 @@ export default function RouteMapCanvas({
             onClick={() => mapRef.current?.zoomOut({ duration: reducedMotion ? 0 : 180 })}
             aria-label="Zoom out map"
             title="Zoom out"
-            className="flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] shadow-sm hover:border-red-600/60 hover:text-red-700 dark:hover:text-red-400"
+            className="flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] shadow-sm hover:border-red-600/60 hover:text-red-700 dark:hover:text-red-400"
           >
             <Minus className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -1879,17 +1972,51 @@ export default function RouteMapCanvas({
             onClick={() => fitRouteBounds(false)}
             aria-label="Fit entire course on map"
             title="Fit course"
-            className="flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] shadow-sm hover:border-red-600/60 hover:text-red-700 dark:hover:text-red-400"
+            className="flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] shadow-sm hover:border-red-600/60 hover:text-red-700 dark:hover:text-red-400"
           >
             <Focus className="h-4 w-4" aria-hidden="true" />
           </button>
+          {onLocateMe && (
+            <button
+              type="button"
+              onClick={() => {
+                if (gpsLivePosition && onCenterOnUser) {
+                  onCenterOnUser();
+                } else {
+                  onLocateMe();
+                }
+              }}
+              aria-pressed={locateStatus === 'active'}
+              aria-label={
+                locateStatus === 'locating'
+                  ? 'Finding your location on the map'
+                  : gpsLivePosition
+                    ? 'Center map on your live location'
+                    : 'Show my location on the map'
+              }
+              title={
+                locateStatus === 'locating'
+                  ? 'Locating your spot...'
+                  : gpsLivePosition
+                    ? 'Center on my spot'
+                    : 'Show my location'
+              }
+              className={`flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border text-xs font-semibold shadow-sm ${
+                locateStatus === 'active'
+                  ? 'border-sky-600 bg-sky-600 text-white hover:bg-sky-500'
+                  : 'border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] hover:border-sky-600/60 hover:text-sky-700 dark:hover:text-sky-400'
+              }`}
+            >
+              <LocateFixed className="h-4 w-4" aria-hidden="true" />
+            </button>
+          )}
           <button
             type="button"
             onClick={toggleFullscreen}
             aria-pressed={fullscreenActive}
             aria-label={fullscreenActive ? 'Exit fullscreen map' : 'Toggle fullscreen map'}
             title={fullscreenActive ? 'Exit fullscreen (Esc)' : 'Fullscreen map'}
-            className={`flex min-h-11 min-w-11 items-center justify-center rounded-xl border px-2 text-xs font-semibold shadow-sm ${
+            className={`flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border text-xs font-semibold shadow-sm ${
               fullscreenActive
                 ? 'border-red-600 bg-red-700 text-white'
                 : 'border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] hover:border-red-600/60'
@@ -1907,14 +2034,13 @@ export default function RouteMapCanvas({
             aria-pressed={activeImagery}
             aria-label={activeImagery ? 'Hide Sentinel-2 satellite imagery' : 'Show Sentinel-2 satellite imagery'}
             title={activeImagery ? 'Hide Satellite' : 'Sentinel-2 Satellite'}
-            className={`flex min-h-11 min-w-11 items-center justify-center rounded-xl border px-2 text-xs font-semibold shadow-sm ${
+            className={`flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border text-xs font-semibold shadow-sm ${
               activeImagery
                 ? 'border-red-600 bg-red-700 text-white'
                 : 'border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] hover:border-red-600/60'
             }`}
           >
             <Globe className="h-4 w-4" aria-hidden="true" />
-            <span className="ml-1 hidden sm:inline">Sat</span>
           </button>
           <button
             type="button"
@@ -1922,14 +2048,13 @@ export default function RouteMapCanvas({
             aria-pressed={active3D}
             aria-label={active3D ? 'Switch to 2D map view' : 'Switch to 3D terrain relief view'}
             title={active3D ? 'Switch to 2D' : '3D Terrain'}
-            className={`flex min-h-11 min-w-11 items-center justify-center rounded-xl border px-2 text-xs font-semibold shadow-sm ${
+            className={`flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border text-xs font-semibold shadow-sm ${
               active3D
                 ? 'border-red-600 bg-red-700 text-white'
                 : 'border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] hover:border-red-600/60'
             }`}
           >
             <Layers className="h-4 w-4" aria-hidden="true" />
-            <span className="ml-1 hidden sm:inline">{active3D ? '3D' : '2D'}</span>
           </button>
           {onSelectChainage && !editable && !reducedMotion && (
             <button
@@ -1938,7 +2063,7 @@ export default function RouteMapCanvas({
               aria-pressed={isPlayingPreview}
               aria-label={isPlayingPreview ? 'Pause course preview' : 'Play course preview'}
               title={isPlayingPreview ? 'Pause preview' : 'Preview course'}
-              className={`flex min-h-11 min-w-11 items-center justify-center rounded-xl border px-2 text-xs font-semibold shadow-sm ${
+              className={`flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border text-xs font-semibold shadow-sm ${
                 isPlayingPreview
                   ? 'border-red-600 bg-red-700 text-white'
                   : 'border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] hover:border-red-600/60'
@@ -1954,7 +2079,7 @@ export default function RouteMapCanvas({
         </div>
 
         {/* Bottom-left Course Telemetry HUD + Preview Position + Pan Lock status */}
-        <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex max-w-[calc(100%-5.5rem)] flex-wrap items-center gap-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 px-3 py-1.5 text-xs text-[var(--text-primary)] shadow-sm">
+        <div className="pointer-events-none absolute bottom-2.5 left-2.5 z-10 flex max-w-[calc(100%-6.75rem)] flex-wrap items-center gap-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 px-2.5 py-1.5 text-xs text-[var(--text-primary)] shadow-sm">
           <Compass className="h-3.5 w-3.5 shrink-0 text-red-700 dark:text-red-400" aria-hidden="true" />
           <span className="font-mono font-semibold">
             {route.canonicalGeometry.isCanvasCleared
@@ -2007,6 +2132,7 @@ export default function RouteMapCanvas({
             </span>
           )}
         </div>
+        {selectedMarkerOverlay}
       </div>
 
       {/* Explicit map attribution & fallback toggle footer */}

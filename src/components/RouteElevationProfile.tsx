@@ -1,5 +1,5 @@
 import { useMemo, useRef } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { Camera, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { GpxRoute } from '../lib/gpxRoute';
 import { locateAtChainage } from '../lib/routes/anchoring';
 import type { ProcessedRoute } from '../lib/routes/geometry';
@@ -16,6 +16,8 @@ interface RouteElevationProfileProps {
   markers?: RouteMarker[];
   selectedMarkerId?: string;
   onSelectMarker?: (marker: RouteMarker) => void;
+  onOpenMarkerPhotos?: (marker: RouteMarker) => void;
+  runnerLocationChainageM?: number;
   activePass?: number;
   overlapCandidates?: RouteAnchorCandidate[];
   onSelectPass?: (passNumber: number) => void;
@@ -41,6 +43,8 @@ export default function RouteElevationProfile({
   markers = [],
   selectedMarkerId,
   onSelectMarker,
+  onOpenMarkerPhotos,
+  runnerLocationChainageM,
   activePass = 1,
   overlapCandidates = [],
   onSelectPass,
@@ -193,6 +197,19 @@ export default function RouteElevationProfile({
         : `${prov.source.toUpperCase()} elevation · smoothed (${prov.algorithmVersion})`;
 
   const cursorX = chartData.xForChainage(activeChainageM);
+  const runnerX =
+    runnerLocationChainageM !== undefined && Number.isFinite(runnerLocationChainageM)
+      ? chartData.xForChainage(Math.max(0, Math.min(totalDistanceM, runnerLocationChainageM)))
+      : null;
+  const runnerPoint =
+    runnerLocationChainageM !== undefined && Number.isFinite(runnerLocationChainageM)
+      ? locateAtChainage(route, Math.max(0, Math.min(totalDistanceM, runnerLocationChainageM)), activePass)
+      : null;
+  const selectedMarker = orderedMarkers.find((m) => m.id === selectedMarkerId) || null;
+  const selectedMarkerElevation = selectedMarker
+    ? locateAtChainage(route, selectedMarker.chainageM, selectedMarker.passNumber).elevation
+    : undefined;
+  const selectedMarkerPhotoCount = selectedMarker?.photos?.length || 0;
 
   return (
     <section
@@ -365,16 +382,31 @@ export default function RouteElevationProfile({
                   ? chartData.yForEle(loc.elevation)
                   : PAD_TOP + PLOT_H / 2;
               const isSelected = marker.id === selectedMarkerId;
+              const hasPhotos = (marker.photos?.length || 0) > 0;
               return (
                 <g
                   key={marker.id}
-                  className="cursor-pointer"
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`${marker.name}, ${(marker.chainageM / 1000).toFixed(2)} km${hasPhotos ? `, ${marker.photos.length} snapshot${marker.photos.length > 1 ? 's' : ''}` : ''}`}
+                  className="cursor-pointer focus:outline-none"
                   onClick={(e) => {
                     e.stopPropagation();
                     onSelectMarker?.(marker);
                     emitChainage(marker.chainageM, marker.passNumber);
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onSelectMarker?.(marker);
+                      emitChainage(marker.chainageM, marker.passNumber);
+                    }
+                  }}
                 >
+                  <title>
+                    {`${marker.name} (${(marker.chainageM / 1000).toFixed(2)} km)${hasPhotos ? ` • ${marker.photos.length} snapshot(s)` : ''}`}
+                  </title>
                   <line
                     x1={mx}
                     x2={mx}
@@ -384,17 +416,52 @@ export default function RouteElevationProfile({
                     strokeOpacity={isSelected ? 0.65 : 0.25}
                     strokeDasharray={isSelected ? undefined : '2 2'}
                   />
+                  <circle cx={mx} cy={my} r={12} fill="transparent" />
                   <circle
                     cx={mx}
                     cy={my}
-                    r={isSelected ? 5.5 : 3.5}
+                    r={isSelected ? 6 : 4}
                     fill={isSelected ? '#dc2626' : 'var(--surface-card)'}
                     stroke="#dc2626"
                     strokeWidth="2"
                   />
+                  {hasPhotos && (
+                    <circle
+                      cx={mx + (isSelected ? 5 : 4)}
+                      cy={my - (isSelected ? 6 : 5)}
+                      r={3}
+                      fill="#f59e0b"
+                      stroke="#ffffff"
+                      strokeWidth="1.25"
+                    />
+                  )}
                 </g>
               );
             })}
+
+            {/* Live runner location projection on profile */}
+            {runnerX !== null && (
+              <g>
+                <line
+                  x1={runnerX}
+                  x2={runnerX}
+                  y1={PAD_TOP}
+                  y2={PAD_TOP + PLOT_H}
+                  stroke="#2563eb"
+                  strokeWidth="2"
+                />
+                {runnerPoint?.elevation !== undefined && (
+                  <circle
+                    cx={runnerX}
+                    cy={chartData.yForEle(runnerPoint.elevation)}
+                    r={5.5}
+                    fill="#2563eb"
+                    stroke="#ffffff"
+                    strokeWidth="2"
+                  />
+                )}
+              </g>
+            )}
 
             {/* Active synchronized cursor line */}
             <line
@@ -421,6 +488,33 @@ export default function RouteElevationProfile({
       ) : (
         <div className="mt-3 rounded-xl border border-dashed border-[var(--border-default)] bg-[var(--surface-inset)] px-4 py-5 text-center text-xs text-[var(--text-secondary)]">
           Elevation is unavailable for this file. Distance position along the map remains active.
+        </div>
+      )}
+
+      {selectedMarker && (
+        <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 py-2 text-xs">
+          <div className="min-w-0 flex flex-wrap items-center gap-2">
+            <span className="rounded-md bg-red-700/15 px-1.5 py-0.5 font-semibold capitalize text-red-700 dark:text-red-300">
+              {selectedMarker.kind}
+            </span>
+            <span className="font-semibold text-[var(--text-primary)] truncate">
+              {selectedMarker.name}
+            </span>
+            <span className="font-mono text-[var(--text-secondary)]">
+              {(selectedMarker.chainageM / 1000).toFixed(2)} km
+              {selectedMarkerElevation !== undefined ? ` · ${Math.round(selectedMarkerElevation)} m` : ''}
+            </span>
+          </div>
+          {selectedMarkerPhotoCount > 0 && onOpenMarkerPhotos && (
+            <button
+              type="button"
+              onClick={() => onOpenMarkerPhotos(selectedMarker)}
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-amber-500/50 bg-amber-500/10 px-2.5 font-semibold text-amber-800 hover:bg-amber-500/20 dark:text-amber-300"
+            >
+              <Camera className="h-3.5 w-3.5" aria-hidden="true" />
+              View {selectedMarkerPhotoCount} {selectedMarkerPhotoCount === 1 ? 'snapshot' : 'snapshots'}
+            </button>
+          )}
         </div>
       )}
 

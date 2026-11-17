@@ -2,6 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
+  computeRunnerLocationRelativeToRoute,
+  selectPublishedCourseForDistance,
+} from '../src/lib/routes/useRunnerGeolocation';
+import {
   exportSanitizedGpx,
   geodesicDistanceM,
   parseGpxRoute,
@@ -867,4 +871,109 @@ test('supports road, off-road dirt, grass, rocky surface analytics and per-race 
   const cebuPublished = getPublishedCoursesForRace(PILOT_CEBU_RACE.id);
   assert.equal(cebuPublished.length, 1);
   assert.equal(cebuPublished[0].distanceId, '21k');
+});
+
+test('15. Runner geolocation projection computes on-route status, off-course offset and next trailmark', () => {
+  const courseGeom = {
+    version: 1 as const,
+    sourceKind: 'gpx' as const,
+    segments: [
+      {
+        id: 'seg_geo',
+        name: 'Geo Test Trail',
+        sourceKind: 'gpx' as const,
+        points: [
+          { lat: 10.320, lon: 123.900, ele: 120 },
+          { lat: 10.325, lon: 123.900, ele: 180 },
+          { lat: 10.330, lon: 123.900, ele: 240 },
+          { lat: 10.335, lon: 123.900, ele: 310 },
+        ],
+      },
+    ],
+  };
+  const route = processCanonicalGeometry(courseGeom);
+  const startAidLoc = locateAtChainage(route, 400, 1);
+  const peakLoc = locateAtChainage(route, 1300, 1);
+
+  const markers = [
+    {
+      id: 'm_aid_1',
+      kind: 'water' as const,
+      name: 'First Water Stop',
+      description: 'Hydration',
+      latitude: startAidLoc.latitude,
+      longitude: startAidLoc.longitude,
+      chainageM: startAidLoc.chainageM,
+      segmentIndex: startAidLoc.segmentIndex,
+      pointIndex: startAidLoc.pointIndex,
+      passNumber: 1,
+      offsetMeters: 0,
+      needsReview: false,
+      offCourseBlocked: false,
+      offCourseConfirmed: false,
+      services: ['Water'],
+      photos: [],
+      visibility: 'public' as const,
+    },
+    {
+      id: 'm_peak_2',
+      kind: 'landmark' as const,
+      name: 'Ridge Overlook',
+      description: 'Summit landmark',
+      latitude: peakLoc.latitude,
+      longitude: peakLoc.longitude,
+      chainageM: peakLoc.chainageM,
+      segmentIndex: peakLoc.segmentIndex,
+      pointIndex: peakLoc.pointIndex,
+      passNumber: 1,
+      offsetMeters: 0,
+      needsReview: false,
+      offCourseBlocked: false,
+      offCourseConfirmed: false,
+      services: [],
+      photos: [],
+      visibility: 'public' as const,
+    },
+  ];
+
+  const onRouteSpot = locateAtChainage(route, 650, 1);
+  const nearProj = computeRunnerLocationRelativeToRoute(
+    route,
+    onRouteSpot.latitude + 0.0001,
+    onRouteSpot.longitude,
+    markers,
+    1,
+  );
+  assert.ok(nearProj);
+  assert.equal(nearProj.onCourse, true);
+  assert.ok(nearProj.offRouteMeters <= 30);
+  assert.equal(nearProj.nearestMarker?.id, 'm_aid_1');
+  assert.equal(nearProj.nextMarker?.id, 'm_peak_2');
+  assert.ok((nearProj.nextMarkerDistanceAlongM ?? 0) > 500);
+  assert.ok(nearProj.distanceRemainingM < route.distanceM);
+
+  const farProj = computeRunnerLocationRelativeToRoute(
+    route,
+    onRouteSpot.latitude,
+    onRouteSpot.longitude + 0.006,
+    markers,
+    1,
+  );
+  assert.ok(farProj);
+  assert.equal(farProj.onCourse, false);
+  assert.ok(farProj.offRouteMeters > 400);
+
+  assert.equal(
+    computeRunnerLocationRelativeToRoute(route, Number.NaN, 123.9, markers),
+    null,
+  );
+
+  const sampleCourses = [
+    { distanceId: '10k', distanceLabel: '10K', advertisedKm: 10 },
+    { distanceId: '21k', distanceLabel: '21K', advertisedKm: 21 },
+  ];
+  assert.equal(selectPublishedCourseForDistance(sampleCourses, '21 km')?.distanceId, '21k');
+  assert.equal(selectPublishedCourseForDistance(sampleCourses, '10k')?.distanceId, '10k');
+  assert.equal(selectPublishedCourseForDistance(sampleCourses, '42k')?.distanceId, '10k');
+  assert.equal(selectPublishedCourseForDistance([], '21k'), null);
 });

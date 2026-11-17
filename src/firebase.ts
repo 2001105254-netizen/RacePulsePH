@@ -20,6 +20,7 @@ import {
 } from 'firebase/auth';
 import { Capacitor } from '@capacitor/core';
 import { SocialLogin } from '@capgo/capacitor-social-login';
+import { initFirebaseAppCheck } from './lib/botProtection';
 
 // Configuration for the racepulseph Firebase project
 const firebaseConfig = {
@@ -32,6 +33,7 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
+initFirebaseAppCheck(app);
 
 // Initialize Firestore on the default database with multi-tab persistent cache
 export const db = typeof window !== 'undefined'

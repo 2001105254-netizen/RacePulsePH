@@ -16,6 +16,7 @@ import {
   Gauge,
   Globe,
   Layers,
+  LocateFixed,
   MapPin,
   Mountain,
   QrCode,
@@ -60,6 +61,10 @@ import {
   subscribePublishedCatalog,
 } from '../../lib/routes/routeStore';
 import { buildRaceCoursePath, type RoutePageMatch } from '../../lib/routes/routing';
+import {
+  computeRunnerLocationRelativeToRoute,
+  useRunnerGeolocation,
+} from '../../lib/routes/useRunnerGeolocation';
 import type {
   PublishedRaceRoute,
   RaceRouteCatalogEntry,
@@ -157,6 +162,8 @@ export default function RouteExplorerPage({
   const [offlineBusy, setOfflineBusy] = useState(false);
   const [offlineNotice, setOfflineNotice] = useState('');
 
+  const geo = useRunnerGeolocation();
+  const pendingFlyToUserRef = useRef(false);
   const shareTriggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -392,6 +399,46 @@ export default function RouteExplorerPage({
       race: activeRaceObj,
     });
   }, [activeRoute, activeMarkers, targetPaceMinPerKm, activeRaceObj]);
+
+  const locationProjection = useMemo(() => {
+    if (!activeRoute || !geo.position) return null;
+    return computeRunnerLocationRelativeToRoute(
+      activeRoute,
+      geo.position.lat,
+      geo.position.lon,
+      activeMarkers,
+      activePass,
+    );
+  }, [activeRoute, geo.position, activeMarkers, activePass]);
+
+  useEffect(() => {
+    if (!geo.position || !pendingFlyToUserRef.current) return;
+    pendingFlyToUserRef.current = false;
+    setFlyToTrigger({
+      lat: geo.position.lat,
+      lon: geo.position.lon,
+      zoom: 15,
+      nonce: Date.now() + Math.random(),
+    });
+  }, [geo.position]);
+
+  const handleLocateMe = useCallback(() => {
+    pendingFlyToUserRef.current = true;
+    geo.startTracking();
+  }, [geo]);
+
+  const handleCenterOnUser = useCallback(() => {
+    if (geo.position) {
+      setFlyToTrigger({
+        lat: geo.position.lat,
+        lon: geo.position.lon,
+        zoom: 15,
+        nonce: Date.now() + Math.random(),
+      });
+    } else {
+      handleLocateMe();
+    }
+  }, [geo.position, handleLocateMe]);
 
   const siblingDistances = useMemo(() => {
     const raceId = publication?.raceId || (match.kind === 'race-course' ? match.raceId : undefined);
@@ -1154,7 +1201,24 @@ export default function RouteExplorerPage({
                     </button>
                   ))}
                 </div>
-                <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Sentinel-2 imagery and Copernicus 3D controls">
+                <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Sentinel-2 imagery, Copernicus 3D and runner location controls">
+                  <button
+                    type="button"
+                    aria-pressed={geo.status === 'active'}
+                    onClick={geo.status === 'active' ? handleCenterOnUser : handleLocateMe}
+                    className={`inline-flex min-h-11 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition ${
+                      geo.status === 'active'
+                        ? 'border-sky-600 bg-sky-600 text-white'
+                        : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-sky-600/50'
+                    }`}
+                  >
+                    <LocateFixed className="h-4 w-4" aria-hidden="true" />
+                    {geo.status === 'locating'
+                      ? 'Locating...'
+                      : geo.status === 'active'
+                        ? 'Center on me'
+                        : 'My location'}
+                  </button>
                   <button
                     type="button"
                     aria-pressed={satelliteEnabled}
@@ -1267,6 +1331,94 @@ export default function RouteExplorerPage({
                 </div>
               </div>
 
+              {geo.status !== 'idle' && (
+                <div
+                  role={geo.error ? 'alert' : 'status'}
+                  aria-live="polite"
+                  className={`flex flex-wrap items-center justify-between gap-2 rounded-2xl border px-4 py-2.5 text-xs ${
+                    geo.error
+                      ? 'border-amber-500/50 bg-amber-500/10 text-[var(--text-primary)]'
+                      : 'border-sky-600/40 bg-sky-600/10 text-[var(--text-primary)]'
+                  }`}
+                >
+                  {geo.error ? (
+                    <>
+                      <span>{geo.error}</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleLocateMe}
+                          className="min-h-11 sm:min-h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-3 font-semibold"
+                        >
+                          Retry GPS
+                        </button>
+                        <button
+                          type="button"
+                          onClick={geo.stopTracking}
+                          className="min-h-11 sm:min-h-9 rounded-lg px-2 font-semibold text-[var(--text-secondary)]"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    </>
+                  ) : geo.status === 'locating' ? (
+                    <>
+                      <span>Requesting live runner GPS position...</span>
+                      <button
+                        type="button"
+                        onClick={geo.stopTracking}
+                        className="min-h-11 sm:min-h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-3 font-semibold"
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : locationProjection && geo.position ? (
+                    <>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                        <span className="inline-flex items-center gap-1.5 font-semibold text-sky-700 dark:text-sky-300">
+                          <span className="h-2.5 w-2.5 rounded-full bg-sky-600" aria-hidden="true" />
+                          {locationProjection.onCourse
+                            ? `On course (±${geo.position.accuracyM}m)`
+                            : `${Math.round(locationProjection.offRouteMeters)} m from route (±${geo.position.accuracyM}m)`}
+                        </span>
+                        <span className="font-mono text-[var(--text-secondary)]">
+                          Nearest {(locationProjection.chainageM / 1000).toFixed(2)} km
+                          {locationProjection.nearestElevationM !== undefined
+                            ? ` · ${Math.round(locationProjection.nearestElevationM)} m`
+                            : ''}
+                        </span>
+                        {locationProjection.nextMarker && (
+                          <span className="text-[var(--text-secondary)]">
+                            Next: <strong className="text-[var(--text-primary)]">{locationProjection.nextMarker.name}</strong>
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleSelectChainage(
+                              locationProjection.chainageM,
+                              locationProjection.passNumber,
+                            )
+                          }
+                          className="min-h-11 sm:min-h-9 rounded-lg border border-sky-600/40 bg-[var(--surface-card)] px-3 font-semibold text-sky-700 dark:text-sky-300"
+                        >
+                          Jump cursor here
+                        </button>
+                        <button
+                          type="button"
+                          onClick={geo.stopTracking}
+                          className="min-h-11 sm:min-h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-3 font-semibold text-[var(--text-secondary)]"
+                        >
+                          Stop GPS
+                        </button>
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              )}
+
               <RouteMapCanvas
                 route={activeRoute}
                 routeIdentityKey={publication?.id ?? legacyRace?.id}
@@ -1278,6 +1430,18 @@ export default function RouteExplorerPage({
                 activePass={activePass}
                 theme={theme}
                 colorMode={colorMode}
+                gpsLivePosition={
+                  geo.position
+                    ? {
+                        lat: geo.position.lat,
+                        lon: geo.position.lon,
+                        accuracyM: geo.position.accuracyM,
+                      }
+                    : null
+                }
+                locateStatus={geo.status}
+                onLocateMe={handleLocateMe}
+                onCenterOnUser={handleCenterOnUser}
                 imageryEnabled={satelliteEnabled}
                 onToggleImagery={setSatelliteEnabled}
                 is3DEnabled={terrain3DEnabled}
@@ -1302,6 +1466,12 @@ export default function RouteExplorerPage({
                 markers={activeMarkers}
                 selectedMarkerId={selectedMarkerId}
                 onSelectMarker={handleSelectMarker}
+                onOpenMarkerPhotos={(marker) => {
+                  handleSelectMarker(marker);
+                  setPhotoModalMarker(marker);
+                  setPhotoModalIndex(0);
+                }}
+                runnerLocationChainageM={locationProjection?.chainageM}
                 activePass={activePass}
                 overlapCandidates={overlapCandidates}
                 onSelectPass={(passNum) => {

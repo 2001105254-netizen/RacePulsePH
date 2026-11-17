@@ -1,5 +1,7 @@
 import { collection, doc, getDoc, getDocs, onSnapshot, query, setDoc, where } from 'firebase/firestore';
 import { auth, db } from '../../firebase';
+import { getAppCheckHeaders } from '../botProtection';
+import { parseRetryAfterSeconds } from '../resilientFetch';
 import type { Race } from '../../types';
 import { fetchGpxText, parseGpxRoute } from '../gpxRoute';
 import { deriveDefaultChapters, evaluateMarkerOffset, reanchorMarkersForRoute } from './anchoring';
@@ -1301,14 +1303,47 @@ export function subscribeRacePublishedCourses(
   let active = true;
   let localCourses: PublishedRaceRoute[] = getPublishedCoursesForRace(raceId);
   let remoteCatalogEntries: RaceRouteCatalogEntry[] = [];
+  let remoteBindings: RaceRouteBinding[] = [];
   const remotePublications = new Map<string, PublishedRaceRoute>();
   const inFlightPubIds = new Set<string>();
+
+  const queueFetchPublication = (pubId: string) => {
+    if (!pubId || remotePublications.has(pubId) || inFlightPubIds.has(pubId)) return;
+    const localPub = getRouteStoreSnapshot().publications[pubId];
+    if (localPub && localPub.status === 'published') {
+      remotePublications.set(pubId, localPub);
+      return;
+    }
+    inFlightPubIds.add(pubId);
+    void getDoc(doc(db, 'publishedRaceRoutes', toValidFirestoreId(pubId, 'pub')))
+      .then((pubSnap) => {
+        if (!active) return;
+        if (pubSnap.exists()) {
+          const pub = { ...(pubSnap.data() as PublishedRaceRoute), id: pubSnap.id };
+          if (pub.status === 'published') {
+            remotePublications.set(pubId, pub);
+            emit();
+          }
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        inFlightPubIds.delete(pubId);
+      });
+  };
 
   const emit = () => {
     if (!active) return;
     const byDistance = new Map<string, PublishedRaceRoute>();
     for (const c of localCourses) {
       if (c.status === 'published') byDistance.set(c.distanceId, c);
+    }
+    for (const binding of remoteBindings) {
+      if (binding.raceId !== raceId || !binding.currentPublicationId) continue;
+      const pub = remotePublications.get(binding.currentPublicationId);
+      if (pub && pub.status === 'published') {
+        byDistance.set(pub.distanceId, pub);
+      }
     }
     for (const entry of remoteCatalogEntries) {
       if (entry.raceId !== raceId || entry.status !== 'published') continue;
@@ -1348,34 +1383,15 @@ export function subscribeRacePublishedCourses(
     emit();
   });
 
-  const unsubRemote = onSnapshot(
-    query(collection(db, 'raceRouteCatalog'), where('raceId', '==', raceId), where('status', '==', 'published')),
+  // Query by raceId alone so Firestore never requires a composite index for runner discovery.
+  const unsubRemoteCatalog = onSnapshot(
+    query(collection(db, 'raceRouteCatalog'), where('raceId', '==', raceId)),
     (snap) => {
-      remoteCatalogEntries = snap.docs.map((d) => ({ ...(d.data() as RaceRouteCatalogEntry), id: d.id }));
+      remoteCatalogEntries = snap.docs
+        .map((d) => ({ ...(d.data() as RaceRouteCatalogEntry), id: d.id }))
+        .filter((entry) => entry.status === 'published');
       for (const entry of remoteCatalogEntries) {
-        const pubId = entry.currentPublicationId;
-        if (!pubId || remotePublications.has(pubId) || inFlightPubIds.has(pubId)) continue;
-        const localPub = getRouteStoreSnapshot().publications[pubId];
-        if (localPub && localPub.status === 'published') {
-          remotePublications.set(pubId, localPub);
-          continue;
-        }
-        inFlightPubIds.add(pubId);
-        void getDoc(doc(db, 'publishedRaceRoutes', toValidFirestoreId(pubId, 'pub')))
-          .then((pubSnap) => {
-            if (!active) return;
-            if (pubSnap.exists()) {
-              const pub = { ...(pubSnap.data() as PublishedRaceRoute), id: pubSnap.id };
-              if (pub.status === 'published') {
-                remotePublications.set(pubId, pub);
-                emit();
-              }
-            }
-          })
-          .catch(() => {})
-          .finally(() => {
-            inFlightPubIds.delete(pubId);
-          });
+        queueFetchPublication(entry.currentPublicationId);
       }
       emit();
     },
@@ -1384,10 +1400,25 @@ export function subscribeRacePublishedCourses(
     },
   );
 
+  const unsubRemoteBindings = onSnapshot(
+    collection(db, 'races', raceId, 'routeBindings'),
+    (snap) => {
+      remoteBindings = snap.docs.map((d) => ({ ...(d.data() as RaceRouteBinding), distanceId: (d.data() as RaceRouteBinding).distanceId || d.id }));
+      for (const binding of remoteBindings) {
+        queueFetchPublication(binding.currentPublicationId);
+      }
+      emit();
+    },
+    () => {
+      // Keep local/catalog fallback when subcollection is unreadable offline
+    },
+  );
+
   return () => {
     active = false;
     unsubLocal();
-    unsubRemote();
+    unsubRemoteCatalog();
+    unsubRemoteBindings();
   };
 }
 
@@ -1426,6 +1457,22 @@ export function subscribePublishedCatalog(
   };
 }
 
+function withFirestoreTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('firestore-read-timeout')), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
 export async function loadPublishedCourse(
   raceId: string,
   distanceId: string,
@@ -1441,15 +1488,38 @@ export async function loadPublishedCourse(
   const store = getRouteStoreSnapshot();
   const bindingKey = `${raceId}_${distanceId}`;
   let currentPubId = store.bindings[bindingKey]?.currentPublicationId || store.catalog[bindingKey]?.currentPublicationId;
+  const hasLocalBinding = Boolean(currentPubId && store.publications[currentPubId]);
+  const readBudgetMs = hasLocalBinding ? 1200 : 4000;
 
   try {
-    const bindingSnap = await getDoc(doc(db, 'races', raceId, 'routeBindings', toValidFirestoreId(distanceId, 'dist')));
+    const bindingSnap = await withFirestoreTimeout(
+      getDoc(doc(db, 'races', raceId, 'routeBindings', toValidFirestoreId(distanceId, 'dist'))),
+      readBudgetMs,
+    );
     if (bindingSnap.exists()) {
       const data = bindingSnap.data() as RaceRouteBinding;
       if (data.currentPublicationId) currentPubId = data.currentPublicationId;
     }
+    if (!currentPubId && !requestedPublicationId) {
+      const catSnap = await withFirestoreTimeout(
+        getDocs(query(collection(db, 'raceRouteCatalog'), where('raceId', '==', raceId))),
+        readBudgetMs,
+      );
+      const normalizedDist = distanceId.trim().toLowerCase();
+      for (const docSnap of catSnap.docs) {
+        const entry = docSnap.data() as RaceRouteCatalogEntry;
+        if (entry.status !== 'published' || !entry.currentPublicationId) continue;
+        if (
+          entry.distanceId.toLowerCase() === normalizedDist ||
+          entry.distanceLabel.toLowerCase() === normalizedDist
+        ) {
+          currentPubId = entry.currentPublicationId;
+          break;
+        }
+      }
+    }
   } catch {
-    // Fallback to local store
+    // Fallback cleanly to local/seeded store
   }
 
   const targetPubId = requestedPublicationId || currentPubId;
@@ -1459,7 +1529,10 @@ export async function loadPublishedCourse(
 
   let publication = store.publications[targetPubId] || null;
   try {
-    const pubSnap = await getDoc(doc(db, 'publishedRaceRoutes', toValidFirestoreId(targetPubId, 'pub')));
+    const pubSnap = await withFirestoreTimeout(
+      getDoc(doc(db, 'publishedRaceRoutes', toValidFirestoreId(targetPubId, 'pub'))),
+      publication ? 1200 : 4000,
+    );
     if (pubSnap.exists()) {
       publication = { ...(pubSnap.data() as PublishedRaceRoute), id: pubSnap.id };
     }
@@ -1621,17 +1694,26 @@ async function tryRemoteCommand(path: string, payload: Record<string, unknown>):
   const apiUrl = resolveRemoteRouteApiUrl();
   const user = auth.currentUser;
   if (!apiUrl || !user) return;
-  const token = await user.getIdToken();
+  const [token, appCheckHeaders] = await Promise.all([
+    user.getIdToken(),
+    getAppCheckHeaders(),
+  ]);
   const res = await fetch(`${apiUrl}${path}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...appCheckHeaders,
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
+    const retryAfter = parseRetryAfterSeconds(res, err);
+    if (res.status === 429 && retryAfter > 0) {
+      throw new Error(err.error || `Too many route updates. Please wait ${retryAfter}s.`);
+    }
     throw new Error(err.error || 'Remote route command failed.');
   }
 }

@@ -5,6 +5,16 @@ const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret, defineString } = require('firebase-functions/params');
 const { createAccountSecurity, AccountError } = require('./account-security');
 const { accountMessage } = require('./account-email');
+const { searchRunnerDirectory } = require('./friend-search');
+const {
+  applyApiSecurityHeaders,
+  assertHumanFormSignals,
+  enforceRateLimit,
+  extractClientIp,
+  GuardError,
+  verifyAppCheckRequest,
+  verifyTurnstileRequest,
+} = require('./request-guard');
 
 const smtpPassword = defineSecret('SMTP_APP_PASSWORD');
 const codeSecret = defineSecret('AUTH_CODE_SECRET');
@@ -189,33 +199,29 @@ exports.accountApi = onRequest({
   secrets: [smtpPassword, codeSecret],
   cors: ['https://racepulseph.com', 'https://www.racepulseph.com', 'https://racepulseph.web.app', 'https://racepulseph.firebaseapp.com', 'http://localhost', 'https://localhost', 'capacitor://localhost', 'http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:3000', 'http://127.0.0.1:5173'],
   maxInstances: 10,
+  concurrency: 80,
+  timeoutSeconds: 60,
 }, async (request, response) => {
-  response.set('Cache-Control', 'no-store');
+  applyApiSecurityHeaders(response);
+  response.set('Access-Control-Expose-Headers', 'Retry-After');
   const route = (request.path || '/').replace(/\/+$/, '');
   const db = admin.firestore();
   const auth = admin.auth();
   const secret = codeSecret.value();
+  const clientIp = extractClientIp(request);
 
-async function enforceUnsubscribeIpLimit(db, secret, ip) {
-  const normalizedIp = String(ip || 'unknown').trim().slice(0, 128);
-  const ipHash = crypto.createHmac('sha256', secret).update(`unsub_ip:${normalizedIp}`).digest('hex');
-  const ref = db.doc(`accountRateLimits/unsub_${ipHash}`);
-  const hourMs = 3600 * 1000;
-  await db.runTransaction(async (transaction) => {
-    const nowMs = Date.now();
-    const snap = await transaction.get(ref);
-    const prev = snap.exists ? snap.data() : {};
-    const inWindow = typeof prev.windowStart === 'number' && nowMs - prev.windowStart < hourMs;
-    if (inWindow && (prev.count || 0) >= 30) {
-      throw new AccountError(429, 'Too many requests. Please try again later.', 3600);
-    }
-    transaction.set(ref, {
-      windowStart: inWindow ? prev.windowStart : nowMs,
-      count: inWindow ? (prev.count || 0) + 1 : 1,
-      expiresAt: new Date(nowMs + hourMs),
+  async function enforceUnsubscribeIpLimit(ip) {
+    await enforceRateLimit({
+      db,
+      secret,
+      namespace: 'unsub',
+      identifier: ip,
+      limit: 30,
+      windowMs: 3600 * 1000,
+      message: 'Too many requests. Please try again later.',
+      penaltyMultiplier: 1.5,
     });
-  });
-}
+  }
 
   try {
     // Unauthenticated RFC 8058 one-click unsubscribe GET or POST handler.
@@ -223,7 +229,7 @@ async function enforceUnsubscribeIpLimit(db, secret, ip) {
       if (request.method === 'POST' && (!request.is('application/json') || (request.rawBody?.length || 0) > 8192 || !request.body || typeof request.body !== 'object' || Array.isArray(request.body))) {
         throw new AccountError(400, 'Invalid unsubscribe request.');
       }
-      await enforceUnsubscribeIpLimit(db, secret, request.ip);
+      await enforceUnsubscribeIpLimit(clientIp);
       const tokenParam = request.method === 'GET' ? request.query?.token : request.body?.token;
       const emailParam = request.method === 'GET' ? request.query?.email : request.body?.email;
       const optIn = request.method === 'POST' && request.body?.marketingOptIn === true;
@@ -268,6 +274,7 @@ async function enforceUnsubscribeIpLimit(db, secret, ip) {
     if (!request.is('application/json') || (request.rawBody?.length || 0) > 8192 || !request.body || typeof request.body !== 'object' || Array.isArray(request.body)) {
       return response.status(400).json({ error: 'Invalid account request.' });
     }
+    await verifyAppCheckRequest(request, { admin });
 
     if (route === '/account/delete') {
       const token = request.get('Authorization')?.match(/^Bearer (.+)$/)?.[1];
@@ -278,6 +285,15 @@ async function enforceUnsubscribeIpLimit(db, secret, ip) {
       } catch {
         throw new AccountError(401, 'Your session has expired. Please sign in again.');
       }
+      await enforceRateLimit({
+        db,
+        secret,
+        namespace: 'acct_del',
+        identifier: decoded.uid,
+        limit: 5,
+        windowMs: 3600 * 1000,
+        message: 'Too many account deletion attempts. Please try again later.',
+      });
       if (String(request.body?.confirmation || '').trim().toUpperCase() !== 'DELETE') {
         throw new AccountError(400, 'Confirmation keyword DELETE is required.');
       }
@@ -294,11 +310,43 @@ async function enforceUnsubscribeIpLimit(db, secret, ip) {
       } catch {
         throw new AccountError(401, 'Your session has expired. Please sign in again.');
       }
+      await enforceRateLimit({
+        db,
+        secret,
+        namespace: 'acct_pref',
+        identifier: decoded.uid,
+        limit: 20,
+        windowMs: 15 * 60 * 1000,
+        message: 'Too many preference updates. Please wait a moment.',
+      });
       const userRecord = await auth.getUser(decoded.uid);
       if (!userRecord.email) throw new AccountError(400, 'Account has no email address.');
       const nextOptIn = Boolean(request.body?.marketingOptIn);
       await applyMarketingPreference({ db, secret, email: userRecord.email, marketingOptIn: nextOptIn });
       return response.json({ updated: true, marketingOptIn: nextOptIn });
+    }
+
+    if (route === '/friends/search') {
+      const token = request.get('Authorization')?.match(/^Bearer (.+)$/)?.[1];
+      if (!token) throw new AccountError(401, 'Please sign in to search runners.');
+      let decoded;
+      try {
+        decoded = await auth.verifyIdToken(token, true);
+      } catch {
+        throw new AccountError(401, 'Your session has expired. Please sign in again.');
+      }
+      const outcome = await searchRunnerDirectory({
+        db,
+        secret,
+        callerUid: decoded.uid,
+        rawQuery: request.body?.query,
+      });
+      return response.json(outcome);
+    }
+
+    assertHumanFormSignals(request.body);
+    if (route === '/password/request') {
+      await verifyTurnstileRequest(request, { expectedAction: 'password_reset' });
     }
 
     const service = createAccountSecurity({
@@ -315,7 +363,7 @@ async function enforceUnsubscribeIpLimit(db, secret, ip) {
         await transporter.sendMail(accountMessage({ sender: smtpUser.value(), email, purpose, name, code, unsubscribeUrl }));
       },
     });
-    const input = { ...request.body, ip: request.ip, uid: undefined };
+    const input = { ...request.body, ip: clientIp, uid: undefined };
     if (route.startsWith('/verification/')) {
       const token = request.get('Authorization')?.match(/^Bearer (.+)$/)?.[1];
       if (!token) throw new AccountError(401, 'Please sign in again to verify your email.');
@@ -332,7 +380,7 @@ async function enforceUnsubscribeIpLimit(db, secret, ip) {
     else return response.status(404).json({ error: 'Account route not found.' });
     return response.json(result);
   } catch (error) {
-    if (error instanceof AccountError) {
+    if (error instanceof AccountError || error instanceof GuardError) {
       if (error.retryAfter) response.set('Retry-After', String(error.retryAfter));
       return response.status(error.status).json({ error: error.message, ...(error.retryAfter ? { retryAfter: error.retryAfter } : {}) });
     }

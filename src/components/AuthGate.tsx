@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { doc, getDoc, runTransaction } from 'firebase/firestore';
 import { AnimatePresence, m } from 'motion/react';
 import { directionalTabVariants, type NavDirection } from './ui/MotionPrimitives';
 import { db, signUpWithEmail, signInWithEmail, signInWithGoogle, signOutUser } from '../firebase';
 import { clearSignupDraft, getSignupDraft, saveSignupDraft } from '../lib/accountSecurity';
+import { createActionCooldownStore } from '../lib/resilientFetch';
 import { PasswordResetFlow } from './AccountSecurity';
 import { isSuperAdminEmail } from '../lib/superAdmin';
 import type { LegalDocKey } from '../lib/legalConfig';
@@ -28,6 +29,7 @@ type FieldKey = 'loginEmail' | 'loginPassword' | 'signupName' | 'signupUsername'
 
 const USERNAME_PATTERN = /^[a-z0-9][a-z0-9_.-]{2,23}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const authCooldown = createActionCooldownStore('racepulse_auth_cd');
 
 const accentText = 'text-red-700 dark:text-red-400';
 const labelClass = 'block text-xs font-semibold text-[var(--text-secondary)] mb-2';
@@ -206,12 +208,25 @@ export default function AuthGate({
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [resettingPassword, setResettingPassword] = useState(false);
+  const [honeypot, setHoneypot] = useState('');
+  const [cooldownSeconds, setCooldownSeconds] = useState(() => authCooldown.getRemainingSeconds('auth'));
+  const submitLockRef = useRef(false);
+  const mountedAtRef = useRef(Date.now());
+
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return;
+    const timer = window.setInterval(() => {
+      setCooldownSeconds(authCooldown.getRemainingSeconds('auth'));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [cooldownSeconds]);
 
   useEffect(() => {
     setMode(initialMode);
     setError('');
     setNotice('');
     setTouched({});
+    mountedAtRef.current = Date.now();
   }, [initialMode]);
 
   const markTouched = (field: FieldKey) => {
@@ -251,6 +266,17 @@ export default function AuthGate({
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitLockRef.current) return;
+    if (honeypot.trim() !== '') {
+      triggerFormError('Could not sign in right now. Please refresh and try again.');
+      return;
+    }
+    const waitLeft = authCooldown.getRemainingSeconds('auth');
+    if (waitLeft > 0) {
+      setCooldownSeconds(waitLeft);
+      triggerFormError(`Too many sign-in attempts. Please wait ${waitLeft}s before trying again.`);
+      return;
+    }
     setTouched((prev) => ({ ...prev, loginEmail: true, loginPassword: true }));
     setError('');
     setNotice('');
@@ -258,13 +284,25 @@ export default function AuthGate({
       triggerFormError('Enter your email or username and password.');
       return;
     }
+    submitLockRef.current = true;
     setSubmitting(true);
     try {
       const accountEmail = await resolveLoginEmail(email);
       await signInWithEmail(accountEmail, password);
+      authCooldown.clear('auth');
+      setCooldownSeconds(0);
     } catch (err: any) {
+      const code = typeof err?.code === 'string' ? err.code : '';
+      if (code === 'auth/too-many-requests') {
+        authCooldown.start('auth', 60);
+        setCooldownSeconds(60);
+      } else {
+        const penalty = authCooldown.recordFailure('auth', { threshold: 5, baseWaitSec: 15, maxWaitSec: 180 });
+        if (penalty > 0) setCooldownSeconds(penalty);
+      }
       triggerFormError(err.message?.replace('Firebase: ', '') || 'Failed to sign in.');
     } finally {
+      submitLockRef.current = false;
       setSubmitting(false);
     }
   };
@@ -278,6 +316,17 @@ export default function AuthGate({
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitLockRef.current) return;
+    if (honeypot.trim() !== '' || Date.now() - mountedAtRef.current < 400) {
+      triggerFormError('Could not process account creation right now. Please try again.');
+      return;
+    }
+    const waitLeft = authCooldown.getRemainingSeconds('auth');
+    if (waitLeft > 0) {
+      setCooldownSeconds(waitLeft);
+      triggerFormError(`Too many attempts. Please wait ${waitLeft}s before trying again.`);
+      return;
+    }
     setTouched({
       signupName: true,
       signupUsername: true,
@@ -319,6 +368,7 @@ export default function AuthGate({
     }
 
     const termsAcceptedAt = new Date().toISOString();
+    submitLockRef.current = true;
     setSubmitting(true);
     try {
       saveSignupDraft(email, {
@@ -330,10 +380,21 @@ export default function AuthGate({
         marketingOptIn,
       });
       await signUpWithEmail(email, password, displayName);
+      authCooldown.clear('auth');
+      setCooldownSeconds(0);
       setPassword('');
     } catch (err: any) {
+      const code = typeof err?.code === 'string' ? err.code : '';
+      if (code === 'auth/too-many-requests') {
+        authCooldown.start('auth', 60);
+        setCooldownSeconds(60);
+      } else {
+        const penalty = authCooldown.recordFailure('auth', { threshold: 5, baseWaitSec: 15, maxWaitSec: 180 });
+        if (penalty > 0) setCooldownSeconds(penalty);
+      }
       triggerFormError(err.message?.replace('Firebase: ', '') || 'Failed to create account.');
     } finally {
+      submitLockRef.current = false;
       setSubmitting(false);
     }
   };
@@ -547,6 +608,21 @@ export default function AuthGate({
                   )}
                 </div>
 
+                <div
+                  aria-hidden="true"
+                  style={{ position: 'absolute', left: '-9999px', width: '1px', height: '1px', overflow: 'hidden', opacity: 0, pointerEvents: 'none' }}
+                >
+                  <label htmlFor="auth-website-hp">Leave blank</label>
+                  <input
+                    id="auth-website-hp"
+                    type="text"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    value={honeypot}
+                    onChange={(e) => setHoneypot(e.target.value)}
+                  />
+                </div>
+
                 {errorMessage}
                 {notice && (
                   <p className="text-xs font-semibold flex items-start gap-2 text-emerald-700 dark:text-emerald-300" role="status">
@@ -554,11 +630,13 @@ export default function AuthGate({
                   </p>
                 )}
 
-                <button type="submit" disabled={submitting} className={primaryButton(submitting)}>
+                <button type="submit" disabled={submitting || cooldownSeconds > 0} className={primaryButton(submitting || cooldownSeconds > 0)}>
                   {submitting ? (
                     <>
                       <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> Signing in...
                     </>
+                  ) : cooldownSeconds > 0 ? (
+                    `Wait ${cooldownSeconds}s`
                   ) : (
                     'Sign in'
                   )}
@@ -734,13 +812,15 @@ export default function AuthGate({
 
                 <button
                   type="submit"
-                  disabled={submitting || ageStatus === 'under_13'}
-                  className={primaryButton(submitting || ageStatus === 'under_13')}
+                  disabled={submitting || cooldownSeconds > 0 || ageStatus === 'under_13'}
+                  className={primaryButton(submitting || cooldownSeconds > 0 || ageStatus === 'under_13')}
                 >
                   {submitting ? (
                     <>
                       <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> Sending code...
                     </>
+                  ) : cooldownSeconds > 0 ? (
+                    `Wait ${cooldownSeconds}s`
                   ) : (
                     <>
                       <ShieldCheck className="w-4 h-4 shrink-0" aria-hidden="true" /> Continue to verify email

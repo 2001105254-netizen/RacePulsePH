@@ -953,7 +953,6 @@ export default function RunnerDashboard({
             dismissOnBackdropClick
             titleId="runner-alerts-sheet-title"
             onRequestClose={() => setAlertsOpen(false)}
-            className="bg-[var(--surface-card)] p-0"
           >
             <RunnerRemindersPanel
               titleId="runner-alerts-sheet-title"
@@ -1002,7 +1001,7 @@ export default function RunnerDashboard({
           onRequestClose={() => {
             if (!claimingBib) setPendingBibClaim(null);
           }}
-          className="bg-[var(--surface-card)] p-4 sm:p-6 space-y-4"
+          bodyClassName="p-4 sm:p-6 space-y-4"
         >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">

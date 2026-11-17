@@ -1,4 +1,5 @@
 const crypto = require('node:crypto');
+const { enforceRateLimit, GuardError, normalizeIpBucket } = require('./request-guard');
 
 const CODE_TTL = 10 * 60 * 1000;
 const COOLDOWN = 60 * 1000;
@@ -24,20 +25,31 @@ function createAccountSecurity({ db, auth, sendCode, secret, now = Date.now }) {
   const hash = (value) => crypto.createHmac('sha256', secret).update(value).digest('hex');
   const challengeRef = (purpose, email) => db.doc(`accountChallenges/${hash(`${purpose}:${email}`)}`);
 
-  async function rateLimit(ip) {
-    const ref = db.doc(`accountRateLimits/${hash(`ip:${ip || 'unknown'}`)}`);
-    await db.runTransaction(async (transaction) => {
-      const snapshot = await transaction.get(ref);
-      const previous = snapshot.exists ? snapshot.data() : {};
-      const inWindow = now() - previous.windowStart < HOUR;
-      if (inWindow && previous.count >= 60) throw new AccountError(429, 'Too many attempts. Please try again later.', 3600);
-      transaction.set(ref, { windowStart: inWindow ? previous.windowStart : now(), count: inWindow ? previous.count + 1 : 1, expiresAt: new Date(now() + HOUR) });
-    });
+  async function rateLimit(ip, namespace = 'ip', limit = 60, message = 'Too many attempts. Please try again later.') {
+    try {
+      await enforceRateLimit({
+        db,
+        secret,
+        namespace,
+        identifier: normalizeIpBucket(ip || 'unknown'),
+        limit,
+        windowMs: HOUR,
+        message,
+        penaltyMultiplier: 1.5,
+        now,
+      });
+    } catch (error) {
+      if (error instanceof GuardError) {
+        throw new AccountError(error.status, error.message, error.retryAfter);
+      }
+      throw error;
+    }
   }
 
   async function requestCode({ purpose, email: inputEmail, uid, ip, name }) {
     const startedAt = now();
     await rateLimit(ip);
+    await rateLimit(ip, 'send_ip', 15, 'Too many code requests from this network. Please try again later.');
     let user;
     let email;
     if (purpose === 'verify') {

@@ -911,11 +911,12 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
     <DialogSurface
       variant="sheet"
       dismissOnBackdropClick
+      maxWidthCss="56rem"
+      scrollableBody={false}
       titleId={`${dialogId}-title`}
       descriptionId={`${dialogId}-desc`}
       onRequestClose={onClose}
       initialFocusRef={closeRef}
-      className="sm:inset-0 sm:m-auto h-fit w-full sm:w-[calc(100%-2rem)] max-w-4xl max-h-[92dvh] overflow-y-auto rounded-t-[20px] sm:rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] p-0 relative"
     >
       {/* Hidden quick inputs for header avatar & cover banner */}
       <input
@@ -940,11 +941,12 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
         type="button"
         onClick={onClose}
         aria-label="Close profile and account settings"
-        className="absolute top-3 right-3 z-20 min-h-11 min-w-11 rounded-full bg-[var(--surface-inset)] sm:bg-black/55 hover:bg-[var(--surface-hover)] sm:hover:bg-black/75 border border-[var(--border-default)] sm:border-white/25 text-[var(--text-primary)] sm:text-white flex items-center justify-center transition-colors sm:backdrop-blur-sm"
+        className="absolute top-1 right-3 sm:top-3 sm:right-3 z-20 min-h-11 min-w-11 rounded-full bg-[var(--surface-inset)] sm:bg-black/55 hover:bg-[var(--surface-hover)] sm:hover:bg-black/75 border border-[var(--border-default)] sm:border-white/25 text-[var(--text-primary)] sm:text-white flex items-center justify-center transition-colors sm:backdrop-blur-sm"
       >
         <X className="w-5 h-5" aria-hidden="true" />
       </button>
 
+      <div className="min-h-0 flex-auto overflow-y-auto overscroll-y-contain">
       {/* Cover banner (tablet/desktop >= 640px only; hidden on compact mobile sheet so content leads) */}
       <div className={`hidden sm:block relative h-48 w-full overflow-hidden rounded-t-2xl ${coverPreview ? 'bg-black' : activeCoverClass}`}>
         {coverPreview ? (
@@ -1031,9 +1033,9 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
 
       {/* Avatar & Identity Header */}
       <div className="px-3 sm:px-6 pb-3 sm:pb-4 border-b border-[var(--border-subtle)]">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 sm:gap-4 pr-12 sm:pr-0">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 sm:gap-4 pr-14 sm:pr-0">
           <div className="flex items-center sm:items-end gap-3 sm:gap-4 min-w-0">
-            <div className={`relative ${showCoverPicker ? 'mt-3' : 'mt-3 sm:-mt-16'} w-16 h-16 sm:w-28 sm:h-28 shrink-0 self-start transition-[margin] duration-150`}>
+            <div className={`relative ${showCoverPicker ? 'mt-3' : 'mt-3 sm:-mt-16'} w-20 h-20 sm:w-28 sm:h-28 shrink-0 self-start transition-[margin] duration-150`}>
               <div className="w-full h-full rounded-full overflow-hidden bg-red-700 text-white ring-4 ring-[var(--surface-card)] flex items-center justify-center font-display font-semibold text-2xl sm:text-4xl">
                 {photoPreview ? (
                   <img src={photoPreview} alt="" aria-hidden="true" className="w-full h-full object-cover" />
@@ -1047,7 +1049,7 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
                 disabled={processingMedia}
                 aria-label="Change profile picture"
                 title="Change profile picture"
-                className="absolute -bottom-1 -right-1 min-h-11 min-w-11 rounded-full bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] border border-[var(--border-default)] text-[var(--text-primary)] flex items-center justify-center transition-colors"
+                className="absolute -bottom-1.5 -right-1.5 min-h-11 min-w-11 rounded-full bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] border border-[var(--border-default)] text-[var(--text-primary)] flex items-center justify-center transition-colors"
               >
                 <Camera className="w-4 h-4" aria-hidden="true" />
               </button>
@@ -1869,6 +1871,7 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
             </div>
           </div>
         )}
+      </div>
       </div>
     </DialogSurface>
   );

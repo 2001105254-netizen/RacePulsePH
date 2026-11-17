@@ -25,6 +25,7 @@ import { embeddableMapUrl, safeExternalUrl, youtubeEmbedUrl } from '../lib/liveB
 import { formatClockTime, formatDateTime, formatRaceTime } from '../lib/preciseTime';
 import { SAFE_IFRAME_SANDBOX } from '../lib/security';
 import { runnerDivisionLabel } from '../lib/raceEntry';
+import { buildPublicRaceStats } from '../lib/publicLandingStats';
 import { computeResults, getCheckpointByType } from '../lib/timing';
 import { useWorkspaceHeader } from '../lib/workspaceHeader';
 import {
@@ -485,6 +486,13 @@ export default function LiveBroadcastPanel({ uid: _uid, launchRequest }: LiveBro
           totalFinished: finishedCount,
           leaders: canPublishBoard ? leaders : [],
           officialResults: canPublishBoard ? officialResults : [],
+          publicStats: buildPublicRaceStats({
+            race: activeRace,
+            raceRunners: runnerProfiles,
+            chipReads,
+            completed: Boolean(activeRace.completedAt),
+            canPublishTiming: canPublishBoard,
+          }),
         };
         await setDoc(doc(db, 'liveResults', activeRace.id), summary);
         if (!quiet) {

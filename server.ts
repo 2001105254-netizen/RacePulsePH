@@ -3,8 +3,9 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import crypto from 'crypto';
+import zlib from 'zlib';
 import * as lanPolicy from './functions/lan-policy.js';
-import { createServer as createViteServer } from "vite";
+import * as requestGuard from './functions/request-guard.js';
 
 interface EngravingOrder {
   id: string;
@@ -208,7 +209,15 @@ function pruneRfidEvents(): void {
   // Retain every event within the recovery window, including large bursts.
 }
 
-function saveRfidEventsDB(): void {
+let rfidEventsFlushTimer: NodeJS.Timeout | null = null;
+let rfidEventsDirty = false;
+
+function saveRfidEventsDBNow(): void {
+  if (rfidEventsFlushTimer) {
+    clearTimeout(rfidEventsFlushTimer);
+    rfidEventsFlushTimer = null;
+  }
+  rfidEventsDirty = false;
   try {
     pruneRfidEvents();
     writeJsonAtomic(RFID_EVENTS_DB_FILE, rfidEvents);
@@ -217,10 +226,83 @@ function saveRfidEventsDB(): void {
   }
 }
 
+function saveRfidEventsDB(): void {
+  rfidEventsDirty = true;
+  if (rfidEventsFlushTimer) return;
+  rfidEventsFlushTimer = setTimeout(() => {
+    rfidEventsFlushTimer = null;
+    if (rfidEventsDirty) {
+      saveRfidEventsDBNow();
+    }
+  }, 120);
+  rfidEventsFlushTimer.unref?.();
+}
+
+const SESSION_CACHE_TTL_MS = Math.max(0, Number(process.env.RACEPULSE_SESSION_CACHE_MS ?? 5000) || 0);
+const sessionCache = new Map<string, { expiresAt: number; session: Record<string, unknown> }>();
+const sessionInFlight = new Map<string, Promise<{ status: number; ok: boolean; session?: Record<string, unknown> }>>();
+
+async function resolveAccessSession(endpoint: string, bearer: string, scanningRaceId?: string) {
+  const key = crypto
+    .createHash('sha256')
+    .update(`${bearer}|${scanningRaceId || ''}`)
+    .digest('hex');
+
+  if (SESSION_CACHE_TTL_MS > 0) {
+    const cached = sessionCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) {
+      return { status: 200, ok: true, session: cached.session };
+    }
+    if (cached) sessionCache.delete(key);
+  }
+
+  const existingFlight = sessionInFlight.get(key);
+  if (existingFlight) return existingFlight;
+
+  const promise = (async () => {
+    const response = await fetch(`${endpoint}/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: bearer },
+      body: JSON.stringify(scanningRaceId ? { scanningRaceId } : {}),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok) {
+      return { status: response.status, ok: false };
+    }
+    const session = (await response.json()) as Record<string, unknown>;
+    if (SESSION_CACHE_TTL_MS > 0) {
+      if (sessionCache.size > 2000) {
+        const nowMs = Date.now();
+        for (const [k, v] of sessionCache) {
+          if (v.expiresAt <= nowMs) sessionCache.delete(k);
+        }
+        if (sessionCache.size > 2000) sessionCache.clear();
+      }
+      sessionCache.set(key, { expiresAt: Date.now() + SESSION_CACHE_TTL_MS, session });
+    }
+    return { status: 200, ok: true, session };
+  })().finally(() => {
+    sessionInFlight.delete(key);
+  });
+
+  sessionInFlight.set(key, promise);
+  return promise;
+}
+
 async function startServer() {
   const app = express();
   const allowedOrigins = parseAllowedOrigins();
+  const lanLimiter = requestGuard.createMemoryLimiter({ maxEntries: 10_000 });
+  if (process.env.RACEPULSE_TRUST_PROXY === 'true') {
+    app.set('trust proxy', 1);
+  }
   app.disable("x-powered-by");
+
+  const clientIpOf = (req: express.Request) => requestGuard.normalizeIpBucket(req.ip || req.socket.remoteAddress || 'unknown');
+  const sendRateLimitExceeded = (res: express.Response, retryAfter: number, message: string) => {
+    res.setHeader('Retry-After', String(Math.max(1, retryAfter)));
+    return res.status(429).json({ error: message, retryAfter: Math.max(1, retryAfter) });
+  };
 
   // Security headers on all responses
   app.use((req, res, next) => {
@@ -230,6 +312,53 @@ async function startServer() {
     res.setHeader("X-Permitted-Cross-Domain-Policies", "none");
     if (req.path.startsWith("/api")) {
       res.setHeader("Cache-Control", "no-store");
+    }
+    next();
+  });
+
+  // Lightweight gzip compression for JSON API payloads > 1 KiB
+  app.use('/api', (req, res, next) => {
+    const acceptEncoding = String(req.get('Accept-Encoding') || '');
+    if (!/\bgzip\b/i.test(acceptEncoding)) {
+      next();
+      return;
+    }
+    const origJson = res.json.bind(res);
+    res.json = ((body: unknown) => {
+      const payload = Buffer.from(JSON.stringify(body), 'utf-8');
+      if (payload.byteLength < 1024 || res.headersSent) {
+        return origJson(body);
+      }
+      const compressed = zlib.gzipSync(payload);
+      res.setHeader('Content-Encoding', 'gzip');
+      res.setHeader('Vary', 'Accept-Encoding');
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      return res.send(compressed);
+    }) as express.Response['json'];
+    next();
+  });
+
+  // Global per-IP flood guard (protects SPA & static routes from tight request storms)
+  app.use((req, res, next) => {
+    if (req.method === 'OPTIONS') {
+      next();
+      return;
+    }
+    const isBridgePost = req.path === '/api/rfid-events' && req.method === 'POST';
+    const ip = clientIpOf(req);
+    const limitCheck = lanLimiter.consume(`global:${ip}`, {
+      limit: isBridgePost ? 10_000 : 600,
+      windowMs: 60 * 1000,
+      penaltyMultiplier: 1.5,
+    });
+    if (!limitCheck.allowed) {
+      if (req.path.startsWith('/api')) {
+        sendRateLimitExceeded(res, limitCheck.retryAfter, 'Too many requests. Please slow down briefly.');
+        return;
+      }
+      res.setHeader('Retry-After', String(Math.max(1, limitCheck.retryAfter)));
+      res.status(429).send('Too many requests. Please retry shortly.');
+      return;
     }
     next();
   });
@@ -252,7 +381,8 @@ async function startServer() {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Vary", "Origin");
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-RacePulse-Bridge-Key");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-RacePulse-Bridge-Key, X-Firebase-AppCheck, X-Turnstile-Token, Idempotency-Key");
+      res.setHeader("Access-Control-Expose-Headers", "Retry-After");
     }
     if (req.method === "OPTIONS") {
       res.sendStatus(204);
@@ -326,6 +456,7 @@ async function startServer() {
   app.use('/api', async (req, res, next) => {
     const cleanSubpath = req.path.replace(/\/+$/, '') || '/';
     const route = '/api' + (cleanSubpath === '/' ? '' : cleanSubpath);
+    const clientIp = clientIpOf(req);
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
       if (!isPlainRecord(req.body)) {
         return res.status(400).json({ error: 'Expected a JSON object body.' });
@@ -335,16 +466,51 @@ async function startServer() {
     if (route === '/api/rfid-events' && req.method === 'POST') {
       const expected = process.env.RACEPULSE_BRIDGE_KEY || '';
       const supplied = req.get('X-RacePulse-Bridge-Key') || '';
-      if (expected.length < 32 || supplied.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(expected)) || !process.env.RACEPULSE_BRIDGE_RACE_ID) return res.status(401).json({ error: 'Bridge pairing is required.' });
+      if (expected.length < 32 || supplied.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(expected)) || !process.env.RACEPULSE_BRIDGE_RACE_ID) {
+        const badBridge = lanLimiter.consume(`bad_bridge:${clientIp}`, { limit: 15, windowMs: 5 * 60 * 1000, penaltyMultiplier: 2 });
+        if (!badBridge.allowed) {
+          return sendRateLimitExceeded(res, badBridge.retryAfter, 'Too many failed bridge authentication attempts.');
+        }
+        return res.status(401).json({ error: 'Bridge pairing is required.' });
+      }
       return next();
     }
+
+    const apiBucket = route === '/api/rfid-events' ? 'rfid_get' : req.method === 'GET' ? 'api_read' : 'api_write';
+    const apiLimit = route === '/api/rfid-events' ? 300 : req.method === 'GET' ? 240 : 120;
+    const rateRes = lanLimiter.consume(`${apiBucket}:${clientIp}`, {
+      limit: apiLimit,
+      windowMs: 60 * 1000,
+      penaltyMultiplier: 1.5,
+    });
+    if (!rateRes.allowed) {
+      return sendRateLimitExceeded(res, rateRes.retryAfter, 'Too many race-day API requests. Retrying after backoff.');
+    }
+
     try {
       const bearer = req.get('Authorization');
-      if (!bearer?.startsWith('Bearer ')) return res.status(401).json({ error: 'Sign in to use race-day services.' });
+      if (!bearer?.startsWith('Bearer ')) {
+        const badBearer = lanLimiter.consume(`bad_auth:${clientIp}`, { limit: 30, windowMs: 5 * 60 * 1000, penaltyMultiplier: 2 });
+        if (!badBearer.allowed) {
+          return sendRateLimitExceeded(res, badBearer.retryAfter, 'Too many unauthenticated requests. Please wait.');
+        }
+        return res.status(401).json({ error: 'Sign in to use race-day services.' });
+      }
       const endpoint = process.env.RACEPULSE_ACCESS_API_URL || 'https://asia-southeast1-racepulseph.cloudfunctions.net/accessApi';
-      const response = await fetch(endpoint + '/session', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: bearer }, body: JSON.stringify(route === '/api/chip-reads' && req.method === 'POST' ? { scanningRaceId: req.body?.raceId } : {}), signal: AbortSignal.timeout(8000) });
-      if (!response.ok) return res.status(response.status).json({ error: 'Current authorization could not be confirmed. Work remains queued.' });
-      const session = await response.json();
+      const scanningRaceId = route === '/api/chip-reads' && req.method === 'POST' && typeof req.body?.raceId === 'string'
+        ? req.body.raceId
+        : undefined;
+      const authResult = await resolveAccessSession(endpoint, bearer, scanningRaceId);
+      if (!authResult.ok || !authResult.session) {
+        if (authResult.status === 401 || authResult.status === 403) {
+          const badAuth = lanLimiter.consume(`bad_auth:${clientIp}`, { limit: 30, windowMs: 5 * 60 * 1000, penaltyMultiplier: 2 });
+          if (!badAuth.allowed) {
+            return sendRateLimitExceeded(res, badAuth.retryAfter, 'Too many rejected authorization attempts. Please wait.');
+          }
+        }
+        return res.status(authResult.status).json({ error: 'Current authorization could not be confirmed. Work remains queued.' });
+      }
+      const session = authResult.session;
       const id = route.split('/').at(-1);
       const bodyId = typeof req.body?.id === 'string' ? req.body.id : undefined;
       if (req.method !== 'GET' && !route.endsWith('/reset')) {
@@ -590,6 +756,7 @@ async function startServer() {
   // ========== VITE / STATIC WEB FILES SERVING ==========
 
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -597,18 +764,46 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, {
+      maxAge: '1y',
+      immutable: true,
+      setHeaders: (res, filePath) => {
+        const base = path.basename(filePath);
+        if (base === 'index.html' || base === 'sw.js' || base === 'manifest.webmanifest') {
+          res.setHeader('Cache-Control', 'no-cache');
+        }
+      },
+    }));
     app.get("*", (req, res) => {
+      res.setHeader('Cache-Control', 'no-cache');
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`\n======================================================`);
     console.log(`🚀 RACEPULSEPH BACKEND HUB RUNNING ONLINE!`);
     console.log(`🔗 Local Terminal Host: http://localhost:${PORT}`);
     console.log(`💻 LAN Wi-Fi Hotspot IP: http://<YOUR_LAPTOP_IP_HERE>:${PORT}`);
     console.log(`======================================================\n`);
+  });
+
+  // Mitigate Slowloris / slow-client socket exhaustion
+  server.headersTimeout = 15_000;
+  server.requestTimeout = 30_000;
+  server.keepAliveTimeout = 5_000;
+  server.maxHeadersCount = 64;
+
+  const flushOnShutdown = () => {
+    if (rfidEventsDirty) saveRfidEventsDBNow();
+  };
+  process.once('SIGINT', () => {
+    flushOnShutdown();
+    server.close(() => process.exit(0));
+  });
+  process.once('SIGTERM', () => {
+    flushOnShutdown();
+    server.close(() => process.exit(0));
   });
 }
 

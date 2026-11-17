@@ -1,4 +1,7 @@
 import { auth } from '../firebase';
+import { getAppCheckHeaders, type HumanFormSignals } from './botProtection';
+import { parseRetryAfterSeconds } from './resilientFetch';
+import type { FriendProfile } from '../types';
 
 const apiUrl = (import.meta.env.VITE_ACCOUNT_API_URL || 'https://asia-southeast1-racepulseph.cloudfunctions.net/accountApi').replace(/\/$/, '');
 
@@ -13,29 +16,47 @@ export class AccountRequestError extends Error {
   constructor(message: string, public retryAfter = 0, public status = 0) { super(message); }
 }
 
-const unavailableMessage = 'RacePulse email delivery is temporarily unavailable. Please try again later. If this continues, contact events@racepulseph.com.';
+const emailUnavailableMessage = 'RacePulse email delivery is temporarily unavailable. Please try again later. If this continues, contact events@racepulseph.com.';
+const searchUnavailableMessage = 'Runner search is temporarily unavailable. Please try again shortly.';
 
-async function request<T>(path: string, body: object, authenticated = false): Promise<T> {
+async function request<T>(
+  path: string,
+  body: object,
+  authenticated = false,
+  unavailableFallback = emailUnavailableMessage,
+): Promise<T> {
   const token = authenticated ? await auth.currentUser?.getIdToken() : null;
-  if (authenticated && !token) throw new Error('Please sign in again to verify your email.');
+  if (authenticated && !token) throw new Error('Please sign in again to continue.');
+  const appCheckHeaders = typeof getAppCheckHeaders === 'function' ? await getAppCheckHeaders() : {};
   let response: Response;
   try {
     response = await fetch(`${apiUrl}${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      headers: {
+        'Content-Type': 'application/json',
+        ...appCheckHeaders,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(60000),
     });
   } catch {
     const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
-    throw new AccountRequestError(offline ? 'You’re offline. Reconnect to the internet, then try again.' : unavailableMessage);
+    throw new AccountRequestError(offline ? 'You’re offline. Reconnect to the internet, then try again.' : unavailableFallback);
   }
   const result = await response.json().catch(() => null);
   if (!response.ok) {
     const unavailable = response.status === 404 || response.status >= 500;
-    throw new AccountRequestError(unavailable ? unavailableMessage : result?.error || 'Could not complete this request. Please try again.', Number(result?.retryAfter) || 0, response.status);
+    const retryAfter = typeof parseRetryAfterSeconds === 'function'
+      ? parseRetryAfterSeconds(response, result)
+      : Number(result?.retryAfter || response.headers?.get?.('Retry-After')) || 0;
+    throw new AccountRequestError(
+      unavailable ? unavailableFallback : result?.error || 'Could not complete this request. Please try again.',
+      retryAfter,
+      response.status,
+    );
   }
-  if (!result || typeof result !== 'object') throw new AccountRequestError(unavailableMessage);
+  if (!result || typeof result !== 'object') throw new AccountRequestError(unavailableFallback);
   return result as T;
 }
 
@@ -43,25 +64,31 @@ function validateDelivery(delivery: CodeDelivery, allowVerified = false): CodeDe
   if (allowVerified && delivery.alreadyVerified === true) return delivery;
   if (typeof delivery.challengeId !== 'string' || !/^[a-f0-9]{48}$/.test(delivery.challengeId)
     || !Number.isFinite(delivery.expiresIn) || delivery.expiresIn <= 0
-    || !Number.isFinite(delivery.retryAfter) || delivery.retryAfter < 0) throw new AccountRequestError(unavailableMessage);
+    || !Number.isFinite(delivery.retryAfter) || delivery.retryAfter < 0) throw new AccountRequestError(emailUnavailableMessage);
   return delivery;
 }
 
-export const requestVerificationCode = async (name?: string) => validateDelivery(await request<CodeDelivery>('/verification/request', { name }, true), true);
-export const confirmVerificationCode = async (challengeId: string, code: string) => {
-  const result = await request<{ verified: boolean }>('/verification/confirm', { challengeId, code }, true);
-  if (result.verified !== true) throw new AccountRequestError(unavailableMessage);
+export const requestVerificationCode = async (name?: string, signals?: HumanFormSignals) =>
+  validateDelivery(await request<CodeDelivery>('/verification/request', { name, ...(signals || {}) }, true), true);
+
+export const confirmVerificationCode = async (challengeId: string, code: string, signals?: HumanFormSignals) => {
+  const result = await request<{ verified: boolean }>('/verification/confirm', { challengeId, code, ...(signals || {}) }, true);
+  if (result.verified !== true) throw new AccountRequestError(emailUnavailableMessage);
   return result;
 };
-export const requestPasswordCode = async (email: string) => validateDelivery(await request<CodeDelivery>('/password/request', { email }));
-export const confirmPasswordCode = async (email: string, challengeId: string, code: string) => {
-  const result = await request<{ resetToken: string }>('/password/confirm', { email, challengeId, code });
-  if (typeof result.resetToken !== 'string' || !/^[a-f0-9]{64}$/.test(result.resetToken)) throw new AccountRequestError(unavailableMessage);
+
+export const requestPasswordCode = async (email: string, signals?: HumanFormSignals) =>
+  validateDelivery(await request<CodeDelivery>('/password/request', { email, ...(signals || {}) }));
+
+export const confirmPasswordCode = async (email: string, challengeId: string, code: string, signals?: HumanFormSignals) => {
+  const result = await request<{ resetToken: string }>('/password/confirm', { email, challengeId, code, ...(signals || {}) });
+  if (typeof result.resetToken !== 'string' || !/^[a-f0-9]{64}$/.test(result.resetToken)) throw new AccountRequestError(emailUnavailableMessage);
   return result;
 };
-export const completePasswordReset = async (resetToken: string, password: string) => {
-  const result = await request<{ reset: boolean }>('/password/complete', { resetToken, password });
-  if (result.reset !== true) throw new AccountRequestError(unavailableMessage);
+
+export const completePasswordReset = async (resetToken: string, password: string, signals?: HumanFormSignals) => {
+  const result = await request<{ reset: boolean }>('/password/complete', { resetToken, password, ...(signals || {}) });
+  if (result.reset !== true) throw new AccountRequestError(emailUnavailableMessage);
   return result;
 };
 
@@ -73,7 +100,7 @@ export interface DeleteAccountResult {
 
 export const deleteMyAccountAndData = async () => {
   const result = await request<DeleteAccountResult>('/account/delete', { confirmation: 'DELETE' }, true);
-  if (result.deleted !== true) throw new AccountRequestError(unavailableMessage);
+  if (result.deleted !== true) throw new AccountRequestError(emailUnavailableMessage);
   return result;
 };
 
@@ -83,7 +110,7 @@ export const updateMarketingPreference = async (marketingOptIn: boolean) => {
     { marketingOptIn },
     true
   );
-  if (result.updated !== true) throw new AccountRequestError(unavailableMessage);
+  if (result.updated !== true) throw new AccountRequestError(emailUnavailableMessage);
   return result;
 };
 
@@ -95,6 +122,17 @@ export interface UnsubscribeResult {
 
 export const submitUnsubscribe = async (input: { token?: string; email?: string; marketingOptIn?: boolean }) => {
   return request<UnsubscribeResult>('/unsubscribe', input, false);
+};
+
+export const searchRunnerFriends = async (query: string): Promise<FriendProfile[]> => {
+  const result = await request<{ results: FriendProfile[] }>(
+    '/friends/search',
+    { query },
+    true,
+    searchUnavailableMessage,
+  );
+  if (!Array.isArray(result.results)) throw new AccountRequestError(searchUnavailableMessage);
+  return result.results;
 };
 
 export interface SignupDraft {

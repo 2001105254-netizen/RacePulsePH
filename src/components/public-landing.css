@@ -614,6 +614,8 @@
   font-size: 0.75rem;
   font-weight: 600;
   line-height: 1.25;
+  white-space: nowrap;
+  max-width: 100%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1021,16 +1023,193 @@
 }
 
 @media (forced-colors: active) {
-  .brand-nav[data-nav-tier='wide'] .landing-nav-link.target-current::after {
+  .brand-nav[data-nav-tier='wide'] .landing-nav-link.target-current::after,
+  .landing-stats-tab[aria-selected='true']::after {
     background: Highlight;
   }
-  .brand-nav:not([data-nav-tier='wide']) .landing-nav-link.target-current {
+  .brand-nav:not([data-nav-tier='wide']) .landing-nav-link.target-current,
+  .landing-stats-tab[aria-selected='true'] {
     outline: 2px solid Highlight;
   }
 }
 
 .public-landing section[tabindex='-1']:focus {
   outline: none;
+}
+
+/* Balanced Podium Highlight Shelf (cards + live standings companion when highlights < minSlots) */
+.landing-podium-shelf {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 16px;
+}
+
+.landing-podium-cards {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 16px;
+  max-width: 100%;
+}
+
+.landing-podium-companion {
+  flex: 1 1 340px;
+  min-width: 0;
+}
+
+@media (max-width: 639px) {
+  .landing-podium-cards,
+  .landing-podium-companion {
+    flex: 1 1 100%;
+  }
+}
+
+/* Landing Statistics Hub (#runner-statistics) */
+.landing-stats-filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--border-default);
+  background: var(--surface-card);
+}
+
+@media (min-width: 1024px) {
+  .landing-stats-filter-bar {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+}
+
+.landing-stats-chip-group {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  padding-block: 2px;
+  min-width: 0;
+}
+
+.landing-stats-chip-group > * {
+  flex-shrink: 0;
+}
+
+@media (min-width: 768px) {
+  .landing-stats-chip-group {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+}
+
+.landing-stat-kpi {
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--border-default);
+  background: var(--surface-card);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.landing-stat-kpi-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.landing-stat-kpi-value {
+  font-family: var(--font-mono);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+@media (min-width: 640px) {
+  .landing-stat-kpi-value {
+    font-size: 1.375rem;
+  }
+}
+
+.landing-stat-kpi-sub {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.landing-stats-tablist {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 4px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.landing-stats-tablist::-webkit-scrollbar {
+  display: none;
+}
+
+.landing-stats-tab {
+  position: relative;
+  min-height: 44px;
+  padding: 10px 14px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: 10px 10px 0 0;
+  cursor: pointer;
+  transition: color 140ms var(--ease-out-quart), background-color 140ms var(--ease-out-quart);
+}
+
+.landing-stats-tab:hover {
+  color: var(--text-primary);
+}
+
+.landing-stats-tab[aria-selected='true'] {
+  color: var(--text-primary);
+}
+
+.landing-stats-tab[aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 0;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--color-entry-action);
+}
+
+.landing-stats-tab:focus-visible {
+  outline: 2px solid var(--color-entry-action);
+  outline-offset: -3px;
 }
 
 /* Below-the-fold containment & deferred rendering for complex catalog/stats/bib sections */
@@ -1054,7 +1233,9 @@
   .public-landing :is(.landing-intro, .landing-lookup) *::before,
   .public-landing :is(.landing-intro, .landing-lookup) *::after,
   .landing-nav-link,
-  .landing-nav-link::after {
+  .landing-nav-link::after,
+  .landing-stats-tab,
+  .landing-stats-tab::after {
     animation: none !important;
     transition: none !important;
     scroll-behavior: auto !important;

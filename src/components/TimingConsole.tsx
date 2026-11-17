@@ -11,6 +11,7 @@ import { useDualSync } from '../lib/dualSync';
 import { checkpointType, computeResults, getCheckpointByType, getWaveStartTime } from '../lib/timing';
 import { groupRankingFolders } from '../lib/rankingFolders';
 import { useOfflineScanQueue } from '../lib/offlineScanQueue';
+import { computeBackoffMs, parseRetryAfterSeconds } from '../lib/resilientFetch';
 import { Race, ChipRead, PublicLeaderboardEntry, PublicLiveResults, RaceEntryCategory, RunnerProfile, RunnerResult } from '../types';
 import { groupRunnersByDistance, generateRunnerRosterPdf } from '../lib/runnerReport';
 import { generateRankingsReportPdf } from '../lib/rankingsReport';
@@ -20,6 +21,7 @@ import QrScannerModal from './QrScannerModal';
 import RaceList from './RaceList';
 import LiveRankingsScreen from './LiveRankingsScreen';
 import { buildBroadcastShortcutGuide, getDistanceLabelsForRace } from '../lib/liveRankings';
+import { buildPublicRaceStats } from '../lib/publicLandingStats';
 import EntrySequencePanel from './EntrySequencePanel';
 import DialogSurface from './ui/DialogSurface';
 import { useFeedback } from './ui/FeedbackProvider';
@@ -498,6 +500,13 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
         totalFinished: finishedCount,
         leaders: canPublishResults ? publicLeaders : [],
         officialResults: canPublishResults ? publicOfficialResults : [],
+        publicStats: buildPublicRaceStats({
+          race,
+          raceRunners: runnerProfiles,
+          chipReads,
+          completed: isRaceCompleted,
+          canPublishTiming: canPublishResults,
+        }),
       };
       setDoc(doc(db, 'liveResults', race.id), summary).catch((error) => {
         console.warn('Public live leaderboard publish skipped:', error.message);
@@ -755,21 +764,47 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
 
     let active = true;
     let polling = false;
+    let timerId: number | null = null;
+    let consecutiveFailures = 0;
     let after = new Date().toISOString();
     setBridgeEndpointReady(false);
 
+    const scheduleNext = (delayMs: number) => {
+      if (!active) return;
+      if (timerId !== null) window.clearTimeout(timerId);
+      timerId = window.setTimeout(() => { void pollBridge(); }, delayMs);
+    };
+
     const pollBridge = async () => {
-      if (polling) return;
+      if (!active || polling) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        scheduleNext(5000);
+        return;
+      }
       polling = true;
+      let nextDelay = 450;
       try {
         const response = await authenticatedFetch(`/api/rfid-events?raceId=${encodeURIComponent(race.id)}&after=${encodeURIComponent(after)}`, { cache: 'no-store' });
         const contentType = response.headers.get('content-type') || '';
         if (!response.ok || !contentType.includes('application/json')) {
+          consecutiveFailures += 1;
           if (active) setBridgeEndpointReady(false);
+          const retryAfter = response.status === 429
+            ? parseRetryAfterSeconds(response)
+            : response.status === 401 || response.status === 403
+              ? 30
+              : 0;
+          nextDelay = computeBackoffMs(consecutiveFailures - 1, {
+            baseMs: 1000,
+            maxMs: 30_000,
+            jitterRatio: 0.2,
+            retryAfterSec: retryAfter,
+          });
           return;
         }
         const payload = await response.json() as { events?: RfidBridgeEvent[] };
         if (!active) return;
+        consecutiveFailures = 0;
         setBridgeEndpointReady(true);
 
         for (const event of payload.events || []) {
@@ -782,17 +817,23 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
           if (cursor && Date.parse(cursor) >= Date.parse(after)) after = cursor;
         }
       } catch {
+        consecutiveFailures += 1;
         if (active) setBridgeEndpointReady(false);
+        nextDelay = computeBackoffMs(consecutiveFailures - 1, {
+          baseMs: 1000,
+          maxMs: 30_000,
+          jitterRatio: 0.2,
+        });
       } finally {
         polling = false;
+        scheduleNext(nextDelay);
       }
     };
 
     void pollBridge();
-    const interval = window.setInterval(() => { void pollBridge(); }, 450);
     return () => {
       active = false;
-      window.clearInterval(interval);
+      if (timerId !== null) window.clearTimeout(timerId);
     };
   }, [mode, scanSource, selectedCheckpointId, scannerArmed]);
 
@@ -1211,6 +1252,13 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
     setArmStartOnEnter(false);
     try {
       const completedAt = new Date().toISOString();
+      const finishedPublicStats = buildPublicRaceStats({
+        race: { ...race, completedAt },
+        raceRunners: runnerProfiles,
+        chipReads,
+        completed: true,
+        canPublishTiming: true,
+      });
       const batch = writeBatch(db);
       batch.update(doc(db, 'races', race.id), { completedAt, registrationOpen: false });
       batch.set(doc(db, 'liveResults', race.id), {
@@ -1223,6 +1271,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
         totalFinished: finishedCount,
         leaders: publicLeaders,
         officialResults: publicOfficialResults,
+        publicStats: finishedPublicStats,
       } satisfies PublicLiveResults);
       await batch.commit();
       setFeedback({ type: 'success', text: `Race finished. ${finishedCount} official finisher${finishedCount === 1 ? '' : 's'} are now published in Done Races.` });
@@ -1248,6 +1297,13 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
         totalFinished: finishedCount,
         leaders: publicLeaders,
         officialResults: publicOfficialResults,
+        publicStats: buildPublicRaceStats({
+          race,
+          raceRunners: runnerProfiles,
+          chipReads,
+          completed: true,
+          canPublishTiming: true,
+        }),
       } satisfies PublicLiveResults);
       setFeedback({ type: 'success', text: `Published ${finishedCount} official finisher${finishedCount === 1 ? '' : 's'} to the public results page.` });
     } catch (error: any) {

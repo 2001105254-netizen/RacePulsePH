@@ -1,4 +1,5 @@
 import { authenticatedFetch } from './access';
+import { parseRetryAfterSeconds } from './resilientFetch';
 import { RaceEntryCategory, RunnerProfile } from '../types';
 
 export interface RaceBibQrPayload {
@@ -32,7 +33,13 @@ async function requestClaim<T>(path: '/preview' | '/claim', payload: RaceBibQrPa
     body: JSON.stringify(payload),
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error || 'Unable to verify this race bib.');
+  if (!response.ok) {
+    const retryAfter = parseRetryAfterSeconds(response, body);
+    if (response.status === 429 && retryAfter > 0) {
+      throw new Error(body.error || `Too many bib lookups. Please wait ${retryAfter}s before trying again.`);
+    }
+    throw new Error(body.error || 'Unable to verify this race bib.');
+  }
   return body as T;
 }
 

@@ -5,6 +5,8 @@ import { useAndroidBackHandler } from '../../lib/capacitorAndroid';
 interface DialogSurfaceProps {
   children: ReactNode;
   className?: string;
+  bodyClassName?: string;
+  scrollableBody?: boolean;
   titleId: string;
   descriptionId?: string;
   onRequestClose: () => void;
@@ -20,6 +22,8 @@ interface DialogSurfaceProps {
 export default function DialogSurface({
   children,
   className = '',
+  bodyClassName = '',
+  scrollableBody = true,
   titleId,
   descriptionId,
   onRequestClose,
@@ -118,7 +122,22 @@ export default function DialogSurface({
         onRequestCloseRef.current();
       }}
     >
-      {children}
+      {variant === 'sheet' ? (
+        <>
+          <div className="sm:hidden shrink-0 pt-2 pb-1 flex justify-center" aria-hidden="true">
+            <span className="h-1 w-10 rounded-full bg-[var(--border-strong)]/45" />
+          </div>
+          <div
+            className={`relative min-h-0 flex-auto ${
+              scrollableBody ? 'overflow-y-auto overscroll-y-contain' : 'flex flex-col overflow-hidden'
+            } ${bodyClassName}`}
+          >
+            {children}
+          </div>
+        </>
+      ) : (
+        children
+      )}
     </dialog>,
     document.body,
   );

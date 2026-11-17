@@ -155,6 +155,9 @@ jobs:
             tests/lan-access.test.cjs \
             tests/account-client.test.cjs \
             tests/account-security.test.cjs \
+            tests/friend-search.test.cjs \
+            tests/request-guard.test.cjs \
+            tests/resilient-fetch.test.cjs \
             tests/timing-sequence.test.cjs \
             tests/lan-http.test.cjs \
             tests/security-client.test.cjs \

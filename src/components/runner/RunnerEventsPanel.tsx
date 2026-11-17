@@ -32,7 +32,15 @@ import {
 import { db } from '../../firebase';
 import { useAccess } from '../../lib/access';
 import type { LegalDocKey } from '../../lib/legalConfig';
-import { createPayMongoCheckout, getPaymentStatus, PaymentStatusResponse } from '../../lib/payments';
+import {
+  createPayMongoCheckout,
+  getPaymentStatus,
+  PaymentRequestError,
+  PaymentStatusResponse,
+} from '../../lib/payments';
+import { buildHumanFormSignals } from '../../lib/botProtection';
+import { computeBackoffMs } from '../../lib/resilientFetch';
+import TurnstileChallenge from '../TurnstileChallenge';
 import { entryCategoryLabels, entryMemberCount, raceEntryCategories, runnerEntryCategory } from '../../lib/raceEntry';
 import { isRaceRegistrationOpen } from '../../lib/raceRegistration';
 import { FriendProfile, Gender, Race, RaceEntryCategory, RunnerProfile } from '../../types';
@@ -536,6 +544,12 @@ function OpenEventDetailsSections({
         )}
       </div>
 
+      {!compactCourse && (
+        <div className="py-3">
+          <EventCourseRunnerPanel race={race} preferredDistance={preferredDistance} compact />
+        </div>
+      )}
+
       {(race.inclusions || []).length > 0 && (
         <div className="py-3 space-y-1.5">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] flex items-center gap-1.5">
@@ -597,12 +611,6 @@ function OpenEventDetailsSections({
         </p>
       </div>
 
-      {!compactCourse && (
-        <div className="py-3">
-          <EventCourseRunnerPanel race={race} preferredDistance={preferredDistance} compact />
-        </div>
-      )}
-
       {friendIdentity?.username && canInvite && (
         <div className="py-3">
           <InviteFriendsToRace uid={uid} senderName={friendIdentity.displayName} race={race} />
@@ -639,7 +647,7 @@ function OpenEventCanvasView({
   onOpenLightbox: (media: { title: string; subtitle: string; src: string; alt: string }) => void;
   onBack: () => void;
 }) {
-  const [detent, setDetent] = useState<SheetDetent>('half');
+  const [detent, setDetent] = useState<SheetDetent>('peek');
   const statusLabel = existingForRace ? `Bib #${existingForRace.bibNumber}` : 'Reg Open';
   const statusTone: QueueStatusTone = existingForRace ? 'joined' : 'open';
 
@@ -677,7 +685,11 @@ function OpenEventCanvasView({
       />
 
       {/* Upper 60-70% Course Map & Event Overview Canvas */}
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain pt-[calc(76px+var(--rp-safe-top))] pb-[184px] px-3 space-y-3">
+      <div
+        className={`flex-1 min-h-0 overflow-y-auto overscroll-y-contain scroll-pt-24 scroll-pb-48 pt-[calc(76px+var(--rp-safe-top))] px-3 space-y-3 ${
+          detent === 'half' ? 'pb-[52dvh]' : 'pb-[184px]'
+        }`}
+      >
         <RunnerTelemetryStrip
           ariaLabel="Event summary metrics"
           className="rounded-xl border border-[var(--border-default)]"
@@ -828,6 +840,11 @@ export default function RunnerEventsPanel({
   const [confirmation, setConfirmation] = useState<{ registration: RunnerProfile; wasUpdate: boolean } | null>(null);
   const [paymentReturn, setPaymentReturn] = useState<PaymentStatusResponse | null>(null);
   const [checkingPayment, setCheckingPayment] = useState(false);
+  const [paymentPollTimedOut, setPaymentPollTimedOut] = useState(false);
+  const [paymentCheckNonce, setPaymentCheckNonce] = useState(0);
+  const [honeypot, setHoneypot] = useState('');
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileNonce, setTurnstileNonce] = useState(0);
 
   const mobileSearchRef = useRef<HTMLInputElement>(null);
   const fullNameInputRef = useRef<HTMLInputElement>(null);
@@ -835,6 +852,14 @@ export default function RunnerEventsPanel({
   const emergencyNameInputRef = useRef<HTMLInputElement>(null);
   const emergencyPhoneInputRef = useRef<HTMLInputElement>(null);
   const errorAlertRef = useRef<HTMLDivElement>(null);
+  const submitLockRef = useRef(false);
+  const formOpenedAtRef = useRef(Date.now());
+
+  useEffect(() => {
+    if (showForm) {
+      formOpenedAtRef.current = Date.now();
+    }
+  }, [showForm]);
 
   useAndroidBackHandler(Boolean(lightboxMedia), () => setLightboxMedia(null));
   useAndroidBackHandler(showForm && !saving, () => {
@@ -855,13 +880,37 @@ export default function RunnerEventsPanel({
     return () => onCanvasModeChange?.(false);
   }, [isCompact, mobileInspecting, inFormFlow, onCanvasModeChange]);
 
-  // Payment-provider return verification (webhook remains the authoritative writer)
+  // Payment-provider return verification (webhook remains the authoritative writer).
+  // Bounded to MAX_PAYMENT_POLLS attempts with exponential backoff and hidden-tab pause.
   useEffect(() => {
     const paymentId = new URLSearchParams(window.location.search).get('payment');
     if (!paymentId) return;
+    const MAX_PAYMENT_POLLS = 24;
     let cancelled = false;
     let timeout: number | undefined;
+    let attempts = 0;
+
+    setPaymentPollTimedOut(false);
+
+    const scheduleCheck = (delayMs: number) => {
+      if (cancelled) return;
+      timeout = window.setTimeout(() => {
+        void check();
+      }, delayMs);
+    };
+
     const check = async () => {
+      if (cancelled) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        scheduleCheck(4000);
+        return;
+      }
+      if (attempts >= MAX_PAYMENT_POLLS) {
+        setCheckingPayment(false);
+        setPaymentPollTimedOut(true);
+        return;
+      }
+      attempts += 1;
       setCheckingPayment(true);
       try {
         const payment = await getPaymentStatus(paymentId);
@@ -873,22 +922,35 @@ export default function RunnerEventsPanel({
           return;
         }
         if (payment.status === 'pending' || payment.status === 'creating') {
-          timeout = window.setTimeout(check, 2500);
+          if (attempts >= MAX_PAYMENT_POLLS) {
+            setPaymentPollTimedOut(true);
+            return;
+          }
+          const delayMs = computeBackoffMs(Math.floor(attempts / 4), {
+            baseMs: 2500,
+            maxMs: 12_000,
+            jitterRatio: 0.15,
+          });
+          scheduleCheck(delayMs);
         }
       } catch (err: any) {
         if (!cancelled) {
+          if (err instanceof PaymentRequestError && err.status === 429) {
+            setPaymentPollTimedOut(true);
+          }
           setError(err.message || 'We could not verify your payment yet. Please refresh in a moment.');
         }
       } finally {
         if (!cancelled) setCheckingPayment(false);
       }
     };
+
     void check();
     return () => {
       cancelled = true;
       if (timeout) window.clearTimeout(timeout);
     };
-  }, []);
+  }, [paymentCheckNonce]);
 
   const openRaces = useMemo(
     () => races.filter((race) => isRaceRegistrationOpen(race)).sort((a, b) => a.date.localeCompare(b.date)),
@@ -1123,6 +1185,7 @@ export default function RunnerEventsPanel({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitLockRef.current) return;
     if (!can('personal.register')) return failValidation('Registration is disabled for your account.');
     setError('');
     if (!fullName.trim()) return failValidation('Please enter your full name.', fullNameInputRef);
@@ -1171,9 +1234,11 @@ export default function RunnerEventsPanel({
       return failValidation('Enter the payment reference number from your GCash or bank transaction.');
     }
 
+    submitLockRef.current = true;
     setSaving(true);
     try {
       if (shouldPayOnline) {
+        const signals = buildHumanFormSignals(honeypot, formOpenedAtRef.current, turnstileToken);
         const checkout = await createPayMongoCheckout({
           raceId: selectedRace.id,
           distance: finalDistance,
@@ -1199,7 +1264,7 @@ export default function RunnerEventsPanel({
                 teamMembers: normalizedMembers.map((member) => member.toUpperCase()),
               }
             : {}),
-        });
+        }, signals);
         window.location.assign(checkout.checkoutUrl);
         return;
       }
@@ -1254,8 +1319,10 @@ export default function RunnerEventsPanel({
       }
       setConfirmation({ registration: record, wasUpdate: !!existingForRace });
     } catch (err: any) {
+      if (shouldPayOnline) setTurnstileNonce((n) => n + 1);
       failValidation(err.message || 'Failed to save your race profile.');
     } finally {
+      submitLockRef.current = false;
       setSaving(false);
     }
   };
@@ -1752,11 +1819,28 @@ export default function RunnerEventsPanel({
                   </div>
                 )}
 
-                {(checkingPayment || paymentReturn?.status === 'pending' || paymentReturn?.status === 'creating') && (
+                {(checkingPayment || ((paymentReturn?.status === 'pending' || paymentReturn?.status === 'creating') && !paymentPollTimedOut)) && (
                   <p className="text-xs text-amber-900 dark:text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-xl px-3 py-2 flex items-center gap-2">
                     <RefreshCw className="w-3.5 h-3.5 motion-safe:animate-spin shrink-0" aria-hidden="true" />
                     Verifying your PayMongo payment securely...
                   </p>
+                )}
+
+                {paymentPollTimedOut && (paymentReturn?.status === 'pending' || paymentReturn?.status === 'creating') && (
+                  <div
+                    role="status"
+                    className="text-xs text-amber-900 dark:text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-xl px-3 py-2.5 flex flex-wrap items-center justify-between gap-2"
+                  >
+                    <span>Confirmation is taking longer than expected. Refresh once your payment finishes.</span>
+                    <button
+                      type="button"
+                      disabled={checkingPayment}
+                      onClick={() => setPaymentCheckNonce((n) => n + 1)}
+                      className="min-h-9 px-3 rounded-lg border border-amber-600/40 bg-amber-500/15 font-semibold hover:bg-amber-500/25 transition-colors"
+                    >
+                      Refresh status
+                    </button>
+                  </div>
                 )}
 
                 {(paymentReturn?.status === 'failed' || paymentReturn?.status === 'expired') && (
@@ -1766,6 +1850,25 @@ export default function RunnerEventsPanel({
                   >
                     Your checkout was not completed. No registration or charge was created; you may retry payment anytime.
                   </p>
+                )}
+
+                <div
+                  aria-hidden="true"
+                  style={{ position: 'absolute', left: '-9999px', width: '1px', height: '1px', overflow: 'hidden', opacity: 0, pointerEvents: 'none' }}
+                >
+                  <label htmlFor="reg-company-website">Leave blank</label>
+                  <input
+                    id="reg-company-website"
+                    type="text"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    value={honeypot}
+                    onChange={(e) => setHoneypot(e.target.value)}
+                  />
+                </div>
+
+                {!existingForRace && selectedRace.onlinePaymentEnabled && entryFee > 0 && (
+                  <TurnstileChallenge action="checkout" resetNonce={turnstileNonce} onToken={setTurnstileToken} />
                 )}
 
                 <div className="glass-inset p-4 space-y-3 rounded-xl">
@@ -2513,11 +2616,12 @@ export default function RunnerEventsPanel({
         <DialogSurface
           variant="sheet"
           dismissOnBackdropClick
+          maxWidthCss="56rem"
           titleId="runner_event_media_lightbox"
           onRequestClose={() => setLightboxMedia(null)}
-          className="sm:inset-0 sm:m-auto h-fit sm:rounded-2xl w-full sm:w-[calc(100%-2rem)] max-w-4xl max-h-[90dvh] flex flex-col overflow-hidden border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)]"
+          bodyClassName="p-3 sm:p-4 space-y-3"
         >
-          <div className="p-3 sm:p-4 space-y-3">
+          <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <h2

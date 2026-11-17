@@ -1,5 +1,7 @@
 import { auth } from '../firebase';
 import { Gender, RaceEntryCategory } from '../types';
+import { getAppCheckHeaders, type HumanFormSignals } from './botProtection';
+import { boundedFetch, parseRetryAfterSeconds } from './resilientFetch';
 
 export interface PendingRegistrationPayload {
   raceId: string;
@@ -34,6 +36,17 @@ export interface PaymentStatusResponse {
   registrationId?: string;
 }
 
+export class PaymentRequestError extends Error {
+  constructor(
+    message: string,
+    public readonly status = 0,
+    public readonly retryAfter = 0,
+  ) {
+    super(message);
+    this.name = 'PaymentRequestError';
+  }
+}
+
 // This is the standard Firebase Functions URL for RacePulsePH. A staging or
 // custom domain can override it without rebuilding through VITE_PAYMENTS_API_URL.
 const paymentsApiUrl = (import.meta.env.VITE_PAYMENTS_API_URL || 'https://asia-southeast1-racepulseph.cloudfunctions.net/paymentsApi').replace(/\/$/, '');
@@ -41,25 +54,49 @@ const paymentsApiUrl = (import.meta.env.VITE_PAYMENTS_API_URL || 'https://asia-s
 async function paymentRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const user = auth.currentUser;
   if (!user) throw new Error('Please sign in before paying for a race registration.');
-  const token = await user.getIdToken();
-  const response = await fetch(`${paymentsApiUrl}${path}`, {
-    ...init,
-    signal: init?.signal ?? AbortSignal.timeout(15000),
-    headers: {
-      Authorization: `Bearer ${token}`,
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init?.headers,
+  const [token, appCheckHeaders] = await Promise.all([
+    user.getIdToken(),
+    getAppCheckHeaders(),
+  ]);
+  const response = await boundedFetch(
+    `${paymentsApiUrl}${path}`,
+    {
+      ...init,
+      headers: {
+        ...appCheckHeaders,
+        Authorization: `Bearer ${token}`,
+        ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+        ...init?.headers,
+      },
     },
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error || 'Unable to start secure checkout. Please try again.');
+    {
+      maxRetries: init?.method === 'POST' ? 0 : 1,
+      timeoutMs: 15_000,
+      dedupeGet: (init?.method || 'GET').toUpperCase() === 'GET',
+      circuitKey: 'paymentsApi',
+    },
+  );
+  const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!response.ok) {
+    const retryAfter = parseRetryAfterSeconds(response, body);
+    const msg = typeof body.error === 'string' && body.error
+      ? body.error
+      : 'Unable to start secure checkout. Please try again.';
+    throw new PaymentRequestError(msg, response.status, retryAfter);
+  }
   return body as T;
 }
 
-export async function createPayMongoCheckout(registration: PendingRegistrationPayload): Promise<PaymentCheckoutResponse> {
+export async function createPayMongoCheckout(
+  registration: PendingRegistrationPayload,
+  signals?: HumanFormSignals,
+): Promise<PaymentCheckoutResponse> {
   const result = await paymentRequest<PaymentCheckoutResponse>('/checkout', {
     method: 'POST',
-    body: JSON.stringify({ registration }),
+    body: JSON.stringify({
+      registration,
+      ...(signals ? signals : {}),
+    }),
   });
   let parsedUrl: URL;
   try {

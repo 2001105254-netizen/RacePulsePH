@@ -60,4 +60,18 @@ test('local HTTP enforces security headers, CORS allowlist, plain JSON bodies, a
 
  const resetSlash=await request('orders/reset/','POST','operator',{id:'evil_reset',runnerName:'Test',bibNumber:'5-1',status:'queued'});
  assert.equal(resetSlash.status,403);
+ assert.equal(lanCors.headers.get('access-control-expose-headers'),'Retry-After');
+ assert.match(lanCors.headers.get('access-control-allow-headers')||'',/X-Firebase-AppCheck/);
+
+ // Repeated invalid bridge credentials trigger 429 + Retry-After to stop brute-force/DDoS.
+ let saw429=false;
+ for(let i=0;i<20;i+=1){
+  const badBridge=await fetch(`http://127.0.0.1:${port}/api/rfid-events`,{method:'POST',headers:{'Content-Type':'application/json','X-RacePulse-Bridge-Key':'wrong-key'},body:JSON.stringify({id:'bad_'+i,epc:'DEADBEEF',antenna:1,timestamp:new Date().toISOString()})});
+  if(badBridge.status===429){
+   saw429=true;
+   assert.ok(Number(badBridge.headers.get('retry-after'))>=1);
+   break;
+  }
+ }
+ assert.equal(saw429,true);
 });

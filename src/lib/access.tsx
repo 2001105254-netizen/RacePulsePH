@@ -4,6 +4,8 @@ import { subscribeSharedRaces } from './racesStore';
 import { auth, db } from '../firebase';
 import { Race, UserProfile } from '../types';
 import { defaults } from './accessPolicy';
+import { getAppCheckHeaders } from './botProtection';
+import { boundedFetch, parseRetryAfterSeconds } from './resilientFetch';
 import catalog from './access-presets.json';
 type AccessState = { overrides?: Record<string, boolean>; permissions?: Record<string, boolean>; scope?: string; raceIds?: string[]; status?: string; revision?: number };
 type AccessContextValue = { can: (key: string) => boolean; inScope: (race: Race) => boolean; authority: boolean; ready: boolean; suspended: boolean; state: AccessState; version: string };
@@ -99,17 +101,38 @@ export function AccessProvider({ profile, children, onLoadState }: { profile: Us
 export async function authenticatedFetch(url: string, init: RequestInit = {}) {
   const user = auth.currentUser;
   if (!user) throw new Error('Sign in to continue.');
-  const token = await user.getIdToken();
-  return fetch(url, {
-    ...init,
-    signal: init.signal ?? AbortSignal.timeout(15000),
-    headers: { ...Object.fromEntries(new Headers(init.headers)), Authorization: `Bearer ${token}` },
-  });
+  const [token, appCheckHeaders] = await Promise.all([
+    user.getIdToken(),
+    getAppCheckHeaders(),
+  ]);
+  const isLanApi = url.startsWith('/api/');
+  return boundedFetch(
+    url,
+    {
+      ...init,
+      headers: {
+        ...appCheckHeaders,
+        ...Object.fromEntries(new Headers(init.headers)),
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      maxRetries: 0,
+      timeoutMs: 15_000,
+      circuitKey: isLanApi ? '/api/lan' : undefined,
+    },
+  );
 }
 export async function accessCommand(path: string, body: object) {
   const url = (import.meta.env.VITE_ACCESS_API_URL || 'https://asia-southeast1-racepulseph.cloudfunctions.net/accessApi').replace(/\/$/, '');
   const response = await authenticatedFetch(`${url}/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || 'Access request failed.');
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const retryAfter = parseRetryAfterSeconds(response, result);
+    if (response.status === 429 && retryAfter > 0) {
+      throw new Error(result.error || `Too many requests. Please wait ${retryAfter}s and try again.`);
+    }
+    throw new Error(result.error || 'Access request failed.');
+  }
   return result;
 }

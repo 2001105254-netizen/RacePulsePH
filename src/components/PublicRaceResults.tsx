@@ -1,11 +1,10 @@
 import { formatDateTime, parseRaceDurationSeconds } from '../lib/preciseTime';
 import { useEffect, useMemo, useState } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
 import { AlertTriangle, Calendar, FileDown, Medal, RefreshCw, Search, Trophy, UserPlus, X } from 'lucide-react';
 import { ResultsSkeletonList } from './ui/MotionPrimitives';
 import RaceTimeText from './ui/RaceTimeText';
 import { Select } from './ui/Select';
-import { db } from '../firebase';
+import { subscribeLiveResultByRace } from '../lib/liveResultsStore';
 import { downloadFinisherCertificate } from '../lib/finisherCertificate';
 import { isRaceRegistrationOpen } from '../lib/raceRegistration';
 import { PublicLeaderboardEntry, PublicLiveResults, Race, RunnerResult } from '../types';
@@ -61,13 +60,7 @@ export default function PublicRaceResults({
     setCategoryFilter('all');
     setDownloadingKey(null);
     setCertError('');
-    const unsubscribe = onSnapshot(doc(db, 'liveResults', race.id), (snapshot) => {
-      setSummary(snapshot.exists() ? (snapshot.data() as PublicLiveResults) : null);
-    }, (error) => {
-      console.warn('Public race result listener failed:', error.message);
-      setSummary(null);
-    });
-    return () => unsubscribe();
+    return subscribeLiveResultByRace(race.id, setSummary);
   }, [race.id]);
 
   const handleDownloadCertificate = async (entry: PublicLeaderboardEntry) => {

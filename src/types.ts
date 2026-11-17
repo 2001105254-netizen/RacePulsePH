@@ -270,6 +270,139 @@ export interface PublicLeaderboardEntry {
   missingIntermediateLabels?: string[];
 }
 
+// Safe, non-financial, non-PII aggregate race analytics published with
+// liveResults so public visitors see full performance, demographic, and
+// operational readiness metrics without reading private roster or payment data.
+export interface PublicRaceStats {
+  headcount: number;
+  dnsCount: number;
+  dnfCount: number;
+  dqCount: number;
+  fastestSeconds?: number;
+  medianSeconds?: number;
+  p90Seconds?: number;
+  slowestSeconds?: number;
+  peakBucketLabel?: string;
+  peakBucketCount?: number;
+  finishBuckets: Array<{ label: string; count: number; startMin: number }>;
+  registrationVelocity: {
+    recent7dCount: number;
+    series: number[];
+    labels: string[];
+  };
+  timingMix: {
+    chip: number;
+    gun: number;
+    transition: number;
+    rfidReads: number;
+    manualReads: number;
+    rfidSharePct: number;
+    unmatchedScans: number;
+    reviewFlagged: number;
+    missingStart: number;
+    missingIntermediate: number;
+  };
+  genderSplit: Array<{
+    id: 'male' | 'female';
+    label: string;
+    registered: number;
+    finished: number;
+    pct: number;
+    fastestSeconds?: number;
+    medianSeconds?: number;
+    avgPaceSecPerKm?: number;
+  }>;
+  genderByDistance: Array<{
+    distanceLabel: string;
+    maleCount: number;
+    femaleCount: number;
+    total: number;
+  }>;
+  ageSummary: {
+    medianAge: number | null;
+    meanAge: number | null;
+    minAge: number | null;
+    maxAge: number | null;
+    youthUnder18: number;
+    masters50Plus: number;
+    knownAgeCount: number;
+    undisclosedCount: number;
+  };
+  usingCustomAgeCuts: boolean;
+  ageCuts: Array<{
+    id: string;
+    label: string;
+    gender: 'all' | 'male' | 'female';
+    count: number;
+    pct: number;
+    fastestSeconds?: number;
+    medianSeconds?: number;
+  }>;
+  entryFormats: Array<{
+    category: string;
+    label: string;
+    entriesCount: number;
+    headcount: number;
+    sharePct: number;
+  }>;
+  shirtInventory: Array<{
+    size: string;
+    orderedCount: number;
+    claimedCount: number;
+    unclaimedCount: number;
+    claimRatePct: number;
+  }>;
+  checkpoints: Array<{
+    id: string;
+    label: string;
+    type: CheckpointType;
+    scanCount: number;
+    uniqueBibs: number;
+    pctOfRegistered: number;
+    cutoffMinutes?: number;
+  }>;
+  readiness: {
+    bibsAssigned: number;
+    bibsAssignedPct: number;
+    chipsAssigned: number;
+    chipsAssignedPct: number;
+    kitsClaimed: number;
+    kitsClaimedPct: number;
+    emergencyContactPct: number;
+    shirtSizePct: number;
+    under13Count: number;
+    under13ConsentCount: number;
+    marketingOptInPct: number;
+    freeSlotCount: number;
+    relayLinksCount: number;
+    brokenRelayLinksCount: number;
+    unmappedDistanceCount: number;
+    waveStartsConfigured: number;
+    waveStartsTotal: number;
+  };
+  byDistance: Array<{
+    label: string;
+    km: number;
+    registered: number;
+    started: number;
+    finished: number;
+    dns: number;
+    dnf: number;
+    dq: number;
+    finishRatePct: number;
+    fastestSeconds?: number;
+    medianSeconds?: number;
+    p90Seconds?: number;
+    slowestSeconds?: number;
+    avgPaceSecPerKm?: number;
+    chipTimed: number;
+    gunTimed: number;
+    transitionTimed: number;
+    bibsAssigned: number;
+    taggedOrClaimed: number;
+  }>;
+}
+
 // Deliberately contains only publishable result data. Raw chip reads remain
 // private to operators and each individual runner under Firestore rules.
 export interface PublicLiveResults {
@@ -284,6 +417,8 @@ export interface PublicLiveResults {
   // Every completed finisher, ordered by distance and official rank. This is
   // the public result feed; checkpoint scans remain private.
   officialResults: PublicLeaderboardEntry[];
+  // Optional non-financial, non-PII aggregate telemetry snapshot.
+  publicStats?: PublicRaceStats;
 }
 
 export interface RunnerProfile {

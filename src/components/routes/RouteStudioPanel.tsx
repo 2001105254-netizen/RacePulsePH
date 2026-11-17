@@ -211,6 +211,7 @@ export default function RouteStudioPanel({
   const [gpsState, setGpsState] = useState<GpsTrailState>(() => createGpsTrailState({ maxAccuracyM: 25 }));
   const [gpsError, setGpsError] = useState('');
   const gpsWatchIdRef = useRef<number | null>(null);
+  const gpsFixReceivedRef = useRef(false);
 
   // Photo Upload State
   const [photoCaption, setPhotoCaption] = useState('');
@@ -648,22 +649,32 @@ export default function RouteStudioPanel({
     setStatusNotice('Course direction reversed and marker chainages recomputed.');
   };
 
-  const handleStartGpsTracking = () => {
-    setGpsError('');
-    setErrorNotice('');
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      setGpsError('Browser geolocation is unavailable on this device. Use Simulate GPS Walk to rehearse or test field capture.');
-      return;
-    }
-    if (gpsWatchIdRef.current !== null) {
+  const clearGpsWatch = () => {
+    if (gpsWatchIdRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
       navigator.geolocation.clearWatch(gpsWatchIdRef.current);
       gpsWatchIdRef.current = null;
     }
-    setTrailOption('gps');
-    setGpsState((prev) => ({ ...prev, status: 'tracking' }));
-    setStatusNotice(`Live GNSS tracking started (accuracy gate <= ${gpsState.maxAccuracyM} m).`);
+  };
+
+  const formatGeolocationError = (err: GeolocationPositionError): string => {
+    if (err.code === 1) {
+      return 'Location permission denied. Allow location access in your browser or Android app settings, then tap Start GPS tracking again.';
+    }
+    if (err.code === 2) {
+      return 'Device location is unavailable. Turn on Location / GPS services on your device and try again.';
+    }
+    if (err.code === 3) {
+      return 'GNSS fix timed out. Step outdoors for a clearer sky view or widen the accuracy gate, then try again.';
+    }
+    return err.message || 'Location permission denied or GNSS signal lost.';
+  };
+
+  const startGpsWatch = (highAccuracy: boolean) => {
+    clearGpsWatch();
     gpsWatchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
+        gpsFixReceivedRef.current = true;
+        setGpsError('');
         const fix = {
           latitude: pos.coords.latitude,
           longitude: pos.coords.longitude,
@@ -675,18 +686,58 @@ export default function RouteStudioPanel({
         setGpsState((prev) => processGpsBreadcrumbFix(prev, fix, activeSurfaceType, activeTerrainScenario));
       },
       (err) => {
-        setGpsError(err.message || 'Location permission denied or GNSS signal lost.');
+        if (err.code === 1) {
+          clearGpsWatch();
+          setGpsError(formatGeolocationError(err));
+          setGpsState((prev) => ({ ...prev, status: 'paused' }));
+          return;
+        }
+        // Once fixes have started arriving, transient signal drops (e.g. heavy canopy)
+        // keep the watch alive so tracking resumes automatically on the next fix.
+        if (gpsFixReceivedRef.current) {
+          setGpsError(
+            err.code === 3
+              ? 'Waiting for next GNSS fix (signal momentarily weak)...'
+              : 'GNSS signal momentarily unavailable; waiting for next fix...',
+          );
+          return;
+        }
+        // Before the first fix arrives, fall back once from high-accuracy GPS to fused location.
+        if (highAccuracy && (err.code === 2 || err.code === 3)) {
+          setStatusNotice('Switching to fused device location while acquiring GNSS lock.');
+          startGpsWatch(false);
+          return;
+        }
+        clearGpsWatch();
+        setGpsError(formatGeolocationError(err));
         setGpsState((prev) => ({ ...prev, status: 'paused' }));
       },
-      { enableHighAccuracy: true, maximumAge: 1000, timeout: 12000 },
+      highAccuracy
+        ? { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 }
+        : { enableHighAccuracy: false, maximumAge: 5000, timeout: 15000 },
     );
   };
 
-  const handleStopGpsTracking = () => {
-    if (gpsWatchIdRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
-      navigator.geolocation.clearWatch(gpsWatchIdRef.current);
-      gpsWatchIdRef.current = null;
+  const handleStartGpsTracking = () => {
+    setGpsError('');
+    setErrorNotice('');
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setGpsError('Browser geolocation is unavailable on this device. Use Simulate GPS walk to test field capture.');
+      return;
     }
+    if (typeof window !== 'undefined' && window.isSecureContext === false) {
+      setGpsError('Live GPS requires HTTPS, localhost, or the RacePulsePH Android app. Use Simulate GPS walk on local HTTP.');
+      return;
+    }
+    gpsFixReceivedRef.current = false;
+    setTrailOption('gps');
+    setGpsState((prev) => ({ ...prev, status: 'tracking' }));
+    setStatusNotice(`Live GNSS tracking started (accuracy gate <= ${gpsState.maxAccuracyM} m).`);
+    startGpsWatch(true);
+  };
+
+  const handleStopGpsTracking = () => {
+    clearGpsWatch();
     setGpsState((prev) => ({ ...prev, status: 'paused' }));
     setStatusNotice('GPS field recording paused. Review captured fixes or commit to the route.');
   };
@@ -2357,10 +2408,10 @@ export default function RouteStudioPanel({
                       </div>
 
                       {gpsError && (
-                        <p className="text-xs text-red-700 dark:text-red-300">{gpsError}</p>
+                        <p role="alert" className="text-xs font-semibold text-red-700 dark:text-red-300">{gpsError}</p>
                       )}
 
-                      <div className="grid grid-cols-2 gap-2 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] p-2.5 text-xs">
+                      <div className="grid grid-cols-2 gap-2 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] p-2.5 text-xs tabular-nums">
                         <div>
                           <span className="text-[var(--text-secondary)]">Accepted fixes</span>
                           <p className="font-semibold text-[var(--text-primary)]">
@@ -2373,6 +2424,11 @@ export default function RouteStudioPanel({
                             {gpsState.rejectedCount} rejected (+{gpsState.estimatedGainM.toFixed(0)} m)
                           </p>
                         </div>
+                        {gpsState.lastFix && (
+                          <p className="col-span-2 text-[var(--text-secondary)] font-mono">
+                            Latest GNSS: {gpsState.lastFix.latitude.toFixed(5)}, {gpsState.lastFix.longitude.toFixed(5)} (±{Math.round(gpsState.lastFix.accuracyM)} m)
+                          </p>
+                        )}
                         {gpsState.lastRejectReason && (
                           <p className="col-span-2 text-amber-700 dark:text-amber-300">
                             Last filter event: {gpsState.lastRejectReason}

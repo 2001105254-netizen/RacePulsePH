@@ -1,9 +1,24 @@
-const CACHE_NAME = 'racepulseph-shell-v2';
+const CACHE_NAME = 'racepulseph-shell-v3';
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/assets/racepulse-startup.webp', '/startup.js'];
+const MAX_RUNTIME_CACHE_ENTRIES = 120;
 // A service worker is useful for the deployed PWA, but it can serve stale Vite
 // modules on localhost after a source edit. Clear and remove it automatically
 // in local development so the operator always sees the current app.
 const IS_LOCAL_DEVELOPMENT = ['localhost', '127.0.0.1'].includes(self.location.hostname);
+
+async function putBoundedCache(request, response) {
+  const cacheControl = (response.headers.get('cache-control') || '').toLowerCase();
+  if (!response.ok || cacheControl.includes('no-store')) return;
+  const cache = await caches.open(CACHE_NAME);
+  await cache.put(request, response);
+  const keys = await cache.keys();
+  if (keys.length > MAX_RUNTIME_CACHE_ENTRIES) {
+    const excess = keys.length - MAX_RUNTIME_CACHE_ENTRIES;
+    for (let i = 0; i < excess; i += 1) {
+      await cache.delete(keys[i]);
+    }
+  }
+}
 
 self.addEventListener('install', (event) => {
   if (IS_LOCAL_DEVELOPMENT) {
@@ -45,7 +60,7 @@ self.addEventListener('fetch', (event) => {
           const contentType = response.headers.get('content-type') || '';
           if (response.ok && contentType.includes('text/html')) {
             const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy));
+            void putBoundedCache('/index.html', copy);
           }
           return response;
         })
@@ -58,7 +73,7 @@ self.addEventListener('fetch', (event) => {
     caches.match(request).then((cached) => cached || fetch(request).then((response) => {
       if (!response.ok) return response;
       const copy = response.clone();
-      caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+      void putBoundedCache(request, copy);
       return response;
     }))
   );

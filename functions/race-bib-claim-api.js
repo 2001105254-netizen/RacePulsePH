@@ -1,6 +1,13 @@
 const { onRequest } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const accessPolicy = require('./access-policy');
+const {
+  applyApiSecurityHeaders,
+  enforceRateLimit,
+  extractClientIp,
+  setScopedCors,
+  verifyAppCheckRequest,
+} = require('./request-guard');
 
 const allowedOrigins = [
   'http://localhost:3000',
@@ -13,13 +20,7 @@ const allowedOrigins = [
 ];
 
 function setCors(request, response) {
-  const origin = request.get('origin');
-  if (origin && allowedOrigins.includes(origin)) {
-    response.set('Access-Control-Allow-Origin', origin);
-    response.set('Vary', 'Origin');
-  }
-  response.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  response.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  setScopedCors(request, response, { allowedOrigins, methods: 'POST, OPTIONS' });
 }
 
 async function requireRunner(request) {
@@ -39,46 +40,36 @@ async function requireRunner(request) {
   return { db, uid: identity.uid };
 }
 
-const crypto = require('node:crypto');
-
-function readPayload(body) {
-  if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    throw Object.assign(new Error('This race bib QR code is invalid.'), { status: 400 });
-  }
-  const raceId = typeof body?.raceId === 'string' ? body.raceId.trim() : '';
-  const bibNumber = typeof body?.bibNumber === 'string' ? body.bibNumber.trim().toUpperCase() : '';
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(raceId) || !bibNumber || bibNumber.length > 20) {
-    throw Object.assign(new Error('This race bib QR code is invalid.'), { status: 400 });
-  }
-  return { raceId, bibNumber };
-}
-
 async function enforceClaimRateLimit(db, uid, ip) {
   const hourMs = 3600 * 1000;
-  const uidHash = crypto.createHash('sha256').update(`claim_uid:${uid}`).digest('hex');
-  const ipHash = crypto.createHash('sha256').update(`claim_ip:${String(ip || 'unknown')}`).digest('hex');
+  const normalizedIp = extractClientIp({ ip });
   await Promise.all([
-    db.runTransaction(async (tx) => {
-      const ref = db.doc(`accountRateLimits/claim_u_${uidHash}`);
-      const nowMs = Date.now();
-      const snap = await tx.get(ref);
-      const prev = snap.exists ? snap.data() : {};
-      const inWindow = typeof prev.windowStart === 'number' && nowMs - prev.windowStart < hourMs;
-      if (inWindow && (prev.count || 0) >= 20) {
-        throw Object.assign(new Error('Too many bib lookups. Please try again later.'), { status: 429 });
-      }
-      tx.set(ref, { windowStart: inWindow ? prev.windowStart : nowMs, count: inWindow ? (prev.count || 0) + 1 : 1, expiresAt: new Date(nowMs + hourMs) });
+    enforceRateLimit({
+      db,
+      namespace: 'claim_burst',
+      identifier: uid,
+      limit: 8,
+      windowMs: 60 * 1000,
+      message: 'Slow down slightly before scanning the next bib.',
+      memoryOnly: true,
     }),
-    db.runTransaction(async (tx) => {
-      const ref = db.doc(`accountRateLimits/claim_i_${ipHash}`);
-      const nowMs = Date.now();
-      const snap = await tx.get(ref);
-      const prev = snap.exists ? snap.data() : {};
-      const inWindow = typeof prev.windowStart === 'number' && nowMs - prev.windowStart < hourMs;
-      if (inWindow && (prev.count || 0) >= 40) {
-        throw Object.assign(new Error('Too many bib lookups from this network. Please try again later.'), { status: 429 });
-      }
-      tx.set(ref, { windowStart: inWindow ? prev.windowStart : nowMs, count: inWindow ? (prev.count || 0) + 1 : 1, expiresAt: new Date(nowMs + hourMs) });
+    enforceRateLimit({
+      db,
+      namespace: 'claim_u',
+      identifier: uid,
+      limit: 20,
+      windowMs: hourMs,
+      message: 'Too many bib lookups. Please try again later.',
+      penaltyMultiplier: 1.5,
+    }),
+    enforceRateLimit({
+      db,
+      namespace: 'claim_i',
+      identifier: normalizedIp,
+      limit: 40,
+      windowMs: hourMs,
+      message: 'Too many bib lookups from this network. Please try again later.',
+      penaltyMultiplier: 1.5,
     }),
   ]);
 }
@@ -104,12 +95,77 @@ function safeRunner(source, uid) {
   };
 }
 
+function readPayload(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw Object.assign(new Error('This race bib QR code is invalid.'), { status: 400 });
+  }
+  const raceId = typeof body?.raceId === 'string' ? body.raceId.trim() : '';
+  const bibNumber = typeof body?.bibNumber === 'string' ? body.bibNumber.trim().toUpperCase() : '';
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(raceId) || !bibNumber || bibNumber.length > 20) {
+    throw Object.assign(new Error('This race bib QR code is invalid.'), { status: 400 });
+  }
+  return { raceId, bibNumber };
+}
+
+const raceBibFallbackCacheByDb = new WeakMap();
+const RACE_BIB_FALLBACK_TTL_MS = 30 * 1000;
+
 async function findRunner(db, raceId, bibNumber) {
-  // Query by race first to avoid a new composite index for every deployment.
-  // The requested bib remains exact (case-insensitive) and is never returned
-  // until the signed-in runner has scanned its physical QR code.
-  const snapshot = await db.collection('runners').where('raceId', '==', raceId).get();
-  const match = snapshot.docs.find((item) => String(item.data().bibNumber || '').trim().toUpperCase() === bibNumber);
+  // Fast indexed query (O(1) reads) when composite index (raceId, bibNumber) is ready.
+  try {
+    const directQuery = await db
+      .collection('runners')
+      .where('raceId', '==', raceId)
+      .where('bibNumber', '==', bibNumber)
+      .limit(2)
+      .get();
+    if (!directQuery.empty) {
+      const match = directQuery.docs[0];
+      if (match.data().isFreeSlot) {
+        throw Object.assign(new Error('This is an empty race-day slot and cannot be added to an account yet.'), { status: 400 });
+      }
+      return match;
+    }
+  } catch (err) {
+    if (err && typeof err.status === 'number') throw err;
+    // Composite index may not be active yet or query fell back; use cached race map below.
+  }
+
+  let byRace = raceBibFallbackCacheByDb.get(db);
+  if (!byRace) {
+    byRace = new Map();
+    raceBibFallbackCacheByDb.set(db, byRace);
+  }
+  let entry = byRace.get(raceId);
+  if (!entry || Date.now() - entry.loadedAt >= RACE_BIB_FALLBACK_TTL_MS) {
+    if (!entry?.inFlight) {
+      const loader = db
+        .collection('runners')
+        .where('raceId', '==', raceId)
+        .get()
+        .then((snapshot) => {
+          const map = new Map();
+          snapshot.docs.forEach((docSnap) => {
+            const normBib = String(docSnap.data().bibNumber || '').trim().toUpperCase();
+            if (normBib && !map.has(normBib)) {
+              map.set(normBib, docSnap);
+            }
+          });
+          byRace.set(raceId, { loadedAt: Date.now(), map, inFlight: null });
+          return map;
+        })
+        .catch((err) => {
+          byRace.delete(raceId);
+          throw err;
+        });
+      entry = { loadedAt: 0, map: entry?.map || null, inFlight: loader };
+      byRace.set(raceId, entry);
+    }
+    await entry.inFlight;
+    entry = byRace.get(raceId);
+  }
+
+  const match = entry?.map?.get(bibNumber);
   if (!match) throw Object.assign(new Error('No runner was found for this bib in the selected race.'), { status: 404 });
   if (match.data().isFreeSlot) throw Object.assign(new Error('This is an empty race-day slot and cannot be added to an account yet.'), { status: 400 });
   return match;
@@ -197,21 +253,32 @@ async function claim(request, response) {
   return response.json(publicResponse(raceSnapshot.data(), claimedRunner, alreadyLinked));
 }
 
-exports.raceBibClaimApi = onRequest({ region: 'asia-southeast1', maxInstances: 20 }, async (request, response) => {
-  response.set('Cache-Control', 'no-store');
+exports.raceBibClaimApi = onRequest({
+  region: 'asia-southeast1',
+  maxInstances: 20,
+  concurrency: 80,
+  timeoutSeconds: 30,
+}, async (request, response) => {
+  applyApiSecurityHeaders(response);
   setCors(request, response);
   if (request.method === 'OPTIONS') return response.status(204).send('');
   if (request.method !== 'POST' || !request.is('application/json') || (request.rawBody?.length || 0) > 65536) {
     return response.status(400).json({ error: 'Invalid request.' });
   }
   try {
+    await verifyAppCheckRequest(request, { admin });
     const path = (request.path || '/').replace(/\/+$/, '') || '/';
     if (path === '/preview') return await preview(request, response);
     if (path === '/claim') return await claim(request, response);
     return response.status(404).json({ error: 'Route not found.' });
   } catch (error) {
     const status = typeof error?.status === 'number' && error.status >= 400 && error.status < 600 ? error.status : 500;
+    const retryAfter = Number(error?.retryAfter) || 0;
+    if (retryAfter > 0) response.set('Retry-After', String(retryAfter));
     console.warn('Race bib claim request failed', { status });
-    return response.status(status).json({ error: status < 500 && error?.message ? error.message : 'Unable to process this race bib.' });
+    return response.status(status).json({
+      error: status < 500 && error?.message ? error.message : 'Unable to process this race bib.',
+      ...(retryAfter > 0 ? { retryAfter } : {}),
+    });
   }
 });
