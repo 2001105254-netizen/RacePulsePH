@@ -132,6 +132,7 @@ export default function MyRaceEventsPanel({
   const headerCtx = useWorkspaceHeader();
   const isDesktop = useIsDesktop();
 
+  const canViewAnalytics = can('race.analytics');
   const canViewRoster = can('roster.view');
   const canViewRevenue = can('revenue.view');
   const canViewTiming = can('timing.view');
@@ -507,6 +508,7 @@ export default function MyRaceEventsPanel({
   };
 
   const openDataViewer = (category: DataViewerCategory = 'performance') => {
+    if (!canViewAnalytics) return;
     const resolvedCategory: DataViewerCategory =
       category === 'financial' && !canViewRevenue ? 'performance' : category;
     if (!selectedRaceId && activeViewerEvent) {
@@ -719,20 +721,22 @@ export default function MyRaceEventsPanel({
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={() => (viewMode === 'viewer' ? setViewMode('directory') : openDataViewer(safeViewerCategory))}
-        aria-pressed={viewMode === 'viewer'}
-        disabled={races.length === 0 && viewMode === 'directory'}
-        className={`h-9 px-3 rounded-lg border text-xs font-semibold inline-flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap disabled:opacity-40 ${
-          viewMode === 'viewer'
-            ? 'bg-white text-zinc-900 border-white hover:bg-zinc-100'
-            : 'bg-white/10 hover:bg-white/15 text-white border-white/15'
-        }`}
-      >
-        <BarChart3 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-        <span>{viewMode === 'viewer' ? 'Event Directory' : 'Data Viewer'}</span>
-      </button>
+      {canViewAnalytics && (
+        <button
+          type="button"
+          onClick={() => (viewMode === 'viewer' ? setViewMode('directory') : openDataViewer(safeViewerCategory))}
+          aria-pressed={viewMode === 'viewer'}
+          disabled={races.length === 0 && viewMode === 'directory'}
+          className={`h-9 px-3 rounded-lg border text-xs font-semibold inline-flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap disabled:opacity-40 ${
+            viewMode === 'viewer'
+              ? 'bg-white text-zinc-900 border-white hover:bg-zinc-100'
+              : 'bg-white/10 hover:bg-white/15 text-white border-white/15'
+          }`}
+        >
+          <BarChart3 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+          <span>{viewMode === 'viewer' ? 'Event Directory' : 'Data Viewer'}</span>
+        </button>
+      )}
 
       {canCreateRace && onCreateEvent && (
         <button
@@ -868,15 +872,17 @@ export default function MyRaceEventsPanel({
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => openDataViewer(safeViewerCategory)}
-                  disabled={races.length === 0}
-                  className="min-h-11 px-4 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-2 disabled:opacity-40"
-                >
-                  <BarChart3 className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
-                  <span>Data Viewer</span>
-                </button>
+                {canViewAnalytics && (
+                  <button
+                    type="button"
+                    onClick={() => openDataViewer(safeViewerCategory)}
+                    disabled={races.length === 0}
+                    className="min-h-11 px-4 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-2 disabled:opacity-40"
+                  >
+                    <BarChart3 className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+                    <span>Data Viewer</span>
+                  </button>
+                )}
                 {canCreateRace && onCreateEvent && (
                   <button
                     type="button"
@@ -943,7 +949,7 @@ export default function MyRaceEventsPanel({
         </div>
       )}
 
-      {viewMode === 'viewer' ? (
+      {viewMode === 'viewer' && canViewAnalytics ? (
         <EventDataViewer
           races={sortedViewerRaces}
           selectedRaceId={activeViewerEvent?.race.id || selectedRaceId}
@@ -1478,7 +1484,7 @@ export default function MyRaceEventsPanel({
               canViewRoster={canViewRoster}
               canViewRevenue={canViewRevenue}
               onOpenEngraving={canViewEngraving && onOpenEngraving ? handleLaunchEngraving : undefined}
-              onOpenDataViewer={openDataViewer}
+              onOpenDataViewer={canViewAnalytics ? openDataViewer : undefined}
             />
           )}
         </section>
@@ -1709,14 +1715,16 @@ export default function MyRaceEventsPanel({
                     </button>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={() => openDataViewer(safeViewerCategory)}
-                    className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 transition-colors col-span-2"
-                  >
-                    <BarChart3 className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
-                    <span>Open Data Viewer</span>
-                  </button>
+                  {canViewAnalytics && (
+                    <button
+                      type="button"
+                      onClick={() => openDataViewer(safeViewerCategory)}
+                      className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 transition-colors col-span-2"
+                    >
+                      <BarChart3 className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+                      <span>Open Data Viewer</span>
+                    </button>
+                  )}
 
                   {canViewEngraving && onOpenEngraving && (
                     <button

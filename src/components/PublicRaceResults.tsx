@@ -16,6 +16,7 @@ interface PublicRaceResultsProps {
   onRegister: (raceId: string) => void;
   registerLabel?: string;
   embedded?: boolean;
+  hideCoursePreview?: boolean;
 }
 
 function certificateResult(entry: PublicLeaderboardEntry): RunnerResult {
@@ -39,7 +40,13 @@ function certificateResult(entry: PublicLeaderboardEntry): RunnerResult {
 // Read-only results view. It deliberately reads only the compact public
 // `liveResults` record published by the timing console: never raw scan data or
 // runner contact details.
-export default function PublicRaceResults({ race, onRegister, registerLabel = 'Sign up to register', embedded = false }: PublicRaceResultsProps) {
+export default function PublicRaceResults({
+  race,
+  onRegister,
+  registerLabel = 'Sign up to register',
+  embedded = false,
+  hideCoursePreview = false,
+}: PublicRaceResultsProps) {
   const [summary, setSummary] = useState<PublicLiveResults | null | undefined>(undefined);
   const [search, setSearch] = useState('');
   const [distance, setDistance] = useState('all');
@@ -183,55 +190,64 @@ export default function PublicRaceResults({ race, onRegister, registerLabel = 'S
         </div>
       )}
 
-      <div className={embedded ? 'space-y-4' : 'p-4 sm:p-6 space-y-4'}>
-        <EventCourseRunnerPanel race={race} preferredDistance={distance !== 'all' ? distance : undefined} />
+      <div className={embedded ? 'space-y-3' : 'p-3 sm:p-5 space-y-4'}>
+        {!hideCoursePreview && (
+          <EventCourseRunnerPanel race={race} preferredDistance={distance !== 'all' ? distance : undefined} />
+        )}
         {summary === undefined ? (
           <ResultsSkeletonList rows={5} />
         ) : summary === null || officialResults.length === 0 ? (
-          <div className="glass-inset px-5 py-8 text-center space-y-2">
-            <Medal className="w-8 h-8 mx-auto text-[var(--text-secondary)]" aria-hidden="true" />
+          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-4 py-6 text-center space-y-1.5">
+            <Medal className="w-7 h-7 mx-auto text-[var(--text-secondary)]" aria-hidden="true" />
             <p className="text-sm font-semibold text-[var(--text-primary)]">Official results are not published yet</p>
             <p className="text-xs text-[var(--text-secondary)]">Results and E-certificates become available after the organizer starts the race and records finishers.</p>
           </div>
         ) : (
           <>
-            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
               <div>
                 <h3 className="text-sm font-semibold text-[var(--text-primary)]">Official ranking</h3>
-                <p className="mt-1 text-xs text-[var(--text-secondary)]">{officialResults.length} official finishers. Search your name or bib, filter by age division, then download your certificate. Free Slots are identified by bib only.</p>
+                <p className="mt-0.5 text-xs tabular-nums text-[var(--text-secondary)]">
+                  {officialResults.length} official finishers · Search name or bib to download certificate
+                </p>
               </div>
-              {summary.updatedAt && <span className="text-xs text-[var(--text-secondary)]">Updated {formatDateTime(summary.updatedAt)}</span>}
+              {summary.updatedAt && <span className="text-xs tabular-nums text-[var(--text-secondary)]">Updated {formatDateTime(summary.updatedAt)}</span>}
             </div>
 
             {raceStats && (
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2" aria-label="Race finish statistics">
-                <div className="glass-inset px-3 py-2">
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Finishers</div>
-                  <div className="mt-1 font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">
-                    {raceStats.finished}{raceStats.registered > 0 ? ` / ${raceStats.registered}` : ''}
-                    {raceStats.finishRatePct !== null && (
-                      <span className="ml-2 text-xs text-emerald-700 dark:text-emerald-400">({raceStats.finishRatePct}%)</span>
-                    )}
+              <div className="overflow-x-auto racepulse-horizontal-scroll rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)]">
+                <dl
+                  className="grid grid-flow-col auto-cols-[minmax(112px,1fr)] divide-x divide-[var(--border-subtle)]"
+                  aria-label="Race finish statistics"
+                >
+                  <div className="px-2.5 py-2">
+                    <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Finishers</dt>
+                    <dd className="mt-0.5 font-mono text-xs sm:text-sm font-semibold tabular-nums text-[var(--text-primary)] truncate">
+                      {raceStats.finished}{raceStats.registered > 0 ? `/${raceStats.registered}` : ''}
+                      {raceStats.finishRatePct !== null && (
+                        <span className="ml-1.5 text-xs text-emerald-700 dark:text-emerald-400">({raceStats.finishRatePct}%)</span>
+                      )}
+                    </dd>
                   </div>
-                </div>
-                <div className="glass-inset px-3 py-2">
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Fastest Finish</div>
-                  <div className="mt-1 font-mono text-sm font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
-                    <RaceTimeText value={raceStats.fastestTime} fallback="--:--:--" />
+                  <div className="px-2.5 py-2">
+                    <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Fastest</dt>
+                    <dd className="mt-0.5 font-mono text-xs sm:text-sm font-semibold tabular-nums text-emerald-700 dark:text-emerald-400 truncate">
+                      <RaceTimeText value={raceStats.fastestTime} fallback="--:--:--" />
+                    </dd>
                   </div>
-                </div>
-                <div className="glass-inset px-3 py-2">
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Median Finish</div>
-                  <div className="mt-1 font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">
-                    <RaceTimeText value={raceStats.medianTime} fallback="--:--:--" />
+                  <div className="px-2.5 py-2">
+                    <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Median</dt>
+                    <dd className="mt-0.5 font-mono text-xs sm:text-sm font-semibold tabular-nums text-[var(--text-primary)] truncate">
+                      <RaceTimeText value={raceStats.medianTime} fallback="--:--:--" />
+                    </dd>
                   </div>
-                </div>
-                <div className="glass-inset px-3 py-2">
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Chip / Special Age</div>
-                  <div className="mt-1 font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">
-                    {raceStats.chipCount} chip{raceStats.specialAwardsCount > 0 ? ` / ${raceStats.specialAwardsCount} award${raceStats.specialAwardsCount === 1 ? '' : 's'}` : ''}
+                  <div className="px-2.5 py-2">
+                    <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Chip Timing</dt>
+                    <dd className="mt-0.5 font-mono text-xs sm:text-sm font-semibold tabular-nums text-[var(--text-primary)] truncate">
+                      {raceStats.chipCount} chip{raceStats.specialAwardsCount > 0 ? ` · ${raceStats.specialAwardsCount} awd` : ''}
+                    </dd>
                   </div>
-                </div>
+                </dl>
               </div>
             )}
 
@@ -239,7 +255,12 @@ export default function PublicRaceResults({ race, onRegister, registerLabel = 'S
               <label className="relative block">
                 <span className="sr-only">Search official finishers by name or bib number</span>
                 <Search className="pointer-events-none absolute left-3 top-1/2 w-4 h-4 -translate-y-1/2 text-[var(--text-secondary)]" aria-hidden="true" />
-                <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or bib number" className="w-full glass-inset py-3 pl-10 pr-4 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700 dark:focus:ring-red-400" />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search name or bib number"
+                  className="w-full min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] py-2 pl-9 pr-3 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700 dark:focus:ring-red-400"
+                />
               </label>
               {distances.length > 1 && (
                 <Select
@@ -259,12 +280,12 @@ export default function PublicRaceResults({ race, onRegister, registerLabel = 'S
             </div>
 
             {categories.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter results by age division">
+              <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter results by age division">
                 <button
                   type="button"
                   onClick={() => setCategoryFilter('all')}
                   aria-pressed={categoryFilter === 'all'}
-                  className={`min-h-11 px-3 py-2 rounded-full border text-xs font-semibold transition-colors ${
+                  className={`min-h-11 px-3 py-1.5 rounded-full border text-xs font-semibold tabular-nums transition-colors ${
                     categoryFilter === 'all'
                       ? 'border-red-600 bg-red-700 text-white'
                       : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600'
@@ -278,7 +299,7 @@ export default function PublicRaceResults({ race, onRegister, registerLabel = 'S
                     type="button"
                     onClick={() => setCategoryFilter(cat.label)}
                     aria-pressed={categoryFilter === cat.label}
-                    className={`min-h-11 px-3 py-2 rounded-full border text-xs font-semibold transition-colors inline-flex items-center gap-1.5 ${
+                    className={`min-h-11 px-3 py-1.5 rounded-full border text-xs font-semibold tabular-nums transition-colors inline-flex items-center gap-1.5 ${
                       categoryFilter === cat.label
                         ? 'border-red-600 bg-red-700 text-white'
                         : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600'
@@ -294,7 +315,7 @@ export default function PublicRaceResults({ race, onRegister, registerLabel = 'S
             {certError && (
               <div
                 role="alert"
-                className="rounded-xl border border-red-700/30 bg-red-50 dark:bg-red-950/35 px-3 py-2.5 text-xs font-semibold text-red-700 dark:text-red-300 flex items-center justify-between gap-2"
+                className="rounded-xl border border-red-700/30 bg-red-50 dark:bg-red-950/35 px-3 py-2 text-xs font-semibold text-red-700 dark:text-red-300 flex items-center justify-between gap-2"
               >
                 <span className="flex items-center gap-2 min-w-0">
                   <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
@@ -312,38 +333,38 @@ export default function PublicRaceResults({ race, onRegister, registerLabel = 'S
             )}
 
             {filteredResults.length === 0 ? (
-              <p className="glass-inset px-4 py-6 text-center text-xs text-[var(--text-secondary)]">No official result matches &ldquo;{search}&rdquo;.</p>
+              <p className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-4 py-6 text-center text-xs text-[var(--text-secondary)]">
+                No official result matches &ldquo;{search}&rdquo;.
+              </p>
             ) : (
-              <div className="space-y-2 max-h-[38rem] overflow-y-auto pr-1">
+              <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] divide-y divide-[var(--border-subtle)] max-h-[38rem] overflow-y-auto">
                 {filteredResults.map((entry) => {
                   const entryKey = `${entry.distance}_${entry.rank}_${entry.bibNumber}`;
                   const isDownloading = downloadingKey === entryKey;
                   const finisherLabel = entry.isFreeSlot ? `Bib ${entry.bibNumber}` : entry.fullName;
                   return (
-                    <div key={entryKey} className="glass-inset px-3 py-3 sm:px-4 flex items-center gap-3">
-                      <span className="w-8 text-center font-mono font-semibold text-red-700 dark:text-red-400 shrink-0">#{entry.overallRank ?? entry.rank}</span>
+                    <div key={entryKey} className="px-3 py-2.5 flex items-center gap-2.5">
+                      <span className="w-8 text-center font-mono text-xs font-semibold tabular-nums text-red-700 dark:text-red-400 shrink-0">
+                        #{entry.overallRank ?? entry.rank}
+                      </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-semibold text-[var(--text-primary)]">{finisherLabel}</span>
-                        <span className="block mt-1 text-xs text-[var(--text-secondary)]">
+                        <span className="block mt-0.5 text-xs tabular-nums text-[var(--text-secondary)] truncate">
                           {entry.distance} · Bib #{entry.bibNumber}
-                          {entry.categoryRank ? ` · ${entry.categoryLabel || 'Category'} #${entry.categoryRank}` : ''}
+                          {entry.categoryRank ? ` · ${entry.categoryLabel || 'Cat'} #${entry.categoryRank}` : ''}
                           {entry.specialAgeAwards?.length ? ` · ${entry.specialAgeAwards.join(' / ')}` : ''}
-                          {entry.timingMethod === 'gun' ? ' · Gun time' : ''}
-                        </span>
-                        <span className="sm:hidden block mt-1 font-mono text-xs font-semibold tabular-nums text-emerald-800 dark:text-emerald-300">
-                          <RaceTimeText value={entry.finishTime} />
-                          {entry.finishReviewRequired && <span className="ml-2 text-amber-800 dark:text-amber-300">Provisional · finish review</span>}
+                          {entry.timingMethod === 'gun' ? ' · Gun' : ''}
                         </span>
                       </span>
-                      <span className="hidden sm:block shrink-0 text-right font-mono text-sm font-semibold tabular-nums text-emerald-800 dark:text-emerald-300">
+                      <span className="shrink-0 text-right font-mono text-xs sm:text-sm font-semibold tabular-nums text-emerald-800 dark:text-emerald-300">
                         <RaceTimeText value={entry.finishTime} />
-                        {entry.finishReviewRequired && <span className="block text-xs text-amber-800 dark:text-amber-300">Provisional · finish review</span>}
+                        {entry.finishReviewRequired && <span className="block text-[11px] text-amber-800 dark:text-amber-300">Provisional</span>}
                       </span>
                       <button
                         type="button"
                         disabled={isDownloading}
                         onClick={() => handleDownloadCertificate(entry)}
-                        className="shrink-0 min-h-11 min-w-11 rounded-full border border-red-700/30 bg-red-500/10 text-red-700 dark:text-red-400 hover:bg-red-700 hover:text-white disabled:opacity-60 transition-all duration-150 flex items-center justify-center motion-safe:active:scale-95"
+                        className="shrink-0 min-h-11 min-w-11 rounded-full border border-red-700/30 bg-red-500/10 text-red-700 dark:text-red-400 hover:bg-red-700 hover:text-white disabled:opacity-60 transition-colors flex items-center justify-center"
                         title={`Download ${finisherLabel}'s certificate`}
                         aria-label={`Download certificate for ${finisherLabel}`}
                       >

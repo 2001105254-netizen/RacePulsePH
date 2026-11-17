@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "updated": "2026-11-17",
+  "canonicalRoot": ".agents/agents",
+  "mirrorRoot": "agents",
+  "skillsRegistry": ".agents/skills/skills-library.json",
+  "namingConvention": {
+    "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+    "requiredSuffix": "-agent",
+    "allowedExceptions": [],
+    "descriptionLength": [
+      20,
+      400
+    ],
+    "maxLines": 120
+  },
+  "rulesSources": [
+    "AGENTS.md",
+    ".agents/rules/frontend.md",
+    ".agents/skills/antislop/SKILL.md"
+  ],
+  "coreRules": {
+    "skill": "antislop",
+    "version": "3.2.27",
+    "criteria": [
+      "C-1",
+      "C-2",
+      "C-3",
+      "C-4",
+      "C-5"
+    ],
+    "tiers": {
+      "hardGate": [
+        "R-02",
+        "R-03",
+        "R-17",
+        "R-18",
+        "R-23",
+        "R-24",
+        "R-25",
+        "R-26",
+        "R-27",
+        "R-28",
+        "R-32",
+        "R-33",
+        "R-34",
+        "R-35",
+        "R-36",
+        "R-37",
+        "R-38",
+        "R-39",
+        "R-40"
+      ],
+      "purposeGate": [
+        "R-01",
+        "R-04",
+        "R-06",
+        "R-07",
+        "R-08",
+        "R-09",
+        "R-10",
+        "R-12",
+        "R-13",
+        "R-14",
+        "R-19",
+        "R-22"
+      ],
+      "qualityLocks": [
+        "R-05",
+        "R-11",
+        "R-15",
+        "R-16",
+        "R-20",
+        "R-21",
+        "R-29",
+        "R-30",
+        "R-31"
+      ]
+    }
+  },
+  "projectGates": [
+    {
+      "id": "no-em-dash",
+      "summary": "No em dash (U+2014) in UI microcopy, skill text, or agent text.",
+      "rule": "R-02"
+    },
+    {
+      "id": "no-fabricated-claims",
+      "summary": "No fabricated stats, testimonials, AI avatars or unverified security claims.",
+      "rule": "R-36"
+    },
+    {
+      "id": "no-dead-controls",
+      "summary": "No dead links, buttons or navbar anchors.",
+      "rule": "R-26"
+    },
+    {
+      "id": "no-patch-scripts",
+      "summary": "No UI features implemented by scripts that patch source or CSS with string replacement.",
+      "rule": "R-33"
+    },
+    {
+      "id": "no-eyebrow-badges",
+      "summary": "No eyebrow capsule badges or floating pill banners above headlines.",
+      "rule": null
+    },
+    {
+      "id": "no-template-layouts",
+      "summary": "No generic template layouts such as hero plus three cards.",
+      "rule": null
+    },
+    {
+      "id": "delivery-gate",
+      "summary": "Deliver a PASS/FAIL report with interactive verification, guard exit codes and a purpose log.",
+      "rule": "R-35"
+    }
+  ],
+  "agents": [
+    {
+      "name": "runner-mobile-ui-agent",
+      "path": ".agents/agents/runner-mobile-ui-agent.md",
+      "origin": "repo",
+      "status": "active",
+      "role": "Mobile Runner UI Architect",
+      "description": "Specialist agent for high-density mobile Runner UI architecture, thumb-zone ergonomics, and anti-slop spatial refactoring.",
+      "skills": [
+        "antislop",
+        "antislop-layoutmobile",
+        "antislop-human",
+        "racepulse-runner-mobile-ui",
+        "android-layout-specialist",
+        "racepulse-responsive-ui",
+        "racepulse-feedback"
+      ],
+      "dependsOnAgents": [],
+      "tools": [
+        "Read",
+        "Write",
+        "Edit",
+        "Glob",
+        "Grep",
+        "Playwright"
+      ],
+      "rules": [
+        "C-1",
+        "C-2",
+        "C-3",
+        "C-4",
+        "C-5",
+        "R-02",
+        "R-03",
+        "R-11",
+        "R-15",
+        "R-25",
+        "R-26",
+        "R-27",
+        "R-31",
+        "R-32",
+        "R-33",
+        "R-34",
+        "R-35",
+        "R-36",
+        "R-37",
+        "R-39",
+        "R-40"
+      ],
+      "references": [],
+      "mirror": "agents/runner-mobile-ui-agent.md"
+    }
+  ],
+  "backlog": [],
+  "knownGaps": []
+}

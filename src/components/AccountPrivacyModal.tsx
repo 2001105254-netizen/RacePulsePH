@@ -23,6 +23,7 @@ import {
   HeartPulse,
   ImagePlus,
   KeyRound,
+  LogOut,
   Mail,
   MapPin,
   PackageCheck,
@@ -908,13 +909,15 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
 
   return (
     <DialogSurface
+      variant="sheet"
+      dismissOnBackdropClick
       titleId={`${dialogId}-title`}
       descriptionId={`${dialogId}-desc`}
       onRequestClose={onClose}
       initialFocusRef={closeRef}
-      className="fixed inset-0 m-auto h-fit w-[calc(100%-1rem)] sm:w-[calc(100%-2rem)] max-w-4xl max-h-[92dvh] overflow-y-auto rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] shadow-2xl p-0"
+      className="sm:inset-0 sm:m-auto h-fit w-full sm:w-[calc(100%-2rem)] max-w-4xl max-h-[92dvh] overflow-y-auto rounded-t-[20px] sm:rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] p-0 relative"
     >
-      {/* Hidden quick inputs for Facebook header avatar & cover banner */}
+      {/* Hidden quick inputs for header avatar & cover banner */}
       <input
         ref={headerAvatarInputRef}
         type="file"
@@ -932,8 +935,18 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
         className="hidden"
       />
 
-      {/* ========== FACEBOOK COVER BANNER ========== */}
-      <div className={`relative h-36 sm:h-52 w-full overflow-hidden rounded-t-2xl ${coverPreview ? 'bg-black' : activeCoverClass}`}>
+      <button
+        ref={closeRef}
+        type="button"
+        onClick={onClose}
+        aria-label="Close profile and account settings"
+        className="absolute top-3 right-3 z-20 min-h-11 min-w-11 rounded-full bg-[var(--surface-inset)] sm:bg-black/55 hover:bg-[var(--surface-hover)] sm:hover:bg-black/75 border border-[var(--border-default)] sm:border-white/25 text-[var(--text-primary)] sm:text-white flex items-center justify-center transition-colors sm:backdrop-blur-sm"
+      >
+        <X className="w-5 h-5" aria-hidden="true" />
+      </button>
+
+      {/* Cover banner (tablet/desktop >= 640px only; hidden on compact mobile sheet so content leads) */}
+      <div className={`hidden sm:block relative h-48 w-full overflow-hidden rounded-t-2xl ${coverPreview ? 'bg-black' : activeCoverClass}`}>
         {coverPreview ? (
           <img src={coverPreview} alt="" aria-hidden="true" className="w-full h-full object-cover" />
         ) : (
@@ -947,16 +960,6 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
           />
         )}
         <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/65" />
-
-        <button
-          ref={closeRef}
-          type="button"
-          onClick={onClose}
-          aria-label="Close profile and account settings"
-          className="absolute top-3 right-3 z-10 min-h-11 min-w-11 rounded-full bg-black/55 hover:bg-black/75 border border-white/25 text-white flex items-center justify-center transition-colors backdrop-blur-sm"
-        >
-          <X className="w-5 h-5" aria-hidden="true" />
-        </button>
 
         <button
           type="button"
@@ -1026,12 +1029,12 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
         </div>
       )}
 
-      {/* ========== FACEBOOK OVERLAPPING AVATAR & IDENTITY HEADER ========== */}
-      <div className="px-4 sm:px-6 pb-4 border-b border-[var(--border-subtle)]">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-          <div className="flex flex-col sm:flex-row sm:items-end gap-4 min-w-0">
-            <div className={`relative ${showCoverPicker ? 'mt-3' : '-mt-12 sm:-mt-16'} w-24 h-24 sm:w-32 sm:h-32 shrink-0 self-start transition-[margin] duration-150`}>
-              <div className="w-full h-full rounded-full overflow-hidden bg-red-700 text-white ring-4 ring-[var(--surface-card)] shadow-xl flex items-center justify-center font-display font-semibold text-3xl sm:text-4xl">
+      {/* Avatar & Identity Header */}
+      <div className="px-3 sm:px-6 pb-3 sm:pb-4 border-b border-[var(--border-subtle)]">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 sm:gap-4 pr-12 sm:pr-0">
+          <div className="flex items-center sm:items-end gap-3 sm:gap-4 min-w-0">
+            <div className={`relative ${showCoverPicker ? 'mt-3' : 'mt-3 sm:-mt-16'} w-16 h-16 sm:w-28 sm:h-28 shrink-0 self-start transition-[margin] duration-150`}>
+              <div className="w-full h-full rounded-full overflow-hidden bg-red-700 text-white ring-4 ring-[var(--surface-card)] flex items-center justify-center font-display font-semibold text-2xl sm:text-4xl">
                 {photoPreview ? (
                   <img src={photoPreview} alt="" aria-hidden="true" className="w-full h-full object-cover" />
                 ) : (
@@ -1044,14 +1047,14 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
                 disabled={processingMedia}
                 aria-label="Change profile picture"
                 title="Change profile picture"
-                className="absolute -bottom-1 -right-1 min-h-11 min-w-11 rounded-full bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] border border-[var(--border-default)] text-[var(--text-primary)] shadow-md flex items-center justify-center transition-colors"
+                className="absolute -bottom-1 -right-1 min-h-11 min-w-11 rounded-full bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] border border-[var(--border-default)] text-[var(--text-primary)] flex items-center justify-center transition-colors"
               >
                 <Camera className="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
 
-            <div className="min-w-0 space-y-1 pb-1">
-              <h2 id={`${dialogId}-title`} className="font-display text-xl sm:text-2xl font-semibold text-[var(--text-primary)] break-words">
+            <div className="min-w-0 space-y-0.5 sm:space-y-1 pt-2 sm:pt-0 sm:pb-1">
+              <h2 id={`${dialogId}-title`} className="font-display text-lg sm:text-2xl font-semibold text-[var(--text-primary)] break-words">
                 {effectiveName}
                 {effectiveNickname && (
                   <span className="font-normal text-[var(--text-secondary)]"> ({effectiveNickname})</span>
@@ -1062,16 +1065,16 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
                 {runClub.trim() ? ` • ${runClub.trim()}` : ''}
               </p>
               {bio.trim() && (
-                <p className="text-xs text-[var(--text-primary)] leading-relaxed pt-1">{bio.trim()}</p>
+                <p className="text-xs text-[var(--text-primary)] leading-relaxed pt-0.5">{bio.trim()}</p>
               )}
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 shrink-0 pb-1">
+          <div className="flex flex-wrap items-center gap-2 shrink-0 sm:pb-1">
             <button
               type="button"
               onClick={() => switchTab('edit')}
-              className="min-h-11 px-4 py-2 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center gap-2 transition-colors"
+              className="min-h-11 px-3.5 py-2 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
             >
               <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
               <span>Edit profile</span>
@@ -1079,10 +1082,21 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
             <button
               type="button"
               onClick={() => switchTab('security')}
-              className="min-h-11 px-4 py-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-2 transition-colors"
+              className="min-h-11 px-3.5 py-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-1.5 transition-colors"
             >
               <ShieldCheck className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
-              <span>Settings &amp; security</span>
+              <span>Security</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                void signOutUser();
+              }}
+              className="min-h-11 px-3.5 py-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:border-red-600/40 text-xs font-semibold text-red-700 dark:text-red-400 inline-flex items-center gap-1.5 transition-colors"
+            >
+              <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Sign out</span>
             </button>
           </div>
         </div>

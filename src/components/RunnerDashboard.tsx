@@ -7,13 +7,12 @@ import {
   Camera,
   ClipboardList,
   Flag,
-  LogOut,
   Search,
   Trophy,
   Users2,
   X,
 } from 'lucide-react';
-import { db, signOutUser } from '../firebase';
+import { db } from '../firebase';
 import { useAccess } from '../lib/access';
 import { useAndroidBackHandler } from '../lib/capacitorAndroid';
 import { claimRaceBib, claimableEntryLabel, parseRaceBibQr, previewRaceBibClaim, RaceBibClaimPreview } from '../lib/raceBibClaim';
@@ -30,13 +29,22 @@ import WorkspaceShell from './WorkspaceShell';
 import RunnerAllRacesPanel, { type CatalogStatusFilter } from './runner/RunnerAllRacesPanel';
 import RunnerEventsPanel, { type OpenEventsFilter } from './runner/RunnerEventsPanel';
 import RunnerFriendsPanel from './runner/RunnerFriendsPanel';
+import {
+  RunnerOfflineBanner,
+  RunnerQueueSkeleton,
+  RunnerTelemetryStrip,
+  type RunnerTelemetryItem,
+} from './runner/RunnerMobilePrimitives';
 import RunnerMyRacesPanel, { type MyPassesFilter } from './runner/RunnerMyRacesPanel';
-import { philippineTodayStr, useIsDesktop } from './runner/runnerUtils';
+import {
+  philippineTodayStr,
+  useNetworkSyncStatus,
+  useRunnerViewport,
+  useSoftKeyboardOpen,
+} from './runner/runnerUtils';
 import DialogSurface from './ui/DialogSurface';
 import {
-  AnimatedMetricValue,
   AnimatedTabView,
-  ViewLoadingSkeleton,
   resolveTabDirection,
   type NavDirection,
 } from './ui/MotionPrimitives';
@@ -62,7 +70,9 @@ export default function RunnerDashboard({
 }: RunnerDashboardProps) {
   const { can } = useAccess();
   const headerCtx = useWorkspaceHeader();
-  const isDesktop = useIsDesktop();
+  const { isCompact, isSplitPane, isDesktop } = useRunnerViewport();
+  const { online } = useNetworkSyncStatus();
+  const [mobileCanvasActive, setMobileCanvasActive] = useState(false);
 
   const [runnerProfiles, setRunnerProfiles] = useState<RunnerProfile[] | undefined>(undefined);
   const [sharedRaces, setSharedRaces] = useState<Race[]>([]);
@@ -343,17 +353,32 @@ export default function RunnerDashboard({
 
   const { reminders, dismiss, notificationPermission, requestAlerts } = useRunnerReminders(runnerProfiles);
 
-  // Desktop viewport lock: master-detail split tabs lock 100dvh, form flows (Step 2/3 registration & Engraving) scroll freely
+  // Viewport lock: list and split tabs lock 100dvh on all viewports, while registration form & engraving scroll freely
   const isLockedTab =
     tab === 'allraces' || tab === 'myraces' || tab === 'friends' || (tab === 'events' && !eventsInFormFlow);
   const isLocked = isDesktop && isLockedTab;
+  const isSplitLocked = isLockedTab;
+  const imeOpen = useSoftKeyboardOpen(
+    isCompact && !showProfile && !showEventQrScanner && !pendingBibClaim && !alertsOpen,
+  );
 
   const setDesktopLocked = headerCtx?.setDesktopLocked;
+  const setSplitViewportLocked = headerCtx?.setSplitViewportLocked;
   useEffect(() => {
     if (!setDesktopLocked) return;
     setDesktopLocked(isLocked);
     return () => setDesktopLocked(false);
   }, [isLocked, setDesktopLocked]);
+
+  useEffect(() => {
+    if (!setSplitViewportLocked) return;
+    setSplitViewportLocked(isSplitLocked);
+    return () => setSplitViewportLocked(false);
+  }, [isSplitLocked, setSplitViewportLocked]);
+
+  useEffect(() => {
+    if (isSplitPane) setMobileCanvasActive(false);
+  }, [isSplitPane, tab]);
 
   // Global desktop `/` focus shortcut for active top-bar search input
   useEffect(() => {
@@ -493,13 +518,15 @@ export default function RunnerDashboard({
       active: tab === 'engraving',
       onClick: () => selectTab('engraving'),
     },
-  ].filter(
-    (item) =>
-      item.key === 'myraces' ||
-      (item.key === 'allraces'
-        ? can('personal.results') || can('personal.register')
-        : can({ events: 'personal.register', friends: 'personal.friends', engraving: 'personal.engraving' }[item.key]!)),
-  );
+  ].filter((item) => {
+    if (item.key === 'myraces') {
+      return can('personal.results') || can('personal.bibs') || can('personal.certificates') || can('personal.register');
+    }
+    if (item.key === 'allraces') {
+      return can('personal.results') || can('personal.register');
+    }
+    return can({ events: 'personal.register', friends: 'personal.friends', engraving: 'personal.engraving' }[item.key]!);
+  });
 
   const registeredRaceIds = useMemo(
     () => new Set((runnerProfiles || []).map((rp) => rp.raceId)),
@@ -714,14 +741,123 @@ export default function RunnerDashboard({
   const telemetryLoading = runnerProfiles === undefined;
   const telemetryContextSummary =
     tab === 'events'
-      ? `Showing ${eventsMetrics.showing} / ${eventsMetrics.total}`
+      ? `${eventsMetrics.showing}/${eventsMetrics.total}`
       : tab === 'allraces'
-      ? `Showing ${catalogMetrics.showing} / ${catalogMetrics.all}`
-      : tab === 'myraces'
-      ? `Showing ${myPassesMetrics.showing} / ${myPassesMetrics.all}`
-      : tab === 'friends'
-      ? `${friendsCount} connected`
-      : `${totalPassesCount} registered pass${totalPassesCount === 1 ? '' : 'es'}`;
+        ? `${catalogMetrics.showing}/${catalogMetrics.all}`
+        : tab === 'myraces'
+          ? `${myPassesMetrics.showing}/${myPassesMetrics.all}`
+          : tab === 'friends'
+            ? `${friendsCount}`
+            : `${totalPassesCount}`;
+
+  const telemetryItems: RunnerTelemetryItem[] = [
+    {
+      key: 'passes',
+      label: 'Passes',
+      value: totalPassesCount,
+      loading: telemetryLoading,
+      active: tab === 'myraces' && myPassesFilter === 'all',
+      onClick: () => {
+        setMyPassesFilter('all');
+        selectTab('myraces');
+      },
+    },
+    {
+      key: 'upcoming',
+      label: 'Upcoming',
+      value: upcomingPassesCount,
+      loading: telemetryLoading,
+      accent: 'emerald',
+      active: tab === 'myraces' && myPassesFilter === 'upcoming',
+      onClick: () => {
+        setMyPassesFilter('upcoming');
+        selectTab('myraces');
+      },
+    },
+    ...(can('personal.register')
+      ? [
+          {
+            key: 'events',
+            label: 'Open',
+            value: openEventsCount,
+            loading: !racesLoaded,
+            accent: 'red' as const,
+            active: tab === 'events',
+            onClick: () => selectTab('events'),
+          },
+        ]
+      : []),
+    ...(can('personal.friends')
+      ? [
+          {
+            key: 'friends',
+            label: 'Friends',
+            value: friendsCount,
+            active: tab === 'friends',
+            onClick: () => selectTab('friends'),
+          },
+        ]
+      : []),
+  ];
+
+  const showCompactHeader = !isDesktop && !(isCompact && mobileCanvasActive);
+  const showTelemetryBar = !(isCompact && (mobileCanvasActive || eventsInFormFlow));
+
+  const mobileHeaderLeftMarkup = (
+    <div className="flex items-center gap-2 min-w-0 flex-1">
+      <span className="h-4 w-px bg-white/15 shrink-0" aria-hidden="true" />
+      <h1 className="font-display font-semibold text-sm sm:text-base text-white truncate">
+        {currentMeta.title}
+      </h1>
+      {!(tab === 'events' && eventsInFormFlow) && (
+        <span className="font-mono text-xs font-semibold tabular-nums text-zinc-300 shrink-0">
+          {telemetryContextSummary}
+        </span>
+      )}
+    </div>
+  );
+
+  const mobileHeaderRightMarkup = (
+    <div className="flex items-center gap-0.5 shrink-0">
+      {(runnerProfiles?.length ?? 0) > 0 && (
+        <button
+          type="button"
+          onClick={() => setAlertsOpen((open) => !open)}
+          aria-expanded={alertsOpen}
+          aria-label={`Race alerts (${reminders.length})`}
+          className={`min-w-[44px] min-h-[44px] px-1.5 rounded-full inline-flex items-center justify-center gap-1 text-xs font-semibold transition-colors ${
+            alertsOpen
+              ? 'bg-red-700 text-white'
+              : reminders.length > 0
+                ? 'text-amber-300 hover:bg-white/10'
+                : 'text-white/90 hover:bg-white/10'
+          }`}
+        >
+          <BellRing className="w-4 h-4 shrink-0" aria-hidden="true" />
+          {reminders.length > 0 && (
+            <span className="font-mono text-xs tabular-nums">{reminders.length}</span>
+          )}
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={() => setShowProfile(true)}
+        aria-label="Open profile and account settings"
+        className="min-w-[44px] min-h-[44px] rounded-full inline-flex items-center justify-center hover:bg-white/10"
+      >
+        <span
+          className="w-7 h-7 rounded-full overflow-hidden bg-red-700 text-white flex items-center justify-center text-xs font-semibold border border-white/25"
+          aria-hidden="true"
+        >
+          {profile.photoURL ? (
+            <img src={profile.photoURL} alt="" width={28} height={28} className="w-full h-full object-cover" />
+          ) : (
+            (profile.nickname || profile.displayName || 'R').charAt(0).toUpperCase()
+          )}
+        </span>
+      </button>
+    </div>
+  );
 
   return (
     <WorkspaceShell
@@ -733,236 +869,124 @@ export default function RunnerDashboard({
       pendingApprovalNotice={pendingApprovalNotice}
       maxWidthClass="max-w-[1800px]"
       desktopLocked={isLocked}
+      splitLocked={isSplitLocked}
+      mobileBreakpoint="md600"
+      bottomNavVariant="docked"
+      hideBottomNav={imeOpen || (isCompact && mobileCanvasActive)}
+      compactGutters
       onOpenProfile={() => setShowProfile(true)}
     >
       {isDesktop && headerCtx?.leftSlotEl ? createPortal(headerLeftMarkup, headerCtx.leftSlotEl) : null}
       {isDesktop && headerCtx?.rightSlotEl ? createPortal(headerRightMarkup, headerCtx.rightSlotEl) : null}
+      {!isDesktop && showCompactHeader && headerCtx?.leftSlotEl
+        ? createPortal(mobileHeaderLeftMarkup, headerCtx.leftSlotEl)
+        : null}
+      {!isDesktop && showCompactHeader && headerCtx?.rightSlotEl
+        ? createPortal(mobileHeaderRightMarkup, headerCtx.rightSlotEl)
+        : null}
+
+      <RunnerOfflineBanner online={online} />
 
       {/* Strictly one <h1> in the active DOM at every breakpoint */}
       {isDesktop ? (
         <h1 className="sr-only">{currentMeta.title}</h1>
-      ) : (
-        <div className="glass-panel hero-glow flex flex-col sm:flex-row sm:items-center justify-between px-3.5 py-3 gap-2.5 animate-fadeIn">
-          <div className="min-w-0 flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <span className="text-xs tracking-wider font-semibold text-red-700 dark:text-red-400 uppercase block truncate">
-                Runner Portal
+      ) : showCompactHeader && !headerCtx?.leftSlotEl ? (
+        <header className="shrink-0 h-12 px-3 sm:px-4 border-b border-[var(--border-default)] bg-[var(--surface-card)] flex items-center justify-between gap-2">
+          <div className="min-w-0 flex items-baseline gap-2">
+            <h1 className="font-display font-semibold text-base text-[var(--text-primary)] truncate">
+              {currentMeta.title}
+            </h1>
+            <span className="font-mono text-xs font-semibold tabular-nums text-[var(--text-secondary)] shrink-0">
+              {telemetryContextSummary}
+            </span>
+          </div>
+        </header>
+      ) : !showCompactHeader ? (
+        <h1 className="sr-only">{currentMeta.title}</h1>
+      ) : null}
+
+      {/* Compact Horizontal Telemetry Strip (< 96px height, divide-x, tabular-nums) */}
+      {showTelemetryBar && (
+        <div
+          id="runner_portfolio_telemetry"
+          className="shrink-0 w-full flex items-stretch justify-between bg-[var(--surface-card)] border-b border-[var(--border-default)]"
+        >
+          <RunnerTelemetryStrip
+            items={telemetryItems}
+            ariaLabel="Runner portfolio summary"
+            className="flex-1 border-b-0"
+          />
+          {isDesktop && (
+            <div className="hidden xl:flex items-center gap-3 px-4 border-l border-[var(--border-subtle)] shrink-0 text-xs text-[var(--text-secondary)]">
+              {(runnerProfiles?.length ?? 0) > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setAlertsOpen((open) => !open)}
+                  aria-expanded={alertsOpen}
+                  aria-controls="runner_alerts_drawer"
+                  className={`h-8 px-2.5 rounded-lg border text-xs font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+                    alertsOpen
+                      ? 'border-red-600 bg-red-700 text-white'
+                      : reminders.length > 0
+                        ? 'border-amber-600/35 bg-amber-500/10 text-amber-800 dark:text-amber-300'
+                        : 'border-[var(--border-subtle)] bg-[var(--surface-inset)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  <BellRing className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                  <span>Alerts</span>
+                  <span className="font-mono tabular-nums">{reminders.length}</span>
+                </button>
+              )}
+              <span className="font-mono tabular-nums">Showing {telemetryContextSummary}</span>
+              <span className="font-mono px-2.5 py-0.5 rounded-md bg-[var(--surface-inset)] border border-[var(--border-default)] text-[var(--text-primary)]">
+                {profile.username ? `@${profile.username}` : profile.displayName}
               </span>
-              <h1 className="heading-float font-semibold tracking-tight font-display text-[var(--text-primary)] truncate text-lg mt-0.5">
-                {profile.displayName}
-              </h1>
             </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              onClick={openQrScanner}
-              className="min-h-11 shrink-0 text-xs text-[var(--text-primary)] border border-[var(--border-default)] hover:border-red-500/40 hover:text-red-700 dark:hover:text-red-400 font-semibold px-3 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
-            >
-              <Camera className="w-3.5 h-3.5" aria-hidden="true" /> Scan QR
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowProfile(true)}
-              aria-label="Open profile settings"
-              title="Profile and Account Settings"
-              className="min-h-11 shrink-0 text-xs text-[var(--text-primary)] border border-[var(--border-default)] hover:border-red-500/40 hover:text-red-700 dark:hover:text-red-400 font-semibold px-3 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
-            >
-              <span
-                className="w-5 h-5 rounded-full overflow-hidden bg-red-700 text-white flex items-center justify-center text-xs font-semibold shrink-0"
-                aria-hidden="true"
-              >
-                {profile.photoURL ? (
-                  <img src={profile.photoURL} alt="" width={20} height={20} className="w-full h-full object-cover" />
-                ) : (
-                  (profile.nickname || profile.displayName || 'R').charAt(0).toUpperCase()
-                )}
-              </span>
-              <span>Profile</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => signOutUser()}
-              className="min-h-11 shrink-0 text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)] hover:text-[var(--text-primary)] font-semibold px-3 py-2 rounded-[20px] transition flex items-center gap-1.5 uppercase tracking-wider"
-            >
-              <LogOut className="w-3.5 h-3.5" aria-hidden="true" /> Sign Out
-            </button>
-          </div>
+          )}
         </div>
       )}
 
-      {/* Portfolio Telemetry Strip matching Admin MyRaceEventsPanel ISO 11064-5 ribbon */}
-      <section
-        id="runner_portfolio_telemetry"
-        aria-label="Runner portfolio summary"
-        className={`shrink-0 max-w-full border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 sm:px-4 py-1.5 lg:py-0 flex items-center justify-between gap-2 lg:gap-4 overflow-x-auto racepulse-horizontal-scroll touch-pan-x ${
-          isLocked
-            ? 'rounded-2xl lg:rounded-none lg:border-x-0 lg:border-t-0 lg:h-12'
-            : 'rounded-2xl lg:h-12'
-        }`}
-      >
-        <div className="flex flex-nowrap items-center gap-1.5 sm:gap-2 min-w-0 shrink-0 lg:shrink">
-          <button
-            type="button"
-            onClick={() => {
-              setMyPassesFilter('all');
-              selectTab('myraces');
-            }}
-            aria-pressed={tab === 'myraces' && myPassesFilter === 'all'}
-            className={`min-h-11 lg:min-h-0 lg:h-8 px-3 rounded-lg border text-xs font-semibold inline-flex items-center gap-2 transition-colors whitespace-nowrap ${
-              tab === 'myraces' && myPassesFilter === 'all'
-                ? 'border-red-600 bg-red-50 dark:bg-red-950/40 text-[var(--text-primary)]'
-                : 'border-transparent hover:border-[var(--border-subtle)] hover:bg-[var(--surface-hover)] text-[var(--text-secondary)]'
-            }`}
-          >
-            <span className="font-normal">My Passes</span>
-            <AnimatedMetricValue
-              value={totalPassesCount}
-              loading={telemetryLoading}
-              skeletonWidthClass="w-5"
-              skeletonHeightClass="h-4"
-              className="font-mono font-semibold tabular-nums text-[var(--text-primary)]"
-            />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setMyPassesFilter('upcoming');
-              selectTab('myraces');
-            }}
-            aria-pressed={tab === 'myraces' && myPassesFilter === 'upcoming'}
-            className={`min-h-11 lg:min-h-0 lg:h-8 px-3 rounded-lg border text-xs font-semibold inline-flex items-center gap-2 transition-colors whitespace-nowrap ${
-              tab === 'myraces' && myPassesFilter === 'upcoming'
-                ? 'border-red-600 bg-red-50 dark:bg-red-950/40 text-[var(--text-primary)]'
-                : 'border-transparent hover:border-[var(--border-subtle)] hover:bg-[var(--surface-hover)] text-[var(--text-secondary)]'
-            }`}
-          >
-            <span className="w-2 h-2 rounded-full bg-emerald-600 dark:bg-emerald-400 shrink-0" aria-hidden="true" />
-            <span className="font-normal">Upcoming</span>
-            <AnimatedMetricValue
-              value={upcomingPassesCount}
-              loading={telemetryLoading}
-              skeletonWidthClass="w-5"
-              skeletonHeightClass="h-4"
-              className="font-mono font-semibold tabular-nums text-emerald-700 dark:text-emerald-400"
-            />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setMyPassesFilter('completed');
-              selectTab('myraces');
-            }}
-            aria-pressed={tab === 'myraces' && myPassesFilter === 'completed'}
-            className={`min-h-11 lg:min-h-0 lg:h-8 px-3 rounded-lg border text-xs font-semibold inline-flex items-center gap-2 transition-colors whitespace-nowrap ${
-              tab === 'myraces' && myPassesFilter === 'completed'
-                ? 'border-red-600 bg-red-50 dark:bg-red-950/40 text-[var(--text-primary)]'
-                : 'border-transparent hover:border-[var(--border-subtle)] hover:bg-[var(--surface-hover)] text-[var(--text-secondary)]'
-            }`}
-          >
-            <span className="font-normal">Completed</span>
-            <AnimatedMetricValue
-              value={completedPassesCount}
-              loading={telemetryLoading}
-              skeletonWidthClass="w-5"
-              skeletonHeightClass="h-4"
-              className="font-mono font-semibold tabular-nums text-[var(--text-primary)]"
-            />
-          </button>
-
-          <span className="hidden lg:block h-4 w-px bg-[var(--border-subtle)] mx-1 shrink-0" aria-hidden="true" />
-
-          {can('personal.register') && (
-            <button
-              type="button"
-              onClick={() => selectTab('events')}
-              aria-pressed={tab === 'events'}
-              className={`min-h-11 lg:min-h-0 lg:h-8 px-3 rounded-lg border text-xs font-semibold inline-flex items-center gap-2 transition-colors whitespace-nowrap ${
-                tab === 'events'
-                  ? 'border-red-600 bg-red-50 dark:bg-red-950/40 text-[var(--text-primary)]'
-                  : 'border-transparent hover:border-[var(--border-subtle)] hover:bg-[var(--surface-hover)] text-[var(--text-secondary)]'
-              }`}
-            >
-              <span className="w-2 h-2 rounded-full bg-red-600 dark:bg-red-400 shrink-0" aria-hidden="true" />
-              <span className="font-normal">Open Events</span>
-              <AnimatedMetricValue
-                value={openEventsCount}
-                loading={!racesLoaded}
-                skeletonWidthClass="w-5"
-                skeletonHeightClass="h-4"
-                className="font-mono font-semibold tabular-nums text-red-700 dark:text-red-400"
-              />
-            </button>
-          )}
-
-          {can('personal.friends') && (
-            <button
-              type="button"
-              onClick={() => selectTab('friends')}
-              aria-pressed={tab === 'friends'}
-              className={`min-h-11 lg:min-h-0 lg:h-8 px-3 rounded-lg border text-xs font-semibold inline-flex items-center gap-2 transition-colors whitespace-nowrap ${
-                tab === 'friends'
-                  ? 'border-red-600 bg-red-50 dark:bg-red-950/40 text-[var(--text-primary)]'
-                  : 'border-transparent hover:border-[var(--border-subtle)] hover:bg-[var(--surface-hover)] text-[var(--text-secondary)]'
-              }`}
-            >
-              <span className="font-normal">Friends</span>
-              <AnimatedMetricValue
-                value={friendsCount}
-                skeletonWidthClass="w-5"
-                skeletonHeightClass="h-4"
-                className="font-mono font-semibold tabular-nums text-[var(--text-primary)]"
-              />
-            </button>
-          )}
-
-          {(runnerProfiles?.length ?? 0) > 0 && (
-            <button
-              type="button"
-              onClick={() => setAlertsOpen((open) => !open)}
-              aria-expanded={alertsOpen}
-              aria-controls="runner_alerts_drawer"
-              className={`min-h-11 lg:min-h-0 lg:h-8 px-3 rounded-lg border text-xs font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap ${
-                alertsOpen
-                  ? 'border-red-600 bg-red-700 text-white'
-                  : reminders.length > 0
-                  ? 'border-amber-600/35 bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:border-amber-600/60'
-                  : 'border-[var(--border-subtle)] bg-[var(--surface-inset)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-              }`}
-            >
-              <BellRing className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-              <span>Alerts</span>
-              <span className="font-mono tabular-nums">{reminders.length}</span>
-            </button>
-          )}
-        </div>
-
-        <div className="hidden xl:flex items-center gap-3 shrink-0 text-xs text-[var(--text-secondary)]">
-          <span className="font-mono tabular-nums">{telemetryContextSummary}</span>
-          <span className="font-mono px-2.5 py-0.5 rounded-md bg-[var(--surface-inset)] border border-[var(--border-default)] text-[var(--text-primary)]">
-            {profile.username ? `@${profile.username}` : profile.displayName}
-          </span>
-        </div>
-      </section>
-
       {alertsOpen && (runnerProfiles?.length ?? 0) > 0 && (
-        <div id="runner_alerts_drawer">
-          <RunnerRemindersPanel
-            reminders={reminders}
-            dismiss={dismiss}
-            notificationPermission={notificationPermission}
-            requestAlerts={requestAlerts}
-            onOpenPass={(raceId) => {
-              setAlertsOpen(false);
-              setMyPassesFilter('all');
-              setRequestedPassRaceId(raceId);
-              selectTab('myraces');
-            }}
-            onClose={() => setAlertsOpen(false)}
-          />
-        </div>
+        isCompact ? (
+          <DialogSurface
+            variant="sheet"
+            dismissOnBackdropClick
+            titleId="runner-alerts-sheet-title"
+            onRequestClose={() => setAlertsOpen(false)}
+            className="bg-[var(--surface-card)] p-0"
+          >
+            <RunnerRemindersPanel
+              titleId="runner-alerts-sheet-title"
+              reminders={reminders}
+              dismiss={dismiss}
+              notificationPermission={notificationPermission}
+              requestAlerts={requestAlerts}
+              onOpenPass={(raceId) => {
+                setAlertsOpen(false);
+                setMyPassesFilter('all');
+                setRequestedPassRaceId(raceId);
+                selectTab('myraces');
+              }}
+              onClose={() => setAlertsOpen(false)}
+            />
+          </DialogSurface>
+        ) : (
+          <div id="runner_alerts_drawer" className="shrink-0">
+            <RunnerRemindersPanel
+              reminders={reminders}
+              dismiss={dismiss}
+              notificationPermission={notificationPermission}
+              requestAlerts={requestAlerts}
+              onOpenPass={(raceId) => {
+                setAlertsOpen(false);
+                setMyPassesFilter('all');
+                setRequestedPassRaceId(raceId);
+                selectTab('myraces');
+              }}
+              onClose={() => setAlertsOpen(false)}
+            />
+          </div>
+        )
       )}
 
       {showProfile && (
@@ -971,21 +995,24 @@ export default function RunnerDashboard({
 
       {pendingBibClaim && (
         <DialogSurface
+          variant="sheet"
+          dismissOnBackdropClick={!claimingBib}
+          maxWidthCss="28rem"
           titleId="pending-bib-claim-title"
           onRequestClose={() => {
             if (!claimingBib) setPendingBibClaim(null);
           }}
-          className="w-full max-w-md glass-panel p-6 space-y-5 shadow-2xl"
+          className="bg-[var(--surface-card)] p-4 sm:p-6 space-y-4"
         >
           <div className="flex items-start justify-between gap-3">
-            <div>
+            <div className="min-w-0">
               <h2
                 id="pending-bib-claim-title"
-                className="heading-float text-xl font-semibold font-display uppercase text-[var(--text-primary)]"
+                className="text-lg font-semibold font-display text-[var(--text-primary)]"
               >
                 {pendingBibClaim.alreadyLinked ? 'Already in My Races' : 'Add this race bib?'}
               </h2>
-              <p className="text-xs text-[var(--text-secondary)] mt-1">
+              <p className="text-xs text-[var(--text-secondary)] mt-0.5 tabular-nums">
                 {pendingBibClaim.race.name} · {pendingBibClaim.race.date}
               </p>
             </div>
@@ -994,56 +1021,36 @@ export default function RunnerDashboard({
               aria-label="Close bib confirmation dialog"
               onClick={() => setPendingBibClaim(null)}
               disabled={claimingBib}
-              className="min-h-11 min-w-11 flex items-center justify-center rounded-full glass-inset text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400"
+              className="min-h-11 min-w-11 flex items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 shrink-0"
             >
               <X className="w-5 h-5" aria-hidden="true" />
             </button>
           </div>
-          <div className="glass-inset p-4 grid grid-cols-2 gap-x-4 gap-y-3 text-left">
-            <span className="col-span-2">
-              <span className="block text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
-                Runner / team
-              </span>
-              <span className="block text-sm font-semibold text-[var(--text-primary)] mt-1">
+
+          <dl className="border-y border-[var(--border-subtle)] divide-y divide-[var(--border-subtle)] text-xs">
+            <div className="py-2 flex items-center justify-between gap-3">
+              <dt className="text-[var(--text-secondary)]">Runner / team</dt>
+              <dd className="font-semibold text-[var(--text-primary)] text-right truncate">
                 {pendingBibClaim.runner.fullName}
-              </span>
-            </span>
-            <span>
-              <span className="block text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
-                Bib number
-              </span>
-              <span className="block text-lg font-mono font-semibold text-red-700 dark:text-red-400 mt-1">
+              </dd>
+            </div>
+            <div className="py-2 flex items-center justify-between gap-3">
+              <dt className="text-[var(--text-secondary)]">Bib number</dt>
+              <dd className="text-base font-mono font-semibold tabular-nums text-red-700 dark:text-red-400">
                 #{pendingBibClaim.runner.bibNumber}
-              </span>
-            </span>
-            <span>
-              <span className="block text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
-                Distance
-              </span>
-              <span className="block text-sm font-semibold text-[var(--text-primary)] mt-1">
-                {pendingBibClaim.runner.distance}
-              </span>
-            </span>
-            <span>
-              <span className="block text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
-                Category
-              </span>
-              <span className="block text-sm font-semibold text-[var(--text-primary)] mt-1">
-                {claimableEntryLabel(pendingBibClaim.runner.entryCategory)}
-              </span>
-            </span>
-            <span>
-              <span className="block text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
-                Gender
-              </span>
-              <span className="block text-sm font-semibold text-[var(--text-primary)] mt-1 capitalize">
-                {pendingBibClaim.runner.gender}
-              </span>
-            </span>
-          </div>
+              </dd>
+            </div>
+            <div className="py-2 flex items-center justify-between gap-3">
+              <dt className="text-[var(--text-secondary)]">Distance · Category</dt>
+              <dd className="font-semibold text-[var(--text-primary)] capitalize">
+                {pendingBibClaim.runner.distance} · {claimableEntryLabel(pendingBibClaim.runner.entryCategory)} ({pendingBibClaim.runner.gender})
+              </dd>
+            </div>
+          </dl>
+
           {pendingBibClaim.runner.teamMembers && pendingBibClaim.runner.teamMembers.length > 1 && (
             <p className="text-xs text-[var(--text-secondary)]">
-              <span className="font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Members: </span>
+              <span className="font-semibold text-[var(--text-primary)]">Members: </span>
               {pendingBibClaim.runner.teamMembers.join(' · ')}
             </p>
           )}
@@ -1053,14 +1060,14 @@ export default function RunnerDashboard({
             </p>
           )}
           <p className="text-xs text-[var(--text-secondary)]">
-            Only confirm if this is your official race bib. Your event, live splits, and published result will appear under My Races.
+            Only confirm if this is your official race bib. Splits and published results appear under My Races.
           </p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-2 pt-1">
             <button
               type="button"
               onClick={() => setPendingBibClaim(null)}
               disabled={claimingBib}
-              className="min-h-11 py-3 rounded-[var(--radius-control)] glass-inset text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]"
+              className="min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)]"
             >
               Cancel
             </button>
@@ -1068,7 +1075,7 @@ export default function RunnerDashboard({
               type="button"
               onClick={confirmBibClaim}
               disabled={claimingBib}
-              className="min-h-11 py-3 rounded-[var(--radius-control)] bg-gradient-to-r from-red-700 to-red-800 text-white text-xs font-semibold uppercase tracking-widest shadow-lg shadow-red-900/30 disabled:opacity-60"
+              className="min-h-11 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold disabled:opacity-60"
             >
               {claimingBib ? 'Adding...' : pendingBibClaim.alreadyLinked ? 'Open My Races' : 'Confirm & Add Race'}
             </button>
@@ -1077,12 +1084,12 @@ export default function RunnerDashboard({
       )}
 
       {runnerProfiles === undefined ? (
-        <ViewLoadingSkeleton label="Loading runner portal" />
+        <RunnerQueueSkeleton rows={6} label="Loading runner portal" />
       ) : (
         <AnimatedTabView
           tabKey={tab}
           direction={tabDirection}
-          className={isLocked ? 'lg:flex-1 lg:min-h-0 lg:flex lg:flex-col' : 'space-y-5'}
+          className="flex-1 min-h-0 flex flex-col"
         >
           {tab === 'events' && can('personal.register') && (
             <RunnerEventsPanel
@@ -1094,6 +1101,7 @@ export default function RunnerDashboard({
               requestedRaceId={scannedRaceId || pendingDeepLinkRaceId}
               onRequestedRaceHandled={handleEventsDeepLinkHandled}
               onBrowseAllRaces={() => selectTab('allraces')}
+              onScanQr={openQrScanner}
               onSaved={() => {
                 setMyPassesFilter('all');
                 selectTab('myraces');
@@ -1102,6 +1110,10 @@ export default function RunnerDashboard({
               racesLoaded={racesLoaded}
               racesError={racesError}
               isDesktop={isDesktop}
+              isSplitPane={isSplitPane}
+              isCompact={isCompact}
+              imeOpen={imeOpen}
+              onCanvasModeChange={setMobileCanvasActive}
               searchQuery={eventsSearch}
               onSearchQueryChange={setEventsSearch}
               statusFilter={eventsFilter}
@@ -1123,6 +1135,9 @@ export default function RunnerDashboard({
                 selectTab('events');
               }}
               isDesktop={isDesktop}
+              isSplitPane={isSplitPane}
+              isCompact={isCompact}
+              onCanvasModeChange={setMobileCanvasActive}
               searchQuery={catalogSearch}
               onSearchQueryChange={setCatalogSearch}
               statusFilter={catalogFilter}
@@ -1143,6 +1158,9 @@ export default function RunnerDashboard({
               requestedRaceId={requestedPassRaceId}
               onRequestedRaceHandled={handlePassDeepLinkHandled}
               isDesktop={isDesktop}
+              isSplitPane={isSplitPane}
+              isCompact={isCompact}
+              onCanvasModeChange={setMobileCanvasActive}
               searchQuery={myPassesSearch}
               onSearchQueryChange={setMyPassesSearch}
               statusFilter={myPassesFilter}
@@ -1163,6 +1181,7 @@ export default function RunnerDashboard({
               searchQuery={friendsSearch}
               onSearchQueryChange={setFriendsSearch}
               isDesktop={isDesktop}
+              isSplitPane={isSplitPane}
               desktopSearchRef={headerSearchRef}
             />
           )}

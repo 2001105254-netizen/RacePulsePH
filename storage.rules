@@ -9,13 +9,21 @@ service firebase.storage {
     }
     function profile() { return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data; }
     function access() { return firestore.exists(/databases/(default)/documents/userAccess/$(request.auth.uid)) ? firestore.get(/databases/(default)/documents/userAccess/$(request.auth.uid)).data : {'status':'active','overrides':{},'scope':profile().role in ['admin','superadmin'] ? 'all' : 'owned-assigned','raceIds':[]}; }
+    function hasStoredPermission(action, defaultAllowed) {
+      let acc = access();
+      let p = acc.get('permissions', {});
+      let o = acc.get('overrides', {});
+      return (action in o ? o[action] : (action in p ? p[action] : defaultAllowed)) == true;
+    }
     function can(action) {
+      let role = profile().role;
+      let fallback = role in ['admin','superadmin','organizer'];
       return request.auth != null && (isPlatformOwner() || (
         firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)) && access().status == 'active'
-        && (profile().role == 'superadmin' || (
-          (profile().role != 'organizer' || profile().approved)
-          && access().get('overrides', {}).get(action, profile().role in ['admin','superadmin','organizer']) == true
-          && access().get('overrides', {}).get('race.view', profile().role in ['admin','superadmin','organizer']) == true
+        && (role == 'superadmin' || (
+          (role != 'organizer' || profile().approved)
+          && hasStoredPermission(action, fallback)
+          && hasStoredPermission('race.view', fallback)
         ))
       ));
     }
@@ -58,12 +66,14 @@ service firebase.storage {
       allow delete: if writeAllowed();
     }
     function canHighlight(action) {
+      let role = profile().role;
+      let fallback = role in ['admin','superadmin'];
       return request.auth != null && (isPlatformOwner() || (
         firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)) && access().status == 'active'
-        && (profile().role == 'superadmin' || (
-          (profile().role != 'organizer' || profile().approved)
-          && access().get('overrides', {}).get(action, profile().role in ['admin','superadmin']) == true
-          && access().get('overrides', {}).get('highlights.view', profile().role in ['admin','superadmin']) == true
+        && (role == 'superadmin' || (
+          (role != 'organizer' || profile().approved)
+          && hasStoredPermission(action, fallback)
+          && hasStoredPermission('highlights.view', fallback)
         ))
       ));
     }
@@ -80,21 +90,26 @@ service firebase.storage {
       allow delete: if request.auth != null && request.auth.uid == ownerUid && canHighlight('highlights.manage');
     }
     function canRoute(action) {
+      let role = profile().role;
+      let fallback = role in ['admin','superadmin','organizer'];
       return request.auth != null && (isPlatformOwner() || (
         firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)) && access().status == 'active'
-        && (profile().role == 'superadmin' || (
-          (profile().role != 'organizer' || profile().approved)
-          && access().get('overrides', {}).get(action, profile().role in ['admin','superadmin','organizer']) == true
-          && access().get('overrides', {}).get('routes.view', profile().role in ['admin','superadmin','organizer']) == true
+        && (role == 'superadmin' || (
+          (role != 'organizer' || profile().approved)
+          && hasStoredPermission(action, fallback)
+          && hasStoredPermission('routes.view', fallback)
         ))
       ));
     }
+    function canRoutePublish() {
+      return canRoute('routes.publish') && canRoute('routes.edit');
+    }
     match /route-private/{ownerUid}/{presetId}/{file} {
       allow read: if request.auth != null
-        && (request.auth.uid == ownerUid || isPlatformOwner() || profile().role in ['admin','superadmin'])
+        && (request.auth.uid == ownerUid || isPlatformOwner() || profile().role == 'superadmin' || access().scope == 'all')
         && canRoute('routes.view');
       allow create, update: if request.auth != null
-        && (request.auth.uid == ownerUid || isPlatformOwner() || profile().role in ['admin','superadmin'])
+        && (request.auth.uid == ownerUid || isPlatformOwner() || profile().role == 'superadmin' || access().scope == 'all')
         && (canRoute('routes.edit') || canRoute('routes.media'))
         && presetId.matches('^[a-zA-Z0-9_-]{1,64}$')
         && file.matches('^[a-zA-Z0-9._-]+\\.(gpx|GPX|json|JSON|png|jpg|jpeg|webp|PNG|JPG|JPEG|WEBP)$')
@@ -106,7 +121,7 @@ service firebase.storage {
     match /route-published/{publicationId}/{file} {
       allow read: if true;
       allow create, update: if request.auth != null
-        && canRoute('routes.publish')
+        && canRoutePublish()
         && publicationId.matches('^[a-zA-Z0-9_-]{1,64}$')
         && file.matches('^[a-zA-Z0-9._-]+\\.(gpx|GPX|json|JSON|png|jpg|jpeg|webp|PNG|JPG|JPEG|WEBP)$')
         && request.resource.size < 8 * 1024 * 1024;

@@ -1,21 +1,22 @@
 const roles = ['runner', 'organizer', 'admin', 'superadmin'];
 const groups = {
-  Events: ['race.view', 'race.create', 'race.edit', 'race.categories', 'race.registration', 'race.artwork', 'race.bibs', 'race.team'],
+  Events: ['race.view', 'race.analytics', 'race.create', 'race.edit', 'race.categories', 'race.registration', 'race.artwork', 'race.bibs', 'race.team'],
   Routes: ['routes.view', 'routes.create', 'routes.edit', 'routes.media', 'routes.publish', 'routes.assign', 'routes.archive'],
   Roster: ['roster.view', 'roster.add', 'roster.import', 'roster.edit', 'roster.chips', 'roster.bibs', 'roster.kits', 'roster.slots', 'roster.remove'],
   Payments: ['revenue.view', 'payment.configure', 'payment.confirm'],
   Timing: ['timing.view', 'timing.scan', 'timing.manual', 'timing.correct', 'timing.start', 'timing.reset', 'timing.finish', 'timing.reopen'],
-  Results: ['results.view', 'results.publish', 'results.export', 'hub.manage', 'hub.publish', 'roster.export', 'bibs.export'],
+  Results: ['results.view', 'results.publish', 'results.export', 'hub.manage', 'hub.publish', 'roster.export', 'bibs.export', 'bibs.studio'],
   Engraving: ['engraving.view', 'engraving.create', 'engraving.status', 'engraving.export', 'engraving.backup'],
   Highlights: ['highlights.view', 'highlights.manage', 'highlights.settings', 'highlights.playlist'],
   Personal: ['personal.register', 'personal.checkout', 'personal.results', 'personal.bibs', 'personal.certificates', 'personal.engraving', 'personal.friends', 'personal.invites'],
   Directories: ['users.view'],
 };
 const keys = Object.values(groups).flat();
+const standaloneKeys = new Set(['race.create', 'users.view', 'bibs.studio']);
 function defaults(role) {
   return Object.fromEntries(keys.map(key => [key,
-    role === 'superadmin' || (role === 'admin' && !key.startsWith('personal.') && key !== 'highlights.playlist') ||
-    (role === 'organizer' && !key.startsWith('engraving.') && !key.startsWith('highlights.') && key !== 'users.view' && key !== 'timing.correct') ||
+    role === 'superadmin' || (role === 'admin' && !key.startsWith('personal.') && key !== 'highlights.playlist' && key !== 'bibs.studio') ||
+    (role === 'organizer' && !key.startsWith('engraving.') && !key.startsWith('highlights.') && key !== 'users.view' && key !== 'timing.correct' && key !== 'bibs.studio') ||
     (role === 'runner' && key.startsWith('personal.'))]));
 }
 function effective(role, access = {}) {
@@ -26,7 +27,7 @@ function effective(role, access = {}) {
   if (access.status === 'suspended') for (const key of keys) result[key] = false;
   return result;
 }
-const dependencies = Object.fromEntries(keys.filter(k => !k.startsWith('personal.') && !k.endsWith('.view') && k !== 'race.create' && k !== 'users.view').map(k => [k,
+const dependencies = Object.fromEntries(keys.filter(k => !k.startsWith('personal.') && !k.endsWith('.view') && !standaloneKeys.has(k)).map(k => [k,
   k.startsWith('engraving.') ? ['engraving.view'] : k.startsWith('highlights.') ? ['highlights.view'] : k.startsWith('roster.') || k.startsWith('payment.confirm') ? ['roster.view'] : ['race.view']]));
 Object.assign(dependencies, { 'timing.view': ['roster.view', 'race.view'], 'timing.scan': ['timing.view'], 'timing.manual': ['timing.scan'], 'results.view': ['timing.view'], 'results.publish': ['results.view'], 'timing.finish': ['results.publish'], 'revenue.view': ['roster.view'], 'highlights.playlist': ['highlights.view', 'highlights.settings'] });
 Object.assign(dependencies, { 'routes.create': ['routes.view'], 'routes.edit': ['routes.view'], 'routes.media': ['routes.view'], 'routes.publish': ['routes.view', 'routes.edit'], 'routes.assign': ['routes.view', 'race.view'], 'routes.archive': ['routes.view'] });

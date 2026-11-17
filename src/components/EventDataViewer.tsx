@@ -1305,7 +1305,7 @@ export default function EventDataViewer({
                       <span>Timing Console</span>
                     </button>
                   )}
-                  {onOpenRunners && currentRace && (
+                  {canViewRoster && onOpenRunners && currentRace && (
                     <button
                       type="button"
                       onClick={() => onOpenRunners(currentRace.id)}

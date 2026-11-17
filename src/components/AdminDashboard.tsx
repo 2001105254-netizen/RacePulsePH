@@ -6,13 +6,14 @@ import { RunnerProfile, UserProfile } from '../types';
 import WorkspaceShell from './WorkspaceShell';
 import type { WorkspaceSwitchProps } from './DesktopSidebar';
 import AccountPrivacyModal from './AccountPrivacyModal';
+import { useFeedback } from './ui/FeedbackProvider';
 import { AnimatedMetricValue, AnimatedTabView, ViewLoadingSkeleton, resolveTabDirection, type NavDirection } from './ui/MotionPrimitives';
 import type { TimingLaunchRequest } from './TimingConsole';
 import type { RaceSetupLaunchRequest } from './RaceSetupPanel';
 import type { LiveBroadcastLaunchRequest } from './LiveBroadcastPanel';
 import type { EngravingLaunchRequest } from './OperatorDashboard';
 import {
-  Award, CalendarDays, Timer, Tv, Flag, MapPinned, UserCog, Users, LogOut, CheckCircle, XCircle, ShieldCheck, Search, Trash2, Printer, Sparkles,
+  Award, CalendarDays, Timer, Tv, Flag, MapPinned, UserCog, Users, LogOut, CheckCircle, XCircle, ShieldCheck, Search, Trash2, Printer, Sparkles, Sliders,
 } from 'lucide-react';
 
 const LiveBroadcastPanel = lazy(() => import('./LiveBroadcastPanel'));
@@ -40,6 +41,7 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
   const [tab, setTab] = useState<AdminTab>('events');
   const [tabDirection, setTabDirection] = useState<NavDirection>('forward');
   const [showAccountPrivacy, setShowAccountPrivacy] = useState(false);
+  const [accessTargetUid, setAccessTargetUid] = useState<string | null>(null);
   const launchSeqRef = useRef(0);
   const [timingLaunch, setTimingLaunch] = useState<TimingLaunchRequest | null>(null);
   const [setupLaunch, setSetupLaunch] = useState<RaceSetupLaunchRequest | null>(null);
@@ -78,7 +80,11 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
     setHubLaunch({ raceId, nonce: nextNonce() });
     selectTab('hub');
   };
-  const allowed: Record<AdminTab, boolean> = { engraving: can('engraving.view'), timing: can('timing.view') || can('roster.view'), race: can('race.view') || can('race.create'), routes: can('routes.view') || can('race.view'), bibstudio: isSuperAdmin, highlights: can('highlights.view') || isSuperAdmin, organizers: can('users.view') || isSuperAdmin, runners: can('users.view') || isSuperAdmin, access: isSuperAdmin, events: can('race.view'), hub: can('hub.manage') || can('hub.publish') };
+  const openUserAccess = (uid: string) => {
+    setAccessTargetUid(uid);
+    selectTab('access');
+  };
+  const allowed: Record<AdminTab, boolean> = { engraving: can('engraving.view'), timing: can('timing.view') || can('roster.view') || can('payment.confirm'), race: can('race.view') || can('race.create'), routes: can('routes.view'), bibstudio: can('bibs.studio'), highlights: can('highlights.view'), organizers: can('users.view'), runners: can('users.view'), access: isSuperAdmin, events: can('race.view'), hub: can('hub.manage') || can('hub.publish') };
   const firstAllowedTab: AdminTab = ADMIN_TAB_ORDER.find(key => allowed[key]) || 'events';
   const active = allowed[tab] ? tab : firstAllowedTab;
   const homeTab: AdminTab = allowed.events ? 'events' : firstAllowedTab;
@@ -206,9 +212,15 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
             />
           )}
           {active === 'hub' && <LiveBroadcastPanel uid={profile.uid} launchRequest={hubLaunch} />}
-          {active === 'organizers' && <OrganizersPanel canManageAccounts={isSuperAdmin} currentUserId={profile.uid} />}
-          {active === 'runners' && <RunnersPanel canManageAccounts={isSuperAdmin} currentUserId={profile.uid} />}
-          {active === 'access' && <AccessPanel />}
+          {active === 'organizers' && <OrganizersPanel canManageAccounts={isSuperAdmin} currentUserId={profile.uid} onManageAccess={isSuperAdmin ? openUserAccess : undefined} />}
+          {active === 'runners' && <RunnersPanel canManageAccounts={isSuperAdmin} currentUserId={profile.uid} onManageAccess={isSuperAdmin ? openUserAccess : undefined} />}
+          {active === 'access' && (
+            <AccessPanel
+              currentUserId={profile.uid}
+              initialSelectedUid={accessTargetUid}
+              onInitialSelectedHandled={() => setAccessTargetUid(null)}
+            />
+          )}
         </Suspense>
       </AnimatedTabView>
 
@@ -225,7 +237,8 @@ async function removeAppAccount(user: UserProfile): Promise<void> {
   await accessCommand('remove', { uid: user.uid, revision: access?.revision || 0, requestId: crypto.randomUUID() });
 }
 
-function OrganizersPanel({ canManageAccounts, currentUserId }: { canManageAccounts: boolean; currentUserId: string }) {
+function OrganizersPanel({ canManageAccounts, currentUserId, onManageAccess }: { canManageAccounts: boolean; currentUserId: string; onManageAccess?: (uid: string) => void }) {
+  const { confirm, notify } = useFeedback();
   const [users, setUsers] = useState<UserProfile[]>([]);
 
   useEffect(() => {
@@ -243,21 +256,47 @@ function OrganizersPanel({ canManageAccounts, currentUserId }: { canManageAccoun
   const admins = users.filter((u) => u.role === 'admin');
   const superAdmins = users.filter((u) => u.role === 'superadmin');
 
-  const setApproved = async (uid: string, approved: boolean) => {
+  const setApproved = async (user: UserProfile, approved: boolean) => {
     try {
-      const access = (await getDoc(doc(db, 'userAccess', uid))).data() || { scope: 'owned-assigned', raceIds: [], status: 'active', overrides: {}, revision: 0 };
-      await accessCommand('save', { ...access, role: 'organizer', approved, uid, requestId: crypto.randomUUID() });
-    } catch (err) {
-      console.warn('Failed to update organizer approval:', err);
+      const access = (await getDoc(doc(db, 'userAccess', user.uid))).data() || { scope: 'owned-assigned', raceIds: [], status: 'active', overrides: {}, revision: 0 };
+      await accessCommand('save', { ...access, role: 'organizer', approved, uid: user.uid, requestId: crypto.randomUUID() });
+      notify({
+        tone: 'success',
+        title: approved ? 'Organizer approved' : 'Organizer approval revoked',
+        message: approved ? `${user.displayName} can now run operational event tasks.` : `${user.displayName}'s operational organizer tools are paused.`,
+      });
+    } catch (err: any) {
+      notify({
+        tone: 'error',
+        title: 'Could not update approval',
+        message: err?.message || 'Please try again.',
+      });
     }
   };
 
   const deleteAccount = async (user: UserProfile) => {
-    if (user.uid === currentUserId || !window.confirm(`Remove ${user.displayName}'s organizer account? This blocks that login from recreating an app account.`)) return;
+    if (user.uid === currentUserId) return;
+    const confirmed = await confirm({
+      title: `Remove ${user.displayName}'s account?`,
+      message: 'This suspends app access and blocks this login from recreating an app account. You can restore it later from Access history.',
+      confirmLabel: 'Remove access',
+      cancelLabel: 'Keep account',
+      destructive: true,
+    });
+    if (!confirmed) return;
     try {
       await removeAppAccount(user);
-    } catch (err) {
-      console.warn('Failed to remove organizer account:', err);
+      notify({
+        tone: 'success',
+        title: 'Account removed',
+        message: `${user.displayName} no longer has active app access.`,
+      });
+    } catch (err: any) {
+      notify({
+        tone: 'error',
+        title: 'Could not remove account',
+        message: err?.message || 'Please try again.',
+      });
     }
   };
 
@@ -273,14 +312,21 @@ function OrganizersPanel({ canManageAccounts, currentUserId }: { canManageAccoun
         ) : (
           <div className="space-y-2">
             {pending.map((u) => (
-              <div key={u.uid} className="glass-inset px-4 py-3 flex items-center justify-between gap-3">
+              <div key={u.uid} className="glass-inset px-4 py-3 flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-[var(--text-primary)] truncate">{u.displayName}</p>
                   <p className="text-xs text-[var(--text-secondary)] truncate">{u.email}</p>
                 </div>
-                {canManageAccounts && <button type="button" onClick={() => setApproved(u.uid, true)} className="min-h-11 text-xs font-semibold uppercase tracking-wider px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white flex items-center gap-2 shrink-0">
-                  <CheckCircle className="w-3.5 h-3.5" aria-hidden="true" /> Approve
-                </button>}
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {onManageAccess && (
+                    <button type="button" onClick={() => onManageAccess(u.uid)} className="min-h-11 text-xs font-semibold uppercase tracking-wider px-3 py-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] hover:border-red-500/50 flex items-center gap-1.5">
+                      <Sliders className="w-3.5 h-3.5" aria-hidden="true" /> Manage access
+                    </button>
+                  )}
+                  {canManageAccounts && <button type="button" onClick={() => void setApproved(u, true)} className="min-h-11 text-xs font-semibold uppercase tracking-wider px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white flex items-center gap-2 shrink-0">
+                    <CheckCircle className="w-3.5 h-3.5" aria-hidden="true" /> Approve
+                  </button>}
+                </div>
               </div>
             ))}
           </div>
@@ -294,17 +340,24 @@ function OrganizersPanel({ canManageAccounts, currentUserId }: { canManageAccoun
         ) : (
           <div className="space-y-2">
             {approvedOrganizers.map((u) => (
-              <div key={u.uid} className="glass-inset px-4 py-3 flex items-center justify-between gap-3">
+              <div key={u.uid} className="glass-inset px-4 py-3 flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-[var(--text-primary)] truncate">{u.displayName}</p>
                   <p className="text-xs text-[var(--text-secondary)] truncate">{u.email}</p>
                 </div>
-                {canManageAccounts && <div className="flex items-center gap-1">
-                  <button type="button" onClick={() => setApproved(u.uid, false)} className="min-h-11 text-xs font-semibold uppercase tracking-wider px-4 py-2 rounded-xl glass-inset text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 flex items-center gap-2 shrink-0">
-                    <XCircle className="w-3.5 h-3.5" aria-hidden="true" /> Revoke
-                  </button>
-                  <button type="button" onClick={() => void deleteAccount(u)} aria-label={`Remove organizer account ${u.displayName}`} className="min-h-11 min-w-11 flex items-center justify-center p-2 text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition" title="Remove organizer account"><Trash2 className="w-4 h-4" aria-hidden="true" /></button>
-                </div>}
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {onManageAccess && (
+                    <button type="button" onClick={() => onManageAccess(u.uid)} className="min-h-11 text-xs font-semibold uppercase tracking-wider px-3 py-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] hover:border-red-500/50 flex items-center gap-1.5">
+                      <Sliders className="w-3.5 h-3.5" aria-hidden="true" /> Manage access
+                    </button>
+                  )}
+                  {canManageAccounts && <>
+                    <button type="button" onClick={() => void setApproved(u, false)} className="min-h-11 text-xs font-semibold uppercase tracking-wider px-4 py-2 rounded-xl glass-inset text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 flex items-center gap-2 shrink-0">
+                      <XCircle className="w-3.5 h-3.5" aria-hidden="true" /> Revoke
+                    </button>
+                    <button type="button" onClick={() => void deleteAccount(u)} aria-label={`Remove organizer account ${u.displayName}`} className="min-h-11 min-w-11 flex items-center justify-center p-2 text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition" title="Remove organizer account"><Trash2 className="w-4 h-4" aria-hidden="true" /></button>
+                  </>}
+                </div>
               </div>
             ))}
           </div>
@@ -318,9 +371,16 @@ function OrganizersPanel({ canManageAccounts, currentUserId }: { canManageAccoun
         <div className="space-y-2">
           {admins.length === 0 && <p className="text-xs text-[var(--text-secondary)]">No admins yet.</p>}
           {admins.map((u) => (
-            <div key={u.uid} className="glass-inset px-4 py-3">
-              <p className="text-sm font-semibold text-[var(--text-primary)]">{u.displayName}</p>
-              <p className="text-xs text-[var(--text-secondary)]">{u.email}</p>
+            <div key={u.uid} className="glass-inset px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-[var(--text-primary)] truncate">{u.displayName}</p>
+                <p className="text-xs text-[var(--text-secondary)] truncate">{u.email}</p>
+              </div>
+              {onManageAccess && (
+                <button type="button" onClick={() => onManageAccess(u.uid)} className="min-h-11 text-xs font-semibold uppercase tracking-wider px-3 py-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] hover:border-red-500/50 flex items-center gap-1.5 shrink-0">
+                  <Sliders className="w-3.5 h-3.5" aria-hidden="true" /> Manage access
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -333,9 +393,16 @@ function OrganizersPanel({ canManageAccounts, currentUserId }: { canManageAccoun
         <div className="space-y-2">
           {superAdmins.length === 0 && <p className="text-xs text-[var(--text-secondary)]">No super admins yet.</p>}
           {superAdmins.map((u) => (
-            <div key={u.uid} className="glass-inset px-4 py-3">
-              <p className="text-sm font-semibold text-[var(--text-primary)]">{u.displayName}</p>
-              <p className="text-xs text-[var(--text-secondary)]">{u.email}</p>
+            <div key={u.uid} className="glass-inset px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-[var(--text-primary)] truncate">{u.displayName}{u.uid === currentUserId ? ' (You)' : ''}</p>
+                <p className="text-xs text-[var(--text-secondary)] truncate">{u.email}</p>
+              </div>
+              {onManageAccess && (
+                <button type="button" onClick={() => onManageAccess(u.uid)} className="min-h-11 text-xs font-semibold uppercase tracking-wider px-3 py-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] hover:border-red-500/50 flex items-center gap-1.5 shrink-0">
+                  <Sliders className="w-3.5 h-3.5" aria-hidden="true" /> Manage access
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -346,7 +413,8 @@ function OrganizersPanel({ canManageAccounts, currentUserId }: { canManageAccoun
 
 // ========== RUNNERS DIRECTORY ==========
 
-function RunnersPanel({ canManageAccounts, currentUserId }: { canManageAccounts: boolean; currentUserId: string }) {
+function RunnersPanel({ canManageAccounts, currentUserId, onManageAccess }: { canManageAccounts: boolean; currentUserId: string; onManageAccess?: (uid: string) => void }) {
+  const { confirm, notify } = useFeedback();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [usersLoaded, setUsersLoaded] = useState(false);
   const [registrationCounts, setRegistrationCounts] = useState<Record<string, number>>({});
@@ -402,11 +470,28 @@ function RunnersPanel({ canManageAccounts, currentUserId }: { canManageAccounts:
   const activeRunnerCount = allRunners.filter((u) => registrationCounts[u.uid]).length;
 
   const deleteAccount = async (user: UserProfile) => {
-    if (user.uid === currentUserId || !window.confirm(`Remove ${user.displayName}'s runner account? Their registrations will be removed and this login will be blocked from recreating an app account.`)) return;
+    if (user.uid === currentUserId) return;
+    const confirmed = await confirm({
+      title: `Remove ${user.displayName}'s runner account?`,
+      message: 'This suspends app access and blocks this login from recreating an app account. You can restore it later from Access history.',
+      confirmLabel: 'Remove access',
+      cancelLabel: 'Keep account',
+      destructive: true,
+    });
+    if (!confirmed) return;
     try {
       await removeAppAccount(user);
-    } catch (err) {
-      console.warn('Failed to remove runner account:', err);
+      notify({
+        tone: 'success',
+        title: 'Runner removed',
+        message: `${user.displayName}'s app access was removed.`,
+      });
+    } catch (err: any) {
+      notify({
+        tone: 'error',
+        title: 'Could not remove runner',
+        message: err?.message || 'Please try again.',
+      });
     }
   };
 
@@ -479,6 +564,11 @@ function RunnersPanel({ canManageAccounts, currentUserId }: { canManageAccounts:
                   <span className={`text-xs font-semibold uppercase tracking-wide px-3 py-1 rounded-full shrink-0 ${count > 0 ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25' : 'bg-[var(--surface-inset)] text-[var(--text-secondary)] border border-[var(--border-default)]'}`}>
                     {count > 0 ? `${count} race${count > 1 ? 's' : ''}` : 'No races yet'}
                   </span>
+                  {onManageAccess && (
+                    <button type="button" onClick={() => onManageAccess(u.uid)} className="min-h-11 text-xs font-semibold uppercase tracking-wider px-3 py-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] hover:border-red-500/50 flex items-center gap-1.5 shrink-0">
+                      <Sliders className="w-3.5 h-3.5" aria-hidden="true" /> Manage access
+                    </button>
+                  )}
                   {canManageAccounts && <button type="button" onClick={() => void deleteAccount(u)} aria-label={`Remove runner account ${u.displayName}`} className="min-h-11 min-w-11 flex items-center justify-center p-2 text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 transition shrink-0" title="Remove runner account"><Trash2 className="w-4 h-4" aria-hidden="true" /></button>}
                 </div>
               );

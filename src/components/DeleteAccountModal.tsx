@@ -119,13 +119,14 @@ export default function DeleteAccountModal({ profile, onClose }: DeleteAccountMo
   return (
     <DialogSurface
       alert
+      variant="sheet"
       titleId={`${dialogId}-title`}
       descriptionId={`${dialogId}-desc`}
       onRequestClose={() => {
         if (!deleting) onClose();
       }}
       initialFocusRef={closeButtonRef}
-      className="fixed inset-0 m-auto h-fit w-[calc(100%-2rem)] max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border border-red-700/40 bg-[var(--surface-card)] p-6 text-[var(--text-primary)] shadow-2xl"
+      className="sm:inset-0 sm:m-auto h-fit w-full sm:w-[calc(100%-2rem)] max-w-md max-h-[90dvh] overflow-y-auto rounded-t-[20px] sm:rounded-2xl border border-red-700/40 bg-[var(--surface-card)] p-4 sm:p-6 text-[var(--text-primary)]"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="w-11 h-11 rounded-full bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-400 flex items-center justify-center shrink-0">

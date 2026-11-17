@@ -53,3 +53,12 @@ test('route-private blocks anonymous writes and cross-owner access while route-p
  await assertFails(uploadBytes(ref(env.authenticatedContext('storage_owner').storage(),'route-private/other_owner/preset_1/course.gpx'),image,{contentType:'application/gpx+xml'}));
  await assertSucceeds(uploadBytes(ref(env.authenticatedContext('storage_owner').storage(),'route-published/pub_1/manifest.json'),image,{contentType:'application/json'}));
 });
+test('materialized permissions allow delegated runner highlight uploads while explicit overrides deny',async()=>{
+ await env.withSecurityRulesDisabled(async ctx=>{
+  await setDoc(doc(ctx.firestore(),'users','storage_runner'),{uid:'storage_runner',role:'runner',approved:true});
+  await setDoc(doc(ctx.firestore(),'userAccess','storage_runner'),{status:'active',scope:'owned-assigned',raceIds:[],overrides:{'highlights.view':true,'highlights.manage':true},permissions:{'highlights.view':true,'highlights.manage':true}});
+ });
+ await assertSucceeds(uploadBytes(ref(env.authenticatedContext('storage_runner').storage(),'highlight-assets/storage_runner/hl_run/portrait.jpg'),image,{contentType:'image/jpeg'}));
+ await env.withSecurityRulesDisabled(ctx=>setDoc(doc(ctx.firestore(),'userAccess','storage_runner'),{status:'active',scope:'owned-assigned',raceIds:[],overrides:{'highlights.view':true,'highlights.manage':false},permissions:{'highlights.view':true,'highlights.manage':true}}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('storage_runner').storage(),'highlight-assets/storage_runner/hl_run/blocked.jpg'),image,{contentType:'image/jpeg'}));
+});

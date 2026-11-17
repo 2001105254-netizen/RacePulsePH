@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Race, RunnerProfile } from '../../types';
 
 const DESKTOP_QUERY = '(min-width: 1024px)';
+const SPLIT_PANE_QUERY = '(min-width: 600px)';
 
 export function useIsDesktop(): boolean {
   const [isDesktop, setIsDesktop] = useState<boolean>(() =>
@@ -17,6 +18,150 @@ export function useIsDesktop(): boolean {
   }, []);
 
   return isDesktop;
+}
+
+export type RunnerViewportMode = 'compact' | 'medium' | 'expanded';
+
+export function useRunnerViewport(): {
+  mode: RunnerViewportMode;
+  isCompact: boolean;
+  isSplitPane: boolean;
+  isMediumRail: boolean;
+  isDesktop: boolean;
+} {
+  const [state, setState] = useState(() => {
+    if (typeof window === 'undefined') {
+      return { isSplitPane: true, isDesktop: true };
+    }
+    return {
+      isSplitPane: window.matchMedia(SPLIT_PANE_QUERY).matches,
+      isDesktop: window.matchMedia(DESKTOP_QUERY).matches,
+    };
+  });
+
+  useEffect(() => {
+    const splitMedia = window.matchMedia(SPLIT_PANE_QUERY);
+    const desktopMedia = window.matchMedia(DESKTOP_QUERY);
+    const update = () => {
+      setState({
+        isSplitPane: splitMedia.matches,
+        isDesktop: desktopMedia.matches,
+      });
+    };
+    update();
+    splitMedia.addEventListener('change', update);
+    desktopMedia.addEventListener('change', update);
+    return () => {
+      splitMedia.removeEventListener('change', update);
+      desktopMedia.removeEventListener('change', update);
+    };
+  }, []);
+
+  const mode: RunnerViewportMode = state.isDesktop
+    ? 'expanded'
+    : state.isSplitPane
+      ? 'medium'
+      : 'compact';
+
+  return {
+    mode,
+    isCompact: !state.isSplitPane,
+    isSplitPane: state.isSplitPane,
+    isMediumRail: state.isSplitPane && !state.isDesktop,
+    isDesktop: state.isDesktop,
+  };
+}
+
+const NON_TEXT_INPUT_TYPES = new Set([
+  'button',
+  'checkbox',
+  'color',
+  'file',
+  'hidden',
+  'image',
+  'radio',
+  'range',
+  'reset',
+  'submit',
+]);
+
+function isEditableTextElement(el: Element | null): boolean {
+  if (!el || !(el instanceof HTMLElement)) return false;
+  if (el.isContentEditable) return true;
+  if (el.tagName === 'TEXTAREA') return !(el as HTMLTextAreaElement).readOnly;
+  if (el.tagName === 'INPUT') {
+    const input = el as HTMLInputElement;
+    if (input.readOnly || input.disabled) return false;
+    return !NON_TEXT_INPUT_TYPES.has((input.type || 'text').toLowerCase());
+  }
+  return false;
+}
+
+/**
+ * Detects active mobile IME / software keyboard presence via VisualViewport shrinkage
+ * and mobile editable-field focus so fixed bottom bars yield cleanly during typing.
+ */
+export function useSoftKeyboardOpen(enabled = true): boolean {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!enabled || typeof window === 'undefined') {
+      setOpen(false);
+      return;
+    }
+
+    let focusRaf = 0;
+    const evaluate = () => {
+      const isCompactWidth = window.innerWidth < 600;
+      const vv = window.visualViewport;
+      const viewportShrunk = Boolean(vv && window.innerHeight - vv.height > 140);
+      const vk = (navigator as Navigator & { virtualKeyboard?: { boundingRect?: DOMRect } }).virtualKeyboard;
+      const virtualKeyboardVisible = Boolean(vk?.boundingRect && vk.boundingRect.height > 0);
+      const focusedEditable = isCompactWidth && isEditableTextElement(document.activeElement);
+      setOpen(Boolean(isCompactWidth && (viewportShrunk || virtualKeyboardVisible || focusedEditable)));
+    };
+
+    const scheduleEvaluate = () => {
+      window.cancelAnimationFrame(focusRaf);
+      focusRaf = window.requestAnimationFrame(evaluate);
+    };
+
+    evaluate();
+    window.addEventListener('focusin', scheduleEvaluate);
+    window.addEventListener('focusout', scheduleEvaluate);
+    window.addEventListener('resize', scheduleEvaluate);
+    window.visualViewport?.addEventListener('resize', scheduleEvaluate);
+
+    return () => {
+      window.cancelAnimationFrame(focusRaf);
+      window.removeEventListener('focusin', scheduleEvaluate);
+      window.removeEventListener('focusout', scheduleEvaluate);
+      window.removeEventListener('resize', scheduleEvaluate);
+      window.visualViewport?.removeEventListener('resize', scheduleEvaluate);
+    };
+  }, [enabled]);
+
+  return open;
+}
+
+/** Tracks browser online/offline state for the non-blocking top status banner. */
+export function useNetworkSyncStatus(): { online: boolean } {
+  const [online, setOnline] = useState<boolean>(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine !== false : true,
+  );
+
+  useEffect(() => {
+    const handleOnline = () => setOnline(true);
+    const handleOffline = () => setOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  return { online };
 }
 
 export const standardShirtSizes = ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL', '6XL'] as const;

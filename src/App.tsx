@@ -45,6 +45,52 @@ const EmailVerificationScreen = lazy(() =>
   import('./components/AccountSecurity').then((mod) => ({ default: mod.EmailVerificationScreen }))
 );
 const RouteExplorerPage = lazy(() => import('./components/routes/RouteExplorerPage'));
+const RouteExplorerAuthWrapper = lazy(async () => {
+  const [{ AccessProvider, useAccess }, { default: RouteExplorer }] = await Promise.all([
+    import('./lib/access'),
+    import('./components/routes/RouteExplorerPage'),
+  ]);
+  return {
+    default: function LazyAuthorizedRouteExplorer({
+      profile,
+      match,
+      theme,
+      onNavigateUrl,
+      onBackHome,
+    }: {
+      profile: UserProfile;
+      match: Exclude<ReturnType<typeof matchRouteLocation>, null>;
+      theme: 'light' | 'dark';
+      onNavigateUrl: (url: string) => void;
+      onBackHome: () => void;
+    }) {
+      function InnerExplorer() {
+        const { can } = useAccess();
+        const canEditRoutes =
+          can('routes.view') &&
+          (can('routes.create') ||
+            can('routes.edit') ||
+            can('routes.publish') ||
+            can('routes.assign') ||
+            can('routes.archive'));
+        return (
+          <RouteExplorer
+            match={match}
+            theme={theme}
+            canEditRoutes={canEditRoutes}
+            onNavigateUrl={onNavigateUrl}
+            onBackHome={onBackHome}
+          />
+        );
+      }
+      return (
+        <AccessProvider key={profile.uid} profile={profile}>
+          <InnerExplorer />
+        </AccessProvider>
+      );
+    },
+  };
+});
 const RouteStudioWrapper = lazy(async () => {
   const [{ AccessProvider, useAccess }, { default: RouteStudioPanel }] = await Promise.all([
     import('./lib/access'),
@@ -67,8 +113,8 @@ const RouteStudioWrapper = lazy(async () => {
       function GuardedStudio() {
         const { can } = useAccess();
         if (
-          profile.role === 'runner' ||
-          (!can('routes.create') && !can('routes.edit') && !can('routes.publish') && !can('routes.assign'))
+          !can('routes.view') ||
+          (!can('routes.create') && !can('routes.edit') && !can('routes.publish') && !can('routes.assign') && !can('routes.archive'))
         ) {
           return (
             <main id="main-content" tabIndex={-1} className="mx-auto max-w-xl px-4 py-16 text-center space-y-4">
@@ -216,11 +262,12 @@ function AppContent() {
   const setLeftSlotEl = headerCtx?.setLeftSlotEl;
   const setRightSlotEl = headerCtx?.setRightSlotEl;
   const desktopLocked = Boolean(headerCtx?.desktopLocked);
+  const splitViewportLocked = Boolean(headerCtx?.splitViewportLocked);
   useEffect(() => {
-    if (desktopLocked) {
+    if (desktopLocked || splitViewportLocked) {
       window.scrollTo({ top: 0, behavior: 'auto' });
     }
-  }, [desktopLocked]);
+  }, [desktopLocked, splitViewportLocked]);
   const [authUser, setAuthUser] = useState<User | null | undefined>(undefined); // undefined = still checking session
   const [profile, setProfile] = useState<UserProfile | null | undefined>(undefined);
   const [profileError, setProfileError] = useState(false);
@@ -774,13 +821,23 @@ function AppContent() {
   } else if (routeMatch && routeMatch.kind !== 'route-studio') {
     content = (
       <Suspense fallback={suspenseFallback}>
-        <RouteExplorerPage
-          match={routeMatch}
-          theme={theme}
-          canEditRoutes={Boolean(authUser && profile && ['superadmin', 'admin', 'organizer'].includes(profile.role))}
-          onNavigateUrl={navigateUrl}
-          onBackHome={() => navigateUrl('/')}
-        />
+        {authUser && profile ? (
+          <RouteExplorerAuthWrapper
+            profile={profile}
+            match={routeMatch}
+            theme={theme}
+            onNavigateUrl={navigateUrl}
+            onBackHome={() => navigateUrl('/')}
+          />
+        ) : (
+          <RouteExplorerPage
+            match={routeMatch}
+            theme={theme}
+            canEditRoutes={false}
+            onNavigateUrl={navigateUrl}
+            onBackHome={() => navigateUrl('/')}
+          />
+        )}
       </Suspense>
     );
   } else if (stillLoading) {
@@ -965,6 +1022,8 @@ function AppContent() {
           id="app_root"
           className={`min-h-screen min-h-dvh bg-[var(--surface-page)] text-[var(--text-primary)] flex flex-col ${!authUser && guestScreen === 'landing' ? 'public-entry-shell' : ''} ${
             desktopLocked && !signedInUtilityView ? 'lg:h-screen lg:h-dvh lg:overflow-hidden' : ''
+          } ${
+            splitViewportLocked && !signedInUtilityView ? 'h-screen h-dvh overflow-hidden' : ''
           }`}
         >
           <a href="#main-content" className="skip-link">
@@ -984,7 +1043,7 @@ function AppContent() {
           >
             <div
               ref={headerInnerRef}
-              className={`${isWorkspaceShell ? 'w-full px-3 sm:px-4 xl:px-6' : 'w-full max-w-[1600px] mx-auto pl-[max(0.75rem,var(--rp-safe-left))] pr-[max(0.75rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))]'} landing-header-row min-w-0 min-h-[64px] py-[8px] flex items-center justify-between gap-[8px] sm:gap-[12px]`}
+              className={`${isWorkspaceShell ? 'w-full pl-[max(0.75rem,var(--rp-safe-left))] pr-[max(0.75rem,var(--rp-safe-right))] sm:px-4 xl:px-6 min-h-[48px] py-[2px] min-[600px]:min-h-[56px] min-[600px]:py-1 lg:min-h-[64px] lg:py-[8px]' : 'w-full max-w-[1600px] mx-auto pl-[max(0.75rem,var(--rp-safe-left))] pr-[max(0.75rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))] min-h-[64px] py-[8px]'} landing-header-row min-w-0 flex items-center justify-between gap-[8px] sm:gap-[12px]`}
             >
               <div
                 ref={headerLeftRef}
@@ -1029,12 +1088,12 @@ function AppContent() {
                   </span>
                 </button>
 
-                {/* Desktop workspace context slot (e.g. active race event switcher next to brand mark) */}
+                {/* Workspace context slot (renders on desktop and mobile when portal provided) */}
                 {isWorkspaceShell && (
                   <div
                     ref={setLeftSlotEl}
                     id="workspace_header_left_slot"
-                    className="hidden lg:flex items-center gap-2 min-w-0 flex-1 overflow-hidden"
+                    className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden"
                   />
                 )}
               </div>
@@ -1042,14 +1101,14 @@ function AppContent() {
               <div
                 ref={headerRightRef}
                 className={`flex items-center justify-end gap-[8px] ${
-                  isWorkspaceShell ? 'min-w-0 shrink' : isLandingGuest ? 'shrink-0' : 'shrink-0 max-w-full'
+                  isWorkspaceShell ? 'min-w-0 shrink-0' : isLandingGuest ? 'shrink-0' : 'shrink-0 max-w-full'
                 }`}
               >
                 {isWorkspaceShell && (
                   <div
                     ref={setRightSlotEl}
                     id="workspace_header_right_slot"
-                    className="hidden lg:flex items-center gap-[8px] min-w-0 overflow-x-auto racepulse-horizontal-scroll"
+                    className="flex items-center gap-1 lg:gap-[8px] min-w-0 overflow-x-auto racepulse-horizontal-scroll"
                   />
                 )}
                 {isLandingGuest && (
@@ -1206,7 +1265,7 @@ function AppContent() {
             onOpenCookiePolicy={() => openUtilityView('cookies')}
           />
 
-          <div className={`relative flex-grow flex flex-col overflow-x-clip ${desktopLocked && !signedInUtilityView ? 'lg:min-h-0 lg:overflow-hidden' : ''}`}>
+          <div className={`relative flex-grow flex flex-col overflow-x-clip ${desktopLocked && !signedInUtilityView ? 'lg:min-h-0 lg:overflow-hidden' : ''} ${splitViewportLocked && !signedInUtilityView ? 'min-h-0 overflow-hidden' : ''}`}>
             <m.div
               key={viewKey}
               initial={{ opacity: 0, x: navDirection === 'forward' ? 14 : -14 }}
@@ -1216,14 +1275,14 @@ function AppContent() {
                 transitionEnd: { transform: 'none' },
               }}
               transition={{ duration: 0.16, ease: EMIL_EASE }}
-              className={`w-full flex-grow flex flex-col [backface-visibility:hidden] ${desktopLocked && !signedInUtilityView ? 'lg:min-h-0 lg:overflow-hidden' : ''}`}
+              className={`w-full flex-grow flex flex-col [backface-visibility:hidden] ${desktopLocked && !signedInUtilityView ? 'lg:min-h-0 lg:overflow-hidden' : ''} ${splitViewportLocked && !signedInUtilityView ? 'min-h-0 overflow-hidden' : ''}`}
             >
               {content}
             </m.div>
           </div>
 
           {/* Global Footer: verifiable business identity, 4 required legal routes, consent controls, and email unsubscribe */}
-          <footer className={`border-t border-[var(--border-default)] bg-[var(--surface-card)] mt-auto text-xs text-[var(--text-secondary)] ${isWorkspaceShell ? 'pb-24 lg:pb-0' : 'pb-[calc(1rem+var(--rp-safe-bottom))] md:pb-[var(--rp-safe-bottom)]'} ${desktopLocked && !signedInUtilityView ? 'lg:hidden' : ''}`}>
+          <footer className={`border-t border-[var(--border-default)] bg-[var(--surface-card)] mt-auto text-xs text-[var(--text-secondary)] ${isWorkspaceShell ? 'pb-[calc(4.5rem+var(--rp-safe-bottom))] min-[600px]:pb-20 lg:pb-0' : 'pb-[calc(1rem+var(--rp-safe-bottom))] md:pb-[var(--rp-safe-bottom)]'} ${desktopLocked && !signedInUtilityView ? 'lg:hidden' : ''} ${splitViewportLocked && !signedInUtilityView ? 'hidden' : ''}`}>
             <div className={`${isWorkspaceShell ? 'w-full pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))]' : 'w-full max-w-[1600px] mx-auto pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))]'} py-4 space-y-3`}>
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div className="space-y-1 text-center lg:text-left">

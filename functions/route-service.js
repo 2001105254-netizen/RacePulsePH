@@ -24,7 +24,7 @@ function assertText(value, maxLen, label, required = true) {
 
 function canEditPreset(actor, actorAccess, preset) {
   if (policy.isAuthority(actor, actorAccess)) return true;
-  if (actor.role === 'admin' && policy.can(actor, actorAccess, 'routes.view')) return true;
+  if (actorAccess?.scope === 'all' && policy.can(actor, actorAccess, 'routes.view')) return true;
   if (!preset) return false;
   return preset.ownerUid === actor.uid || (Array.isArray(preset.editorIds) && preset.editorIds.includes(actor.uid));
 }

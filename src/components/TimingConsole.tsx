@@ -1283,7 +1283,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
     { key: 'mobile-checkin' as const, label: 'Mobile Check-In', Icon: Smartphone },
     { key: 'assign' as const, label: 'Assign Chips', Icon: Cpu },
     { key: 'roster' as const, label: 'Roster', Icon: Users2 },
-    ...(can('payment.confirm') ? [{ key: 'payments' as const, label: 'Payments', Icon: CheckCircle2 }] : []),
+    ...(can('payment.confirm') || can('revenue.view') ? [{ key: 'payments' as const, label: 'Payments', Icon: CheckCircle2 }] : []),
     { key: 'rankings' as const, label: 'Rankings', Icon: Trophy },
     { key: 'rollcall' as const, label: 'Start Roll Call', Icon: ListChecks },
   ];
@@ -1543,7 +1543,7 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
         </div>
       )}
 
-      {mode === 'payments' && can('payment.confirm') && (
+      {mode === 'payments' && (can('payment.confirm') || can('revenue.view')) && (
         <div className="flex-1 min-h-0 flex flex-col px-0 py-0 lg:p-4 lg:overflow-hidden">
           <PaymentListPanel race={race} runnerProfiles={runnerProfiles} />
         </div>
@@ -4071,7 +4071,7 @@ function PaymentListPanel({ race, runnerProfiles }: PaymentListPanelProps) {
               </div>
               <div className="flex shrink-0 items-center gap-3 sm:flex-col sm:items-end sm:gap-1">
                 <p className="font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">₱{Math.max(0, Number(runner.paymentAmount || 0)).toFixed(2)}</p>
-                {isPendingManual && (
+                {isPendingManual && can('payment.confirm') && (
                   <button
                     type="button"
                     onClick={() => void confirmManualPayment(runner)}

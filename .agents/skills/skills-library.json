@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": "2026-11-13",
+  "updated": "2026-11-17",
   "canonicalRoot": ".agents/skills",
   "mirrorRoot": "skills",
   "namingConvention": {
@@ -881,6 +881,83 @@
       ],
       "scripts": [],
       "mirror": "skills/racepulse-hit-it"
+    },
+    {
+      "name": "racepulse-runner-mobile-ui",
+      "path": ".agents/skills/racepulse-runner-mobile-ui",
+      "origin": "repo",
+      "status": "active",
+      "category": "layout",
+      "description": "Architect high-density, thumb-zone mobile and foldable Runner UI views with anti-slop spatial discipline and Android safe-area compliance. Use when building or refactoring RacePulsePH runner screens, sheets, queues, or adaptive split panes.",
+      "dependsOn": [
+        "antislop",
+        "antislop-layoutmobile",
+        "antislop-human",
+        "android-layout-specialist"
+      ],
+      "loadWith": [
+        "racepulse-responsive-ui",
+        "racepulse-feedback"
+      ],
+      "rules": [
+        "C-1",
+        "C-2",
+        "C-3",
+        "C-4",
+        "C-5",
+        "R-02",
+        "R-03",
+        "R-11",
+        "R-15",
+        "R-25",
+        "R-26",
+        "R-27",
+        "R-31",
+        "R-32",
+        "R-34",
+        "R-35",
+        "R-36",
+        "R-37",
+        "R-39",
+        "R-40"
+      ],
+      "references": [
+        "mobile-architecture.md"
+      ],
+      "scripts": [],
+      "mirror": "skills/racepulse-runner-mobile-ui"
+    },
+    {
+      "name": "racepulse-agent-maker",
+      "path": ".agents/skills/racepulse-agent-maker",
+      "origin": "repo",
+      "status": "active",
+      "category": "meta",
+      "description": "Create, extend, register and validate RacePulsePH workspace specialist agents so they follow AGENTS.md, the frontend rule file, the antislop R-01 to R-40 rules and the agents-library.json registry. Use when adding or revising a custom agent role or persona.",
+      "dependsOn": [
+        "antislop",
+        "racepulse-skill-maker"
+      ],
+      "rules": [
+        "C-1",
+        "C-2",
+        "C-5",
+        "R-02",
+        "R-26",
+        "R-31",
+        "R-33",
+        "R-35",
+        "R-36"
+      ],
+      "references": [
+        "agent-library.md",
+        "agent-template.md",
+        "rules-and-implications.md"
+      ],
+      "scripts": [
+        "scripts/validate-agent-library.cjs"
+      ],
+      "mirror": "skills/racepulse-agent-maker"
     }
   ],
   "backlog": [],

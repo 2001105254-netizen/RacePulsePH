@@ -291,24 +291,26 @@ export default function EventCourseRunnerPanel({
   return (
     <section
       aria-label={`${race.name} read-only course map and running statistics`}
-      className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-4 space-y-4 overflow-x-clip"
+      className={`rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] ${
+        compact ? 'p-3 space-y-3' : 'p-3 sm:p-4 space-y-3.5'
+      } overflow-x-clip`}
     >
       {/* Header + Distance Switcher + Actions */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h3 className="flex items-center gap-2 text-base font-display font-semibold text-[var(--text-primary)]">
+          <h3 className="flex items-center gap-2 text-sm sm:text-base font-display font-semibold text-[var(--text-primary)]">
             <Flag className="h-4 w-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
-            <span className="truncate">Official Course Map &amp; Running Intelligence</span>
+            <span className="truncate">Official Course Map &amp; Stats</span>
           </h3>
-          <p className="mt-1 text-xs text-[var(--text-secondary)]">
-            {activePub.distanceLabel} (v{activePub.versionNumber}) · Road {terrainSummary.roadPct}% / Off-Road {terrainSummary.offRoadPct}% · Course Effort {analytics.difficultyIndex}/100
+          <p className="mt-0.5 text-xs tabular-nums text-[var(--text-secondary)]">
+            {activePub.distanceLabel} (v{activePub.versionNumber}) · Road {terrainSummary.roadPct}% / Trail {terrainSummary.offRoadPct}% · Effort {analytics.difficultyIndex}/100
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={handleExportGpx}
-            className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+            className="inline-flex min-h-11 sm:min-h-9 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
           >
             <Download className="h-3.5 w-3.5" aria-hidden="true" />
             GPX
@@ -319,7 +321,7 @@ export default function EventCourseRunnerPanel({
               e.preventDefault();
               window.dispatchEvent(new CustomEvent('racepulse:navigate', { detail: { url: courseUrl } }));
             }}
-            className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-red-700 px-3 text-xs font-semibold text-white hover:bg-red-600"
+            className="inline-flex min-h-11 sm:min-h-9 items-center gap-1.5 rounded-xl bg-red-700 px-3 text-xs font-semibold text-white hover:bg-red-600"
           >
             <span>Full Route Explorer</span>
             <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
@@ -327,46 +329,50 @@ export default function EventCourseRunnerPanel({
         </div>
       </div>
 
-      {/* Strava-Style Primary Activity Stats Strip */}
-      <dl
-        className={`grid gap-2.5 ${compact ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-5'}`}
-        aria-label="Key race course statistics"
-      >
-        <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-2.5">
-          <dt className="text-xs text-[var(--text-secondary)]">Distance</dt>
-          <dd className="mt-1 font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">
-            {activeRoute.distanceKm.toFixed(2)} km
-          </dd>
-        </div>
-        <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-2.5">
-          <dt className="text-xs text-[var(--text-secondary)]">Elev Gain / Loss</dt>
-          <dd className="mt-1 font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">
-            {activeRoute.elevationProvenance.status === 'unavailable'
-              ? 'Unavailable'
-              : `+${Math.round(activeRoute.elevationGainM)} m / -${Math.round(activeRoute.elevationLossM)} m`}
-          </dd>
-        </div>
-        <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-2.5">
-          <dt className="text-xs text-[var(--text-secondary)]">Altitude &amp; Max Grade</dt>
-          <dd className="mt-1 font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">
-            {terrainSummary.minEleM !== null && terrainSummary.maxEleM !== null
-              ? `${terrainSummary.minEleM}-${terrainSummary.maxEleM} m (${terrainSummary.maxGradePct}%)`
-              : `Max slope ${terrainSummary.maxGradePct}%`}
-          </dd>
-        </div>
-        <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-2.5">
-          <dt className="text-xs text-[var(--text-secondary)]">Surface Split</dt>
-          <dd className="mt-1 font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">
-            {terrainSummary.roadPct}% Road · {terrainSummary.offRoadPct}% Trail
-          </dd>
-        </div>
-        <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-2.5">
-          <dt className="text-xs text-[var(--text-secondary)]">Est. Finish ({formatPaceMinKm(targetPaceMinPerKm)} effort)</dt>
-          <dd className="mt-1 font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">
-            {formatDurationMinutes(analytics.estimatedFinishMinutes)} ({formatPaceMinKm(analytics.averageGapPaceMinPerKm)} GAP)
-          </dd>
-        </div>
-      </dl>
+      {/* Horizontal Divide-X Telemetry Strip (< 96px, zero stacked KPI cards) */}
+      <div className="overflow-x-auto racepulse-horizontal-scroll rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)]">
+        <dl
+          className="grid grid-flow-col auto-cols-[minmax(108px,1fr)] divide-x divide-[var(--border-subtle)]"
+          aria-label="Key race course statistics"
+        >
+          <div className="px-2.5 py-2">
+            <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Distance</dt>
+            <dd className="mt-0.5 font-mono text-xs sm:text-sm font-semibold tabular-nums text-[var(--text-primary)] truncate">
+              {activeRoute.distanceKm.toFixed(2)} km
+            </dd>
+          </div>
+          <div className="px-2.5 py-2">
+            <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Elev Gain / Loss</dt>
+            <dd className="mt-0.5 font-mono text-xs sm:text-sm font-semibold tabular-nums text-[var(--text-primary)] truncate">
+              {activeRoute.elevationProvenance.status === 'unavailable'
+                ? 'Unavailable'
+                : `+${Math.round(activeRoute.elevationGainM)}m / -${Math.round(activeRoute.elevationLossM)}m`}
+            </dd>
+          </div>
+          <div className="px-2.5 py-2">
+            <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Alt &amp; Grade</dt>
+            <dd className="mt-0.5 font-mono text-xs sm:text-sm font-semibold tabular-nums text-[var(--text-primary)] truncate">
+              {terrainSummary.minEleM !== null && terrainSummary.maxEleM !== null
+                ? `${terrainSummary.minEleM}-${terrainSummary.maxEleM}m (${terrainSummary.maxGradePct}%)`
+                : `Max ${terrainSummary.maxGradePct}%`}
+            </dd>
+          </div>
+          <div className="px-2.5 py-2">
+            <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Surface</dt>
+            <dd className="mt-0.5 font-mono text-xs sm:text-sm font-semibold tabular-nums text-[var(--text-primary)] truncate">
+              {terrainSummary.roadPct}% Rd · {terrainSummary.offRoadPct}% Trl
+            </dd>
+          </div>
+          <div className="px-2.5 py-2">
+            <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">
+              Est. ({formatPaceMinKm(targetPaceMinPerKm)})
+            </dt>
+            <dd className="mt-0.5 font-mono text-xs sm:text-sm font-semibold tabular-nums text-[var(--text-primary)] truncate">
+              {formatDurationMinutes(analytics.estimatedFinishMinutes)} ({formatPaceMinKm(analytics.averageGapPaceMinPerKm)} GAP)
+            </dd>
+          </div>
+        </dl>
+      </div>
 
       {courses.length > 1 && (
         <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Course distance maps">
@@ -379,7 +385,7 @@ export default function EventCourseRunnerPanel({
                 role="tab"
                 aria-selected={active}
                 onClick={() => setSelectedDistanceId(c.distanceId)}
-                className={`min-h-9 rounded-xl border px-3 text-xs font-semibold transition-colors ${
+                className={`min-h-11 sm:min-h-9 rounded-xl border px-3 text-xs font-semibold tabular-nums transition-colors ${
                   active
                     ? 'border-red-600 bg-red-700 text-white'
                     : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600/50'

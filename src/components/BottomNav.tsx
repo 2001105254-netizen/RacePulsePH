@@ -14,16 +14,26 @@ export type BottomNavItem = WorkspaceNavItem;
 interface BottomNavProps {
   items: WorkspaceNavItem[];
   navLabel?: string;
+  variant?: 'floating' | 'docked';
+  splitBreakpoint?: 'lg' | 'md600';
+  hidden?: boolean;
 }
 
-// Mobile-only floating tab bar (< 1024px), keeping primary destinations
-// horizontally scrollable with no visible scrollbar across touch, wheel, and drag inputs.
-export default function BottomNav({ items, navLabel = 'Workspace navigation' }: BottomNavProps) {
+// Mobile bottom tab bar (< 1024px for standard workspaces, < 600px when md600 split rail is active).
+// Supports compact docked 56px + safe-area mode with automatic IME hiding for Runner UI.
+export default function BottomNav({
+  items,
+  navLabel = 'Workspace navigation',
+  variant = 'floating',
+  splitBreakpoint = 'lg',
+  hidden = false,
+}: BottomNavProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const suppressClickRef = useRef(false);
 
   const activeKey = items.find((item) => item.active)?.key;
+  const hideBreakpointClass = splitBreakpoint === 'md600' ? 'min-[600px]:hidden' : 'lg:hidden';
 
   // Map vertical wheel scrolling over the nav bar into horizontal scroll when tabs overflow.
   useEffect(() => {
@@ -104,11 +114,54 @@ export default function BottomNav({ items, navLabel = 'Workspace navigation' }: 
     suppressClickRef.current = false;
   };
 
+  if (hidden) return null;
+
+  if (variant === 'docked') {
+    return (
+      <nav
+        aria-label={navLabel}
+        data-workspace-nav="mobile"
+        data-nav-variant="docked"
+        className={`${hideBreakpointClass} fixed bottom-0 inset-x-0 z-40 border-t border-[var(--border-default)] bg-[var(--surface-card)] pb-[var(--rp-safe-bottom)] pl-[var(--rp-safe-left)] pr-[var(--rp-safe-right)]`}
+      >
+        <div className="h-[56px] w-full flex items-stretch justify-around px-1 gap-0.5">
+          {items.map((item) => {
+            const compactText = item.shortLabel || item.label;
+            return (
+              <button
+                key={item.key}
+                ref={(node) => {
+                  itemRefs.current[item.key] = node;
+                }}
+                type="button"
+                onClick={item.onClick}
+                aria-label={item.label}
+                aria-current={item.active ? 'page' : undefined}
+                className={`relative flex-1 min-w-0 min-h-[44px] my-1 px-1 rounded-xl flex flex-col items-center justify-center gap-0.5 transition-colors duration-150 motion-safe:active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
+                  item.active
+                    ? 'bg-red-700 text-white'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
+                }`}
+              >
+                <span aria-hidden="true" className="flex items-center justify-center shrink-0">
+                  {item.icon}
+                </span>
+                <span className="w-full truncate text-center text-[11px] leading-tight font-semibold">
+                  {compactText}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+    );
+  }
+
   return (
     <nav
       aria-label={navLabel}
       data-workspace-nav="mobile"
-      className="lg:hidden fixed bottom-0 inset-x-0 z-40 flex justify-center pb-[max(0.75rem,var(--rp-safe-bottom))] pl-[max(0.5rem,var(--rp-safe-left))] pr-[max(0.5rem,var(--rp-safe-right))] sm:pl-[max(1rem,var(--rp-safe-left))] sm:pr-[max(1rem,var(--rp-safe-right))] pointer-events-none"
+      className={`${hideBreakpointClass} fixed bottom-0 inset-x-0 z-40 flex justify-center pb-[max(0.75rem,var(--rp-safe-bottom))] pl-[max(0.5rem,var(--rp-safe-left))] pr-[max(0.5rem,var(--rp-safe-right))] sm:pl-[max(1rem,var(--rp-safe-left))] sm:pr-[max(1rem,var(--rp-safe-right))] pointer-events-none`}
     >
       <div className="glass-panel w-full max-w-6xl overflow-hidden shadow-2xl pointer-events-auto">
         <div

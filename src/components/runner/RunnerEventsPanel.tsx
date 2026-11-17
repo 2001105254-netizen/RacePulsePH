@@ -19,6 +19,7 @@ import {
   Maximize2,
   PackageCheck,
   Phone,
+  QrCode,
   RefreshCw,
   Search,
   ShieldCheck,
@@ -38,8 +39,18 @@ import { FriendProfile, Gender, Race, RaceEntryCategory, RunnerProfile } from '.
 import { useAndroidBackHandler } from '../../lib/capacitorAndroid';
 import EventCourseRunnerPanel from '../routes/EventCourseRunnerPanel';
 import DialogSurface from '../ui/DialogSurface';
-import { ValueSkeleton } from '../ui/MotionPrimitives';
 import { Select } from '../ui/Select';
+import {
+  RunnerBottomSheetDetent,
+  RunnerFilterRail,
+  RunnerFloatingStatusPill,
+  RunnerQueueRow,
+  RunnerQueueSkeleton,
+  RunnerTelemetryStrip,
+  RunnerThumbActionBar,
+  type QueueStatusTone,
+  type SheetDetent,
+} from './RunnerMobilePrimitives';
 import { formatFeeRangePH, mostRecent, sortedRaceDistances, standardShirtSizes } from './runnerUtils';
 
 export type OpenEventsFilter = 'all' | 'unjoined' | 'registered';
@@ -75,11 +86,16 @@ export interface RunnerEventsPanelProps {
   requestedRaceId?: string | null;
   onRequestedRaceHandled?: () => void;
   onBrowseAllRaces: () => void;
+  onScanQr?: () => void;
   onSaved: () => void;
   races: Race[];
   racesLoaded: boolean;
   racesError: string | null;
   isDesktop: boolean;
+  isSplitPane?: boolean;
+  isCompact?: boolean;
+  imeOpen?: boolean;
+  onCanvasModeChange?: (active: boolean) => void;
   searchQuery: string;
   onSearchQueryChange: (value: string) => void;
   statusFilter: OpenEventsFilter;
@@ -235,19 +251,18 @@ function RegistrationConfirmation({
   onRegisterAnother: () => void;
 }) {
   return (
-    <div className="max-w-xl mx-auto space-y-5 animate-fadeIn">
+    <div className="max-w-xl mx-auto px-3 sm:px-4 py-3 space-y-4">
       <RegistrationProgress currentStep={3} raceName={race?.name} />
-      <div className="glass-panel p-6 sm:p-8 text-center space-y-5 overflow-x-clip relative">
-        <div className="absolute inset-x-0 top-0 h-1 rounded-t-2xl bg-gradient-to-r from-red-600 via-emerald-500 to-red-600" />
-        <div className="w-14 h-14 rounded-full mx-auto bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-emerald-700 dark:text-emerald-400">
-          <CheckCircle2 className="w-8 h-8" aria-hidden="true" />
+      <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] p-4 sm:p-6 text-center space-y-4 overflow-x-clip">
+        <div className="w-12 h-12 rounded-full mx-auto bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-emerald-700 dark:text-emerald-400">
+          <CheckCircle2 className="w-7 h-7" aria-hidden="true" />
         </div>
         <div>
-          <h2 className="heading-float text-xl font-semibold font-display uppercase tracking-tight text-[var(--text-primary)]">
+          <h2 className="text-lg font-semibold font-display uppercase tracking-tight text-[var(--text-primary)]">
             {registration.paymentStatus === 'pending' ? 'Registration reserved' : 'Registration complete'}
           </h2>
           <p
-            className={`text-xs font-semibold uppercase tracking-[0.18em] mt-1 ${
+            className={`text-xs font-semibold uppercase tracking-[0.16em] mt-1 ${
               registration.paymentStatus === 'pending'
                 ? 'text-amber-800 dark:text-amber-300'
                 : 'text-emerald-700 dark:text-emerald-400'
@@ -259,7 +274,7 @@ function RegistrationConfirmation({
                 ? 'Registration updated'
                 : 'Registration confirmed'}
           </p>
-          <p className="text-xs text-[var(--text-secondary)] mt-2">
+          <p className="text-xs text-[var(--text-secondary)] mt-1.5">
             {registration.paymentStatus === 'pending'
               ? 'Your bib is reserved. Follow the payment instructions below so the organizer can verify payment before race day.'
               : 'Your race registration is saved under your account.'}
@@ -282,26 +297,26 @@ function RegistrationConfirmation({
             )}
           </div>
         )}
-        <div className="glass-inset p-4 text-left grid grid-cols-2 gap-y-3 gap-x-4">
+        <div className="border-y border-[var(--border-subtle)] py-3 text-left grid grid-cols-2 gap-y-2.5 gap-x-4">
           <span>
             <span className="block text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Race</span>
-            <span className="block text-sm font-semibold text-[var(--text-primary)] mt-1 truncate">
+            <span className="block text-sm font-semibold text-[var(--text-primary)] mt-0.5 truncate">
               {race?.name || 'Race event'}
             </span>
           </span>
           <span>
             <span className="block text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Race date</span>
-            <span className="block text-sm font-semibold text-[var(--text-primary)] mt-1">
+            <span className="block text-sm font-semibold tabular-nums text-[var(--text-primary)] mt-0.5">
               {race?.date || 'To be announced'}
             </span>
           </span>
           <span>
             <span className="block text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Distance</span>
-            <span className="block text-sm font-semibold text-red-700 dark:text-red-400 mt-1">{registration.distance}</span>
+            <span className="block text-sm font-semibold text-red-700 dark:text-red-400 mt-0.5">{registration.distance}</span>
           </span>
           <span>
             <span className="block text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Bib number</span>
-            <span className="block text-lg font-mono font-semibold text-red-700 dark:text-red-400 mt-1">
+            <span className="block text-lg font-mono font-semibold tabular-nums text-red-700 dark:text-red-400 mt-0.5">
               #{registration.bibNumber}
             </span>
           </span>
@@ -310,7 +325,7 @@ function RegistrationConfirmation({
               <span className="block text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
                 Payment reference
               </span>
-              <span className="block text-sm font-mono font-semibold text-amber-800 dark:text-amber-300 mt-1 break-all">
+              <span className="block text-sm font-mono font-semibold text-amber-800 dark:text-amber-300 mt-0.5 break-all">
                 {registration.paymentReference}
               </span>
             </span>
@@ -320,18 +335,18 @@ function RegistrationConfirmation({
               <span className="block text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
                 Shirt size
               </span>
-              <span className="block text-sm font-semibold text-[var(--text-primary)] mt-1">{registration.shirtSize}</span>
+              <span className="block text-sm font-semibold text-[var(--text-primary)] mt-0.5">{registration.shirtSize}</span>
             </span>
           )}
         </div>
         <p className="text-xs text-[var(--text-secondary)]">
-          Your QR race pass and live race status appear under My Races.
+          Your QR race pass and live race status appear under My Passes.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <button
             type="button"
             onClick={onViewMyRace}
-            className="min-h-11 py-3 px-4 rounded-xl font-display font-semibold uppercase text-xs tracking-widest text-white bg-red-700 hover:bg-red-600 transition"
+            className="min-h-11 py-2.5 px-4 rounded-xl font-display font-semibold uppercase text-xs tracking-widest text-white bg-red-700 hover:bg-red-600 transition"
           >
             View My Race Pass
           </button>
@@ -470,6 +485,287 @@ function InviteFriendsToRace({ uid, senderName, race }: { uid: string; senderNam
   );
 }
 
+function OpenEventDetailsSections({
+  uid,
+  race,
+  raceDistances,
+  existingForRace,
+  preferredDistance,
+  friendIdentity,
+  canInvite,
+  onOpenLightbox,
+  compactCourse = true,
+}: {
+  uid: string;
+  race: Race;
+  raceDistances: ReturnType<typeof sortedRaceDistances>;
+  existingForRace: RunnerProfile | undefined;
+  preferredDistance?: string;
+  friendIdentity?: { username?: string; displayName: string };
+  canInvite: boolean;
+  onOpenLightbox: (media: { title: string; subtitle: string; src: string; alt: string }) => void;
+  compactCourse?: boolean;
+}) {
+  return (
+    <div className="divide-y divide-[var(--border-subtle)]">
+      {existingForRace && (
+        <div className="py-2.5 text-xs font-semibold text-amber-900 dark:text-amber-300 bg-amber-500/10 px-3 rounded-xl border border-amber-500/30 mb-3">
+          Registered under Bib <span className="font-mono tabular-nums">#{existingForRace.bibNumber}</span> ({existingForRace.distance}). Continue to update your entry.
+        </div>
+      )}
+
+      <div className="py-3 space-y-1.5">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] flex items-center gap-1.5">
+          <Coins className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
+          Distances &amp; Pricing
+        </h3>
+        {raceDistances.length === 0 ? (
+          <p className="text-xs text-[var(--text-secondary)]">Custom distance open.</p>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {raceDistances.map((d) => (
+              <span
+                key={d.id}
+                className="text-xs font-semibold px-2.5 py-1 rounded-md bg-red-700/10 dark:bg-red-500/10 border border-red-500/20 text-red-700 dark:text-red-400 font-mono tabular-nums"
+              >
+                {d.label}
+                {d.price > 0 ? `: ₱${d.price.toFixed(0)}` : ' (Free)'}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {(race.inclusions || []).length > 0 && (
+        <div className="py-3 space-y-1.5">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] flex items-center gap-1.5">
+            <PackageCheck className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
+            Inclusions
+          </h3>
+          <div className="flex flex-wrap gap-1.5">
+            {race.inclusions.map((incl, idx) => (
+              <span
+                key={idx}
+                className="text-xs font-semibold px-2.5 py-1 rounded-md border border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)]"
+              >
+                {incl}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {race.inclusionImage && (
+        <div className="py-3 space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] flex items-center gap-1.5">
+            <PackageCheck className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
+            Shirt / Kit Design
+          </h3>
+          <button
+            type="button"
+            onClick={() =>
+              onOpenLightbox({
+                title: `${race.name} Shirt / Kit Design`,
+                subtitle: race.date,
+                src: race.inclusionImage!,
+                alt: `${race.name} shirt or kit design`,
+              })
+            }
+            className="group relative w-full rounded-xl overflow-hidden border border-[var(--border-default)] bg-[var(--surface-inset)] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
+          >
+            <img
+              src={race.inclusionImage}
+              alt={`${race.name} shirt or kit design`}
+              className="w-full max-h-48 object-contain"
+            />
+            <span className="absolute right-2 bottom-2 inline-flex items-center gap-1.5 rounded-lg bg-black/80 px-2.5 py-1 text-xs font-semibold text-white">
+              <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" /> Full screen
+            </span>
+          </button>
+        </div>
+      )}
+
+      <div className="py-3 space-y-1">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+          Course Checkpoints
+        </h3>
+        <p className="text-xs text-[var(--text-primary)] leading-relaxed">
+          {[...(race.checkpoints || [])]
+            .sort((a, b) => a.order - b.order)
+            .map((c) => c.label)
+            .join(' → ') || 'Checkpoints will be posted by the organizer.'}
+        </p>
+      </div>
+
+      {!compactCourse && (
+        <div className="py-3">
+          <EventCourseRunnerPanel race={race} preferredDistance={preferredDistance} compact />
+        </div>
+      )}
+
+      {friendIdentity?.username && canInvite && (
+        <div className="py-3">
+          <InviteFriendsToRace uid={uid} senderName={friendIdentity.displayName} race={race} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OpenEventCanvasView({
+  uid,
+  race,
+  raceDistances,
+  existingForRace,
+  preferredDistance,
+  canRegister,
+  canInvite,
+  friendIdentity,
+  onStartForm,
+  onBrowseAllRaces,
+  onOpenLightbox,
+  onBack,
+}: {
+  uid: string;
+  race: Race;
+  raceDistances: ReturnType<typeof sortedRaceDistances>;
+  existingForRace: RunnerProfile | undefined;
+  preferredDistance?: string;
+  canRegister: boolean;
+  canInvite: boolean;
+  friendIdentity?: { username?: string; displayName: string };
+  onStartForm: () => void;
+  onBrowseAllRaces: () => void;
+  onOpenLightbox: (media: { title: string; subtitle: string; src: string; alt: string }) => void;
+  onBack: () => void;
+}) {
+  const [detent, setDetent] = useState<SheetDetent>('half');
+  const statusLabel = existingForRace ? `Bib #${existingForRace.bibNumber}` : 'Reg Open';
+  const statusTone: QueueStatusTone = existingForRace ? 'joined' : 'open';
+
+  return (
+    <div
+      data-testid="open-event-canvas"
+      className="fixed inset-0 z-[45] h-dvh overflow-hidden flex flex-col bg-[var(--surface-page)]"
+    >
+      <RunnerFloatingStatusPill
+        idBadge={raceDistances[0]?.label}
+        title={race.name}
+        statusLabel={statusLabel}
+        statusTone={statusTone}
+        onBack={onBack}
+        backLabel="Back to Open Events"
+        rightSlot={
+          race.posterImage ? (
+            <button
+              type="button"
+              onClick={() =>
+                onOpenLightbox({
+                  title: race.name,
+                  subtitle: race.date,
+                  src: race.posterImage!,
+                  alt: `${race.name} full event poster`,
+                })
+              }
+              aria-label={`Inspect full poster for ${race.name}`}
+              className="min-h-11 min-w-11 flex items-center justify-center rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] shrink-0"
+            >
+              <Maximize2 className="w-4 h-4" aria-hidden="true" />
+            </button>
+          ) : undefined
+        }
+      />
+
+      {/* Upper 60-70% Course Map & Event Overview Canvas */}
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain pt-[calc(76px+var(--rp-safe-top))] pb-[184px] px-3 space-y-3">
+        <RunnerTelemetryStrip
+          ariaLabel="Event summary metrics"
+          className="rounded-xl border border-[var(--border-default)]"
+          items={[
+            { key: 'cats', label: 'Categories', value: String(raceDistances.length || 1) },
+            { key: 'splits', label: 'Splits', value: String((race.checkpoints || []).length) },
+            { key: 'fee', label: 'Entry Fee', value: formatFeeRangePH(raceDistances), accent: 'red', wide: true },
+          ]}
+        />
+
+        {race.posterImage && (
+          <button
+            type="button"
+            onClick={() =>
+              onOpenLightbox({
+                title: race.name,
+                subtitle: race.date,
+                src: race.posterImage!,
+                alt: `${race.name} full event poster`,
+              })
+            }
+            aria-label={`View full poster for ${race.name}`}
+            className="w-full h-36 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] flex items-center justify-center p-2 overflow-hidden"
+          >
+            <img
+              src={race.posterImage}
+              alt={`${race.name} uncropped event poster`}
+              width={640}
+              height={360}
+              className="max-w-full max-h-full w-auto h-auto object-contain rounded"
+            />
+          </button>
+        )}
+
+        <EventCourseRunnerPanel race={race} preferredDistance={preferredDistance} compact />
+      </div>
+
+      {/* 3-Detent Bottom Sheet: Quick Summary CTA & Full Spec Manifest */}
+      <RunnerBottomSheetDetent
+        detent={detent}
+        onDetentChange={setDetent}
+        ariaLabel="Event registration and specifications"
+        peekSummary={
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-[var(--text-primary)] truncate">{race.name}</p>
+            <p className="text-xs text-[var(--text-secondary)] truncate tabular-nums">
+              {race.date} · {formatFeeRangePH(raceDistances)} · {raceDistances.length || 1} dist
+            </p>
+          </div>
+        }
+        primaryAction={
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onStartForm}
+              disabled={!canRegister}
+              className="min-h-11 flex-1 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+            >
+              <span>{existingForRace ? 'Update Entry' : 'Register Now'}</span>
+              <ArrowRight className="w-4 h-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={onBrowseAllRaces}
+              aria-label="View official standings"
+              className="min-h-11 min-w-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 shrink-0"
+            >
+              <Trophy className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" />
+              <span className="hidden min-[360px]:inline">Standings</span>
+            </button>
+          </div>
+        }
+      >
+        <OpenEventDetailsSections
+          uid={uid}
+          race={race}
+          raceDistances={raceDistances}
+          existingForRace={existingForRace}
+          preferredDistance={preferredDistance}
+          friendIdentity={friendIdentity}
+          canInvite={canInvite}
+          onOpenLightbox={onOpenLightbox}
+        />
+      </RunnerBottomSheetDetent>
+    </div>
+  );
+}
+
 export default function RunnerEventsPanel({
   uid,
   friendIdentity,
@@ -479,11 +775,16 @@ export default function RunnerEventsPanel({
   requestedRaceId,
   onRequestedRaceHandled,
   onBrowseAllRaces,
+  onScanQr,
   onSaved,
   races,
   racesLoaded,
   racesError,
   isDesktop,
+  isSplitPane = isDesktop,
+  isCompact = !isSplitPane,
+  imeOpen = false,
+  onCanvasModeChange,
   searchQuery,
   onSearchQueryChange,
   statusFilter,
@@ -540,7 +841,7 @@ export default function RunnerEventsPanel({
     setConfirmation(null);
     setShowForm(false);
   });
-  useAndroidBackHandler(!isDesktop && mobileInspecting && !showForm, () => {
+  useAndroidBackHandler(isCompact && mobileInspecting && !showForm && !lightboxMedia, () => {
     setMobileInspecting(false);
   });
 
@@ -548,6 +849,11 @@ export default function RunnerEventsPanel({
   useEffect(() => {
     onFormViewChange?.(inFormFlow);
   }, [inFormFlow, onFormViewChange]);
+
+  useEffect(() => {
+    onCanvasModeChange?.(Boolean(isCompact && mobileInspecting && !inFormFlow));
+    return () => onCanvasModeChange?.(false);
+  }, [isCompact, mobileInspecting, inFormFlow, onCanvasModeChange]);
 
   // Payment-provider return verification (webhook remains the authoritative writer)
   useEffect(() => {
@@ -974,29 +1280,29 @@ export default function RunnerEventsPanel({
 
   if (paymentReturn?.status === 'paid') {
     return (
-      <div className="max-w-xl mx-auto space-y-5 animate-fadeIn">
+      <div className="max-w-xl mx-auto px-3 sm:px-4 py-3 space-y-4">
         <RegistrationProgress currentStep={3} />
-        <div className="glass-panel p-7 text-center space-y-4">
-          <div className="w-14 h-14 rounded-full mx-auto bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-emerald-700 dark:text-emerald-400">
-            <CheckCircle2 className="w-8 h-8" aria-hidden="true" />
+        <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] p-4 sm:p-6 text-center space-y-4">
+          <div className="w-12 h-12 rounded-full mx-auto bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-emerald-700 dark:text-emerald-400">
+            <CheckCircle2 className="w-7 h-7" aria-hidden="true" />
           </div>
           <div>
-            <h2 className="heading-float text-xl font-semibold font-display uppercase text-[var(--text-primary)]">
+            <h2 className="text-lg font-semibold font-display uppercase text-[var(--text-primary)]">
               Race registration confirmed
             </h2>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-400 mt-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-400 mt-1">
               Payment verified
             </p>
-            <p className="text-xs text-[var(--text-secondary)] mt-2">
-              Your PayMongo payment was confirmed securely. Your race pass is ready in My Races.
+            <p className="text-xs text-[var(--text-secondary)] mt-1.5">
+              Your PayMongo payment was confirmed securely. Your race pass is ready in My Passes.
             </p>
           </div>
           <button
             type="button"
             onClick={onSaved}
-            className="min-h-11 w-full py-3 rounded-xl font-display font-semibold uppercase text-xs tracking-widest text-white bg-red-700 hover:bg-red-600 transition"
+            className="min-h-11 w-full py-2.5 rounded-xl font-display font-semibold uppercase text-xs tracking-widest text-white bg-red-700 hover:bg-red-600 transition"
           >
-            View My Races
+            View My Passes
           </button>
         </div>
       </div>
@@ -1009,21 +1315,21 @@ export default function RunnerEventsPanel({
     const passedOnFee = selectedRace.onlinePaymentEnabled && selectedRace.paymentFeeMode === 'passed_on';
 
     return (
-      <div className="max-w-6xl mx-auto space-y-5 animate-fadeIn">
+      <div className="max-w-6xl mx-auto px-3 sm:px-4 py-3 pb-24 min-[600px]:pb-6 space-y-4">
         <RegistrationProgress currentStep={2} raceName={selectedRace.name} />
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          <div className="lg:col-span-7 glass-panel p-5 sm:p-6 space-y-5">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+          <div className="lg:col-span-7 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] p-3 sm:p-5 space-y-4">
             <button
               type="button"
               onClick={() => setShowForm(false)}
-              className="min-h-11 py-2 text-xs font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 inline-flex items-center gap-2 transition"
+              className="min-h-11 py-1 text-xs font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 inline-flex items-center gap-2 transition"
             >
               <ArrowLeft className="w-4 h-4" aria-hidden="true" /> Back to Event Details
             </button>
 
             <div>
-              <h2 className="heading-float text-lg sm:text-xl font-semibold font-display uppercase tracking-tight text-[var(--text-primary)]">
+              <h2 className="text-base sm:text-lg font-semibold font-display uppercase tracking-tight text-[var(--text-primary)]">
                 {existingForRace ? 'Update Registration for' : 'Register for'} {selectedRace.name}
               </h2>
               <p className="text-xs text-[var(--text-secondary)] mt-1">
@@ -1031,7 +1337,7 @@ export default function RunnerEventsPanel({
               </p>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+            <form id="runner-registration-form" onSubmit={handleSubmit} className="space-y-4" noValidate>
               <fieldset className="contents" disabled={!can('personal.register')}>
                 <div>
                   <label
@@ -1541,47 +1847,49 @@ export default function RunnerEventsPanel({
                   </div>
                 )}
 
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="min-h-12 w-full py-3 px-6 rounded-xl font-display font-semibold uppercase text-xs tracking-widest flex items-center justify-center gap-2 transition text-white bg-red-700 hover:bg-red-600 disabled:opacity-60"
-                >
-                  {saving ? (
-                    <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />
-                  ) : (
-                    <ClipboardList className="w-4 h-4" aria-hidden="true" />
-                  )}
-                  <span>
-                    {existingForRace
-                      ? 'Update Registration'
-                      : selectedRace.onlinePaymentEnabled && entryFee > 0
-                        ? `Continue to checkout (PHP ${entryFee.toFixed(2)})`
-                        : selectedRace.manualPaymentEnabled && entryFee > 0
-                          ? `Reserve slot (PHP ${entryFee.toFixed(2)})`
-                          : 'Save Race Registration'}
-                  </span>
-                </button>
+                {(isSplitPane || imeOpen) && (
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="min-h-12 w-full py-3 px-6 rounded-xl font-display font-semibold uppercase text-xs tracking-widest flex items-center justify-center gap-2 transition text-white bg-red-700 hover:bg-red-600 disabled:opacity-60 tabular-nums"
+                  >
+                    {saving ? (
+                      <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />
+                    ) : (
+                      <ClipboardList className="w-4 h-4" aria-hidden="true" />
+                    )}
+                    <span>
+                      {existingForRace
+                        ? 'Update Registration'
+                        : selectedRace.onlinePaymentEnabled && entryFee > 0
+                          ? `Continue to checkout (PHP ${entryFee.toFixed(2)})`
+                          : selectedRace.manualPaymentEnabled && entryFee > 0
+                            ? `Reserve slot (PHP ${entryFee.toFixed(2)})`
+                            : 'Save Race Registration'}
+                    </span>
+                  </button>
+                )}
               </fieldset>
             </form>
           </div>
 
-          <aside className="lg:col-span-5 glass-panel border-l-4 border-l-red-600 p-5 sm:p-6 space-y-4 lg:sticky lg:top-20">
-            <div className="flex items-start justify-between gap-3 pb-3 border-b border-[var(--border-subtle)]">
+          <aside className="lg:col-span-5 rounded-xl border border-[var(--border-default)] border-l-4 border-l-red-600 bg-[var(--surface-card)] p-3 sm:p-5 space-y-3 lg:sticky lg:top-20">
+            <div className="flex items-start justify-between gap-3 pb-2.5 border-b border-[var(--border-subtle)]">
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                   Registration Summary
                 </p>
-                <h3 className="text-base font-display font-semibold text-[var(--text-primary)] truncate mt-1">
+                <h3 className="text-base font-display font-semibold text-[var(--text-primary)] truncate mt-0.5">
                   {selectedRace.name}
                 </h3>
-                <p className="text-xs font-mono text-[var(--text-secondary)] mt-1">{selectedRace.date}</p>
+                <p className="text-xs font-mono tabular-nums text-[var(--text-secondary)] mt-0.5">{selectedRace.date}</p>
               </div>
-              <span className="shrink-0 px-2.5 py-1 rounded-full border border-emerald-600/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-xs font-semibold">
+              <span className="shrink-0 px-2.5 py-0.5 rounded-full border border-emerald-600/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-xs font-semibold tabular-nums">
                 {existingForRace ? `Bib #${existingForRace.bibNumber}` : 'Open'}
               </span>
             </div>
 
-            <div className="glass-inset px-3.5 py-3 text-xs flex items-start gap-2 text-[var(--text-secondary)]">
+            <div className="border-b border-[var(--border-subtle)] pb-2.5 text-xs flex items-start gap-2 text-[var(--text-secondary)]">
               <Hash className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0 mt-0.5" aria-hidden="true" />
               <span>
                 {existingForRace
@@ -1591,21 +1899,23 @@ export default function RunnerEventsPanel({
             </div>
 
             {!existingForRace && entryFee > 0 && (
-              <div className="glass-inset p-4 space-y-3 border border-[var(--border-default)]">
+              <div className="border-b border-[var(--border-subtle)] pb-3 space-y-2.5">
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] flex items-center gap-2">
                   <Coins className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
                   Upfront Cost, Tax, and Cancellation Summary
                 </h4>
-                <dl className="space-y-2 text-xs">
-                  <div className="flex items-center justify-between gap-4">
+                <dl className="divide-y divide-[var(--border-subtle)] text-xs">
+                  <div className="py-1.5 flex items-center justify-between gap-4">
                     <dt className="text-[var(--text-secondary)]">Entry fee ({distance})</dt>
-                    <dd className="font-mono font-semibold text-[var(--text-primary)]">PHP {entryFee.toFixed(2)}</dd>
+                    <dd className="font-mono font-semibold tabular-nums text-[var(--text-primary)]">
+                      PHP {entryFee.toFixed(2)}
+                    </dd>
                   </div>
-                  <div className="flex items-center justify-between gap-4">
+                  <div className="py-1.5 flex items-center justify-between gap-4">
                     <dt className="text-[var(--text-secondary)]">RacePulsePH platform surcharge</dt>
-                    <dd className="font-semibold text-[var(--text-primary)]">PHP 0.00 (No hidden fees)</dd>
+                    <dd className="font-semibold tabular-nums text-[var(--text-primary)]">PHP 0.00 (No hidden fees)</dd>
                   </div>
-                  <div className="flex items-start justify-between gap-4">
+                  <div className="py-1.5 flex items-start justify-between gap-4">
                     <dt className="text-[var(--text-secondary)] shrink-0">Gateway processing &amp; taxes</dt>
                     <dd className="text-right text-[var(--text-secondary)]">
                       {selectedRace.onlinePaymentEnabled
@@ -1615,12 +1925,12 @@ export default function RunnerEventsPanel({
                         : 'No online gateway fee added (direct transfer per organizer instructions).'}
                     </dd>
                   </div>
-                  <div className="flex items-center justify-between gap-4">
+                  <div className="py-1.5 flex items-center justify-between gap-4">
                     <dt className="text-[var(--text-secondary)]">Billing schedule</dt>
                     <dd className="font-semibold text-[var(--text-primary)]">One-time charge (no subscription)</dd>
                   </div>
                 </dl>
-                <p className="text-xs text-[var(--text-secondary)] leading-relaxed pt-2 border-t border-[var(--border-subtle)]">
+                <p className="text-xs text-[var(--text-secondary)] leading-relaxed pt-1">
                   Cancellation &amp; refunds: Full refund if organizer cancels. Runner cancellations follow our{' '}
                   <a
                     href="#legal-refund"
@@ -1637,7 +1947,7 @@ export default function RunnerEventsPanel({
               </div>
             )}
 
-            {friendIdentity?.username && (
+            {friendIdentity?.username && can('personal.invites') && (
               <InviteFriendsToRace uid={uid} senderName={friendIdentity.displayName} race={selectedRace} />
             )}
 
@@ -1648,309 +1958,227 @@ export default function RunnerEventsPanel({
             />
           </aside>
         </div>
+
+        {!isSplitPane && (
+          <RunnerThumbActionBar hidden={imeOpen}>
+            <button
+              type="submit"
+              form="runner-registration-form"
+              disabled={saving || !can('personal.register')}
+              className="min-h-11 w-full px-4 rounded-xl font-display font-semibold uppercase text-xs tracking-wider flex items-center justify-center gap-2 transition text-white bg-red-700 hover:bg-red-600 disabled:opacity-60 tabular-nums"
+            >
+              {saving ? (
+                <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />
+              ) : (
+                <ClipboardList className="w-4 h-4" aria-hidden="true" />
+              )}
+              <span>
+                {existingForRace
+                  ? 'Update Registration'
+                  : selectedRace.onlinePaymentEnabled && entryFee > 0
+                    ? `Checkout (PHP ${entryFee.toFixed(2)})`
+                    : selectedRace.manualPaymentEnabled && entryFee > 0
+                      ? `Reserve Slot (PHP ${entryFee.toFixed(2)})`
+                      : 'Save Registration'}
+              </span>
+            </button>
+          </RunnerThumbActionBar>
+        )}
       </div>
     );
   }
 
-  const showMobileDetailOnly = !isDesktop && mobileInspecting && Boolean(selectedRace);
+  const showCompactCanvas = Boolean(isCompact && mobileInspecting && selectedRace);
 
   return (
-    <div id="runner_events_directory_main" className="w-full flex flex-col lg:flex-1 lg:min-h-0 lg:overflow-hidden">
-      {deepLinkNotice && (
-        <div
-          role="alert"
-          className="shrink-0 mx-0 lg:mx-3 mt-0 lg:mt-2 mb-3 lg:mb-1 rounded-xl border border-amber-500/35 bg-amber-500/10 px-4 py-2.5 text-xs font-semibold text-amber-900 dark:text-amber-300 flex items-center justify-between gap-3"
-        >
-          <span className="flex items-center gap-2 min-w-0">
-            <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
-            <span>{deepLinkNotice}</span>
-          </span>
-          <button
-            type="button"
-            onClick={() => setDeepLinkNotice('')}
-            aria-label="Dismiss registration notice"
-            className="min-h-11 min-w-11 lg:min-h-8 lg:min-w-8 rounded-lg inline-flex items-center justify-center shrink-0 hover:bg-amber-500/15"
-          >
-            <X className="w-4 h-4" aria-hidden="true" />
-          </button>
-        </div>
-      )}
-
-      {/* Mobile / Tablet Compact Command Header (< 1024px, matching MyRaceEventsPanel) */}
-      {!isDesktop && !showMobileDetailOnly && (
-        <div className="space-y-3 mb-3">
-          <div className="glass-panel p-3.5 space-y-2.5">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <h2 className="text-base font-display font-semibold text-[var(--text-primary)]">Open Events</h2>
-                <p className="text-xs text-[var(--text-secondary)]">
-                  Inspect distances, routes, and register online
-                </p>
-              </div>
+    <>
+      {showCompactCanvas && selectedRace ? (
+        <OpenEventCanvasView
+          uid={uid}
+          race={selectedRace}
+          raceDistances={raceDistances}
+          existingForRace={existingForRace}
+          preferredDistance={distanceFilter !== 'all' ? distanceFilter : distance}
+          canRegister={can('personal.register')}
+          canInvite={can('personal.invites')}
+          friendIdentity={friendIdentity}
+          onStartForm={() => setShowForm(true)}
+          onBrowseAllRaces={onBrowseAllRaces}
+          onOpenLightbox={setLightboxMedia}
+          onBack={() => setMobileInspecting(false)}
+        />
+      ) : (
+        <div id="runner_events_directory_main" className="w-full flex flex-col flex-1 min-h-0 min-[600px]:overflow-hidden">
+          {deepLinkNotice && (
+            <div
+              role="alert"
+              className="shrink-0 mx-3 mt-2 mb-1 rounded-xl border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-900 dark:text-amber-300 flex items-center justify-between gap-2"
+            >
+              <span className="flex items-center gap-2 min-w-0">
+                <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
+                <span>{deepLinkNotice}</span>
+              </span>
               <button
                 type="button"
-                onClick={onBrowseAllRaces}
-                className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-1.5 shrink-0"
+                onClick={() => setDeepLinkNotice('')}
+                aria-label="Dismiss registration notice"
+                className="min-h-11 min-w-11 lg:min-h-8 lg:min-w-8 rounded-lg inline-flex items-center justify-center shrink-0 hover:bg-amber-500/15"
               >
-                <Trophy className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
-                <span>All Races</span>
+                <X className="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
+          )}
 
-            <div className="relative">
-              <Search
-                className="w-4 h-4 text-[var(--text-secondary)] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-                aria-hidden="true"
-              />
-              <label htmlFor="runner_events_mobile_search" className="sr-only">
-                Search open events by name, date, or distance
-              </label>
-              <input
-                ref={mobileSearchRef}
-                id="runner_events_mobile_search"
-                type="text"
-                value={searchQuery}
-                onChange={(e) => onSearchQueryChange(e.target.value)}
-                placeholder="Search race, date, or distance..."
-                className="w-full min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] pl-9 pr-11 text-sm font-semibold text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => onSearchQueryChange('')}
-                  aria-label="Clear open events search"
-                  className="absolute right-1 top-1/2 -translate-y-1/2 min-h-11 min-w-11 flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                >
-                  <X className="w-4 h-4" aria-hidden="true" />
-                </button>
-              )}
-            </div>
-
-            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter open events">
-              {(
-                [
-                  { key: 'all', label: 'All Open', count: counts.total },
-                  { key: 'unjoined', label: 'Available', count: counts.unjoined },
-                  { key: 'registered', label: 'Joined', count: counts.registered },
-                ] as const
-              ).map((item) => {
-                const active = statusFilter === item.key;
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => onStatusFilterChange(item.key)}
-                    aria-pressed={active}
-                    className={`min-h-11 min-w-11 px-3 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${
-                      active
-                        ? 'border-red-600 bg-red-700 text-white'
-                        : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)]'
-                    }`}
-                  >
-                    <span>{item.label}</span>
-                    <span className="font-mono tabular-nums">{item.count}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Master-Detail Split Workspace (65% Open Events Directory Left / 35% Event Inspector Dock Right) */}
-      <div className="flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-[minmax(0,65fr)_minmax(0,35fr)] gap-4 lg:gap-0">
-        {!showMobileDetailOnly && (
-          <section
-            aria-label="Open race events directory"
-            className="flex flex-col min-h-0 lg:h-full bg-[var(--surface-page)] rounded-2xl lg:rounded-none border border-[var(--border-default)] lg:border-y-0 lg:border-l-0 lg:border-r overflow-hidden"
-          >
-            {/* Distance Filter Bar */}
-            {availableDistances.length > 0 && (
-              <div className="shrink-0 px-3 sm:px-4 py-2 border-b border-[var(--border-default)] bg-[var(--surface-card)] flex items-center gap-2 overflow-x-auto racepulse-horizontal-scroll touch-pan-x">
-                <span className="text-xs font-semibold text-[var(--text-secondary)] whitespace-nowrap shrink-0">
-                  Distance:
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setDistanceFilter('all')}
-                  aria-pressed={distanceFilter === 'all'}
-                  className={`min-h-11 min-w-11 lg:min-h-8 lg:min-w-0 px-3.5 lg:px-3 rounded-lg border text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
-                    distanceFilter === 'all'
-                      ? 'border-red-600 bg-red-700 text-white'
-                      : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600'
-                  }`}
-                >
-                  All
-                </button>
-                {availableDistances.map((label) => (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => setDistanceFilter(label)}
-                    aria-pressed={distanceFilter === label}
-                    className={`min-h-11 min-w-11 lg:min-h-8 lg:min-w-0 px-3.5 lg:px-3 rounded-lg border text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
-                      distanceFilter === label
-                        ? 'border-red-600 bg-red-700 text-white'
-                        : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div
-              tabIndex={0}
-              role="region"
-              aria-label="Open events table"
-              className="flex-1 min-h-0 overflow-x-auto overflow-y-auto overscroll-y-contain"
+          {/* Master-Detail Split Workspace */}
+          <div className="flex-1 min-h-0 flex flex-col min-[600px]:grid min-[600px]:grid-cols-[minmax(236px,38%)_minmax(0,1fr)] min-[920px]:grid-cols-[340px_minmax(0,1fr)] lg:grid-cols-[minmax(0,65fr)_minmax(0,35fr)]">
+            <section
+              aria-label="Open race events directory"
+              className="flex flex-col flex-1 min-h-0 bg-[var(--surface-page)] min-[600px]:border-r min-[600px]:border-[var(--border-default)] overflow-hidden"
             >
-              {!racesLoaded ? (
-                <div role="status" aria-label="Loading open events" className="p-4 sm:p-5 space-y-3">
-                  {[0, 1, 2, 3].map((rowIdx) => (
-                    <div
-                      key={rowIdx}
-                      className="flex items-center justify-between gap-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)] px-4 py-3"
+              {!isDesktop && (
+                <RunnerFilterRail<OpenEventsFilter>
+                  ariaLabel="Filter open events"
+                  options={[
+                    { key: 'all', label: 'All', count: counts.total },
+                    { key: 'unjoined', label: 'Open', count: counts.unjoined },
+                    { key: 'registered', label: 'Joined', count: counts.registered },
+                  ]}
+                  value={statusFilter}
+                  onChange={onStatusFilterChange}
+                  searchValue={searchQuery}
+                  onSearchChange={onSearchQueryChange}
+                  searchPlaceholder="Search race, date, distance..."
+                  searchLabel="Search open events by name, date, or distance"
+                  searchInputId="runner_events_mobile_search"
+                  searchInputRef={mobileSearchRef}
+                />
+              )}
+
+              <div
+                tabIndex={0}
+                role="region"
+                aria-label="Open events list"
+                className="flex-1 min-h-0 overflow-x-auto overflow-y-auto overscroll-y-contain rp-runner-scroll"
+              >
+                {availableDistances.length > 0 && (
+                  <div className="px-3 py-1.5 border-b border-[var(--border-subtle)] bg-[var(--surface-card)] flex items-center gap-1.5 overflow-x-auto racepulse-horizontal-scroll touch-pan-x">
+                    <span className="text-xs font-semibold text-[var(--text-secondary)] whitespace-nowrap shrink-0">
+                      Distance:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setDistanceFilter('all')}
+                      aria-pressed={distanceFilter === 'all'}
+                      className={`min-h-11 min-w-11 min-[600px]:min-h-8 min-[600px]:min-w-0 px-3 rounded-lg border text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
+                        distanceFilter === 'all'
+                          ? 'border-red-600 bg-red-700 text-white'
+                          : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600'
+                      }`}
                     >
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <ValueSkeleton widthClass="w-10 shrink-0" heightClass="h-10 rounded-lg" />
-                        <div className="space-y-2 min-w-0 flex-1">
-                          <ValueSkeleton widthClass="w-48 max-w-full" heightClass="h-4" />
-                          <ValueSkeleton widthClass="w-28" heightClass="h-3" />
-                        </div>
-                      </div>
-                      <ValueSkeleton widthClass="w-20 shrink-0" heightClass="h-4" />
-                    </div>
-                  ))}
-                </div>
-              ) : racesError ? (
-                <div role="alert" className="flex flex-col items-center justify-center py-20 px-4 text-center">
-                  <AlertTriangle className="w-7 h-7 text-red-700 dark:text-red-400 mb-2" aria-hidden="true" />
-                  <h3 className="text-sm font-semibold text-[var(--text-primary)]">Unable to load open events</h3>
-                  <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-sm">{racesError}</p>
-                </div>
-              ) : openRaces.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
-                  <LayoutGrid className="w-8 h-8 text-[var(--text-secondary)] mb-3" aria-hidden="true" />
-                  <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-                    No races are open for registration right now
-                  </h3>
-                  <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-sm">
-                    Browse All Races to inspect upcoming schedules, past results, and downloadable finisher certificates.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={onBrowseAllRaces}
-                    className="mt-4 min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center gap-2"
-                  >
-                    <Trophy className="w-4 h-4" aria-hidden="true" />
-                    <span>Browse All Races</span>
-                  </button>
-                </div>
-              ) : filteredRaces.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
-                  <Search className="w-8 h-8 text-[var(--text-secondary)] mb-3" aria-hidden="true" />
-                  <h3 className="text-sm font-semibold text-[var(--text-primary)]">No matching open events</h3>
-                  <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-sm">
-                    Adjust your search term, status filter, or distance selection.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onSearchQueryChange('');
-                      onStatusFilterChange('all');
-                      setDistanceFilter('all');
-                    }}
-                    className="mt-4 min-h-11 px-4 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)]"
-                  >
-                    Reset filters
-                  </button>
-                </div>
-              ) : !isDesktop ? (
-                <div id="runner_events_cards" className="p-3 space-y-3">
-                  {filteredRaces.map((race) => {
-                    const isSelected = selectedRace?.id === race.id;
-                    const isJoined = registeredRaceIds.has(race.id);
-                    const dists = sortedRaceDistances(race);
-                    return (
-                      <article
-                        key={race.id}
-                        className={`rounded-2xl border border-[var(--border-default)] border-l-4 ${
-                          isSelected
-                            ? 'border-l-red-600 bg-red-500/[0.06] ring-2 ring-red-600/70'
-                            : isJoined
-                              ? 'border-l-zinc-500 bg-[var(--surface-card)]'
-                              : 'border-l-emerald-600 bg-[var(--surface-card)]'
-                        } p-4 space-y-3`}
+                      All
+                    </button>
+                    {availableDistances.map((label) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => setDistanceFilter(label)}
+                        aria-pressed={distanceFilter === label}
+                        className={`min-h-11 min-w-11 min-[600px]:min-h-8 min-[600px]:min-w-0 px-3 rounded-lg border text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
+                          distanceFilter === label
+                            ? 'border-red-600 bg-red-700 text-white'
+                            : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600'
+                        }`}
                       >
-                        <div className="flex items-start gap-3">
-                          <div className="w-16 h-11 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] overflow-hidden shrink-0 flex items-center justify-center">
-                            {race.posterImage ? (
-                              <img
-                                src={race.posterImage}
-                                alt={`${race.name} poster`}
-                                width={64}
-                                height={44}
-                                className="w-16 h-11 object-cover block"
-                              />
-                            ) : (
-                              <Flag className="w-4 h-4 text-[var(--text-secondary)]" aria-hidden="true" />
-                            )}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-start justify-between gap-2">
-                              <h3 className="text-base font-display font-semibold text-[var(--text-primary)] leading-snug">
-                                {race.name}
-                              </h3>
-                              <span
-                                className={`shrink-0 px-2.5 py-0.5 rounded-full border text-xs font-semibold ${
-                                  isJoined
-                                    ? 'bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/30'
-                                    : 'bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700'
-                                }`}
-                              >
-                                {isJoined ? 'Registered' : 'Reg Open'}
-                              </span>
-                            </div>
-                            <p className="text-xs font-mono text-[var(--text-secondary)] mt-1">
-                              {race.date} · {formatFeeRangePH(dists)}
-                            </p>
-                          </div>
-                        </div>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
-                        {dists.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5">
-                            {dists.map((d) => (
-                              <span
-                                key={d.id}
-                                className="px-2 py-0.5 rounded border border-[var(--border-subtle)] bg-[var(--surface-inset)] text-xs font-mono font-semibold text-[var(--text-secondary)]"
-                              >
-                                {d.label}
-                                {d.price > 0 ? ` ₱${d.price.toFixed(0)}` : ''}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-
-                        <div className="pt-2 border-t border-[var(--border-subtle)] flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedRaceId(race.id);
-                              setMobileInspecting(true);
-                            }}
-                            className="min-h-11 flex-1 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 transition-colors"
-                          >
-                            <span>{isJoined ? 'Inspect / Update' : 'View & Register'}</span>
-                            <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
-                          </button>
-                        </div>
-                      </article>
-                    );
-                  })}
-                </div>
-              ) : (
+                {!racesLoaded ? (
+                  <RunnerQueueSkeleton rows={5} label="Loading open events" />
+                ) : racesError ? (
+                  <div role="alert" className="flex flex-col items-center justify-center py-10 px-3 text-center">
+                    <AlertTriangle className="w-6 h-6 text-red-700 dark:text-red-400 mb-2" aria-hidden="true" />
+                    <h3 className="text-sm font-semibold text-[var(--text-primary)]">Unable to load open events</h3>
+                    <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-sm">{racesError}</p>
+                  </div>
+                ) : openRaces.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 px-3 text-center">
+                    <LayoutGrid className="w-7 h-7 text-[var(--text-secondary)] mb-2" aria-hidden="true" />
+                    <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                      No races are open for registration right now
+                    </h3>
+                    <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-sm">
+                      Browse All Races to inspect upcoming schedules, past results, and finisher certificates.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={onBrowseAllRaces}
+                      className="mt-3 min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center gap-2"
+                    >
+                      <Trophy className="w-4 h-4" aria-hidden="true" />
+                      <span>Browse All Races</span>
+                    </button>
+                  </div>
+                ) : filteredRaces.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 px-3 text-center">
+                    <Search className="w-6 h-6 text-[var(--text-secondary)] mb-2" aria-hidden="true" />
+                    <h3 className="text-sm font-semibold text-[var(--text-primary)]">No matching open events</h3>
+                    <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-sm">
+                      Adjust your search term, status filter, or distance selection.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSearchQueryChange('');
+                        onStatusFilterChange('all');
+                        setDistanceFilter('all');
+                      }}
+                      className="mt-3 min-h-11 px-4 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)]"
+                    >
+                      Reset filters
+                    </button>
+                  </div>
+                ) : !isDesktop ? (
+                  <div id="runner_events_list" className="divide-y divide-[var(--border-subtle)] bg-[var(--surface-card)]">
+                    {filteredRaces.map((race) => {
+                      const isSelected = selectedRace?.id === race.id;
+                      const isJoined = registeredRaceIds.has(race.id);
+                      const dists = sortedRaceDistances(race);
+                      const distSummary = dists.map((d) => d.label).join(' · ');
+                      return (
+                        <RunnerQueueRow
+                          key={race.id}
+                          selected={isSelected && isSplitPane}
+                          idTag={race.date.slice(5)}
+                          title={race.name}
+                          meta={`${race.date}${distSummary ? ` · ${distSummary}` : ''}`}
+                          metric={formatFeeRangePH(dists)}
+                          metricAccent={isJoined ? 'red' : 'default'}
+                          statusLabel={isJoined ? 'Joined' : 'Reg Open'}
+                          statusTone={isJoined ? 'joined' : 'open'}
+                          onClick={() => {
+                            setSelectedRaceId(race.id);
+                            if (isCompact) setMobileInspecting(true);
+                          }}
+                        />
+                      );
+                    })}
+                    {onScanQr && (
+                      <div className="p-3 bg-[var(--surface-page)]">
+                        <button
+                          type="button"
+                          onClick={onScanQr}
+                          className="min-h-11 w-full px-4 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] hover:border-red-600 text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 transition-colors"
+                        >
+                          <QrCode className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" />
+                          <span>Scan Race / Bib QR</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
                 <table id="runner_events_table" className="w-full table-fixed text-left border-collapse">
                   <thead className="sticky top-0 z-10 bg-[var(--surface-inset)] border-b border-[var(--border-default)] text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                     <tr>
@@ -2122,48 +2350,32 @@ export default function RunnerEventsPanel({
               )}
             </div>
           </section>
-        )}
 
-        {/* RIGHT EVENT INSPECTOR DOCK (35% Desktop / Focused Detail on Mobile) */}
-        {(isDesktop || showMobileDetailOnly) && (
+        {/* RIGHT EVENT INSPECTOR DOCK (>= 600px Split Canvas) */}
+        {isSplitPane && (
           <aside
             id="runner_event_inspector_dock"
             aria-label="Selected event details and registration"
-            className="flex flex-col min-h-0 lg:h-full bg-[var(--surface-card)] rounded-2xl lg:rounded-none border lg:border-0 border-[var(--border-default)] overflow-hidden"
+            className="flex flex-col min-h-0 h-full bg-[var(--surface-card)] overflow-hidden"
           >
             {selectedRace ? (
               <>
-                <div className="shrink-0 px-4 py-3 border-b border-[var(--border-default)] bg-[var(--surface-inset)]/60 space-y-2">
-                  {!isDesktop && (
-                    <button
-                      type="button"
-                      onClick={() => setMobileInspecting(false)}
-                      className="min-h-11 py-1 text-xs font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 inline-flex items-center gap-2"
-                    >
-                      <ArrowLeft className="w-4 h-4" aria-hidden="true" />
-                      <span>Back to Open Events</span>
-                    </button>
-                  )}
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full border text-xs font-semibold ${
-                            existingForRace
-                              ? 'bg-amber-500/10 text-amber-800 dark:text-amber-300 border-amber-500/30'
-                              : 'bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700'
-                          }`}
-                        >
-                          {existingForRace ? `Bib #${existingForRace.bibNumber}` : 'Registration Open'}
-                        </span>
-                        <span className="inline-flex items-center gap-1 text-xs font-mono font-semibold text-[var(--text-secondary)]">
-                          <Calendar className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
-                          {selectedRace.date}
-                        </span>
-                      </div>
-                      <h2 className="text-base font-display font-semibold text-[var(--text-primary)] line-clamp-2 lg:truncate mt-1">
-                        {selectedRace.name}
-                      </h2>
+                <div className="shrink-0 px-3 sm:px-4 py-2 border-b border-[var(--border-default)] bg-[var(--surface-inset)]/60 space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full border text-xs font-semibold whitespace-nowrap tabular-nums ${
+                          existingForRace
+                            ? 'bg-amber-500/10 text-amber-800 dark:text-amber-300 border-amber-500/30'
+                            : 'bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700'
+                        }`}
+                      >
+                        {existingForRace ? `Bib #${existingForRace.bibNumber}` : 'Registration Open'}
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-xs font-mono font-semibold tabular-nums whitespace-nowrap text-[var(--text-secondary)]">
+                        <Calendar className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
+                        {selectedRace.date}
+                      </span>
                     </div>
 
                     {filteredRaces.length > 1 && (
@@ -2172,31 +2384,34 @@ export default function RunnerEventsPanel({
                           type="button"
                           onClick={() => stepSelectedRace(-1)}
                           aria-label="Previous open event"
-                          className="w-11 h-11 lg:w-8 lg:h-8 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] flex items-center justify-center text-[var(--text-primary)]"
+                          className="w-8 h-8 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] flex items-center justify-center text-[var(--text-primary)]"
                         >
                           <ChevronLeft className="w-4 h-4" aria-hidden="true" />
                         </button>
-                        <span className="px-1.5 font-mono text-xs font-semibold tabular-nums text-[var(--text-secondary)]">
+                        <span className="px-1 font-mono text-xs font-semibold tabular-nums text-[var(--text-secondary)]">
                           {selectedIndex >= 0 ? selectedIndex + 1 : 1}/{filteredRaces.length}
                         </span>
                         <button
                           type="button"
                           onClick={() => stepSelectedRace(1)}
                           aria-label="Next open event"
-                          className="w-11 h-11 lg:w-8 lg:h-8 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] flex items-center justify-center text-[var(--text-primary)]"
+                          className="w-8 h-8 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] flex items-center justify-center text-[var(--text-primary)]"
                         >
                           <ChevronRight className="w-4 h-4" aria-hidden="true" />
                         </button>
                       </div>
                     )}
                   </div>
+                  <h2 className="text-base font-display font-semibold text-[var(--text-primary)] truncate">
+                    {selectedRace.name}
+                  </h2>
                 </div>
 
-                <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain p-4 space-y-4">
+                <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain p-3 sm:p-4 space-y-3">
                   {/* Uncropped Poster Preview */}
                   <div
                     aria-label="Uncropped event poster preview"
-                    className="relative h-44 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] flex items-center justify-center p-2 overflow-hidden"
+                    className="relative h-40 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] flex items-center justify-center p-2 overflow-hidden"
                   >
                     {selectedRace.posterImage ? (
                       <>
@@ -2218,15 +2433,15 @@ export default function RunnerEventsPanel({
                             })
                           }
                           aria-label={`Inspect full poster for ${selectedRace.name}`}
-                          className="absolute top-2 right-2 min-h-11 lg:min-h-0 lg:h-8 px-3 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)]/95 hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-1 shadow-sm"
+                          className="absolute top-2 right-2 min-h-11 lg:min-h-0 lg:h-8 px-3 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)]/95 hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-1"
                         >
                           <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />
                           <span>Full View</span>
                         </button>
                       </>
                     ) : (
-                      <div className="text-center px-4">
-                        <Flag className="w-6 h-6 text-[var(--text-secondary)] mx-auto mb-2" aria-hidden="true" />
+                      <div className="text-center px-3">
+                        <Flag className="w-6 h-6 text-[var(--text-secondary)] mx-auto mb-1.5" aria-hidden="true" />
                         <p className="text-xs font-semibold text-[var(--text-secondary)]">
                           No promotional poster uploaded yet.
                         </p>
@@ -2234,136 +2449,31 @@ export default function RunnerEventsPanel({
                     )}
                   </div>
 
-                  {/* Quick Spec Pair */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-3">
-                      <div className="flex items-center justify-between text-xs text-[var(--text-secondary)]">
-                        <span>Categories</span>
-                        <Flag className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
-                      </div>
-                      <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--text-primary)]">
-                        {raceDistances.length || 1} distance{(raceDistances.length || 1) === 1 ? '' : 's'}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-3">
-                      <div className="flex items-center justify-between text-xs text-[var(--text-secondary)]">
-                        <span>Timing Splits</span>
-                        <CheckSquare className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
-                      </div>
-                      <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--text-primary)]">
-                        {(selectedRace.checkpoints || []).length} checkpoint
-                        {(selectedRace.checkpoints || []).length === 1 ? '' : 's'}
-                      </div>
-                    </div>
-                  </div>
-
-                  {existingForRace && (
-                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-900 dark:text-amber-300">
-                      Registered under Bib #{existingForRace.bibNumber} ({existingForRace.distance}). Continue to review or
-                      update your runner profile.
-                    </div>
-                  )}
-
-                  {/* Distances & Pricing */}
-                  <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)]/70 p-3 space-y-2">
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] flex items-center gap-1.5">
-                      <Coins className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
-                      Distances &amp; Pricing
-                    </h3>
-                    {raceDistances.length === 0 ? (
-                      <p className="text-xs text-[var(--text-secondary)]">Custom distance open.</p>
-                    ) : (
-                      <div className="flex flex-wrap gap-1.5">
-                        {raceDistances.map((d) => (
-                          <span
-                            key={d.id}
-                            className="text-xs font-semibold px-2.5 py-1 rounded-md bg-red-700/10 dark:bg-red-500/10 border border-red-500/20 text-red-700 dark:text-red-400 font-mono"
-                          >
-                            {d.label}
-                            {d.price > 0 ? `: ₱${d.price.toFixed(0)}` : ' (Free)'}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Inclusions */}
-                  {(selectedRace.inclusions || []).length > 0 && (
-                    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)]/70 p-3 space-y-2">
-                      <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] flex items-center gap-1.5">
-                        <PackageCheck className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
-                        Inclusions
-                      </h3>
-                      <div className="flex flex-wrap gap-1.5">
-                        {selectedRace.inclusions.map((incl, idx) => (
-                          <span
-                            key={idx}
-                            className="text-xs font-semibold px-2.5 py-1 rounded-md border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)]"
-                          >
-                            {incl}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Shirt / Kit Preview */}
-                  {selectedRace.inclusionImage && (
-                    <div className="space-y-2">
-                      <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] flex items-center gap-1.5">
-                        <PackageCheck className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
-                        Shirt / Kit Design
-                      </h3>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setLightboxMedia({
-                            title: `${selectedRace.name} Shirt / Kit Design`,
-                            subtitle: selectedRace.date,
-                            src: selectedRace.inclusionImage!,
-                            alt: `${selectedRace.name} shirt or kit design`,
-                          })
-                        }
-                        className="group relative w-full rounded-xl overflow-hidden border border-[var(--border-default)] bg-[var(--surface-inset)] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
-                      >
-                        <img
-                          src={selectedRace.inclusionImage}
-                          alt={`${selectedRace.name} shirt or kit design`}
-                          className="w-full max-h-56 object-contain"
-                        />
-                        <span className="absolute right-2.5 bottom-2.5 inline-flex items-center gap-1.5 rounded-lg bg-black/80 px-2.5 py-1 text-xs font-semibold text-white">
-                          <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" /> Full screen
-                        </span>
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Checkpoints & GPX */}
-                  <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)]/70 p-3 space-y-1.5">
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-                      Course Checkpoints
-                    </h3>
-                    <p className="text-xs text-[var(--text-primary)] leading-relaxed">
-                      {[...(selectedRace.checkpoints || [])]
-                        .sort((a, b) => a.order - b.order)
-                        .map((c) => c.label)
-                        .join(' → ') || 'Checkpoints will be posted by the organizer.'}
-                    </p>
-                  </div>
-
-                  <EventCourseRunnerPanel
-                    race={selectedRace}
-                    preferredDistance={distanceFilter !== 'all' ? distanceFilter : distance}
-                    compact
+                  <RunnerTelemetryStrip
+                    ariaLabel="Event quick metrics"
+                    className="rounded-xl border border-[var(--border-default)]"
+                    items={[
+                      { key: 'cats', label: 'Categories', value: String(raceDistances.length || 1) },
+                      { key: 'splits', label: 'Splits', value: String((selectedRace.checkpoints || []).length) },
+                      { key: 'fee', label: 'Entry Fee', value: formatFeeRangePH(raceDistances), accent: 'red', wide: true },
+                    ]}
                   />
 
-                  {friendIdentity?.username && (
-                    <InviteFriendsToRace uid={uid} senderName={friendIdentity.displayName} race={selectedRace} />
-                  )}
+                  <OpenEventDetailsSections
+                    uid={uid}
+                    race={selectedRace}
+                    raceDistances={raceDistances}
+                    existingForRace={existingForRace}
+                    preferredDistance={distanceFilter !== 'all' ? distanceFilter : distance}
+                    friendIdentity={friendIdentity}
+                    canInvite={can('personal.invites')}
+                    onOpenLightbox={setLightboxMedia}
+                    compactCourse={false}
+                  />
                 </div>
 
-                {/* Pinned Dock Footer (matching MyRaceEventsPanel) */}
-                <div className="shrink-0 p-4 border-t border-[var(--border-default)] bg-[var(--surface-inset)]/70 space-y-2">
+                {/* Pinned Dock Footer */}
+                <div className="shrink-0 p-3 border-t border-[var(--border-default)] bg-[var(--surface-inset)]/70 grid grid-cols-1 [@media(max-height:480px)]:grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => setShowForm(true)}
@@ -2384,8 +2494,8 @@ export default function RunnerEventsPanel({
                 </div>
               </>
             ) : (
-              <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-                <LayoutGrid className="w-8 h-8 text-[var(--text-secondary)] mb-2" aria-hidden="true" />
+              <div className="flex-1 flex flex-col items-center justify-center p-4 text-center">
+                <LayoutGrid className="w-7 h-7 text-[var(--text-secondary)] mb-2" aria-hidden="true" />
                 <h2 className="text-sm font-semibold text-[var(--text-primary)]">Event Inspector Ready</h2>
                 <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-xs">
                   Select an open race from the directory to review distances, kit design, route checkpoints, and register.
@@ -2395,15 +2505,19 @@ export default function RunnerEventsPanel({
           </aside>
         )}
       </div>
+    </div>
+      )}
 
       {/* Full-Resolution Poster / Kit Lightbox */}
       {lightboxMedia && (
         <DialogSurface
+          variant="sheet"
+          dismissOnBackdropClick
           titleId="runner_event_media_lightbox"
           onRequestClose={() => setLightboxMedia(null)}
-          className="fixed inset-0 m-auto h-fit rounded-2xl w-[calc(100%-2rem)] max-w-4xl max-h-[90dvh] flex flex-col overflow-hidden border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] shadow-2xl"
+          className="sm:inset-0 sm:m-auto h-fit sm:rounded-2xl w-full sm:w-[calc(100%-2rem)] max-w-4xl max-h-[90dvh] flex flex-col overflow-hidden border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)]"
         >
-          <div className="p-4 sm:p-5 space-y-3">
+          <div className="p-3 sm:p-4 space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <h2
@@ -2412,7 +2526,7 @@ export default function RunnerEventsPanel({
                 >
                   {lightboxMedia.title}
                 </h2>
-                <p className="text-xs font-mono text-[var(--text-secondary)]">{lightboxMedia.subtitle}</p>
+                <p className="text-xs font-mono tabular-nums text-[var(--text-secondary)]">{lightboxMedia.subtitle}</p>
               </div>
               <button
                 type="button"
@@ -2423,18 +2537,18 @@ export default function RunnerEventsPanel({
                 <X className="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
-            <div className="max-h-[75vh] w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-2 flex items-center justify-center overflow-hidden">
+            <div className="max-h-[70dvh] w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-2 flex items-center justify-center overflow-hidden">
               <img
                 src={lightboxMedia.src}
                 alt={lightboxMedia.alt}
                 width={1200}
                 height={800}
-                className="max-w-full max-h-[70vh] w-auto h-auto object-contain rounded"
+                className="max-w-full max-h-[66dvh] w-auto h-auto object-contain rounded"
               />
             </div>
           </div>
         </DialogSurface>
       )}
-    </div>
+    </>
   );
 }

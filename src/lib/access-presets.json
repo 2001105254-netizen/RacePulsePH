@@ -8,6 +8,7 @@
   "groups": {
     "Events": [
       "race.view",
+      "race.analytics",
       "race.create",
       "race.edit",
       "race.categories",
@@ -58,7 +59,8 @@
       "hub.manage",
       "hub.publish",
       "roster.export",
-      "bibs.export"
+      "bibs.export",
+      "bibs.studio"
     ],
     "Engraving": [
       "engraving.view",
@@ -88,6 +90,9 @@
     ]
   },
   "dependencies": {
+    "race.analytics": [
+      "race.view"
+    ],
     "race.edit": [
       "race.view"
     ],
@@ -240,6 +245,7 @@
   "presets": {
     "runner": {
       "race.view": false,
+      "race.analytics": false,
       "race.create": false,
       "race.edit": false,
       "race.categories": false,
@@ -281,6 +287,7 @@
       "hub.publish": false,
       "roster.export": false,
       "bibs.export": false,
+      "bibs.studio": false,
       "engraving.view": false,
       "engraving.create": false,
       "engraving.status": false,
@@ -302,6 +309,7 @@
     },
     "organizer": {
       "race.view": true,
+      "race.analytics": true,
       "race.create": true,
       "race.edit": true,
       "race.categories": true,
@@ -343,6 +351,7 @@
       "hub.publish": true,
       "roster.export": true,
       "bibs.export": true,
+      "bibs.studio": false,
       "engraving.view": false,
       "engraving.create": false,
       "engraving.status": false,
@@ -364,6 +373,7 @@
     },
     "admin": {
       "race.view": true,
+      "race.analytics": true,
       "race.create": true,
       "race.edit": true,
       "race.categories": true,
@@ -405,6 +415,7 @@
       "hub.publish": true,
       "roster.export": true,
       "bibs.export": true,
+      "bibs.studio": false,
       "engraving.view": true,
       "engraving.create": true,
       "engraving.status": true,
@@ -426,6 +437,7 @@
     },
     "superadmin": {
       "race.view": true,
+      "race.analytics": true,
       "race.create": true,
       "race.edit": true,
       "race.categories": true,
@@ -467,6 +479,7 @@
       "hub.publish": true,
       "roster.export": true,
       "bibs.export": true,
+      "bibs.studio": true,
       "engraving.view": true,
       "engraving.create": true,
       "engraving.status": true,

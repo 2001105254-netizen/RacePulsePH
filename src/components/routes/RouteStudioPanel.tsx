@@ -37,7 +37,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { fetchGpxText, parseGpxRoute } from '../../lib/gpxRoute';
-import { useScopedRaces } from '../../lib/access';
+import { useAccess, useScopedRaces } from '../../lib/access';
 import { locateAtChainage, projectCoordinateToRoute, reanchorMarkersForRoute } from '../../lib/routes/anchoring';
 import { buildCourseAnalytics } from '../../lib/routes/courseAnalytics';
 import { geodesicDistanceM, processCanonicalGeometry, reverseCanonicalGeometry } from '../../lib/routes/geometry';
@@ -162,6 +162,13 @@ export default function RouteStudioPanel({
   onNavigateUrl,
 }: RouteStudioPanelProps) {
   const { confirm } = useFeedback();
+  const { can } = useAccess();
+  const canCreateRoute = can('routes.create');
+  const canEditRoute = can('routes.edit');
+  const canUploadRouteMedia = can('routes.media');
+  const canPublishRoute = can('routes.publish');
+  const canAssignRoute = can('routes.assign');
+  const canArchiveRoute = can('routes.archive');
   const scopedRaces = useScopedRaces();
   const demoMode = isDemoSeedEnabled();
   const [store, setStore] = useState<RouteWorkspaceStore>(() => getRouteStoreSnapshot());
@@ -1000,6 +1007,10 @@ export default function RouteStudioPanel({
   };
 
   const handleNewPreset = () => {
+    if (!canCreateRoute) {
+      setErrorNotice('Creating course presets is disabled for your account.');
+      return;
+    }
     if (!targetRace) {
       setErrorNotice('Create an existing race in Race Setup before creating a course preset.');
       return;
@@ -1021,6 +1032,10 @@ export default function RouteStudioPanel({
   };
 
   const handleDuplicatePreset = () => {
+    if (!canCreateRoute) {
+      setErrorNotice('Duplicating course presets is disabled for your account.');
+      return;
+    }
     if (!activePreset) return;
     setErrorNotice('');
     try {
@@ -1037,6 +1052,10 @@ export default function RouteStudioPanel({
   };
 
   const handleSaveDraft = () => {
+    if (!canEditRoute) {
+      setErrorNotice('Editing course drafts is disabled for your account.');
+      return;
+    }
     if (!activePreset) return;
     setErrorNotice('');
     try {
@@ -1078,6 +1097,10 @@ export default function RouteStudioPanel({
   };
 
   const handleCreateVersion = () => {
+    if (!canPublishRoute) {
+      setErrorNotice('Creating reviewed versions is disabled for your account.');
+      return;
+    }
     if (!activePreset) return;
     setErrorNotice('');
     try {
@@ -1178,6 +1201,10 @@ export default function RouteStudioPanel({
   const handleUploadPhoto = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
+    if (!canUploadRouteMedia) {
+      setErrorNotice('Uploading landmark photos is disabled for your account.');
+      return;
+    }
     if (!file || !selectedMarker) return;
     setPhotoBusy(true);
     setErrorNotice('');
@@ -1204,6 +1231,10 @@ export default function RouteStudioPanel({
   };
 
   const handleAttachVerifiedSamplePhoto = async () => {
+    if (!canUploadRouteMedia) {
+      setErrorNotice('Uploading landmark photos is disabled for your account.');
+      return;
+    }
     if (!selectedMarker) return;
     setErrorNotice('');
     try {
@@ -1230,6 +1261,10 @@ export default function RouteStudioPanel({
   };
 
   const handlePublishBinding = () => {
+    if (!canPublishRoute || !canAssignRoute) {
+      setErrorNotice('Publishing and binding race courses requires routes.publish and routes.assign permissions.');
+      return;
+    }
     if (!targetRace || !activePreset || !selectedVersion) {
       setErrorNotice('Select an existing race and create an immutable preset version before publishing.');
       return;
@@ -1258,6 +1293,10 @@ export default function RouteStudioPanel({
   };
 
   const handleQuickAttachAndPublish = () => {
+    if (!canPublishRoute || !canAssignRoute) {
+      setErrorNotice('Attaching and publishing courses requires routes.publish and routes.assign permissions.');
+      return;
+    }
     if (!targetRace || !targetDistanceId || !activePreset) {
       setErrorNotice('Select an event and distance category first.');
       return;
@@ -1377,6 +1416,10 @@ export default function RouteStudioPanel({
   };
 
   const handleWithdrawPublication = () => {
+    if (!canPublishRoute) {
+      setErrorNotice('Withdrawing published courses is disabled for your account.');
+      return;
+    }
     if (!targetRace || !currentPublication) return;
     setErrorNotice('');
     try {
@@ -1396,6 +1439,10 @@ export default function RouteStudioPanel({
   };
 
   const handleRollback = (targetPubId: string) => {
+    if (!canAssignRoute) {
+      setErrorNotice('Rolling back race course bindings is disabled for your account.');
+      return;
+    }
     if (!targetRace) return;
     setErrorNotice('');
     try {
@@ -1525,6 +1572,7 @@ export default function RouteStudioPanel({
             <button
               key={mode}
               type="button"
+              disabled={!canEditRoute && mode !== 'view'}
               aria-pressed={drawMode === mode}
               onClick={() => {
                 setDrawMode(mode);
@@ -1532,7 +1580,7 @@ export default function RouteStudioPanel({
                   setTrailOption('draw');
                 }
               }}
-              className={`min-h-10 rounded-xl border px-3 text-xs font-semibold ${
+              className={`min-h-10 rounded-xl border px-3 text-xs font-semibold disabled:opacity-45 disabled:cursor-not-allowed ${
                 drawMode === mode
                   ? 'border-red-600 bg-red-700 text-white'
                   : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600/50'
@@ -1794,6 +1842,7 @@ export default function RouteStudioPanel({
             </div>
             <button
               type="button"
+              hidden={!canCreateRoute}
               onClick={handleNewPreset}
               className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
             >
@@ -1802,6 +1851,7 @@ export default function RouteStudioPanel({
             </button>
             <button
               type="button"
+              hidden={!canCreateRoute}
               onClick={handleDuplicatePreset}
               className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
             >
@@ -1811,6 +1861,7 @@ export default function RouteStudioPanel({
             {activePreset && (
               <button
                 type="button"
+                hidden={!canArchiveRoute}
                 onClick={() =>
                   archivePresetCommand({
                     actorUid: profile.uid,
@@ -1827,16 +1878,18 @@ export default function RouteStudioPanel({
             )}
             <button
               type="button"
+              disabled={!canEditRoute}
               onClick={handleSaveDraft}
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-4 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-4 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50 disabled:opacity-45 disabled:cursor-not-allowed"
             >
               <Save className="h-4 w-4" aria-hidden="true" />
               Save draft {dirty ? '*' : ''}
             </button>
             <button
               type="button"
+              disabled={!canPublishRoute || !canAssignRoute}
               onClick={handleQuickAttachAndPublish}
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-red-700 px-4 text-xs font-semibold text-white hover:bg-red-600"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-red-700 px-4 text-xs font-semibold text-white hover:bg-red-600 disabled:opacity-45 disabled:cursor-not-allowed"
             >
               <Flag className="h-4 w-4" aria-hidden="true" />
               Attach &amp; Publish to Event
@@ -2901,7 +2954,7 @@ export default function RouteStudioPanel({
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        disabled={photoBusy || selectedMarker.photos.length >= 3}
+                        disabled={!canUploadRouteMedia || photoBusy || selectedMarker.photos.length >= 3}
                         onClick={() => photoInputRef.current?.click()}
                         className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-red-700 px-3 text-xs font-semibold text-white hover:bg-red-600 disabled:opacity-50"
                       >
@@ -2910,7 +2963,7 @@ export default function RouteStudioPanel({
                       </button>
                       <button
                         type="button"
-                        disabled={selectedMarker.photos.length >= 3}
+                        disabled={!canUploadRouteMedia || selectedMarker.photos.length >= 3}
                         onClick={() => void handleAttachVerifiedSamplePhoto()}
                         className="min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-xs font-semibold text-[var(--text-primary)] disabled:opacity-50"
                       >
@@ -3143,8 +3196,9 @@ export default function RouteStudioPanel({
               />
               <button
                 type="button"
+                disabled={!canPublishRoute}
                 onClick={handleCreateVersion}
-                className="min-h-11 rounded-xl bg-red-700 px-4 text-xs font-semibold text-white hover:bg-red-600"
+                className="min-h-11 rounded-xl bg-red-700 px-4 text-xs font-semibold text-white hover:bg-red-600 disabled:opacity-45 disabled:cursor-not-allowed"
               >
                 Create immutable version
               </button>
@@ -3410,7 +3464,7 @@ export default function RouteStudioPanel({
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                disabled={!selectedVersion || !readiness.ready}
+                disabled={!canPublishRoute || !canAssignRoute || !selectedVersion || !readiness.ready}
                 onClick={handlePublishBinding}
                 className="min-h-11 rounded-xl bg-red-700 px-4 text-xs font-semibold text-white hover:bg-red-600 disabled:opacity-50"
               >
@@ -3418,8 +3472,9 @@ export default function RouteStudioPanel({
               </button>
               <button
                 type="button"
+                disabled={!canPublishRoute || !canAssignRoute}
                 onClick={handleQuickAttachAndPublish}
-                className="min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-4 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+                className="min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-4 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50 disabled:opacity-50"
               >
                 Save, version &amp; attach draft to {targetDistanceId || 'event'}
               </button>
@@ -3451,8 +3506,9 @@ export default function RouteStudioPanel({
                   />
                   <button
                     type="button"
+                    disabled={!canPublishRoute}
                     onClick={handleWithdrawPublication}
-                    className="min-h-10 rounded-xl border border-red-500/40 px-3 font-semibold text-red-700 hover:bg-red-500/10 dark:text-red-300"
+                    className="min-h-10 rounded-xl border border-red-500/40 px-3 font-semibold text-red-700 hover:bg-red-500/10 dark:text-red-300 disabled:opacity-45 disabled:cursor-not-allowed"
                   >
                     Withdraw published course
                   </button>
@@ -3472,8 +3528,9 @@ export default function RouteStudioPanel({
                         </span>
                         <button
                           type="button"
+                          disabled={!canAssignRoute}
                           onClick={() => handleRollback(prev.id)}
-                          className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 font-semibold"
+                          className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 font-semibold disabled:opacity-45 disabled:cursor-not-allowed"
                         >
                           <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
                           Restore v{prev.versionNumber}
@@ -3548,8 +3605,9 @@ export default function RouteStudioPanel({
                         </button>
                         <button
                           type="button"
+                          disabled={!canEditRoute}
                           onClick={() => void handleMigrateLegacy(r, false)}
-                          className="inline-flex min-h-10 items-center gap-1 rounded-xl bg-red-700 px-3 font-semibold text-white hover:bg-red-600"
+                          className="inline-flex min-h-10 items-center gap-1 rounded-xl bg-red-700 px-3 font-semibold text-white hover:bg-red-600 disabled:opacity-45 disabled:cursor-not-allowed"
                         >
                           <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
                           Import draft

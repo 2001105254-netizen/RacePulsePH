@@ -1018,10 +1018,10 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                 >
                   <X className="w-4 h-4" aria-hidden="true" />
                 </button>
-                <button
+                <button disabled={(!!editingId && !can('race.artwork'))}
                   type="button"
                   onClick={() => posterInputRef.current?.click()}
-                  className="absolute bottom-2 right-2 min-h-11 text-xs font-semibold uppercase tracking-wide px-3 py-2 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center gap-2 transition"
+                  className="absolute bottom-2 right-2 min-h-11 text-xs font-semibold uppercase tracking-wide px-3 py-2 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center gap-2 transition disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <ImagePlus className="w-3.5 h-3.5" aria-hidden="true" /> Change
                 </button>
@@ -1030,7 +1030,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
               <button
                 type="button"
                 onClick={() => posterInputRef.current?.click()}
-                disabled={posterUploading}
+                disabled={(posterUploading) || (!!editingId && !can('race.artwork'))}
                 className="w-full aspect-[16/9] rounded-[16px] border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-2 text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 hover:border-red-500/40 transition disabled:opacity-60"
               >
                 {posterUploading ? <RefreshCw className="w-6 h-6 animate-spin" /> : <ImagePlus className="w-6 h-6" />}
@@ -1048,20 +1048,22 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                   <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">Upload the official GPX route or use Route Studio to attach per-distance courses with terrain surfaces, elevation, checkpoints, and photo landmarks.</p>
                 </div>
               </div>
-              <a
-                href={editingId ? `/route-studio?raceId=${encodeURIComponent(editingId)}` : '/route-studio'}
-                onClick={(e) => {
-                  e.preventDefault();
-                  window.dispatchEvent(
-                    new CustomEvent('racepulse:navigate', {
-                      detail: { url: editingId ? `/route-studio?raceId=${encodeURIComponent(editingId)}` : '/route-studio' },
-                    }),
-                  );
-                }}
-                className="inline-flex min-h-11 shrink-0 items-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-red-700 hover:border-red-600/50 dark:text-red-400"
-              >
-                {editingId ? 'Attach / Edit in Route Studio' : 'Open Route Studio'}
-              </a>
+              {can('routes.view') && (can('routes.assign') || can('routes.edit') || can('routes.create')) && (
+                <a
+                  href={editingId ? `/route-studio?raceId=${encodeURIComponent(editingId)}` : '/route-studio'}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.dispatchEvent(
+                      new CustomEvent('racepulse:navigate', {
+                        detail: { url: editingId ? `/route-studio?raceId=${encodeURIComponent(editingId)}` : '/route-studio' },
+                      }),
+                    );
+                  }}
+                  className="inline-flex min-h-11 shrink-0 items-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-red-700 hover:border-red-600/50 dark:text-red-400"
+                >
+                  {editingId ? 'Attach / Edit in Route Studio' : 'Open Route Studio'}
+                </a>
+              )}
             </div>
             {editingId && (
               <div className="mt-3 space-y-2">
@@ -1079,22 +1081,24 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                           Published v{course.versionNumber} · Visible to all runners on event details
                         </p>
                       </div>
-                      <a
-                        href={`/route-studio?raceId=${encodeURIComponent(editingId)}&distanceId=${encodeURIComponent(course.distanceId)}`}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          window.dispatchEvent(
-                            new CustomEvent('racepulse:navigate', {
-                              detail: {
-                                url: `/route-studio?raceId=${encodeURIComponent(editingId)}&distanceId=${encodeURIComponent(course.distanceId)}`,
-                              },
-                            }),
-                          );
-                        }}
-                        className="inline-flex min-h-9 items-center rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 font-semibold text-[var(--text-primary)] hover:border-red-600/50"
-                      >
-                        Edit course
-                      </a>
+                      {can('routes.view') && (can('routes.assign') || can('routes.edit')) && (
+                        <a
+                          href={`/route-studio?raceId=${encodeURIComponent(editingId)}&distanceId=${encodeURIComponent(course.distanceId)}`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            window.dispatchEvent(
+                              new CustomEvent('racepulse:navigate', {
+                                detail: {
+                                  url: `/route-studio?raceId=${encodeURIComponent(editingId)}&distanceId=${encodeURIComponent(course.distanceId)}`,
+                                },
+                              }),
+                            );
+                          }}
+                          className="inline-flex min-h-9 items-center rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+                        >
+                          Edit course
+                        </a>
+                      )}
                     </div>
                   ))
                 ) : (
@@ -1176,12 +1180,12 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                   </div>
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)] mb-2">Runner name position</p>
-                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)]">X <input type="range" min="5" max="95" value={runnerNameX} onChange={(e) => setRunnerNameX(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameX}%</label>
-                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Y <input type="range" min="5" max="95" value={runnerNameY} onChange={(e) => setRunnerNameY(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameY}%</label>
-                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Size <input type="range" min="3" max="14" value={runnerNameSize} onChange={(e) => setRunnerNameSize(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameSize}</label>
-                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Color <input type="color" value={runnerNameColor} onChange={(e) => setRunnerNameColor(e.target.value)} className="w-11 h-11 p-1 border border-[var(--border-default)] rounded-lg cursor-pointer bg-transparent" /> <span className="font-mono">{runnerNameColor}</span></label>
-                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Border <input type="color" value={runnerNameStrokeColor} onChange={(e) => setRunnerNameStrokeColor(e.target.value)} className="w-11 h-11 p-1 border border-[var(--border-default)] rounded-lg cursor-pointer bg-transparent" /> <span className="font-mono">{runnerNameStrokeColor}</span></label>
-                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Border thickness <input type="range" min="0" max="1.5" step="0.1" value={runnerNameStrokeWidth} onChange={(e) => setRunnerNameStrokeWidth(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameStrokeWidth.toFixed(1)}</label>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)]">X <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="5" max="95" value={runnerNameX} onChange={(e) => setRunnerNameX(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameX}%</label>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Y <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="5" max="95" value={runnerNameY} onChange={(e) => setRunnerNameY(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameY}%</label>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Size <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="3" max="14" value={runnerNameSize} onChange={(e) => setRunnerNameSize(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameSize}</label>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Color <input disabled={(!!editingId && !can('race.bibs'))} type="color" value={runnerNameColor} onChange={(e) => setRunnerNameColor(e.target.value)} className="w-11 h-11 p-1 border border-[var(--border-default)] rounded-lg cursor-pointer bg-transparent" /> <span className="font-mono">{runnerNameColor}</span></label>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Border <input disabled={(!!editingId && !can('race.bibs'))} type="color" value={runnerNameStrokeColor} onChange={(e) => setRunnerNameStrokeColor(e.target.value)} className="w-11 h-11 p-1 border border-[var(--border-default)] rounded-lg cursor-pointer bg-transparent" /> <span className="font-mono">{runnerNameStrokeColor}</span></label>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">Border thickness <input disabled={(!!editingId && !can('race.bibs'))} type="range" min="0" max="1.5" step="0.1" value={runnerNameStrokeWidth} onChange={(e) => setRunnerNameStrokeWidth(Number(e.target.value))} className="flex-1 accent-red-600" /> {runnerNameStrokeWidth.toFixed(1)}</label>
                     <div className="flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)] mt-2">
                       <label htmlFor="setup-runner-name-font" className="shrink-0">Font</label>
                       <Select
@@ -1484,7 +1488,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
             <div className="space-y-2">
               {inclusions.map((incl, idx) => (
                 <div key={incl.id} className="flex items-center gap-2">
-                  <input
+                  <input disabled={(!!editingId && !can('race.edit'))}
                     type="text"
                     required
                     value={incl.text}
@@ -1492,7 +1496,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                     placeholder="EX: Finisher Medal"
                     className="flex-1 min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
                   />
-                  <button type="button" onClick={() => removeInclusion(idx)} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 p-2" aria-label={`Remove inclusion ${idx + 1}`}>
+                  <button disabled={(!!editingId && !can('race.edit'))} type="button" onClick={() => removeInclusion(idx)} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 p-2" aria-label={`Remove inclusion ${idx + 1}`}>
                     <Trash2 className="w-4 h-4" aria-hidden="true" />
                   </button>
                 </div>
@@ -1501,7 +1505,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                 <p className="text-xs text-[var(--text-secondary)]">No inclusions yet - e.g. Finisher Medal, Race Singlet, Race Kit.</p>
               )}
             </div>
-            <button type="button" onClick={addInclusion} className="mt-2 min-h-11 px-2 text-xs font-semibold text-red-700 dark:text-red-400 hover:underline flex items-center gap-2">
+            <button disabled={(!!editingId && !can('race.edit'))} type="button" onClick={addInclusion} className="mt-2 min-h-11 px-2 text-xs font-semibold text-red-700 dark:text-red-400 hover:underline flex items-center gap-2">
               <Plus className="w-3.5 h-3.5" aria-hidden="true" /> Add Inclusion
             </button>
           </div>
@@ -1522,10 +1526,10 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                 >
                   <X className="w-4 h-4" aria-hidden="true" />
                 </button>
-                <button
+                <button disabled={(!!editingId && !can('race.artwork'))}
                   type="button"
                   onClick={() => inclusionInputRef.current?.click()}
-                  className="absolute bottom-2 right-2 min-h-11 text-xs font-semibold uppercase tracking-wide px-3 py-2 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center gap-2 transition"
+                  className="absolute bottom-2 right-2 min-h-11 text-xs font-semibold uppercase tracking-wide px-3 py-2 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center gap-2 transition disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <ImagePlus className="w-3.5 h-3.5" aria-hidden="true" /> Change
                 </button>
@@ -1534,7 +1538,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
               <button
                 type="button"
                 onClick={() => inclusionInputRef.current?.click()}
-                disabled={inclusionUploading}
+                disabled={(inclusionUploading) || (!!editingId && !can('race.artwork'))}
                 className="w-full aspect-[16/9] rounded-[16px] border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-2 text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 hover:border-red-500/40 transition disabled:opacity-60"
               >
                 {inclusionUploading ? <RefreshCw className="w-6 h-6 animate-spin" /> : <ImagePlus className="w-6 h-6" />}

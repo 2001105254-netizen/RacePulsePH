@@ -1063,3 +1063,14 @@ html::-webkit-scrollbar-thumb:active,
     min-height: 44px;
   }
 }
+
+/* Runner mobile scroll containers clear the 56px bottom nav and thumb-zone bars */
+.rp-runner-scroll {
+  scroll-padding-bottom: calc(7.5rem + var(--rp-safe-bottom));
+}
+
+@media (min-width: 600px) {
+  .rp-runner-scroll {
+    scroll-padding-bottom: 1.5rem;
+  }
+}

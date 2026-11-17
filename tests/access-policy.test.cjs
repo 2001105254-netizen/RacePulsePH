@@ -62,3 +62,19 @@ test('route studio permissions enforce view and edit dependencies across roles',
   assert.throws(() => validate({ ...input, role: 'organizer', overrides: { 'routes.publish': true, 'routes.edit': false } }));
   assert.throws(() => validate({ ...input, role: 'organizer', overrides: { 'routes.assign': true, 'race.view': false } }));
 });
+
+test('event analytics and standalone bib studio permissions follow role defaults and dependencies', () => {
+  assert.equal(defaults('superadmin')['race.analytics'], true);
+  assert.equal(defaults('admin')['race.analytics'], true);
+  assert.equal(defaults('organizer')['race.analytics'], true);
+  assert.equal(defaults('runner')['race.analytics'], false);
+  assert.throws(() => validate({ ...input, role: 'admin', overrides: { 'race.analytics': true, 'race.view': false } }));
+
+  assert.equal(defaults('superadmin')['bibs.studio'], true);
+  assert.equal(defaults('admin')['bibs.studio'], false);
+  assert.equal(defaults('organizer')['bibs.studio'], false);
+  assert.equal(defaults('runner')['bibs.studio'], false);
+
+  const delegatedStudio = validate({ ...input, role: 'runner', scope: 'owned-assigned', raceIds: [], overrides: { 'bibs.studio': true } });
+  assert.equal(can({ uid: 'r1', role: 'runner', approved: true }, delegatedStudio, 'bibs.studio'), true);
+});

@@ -25,8 +25,8 @@ const helpers = `${markerStart}
       return accessForCaller(callerDoc().data);
     }
     function presetForRole(role, action) {
-      return role == 'superadmin' || (role == 'admin' && !action.matches('personal[.].*') && action != 'highlights.playlist')
-        || (role == 'organizer' && !action.matches('engraving[.].*') && !action.matches('highlights[.].*') && action != 'users.view' && action != 'timing.correct')
+      return role == 'superadmin' || (role == 'admin' && !action.matches('personal[.].*') && action != 'highlights.playlist' && action != 'bibs.studio')
+        || (role == 'organizer' && !action.matches('engraving[.].*') && !action.matches('highlights[.].*') && action != 'users.view' && action != 'timing.correct' && action != 'bibs.studio')
         || (role == 'runner' && action.matches('personal[.].*'));
     }
     function preset(action) {
@@ -214,7 +214,7 @@ block('match /system/highlightsConfig',`match /system/highlightsConfig {
 
     function canAccessPresetData(presetData) {
       return isSuperAdmin()
-        || callerDoc().data.role == 'admin'
+        || (access().scope == 'all' && permission('routes.view'))
         || presetData.ownerUid == request.auth.uid
         || request.auth.uid in presetData.get('editorIds', []);
     }

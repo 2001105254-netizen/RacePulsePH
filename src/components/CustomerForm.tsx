@@ -374,15 +374,15 @@ export default function CustomerForm({
   };
 
   return (
-    <div id="customer_flow_main" className={embedded ? 'w-full space-y-5 relative' : 'w-full max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-8 relative'}>
+    <div id="customer_flow_main" className={embedded ? 'w-full px-3 sm:px-4 py-3 space-y-4 relative' : 'w-full max-w-6xl mx-auto px-3 sm:px-6 py-4 sm:py-6 relative'}>
 
       {/* Header Bar */}
       {embedded ? (
-        <div className="border border-[var(--border-default)] rounded-2xl bg-[var(--surface-card)] px-4 py-3 flex flex-wrap items-center justify-between gap-3 animate-fadeIn">
-          <div className="flex flex-wrap items-center gap-2.5 min-w-0">
+        <div className="border-b border-[var(--border-default)] pb-2.5 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
             <Award className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
-            <h2 className="text-sm sm:text-base font-semibold font-display uppercase tracking-wider text-[var(--text-primary)] whitespace-nowrap">
-              Medal Personalization Booth
+            <h2 className="text-sm font-semibold font-display uppercase tracking-wider text-[var(--text-primary)] whitespace-nowrap">
+              Medal Personalization
             </h2>
             <span className="text-xs text-[var(--text-secondary)] hidden sm:inline">
               Preview and queue custom finisher medal engraving
@@ -390,7 +390,7 @@ export default function CustomerForm({
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             {lanConnected !== null && (
-              <span className={`inline-flex items-center gap-1.5 text-xs font-mono font-semibold tracking-wider uppercase px-2.5 py-1 rounded-full border ${
+              <span className={`inline-flex items-center gap-1.5 text-xs font-mono font-semibold tracking-wider uppercase px-2 py-0.5 rounded-full border ${
                 lanConnected
                   ? 'bg-emerald-500/10 border-emerald-600/30 text-emerald-700 dark:text-emerald-400'
                   : 'bg-red-500/10 border-red-600/30 text-red-700 dark:text-red-400'
@@ -398,11 +398,11 @@ export default function CustomerForm({
                 <span className={`w-2 h-2 rounded-full ${lanConnected ? 'bg-emerald-600 dark:bg-emerald-400' : 'bg-red-600 dark:bg-red-400'}`} aria-hidden="true" />
                 {lanConnected ? (
                   <>
-                    <Wifi className="w-3.5 h-3.5" aria-hidden="true" /> LAN Sync Linked
+                    <Wifi className="w-3.5 h-3.5" aria-hidden="true" /> LAN Sync
                   </>
                 ) : (
                   <>
-                    <WifiOff className="w-3.5 h-3.5" aria-hidden="true" /> Standalone Mode
+                    <WifiOff className="w-3.5 h-3.5" aria-hidden="true" /> Offline Queue
                   </>
                 )}
               </span>
@@ -417,13 +417,13 @@ export default function CustomerForm({
           </div>
         </div>
       ) : (
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between glass-panel hero-glow px-4 sm:px-6 py-4 sm:py-5 mb-8 gap-4 animate-fadeIn">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between border-b border-[var(--border-default)] pb-4 mb-5 gap-3">
           <div className="text-left min-w-0 w-full">
-            <h1 className="heading-float text-2xl sm:text-3xl font-semibold tracking-tight font-display text-[var(--text-primary)] break-words [overflow-wrap:anywhere]">MEDAL PERSONALIZATION BOOTH</h1>
+            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight font-display text-[var(--text-primary)] break-words">MEDAL PERSONALIZATION BOOTH</h1>
             <div className="flex flex-wrap items-center gap-2 mt-1">
               <p className="text-xs sm:text-sm text-[var(--text-secondary)]">Enter your race details carefully before confirming. Entries sync with the on-site laser station.</p>
               {lanConnected !== null && (
-                <span className={`inline-flex max-w-full flex-wrap items-center gap-2 text-xs font-mono font-semibold tracking-wider uppercase px-3 py-1 rounded-full border ${
+                <span className={`inline-flex max-w-full flex-wrap items-center gap-1.5 text-xs font-mono font-semibold tracking-wider uppercase px-2.5 py-0.5 rounded-full border ${
                   lanConnected
                     ? 'bg-emerald-500/10 border-emerald-600/30 text-emerald-700 dark:text-emerald-400'
                     : 'bg-red-500/10 border-red-600/30 text-red-700 dark:text-red-400'
@@ -445,7 +445,7 @@ export default function CustomerForm({
           <button
             type="button"
             onClick={onBackToRoleSelection}
-            className="min-h-11 w-full md:w-auto text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] glass-inset hover:bg-[var(--surface-hover)] font-semibold px-4 py-2 transition flex items-center justify-center gap-2 shrink-0"
+            className="min-h-11 w-full md:w-auto text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] font-semibold px-4 py-2 transition flex items-center justify-center gap-2 shrink-0"
           >
             {backLabel}
           </button>
@@ -453,21 +453,18 @@ export default function CustomerForm({
       )}
 
       {viewState === 'form' ? (
-        <div id="order_form_panel" className="grid grid-cols-1 lg:grid-cols-[minmax(0,7fr)_minmax(0,4fr)] gap-6 lg:gap-8 items-start">
+        <div id="order_form_panel" className="grid grid-cols-1 lg:grid-cols-[minmax(0,7fr)_minmax(0,4fr)] gap-4 lg:gap-6 items-start">
 
-          <div className="min-w-0 relative animate-fadeIn">
-            <div className="glass-panel p-4 sm:p-8 space-y-6">
-              <div className="heading-float-chip flex flex-wrap items-center gap-3 bg-gradient-to-br from-red-700 via-red-800 to-black text-white px-4 py-3 rounded-[20px] border border-white/10">
-                <span className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
-                  <Award className="w-5 h-5" aria-hidden="true" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <h2 className="font-display font-semibold uppercase tracking-wider text-xs sm:text-sm leading-tight text-white break-words [overflow-wrap:anywhere]">Personalization Form</h2>
-                  <p className="text-xs text-red-100/90 font-normal mt-1 break-words">Laser-engraved exactly as typed - double check spelling</p>
+          <div className="min-w-0 relative">
+            <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] p-3 sm:p-5 space-y-4">
+              <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-[var(--border-subtle)]">
+                <div className="min-w-0">
+                  <h2 className="font-display font-semibold uppercase tracking-wider text-xs sm:text-sm text-[var(--text-primary)]">Personalization Form</h2>
+                  <p className="text-xs text-[var(--text-secondary)] mt-0.5">Laser-engraved exactly as typed. Check spelling carefully.</p>
                 </div>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-8" noValidate>
+              <form onSubmit={handleSubmit} className="space-y-6" noValidate>
 
                 {racePrefills.length > 0 && (
                   <div className="rounded-[20px] border border-[var(--border-default)] bg-[var(--surface-inset)] p-4 space-y-2">
@@ -776,40 +773,44 @@ export default function CustomerForm({
             </div>
           </div>
 
-          {/* Real-time Preview Side */}
-          <div className="min-w-0 lg:sticky lg:top-6 flex flex-col items-center animate-fadeIn">
-            <div className="w-full min-w-0 glass-panel p-5 text-left">
-              <h3 className="text-xs font-semibold font-display uppercase tracking-widest text-[var(--text-secondary)] border-b border-[var(--border-default)] pb-3 mb-4 flex items-center gap-2">
+          {/* Real-time Queue Status */}
+          <div className="min-w-0 lg:sticky lg:top-6 flex flex-col">
+            <div className="w-full min-w-0 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] p-3 text-left space-y-2.5">
+              <h3 className="text-xs font-semibold font-display uppercase tracking-widest text-[var(--text-secondary)] flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
-                Live Engraving Queue Status
+                Live Engraving Queue
               </h3>
-
-              <div className="glass-inset p-4">
-                <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">Queue Turnaround Estimate</h4>
-                <p className="text-xs text-[var(--text-secondary)] mt-2 leading-relaxed">
-                  Athletes currently in active queue: <strong className="text-red-700 dark:text-red-400 font-semibold">{activeQueueCount}</strong>.
-                </p>
-                <p className="text-xs text-[var(--text-secondary)] mt-1 leading-relaxed">
-                  Est. processing latency is <strong className="text-red-700 dark:text-red-400 font-semibold">~{activeQueueCount * 2} minutes</strong>. Submit your registration now to secure your spot in line!
-                </p>
-              </div>
+              <dl className="grid grid-cols-2 divide-x divide-[var(--border-subtle)] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)]">
+                <div className="px-2.5 py-2">
+                  <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">In Queue</dt>
+                  <dd className="text-sm font-mono font-semibold tabular-nums text-red-700 dark:text-red-400 mt-0.5">
+                    {activeQueueCount}
+                  </dd>
+                </div>
+                <div className="px-2.5 py-2">
+                  <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Est. Wait</dt>
+                  <dd className="text-sm font-mono font-semibold tabular-nums text-[var(--text-primary)] mt-0.5">
+                    ~{activeQueueCount * 2} min
+                  </dd>
+                </div>
+              </dl>
             </div>
           </div>
 
         </div>
       ) : (
         /* CONFIRMED STATE / STATUS MONITORING SCREEN */
-        <div id="confirmed_screen" className="max-w-4xl mx-auto glass-panel p-4 sm:p-8 text-center space-y-6 sm:space-y-8 animate-fadeIn">
+        <div id="confirmed_screen" className="max-w-4xl mx-auto rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] p-3 sm:p-6 text-center space-y-5">
 
           {/* Confirmed banner */}
           <div className="flex flex-col items-center">
-            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center border border-red-500/20 mb-4 shadow-sm relative">
-              <CheckCircle className="w-10 h-10 text-red-700 dark:text-red-400" aria-hidden="true" />
+            <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center border border-red-500/20 mb-3">
+              <CheckCircle className="w-7 h-7 text-red-700 dark:text-red-400" aria-hidden="true" />
             </div>
 
-            <h2 className="heading-float text-2xl sm:text-3xl font-semibold font-display tracking-tight text-[var(--text-primary)] uppercase">Your Medal Inscription is Registered!</h2>
-            <p className="text-xs sm:text-sm text-[var(--text-secondary)] mt-2 max-w-lg mx-auto">
-              We received your customization details safely. Walk to the engraving booth or stand by. This ticket monitor updates in real-time.
+            <h2 className="text-xl sm:text-2xl font-semibold font-display tracking-tight text-[var(--text-primary)] uppercase">Your Medal Inscription is Registered!</h2>
+            <p className="text-xs sm:text-sm text-[var(--text-secondary)] mt-1.5 max-w-lg mx-auto">
+              Walk to the engraving booth or stand by. This ticket monitor updates in real time.
             </p>
           </div>
 
@@ -879,34 +880,40 @@ export default function CustomerForm({
               <span className="text-xs text-[var(--text-secondary)] font-mono tracking-wide mt-1">HIGH-CONTRAST QR SYNC TICKET</span>
             </div>
 
-            {/* FULL SCREEN MAXIMIZED QR MODAL */}
+            {/* FULL SCREEN MAXIMIZED QR SHEET */}
             {isQrMaximized && (
               <DialogSurface
+                variant="sheet"
+                dismissOnBackdropClick
                 titleId="engraving-qr-zoom-title"
                 onRequestClose={() => setIsQrMaximized(false)}
-                className="glass-panel p-6 sm:p-8 max-w-md w-full flex flex-col items-center text-center space-y-6 relative"
+                className="sm:inset-0 sm:m-auto h-fit rounded-t-[20px] sm:rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] p-4 sm:p-6 max-w-md w-full flex flex-col items-center text-center space-y-4"
               >
-                <button
-                  type="button"
-                  onClick={() => setIsQrMaximized(false)}
-                  aria-label="Close zoomed QR ticket"
-                  className="min-h-11 px-4 py-2 absolute top-4 right-4 glass-inset hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)] text-[var(--text-secondary)] text-xs font-mono tracking-wider font-semibold uppercase transition"
-                >
-                  Close Zoom
-                </button>
-
-                <div className="space-y-1 pt-8">
-                  <span className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase tracking-widest font-mono flex items-center justify-center gap-2">
-                    <WifiOff className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" />
-                    FULL SCREEN SYNC TICKET
+                <div className="w-full flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase tracking-widest font-mono inline-flex items-center gap-1.5">
+                    <WifiOff className="w-3.5 h-3.5" aria-hidden="true" />
+                    Sync Ticket
                   </span>
-                  <h3 id="engraving-qr-zoom-title" className="heading-float text-base font-semibold text-[var(--text-primary)] uppercase font-display tracking-tight">Runner {createdOrder?.runnerName}</h3>
+                  <button
+                    type="button"
+                    onClick={() => setIsQrMaximized(false)}
+                    aria-label="Close zoomed QR ticket"
+                    className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] text-xs font-mono tracking-wider font-semibold uppercase transition"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="space-y-1">
+                  <h3 id="engraving-qr-zoom-title" className="text-base font-semibold text-[var(--text-primary)] uppercase font-display tracking-tight">
+                    Runner {createdOrder?.runnerName}
+                  </h3>
                   <p className="text-xs text-[var(--text-secondary)] max-w-xs leading-normal">
                     Hold your screen directly in front of the laser station camera.
                   </p>
                 </div>
 
-                <div className="bg-white p-6 rounded-3xl shadow-2xl border-4 border-red-500/30">
+                <div className="bg-white p-4 rounded-2xl border-2 border-red-500/30">
                   <QRCodeSVG
                     value={[
                       "RXPv2",
@@ -918,30 +925,30 @@ export default function CustomerForm({
                       createdOrder?.rank || '',
                       createdOrder?.customInscription || ''
                     ].map(val => String(val).replace(/\|/g, " ")).join('|')}
-                    size={280}
+                    size={240}
                     level="L"
                   />
                 </div>
 
-                <div className="glass-inset w-full p-3">
-                  <span className="text-xs font-mono text-[var(--text-secondary)] uppercase block tracking-wider mb-1">Engraver Quick Code</span>
-                  <span className="text-xl font-mono font-semibold text-red-700 dark:text-red-400 tracking-widest">{createdOrder?.id}</span>
+                <div className="w-full rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3">
+                  <span className="text-xs font-mono text-[var(--text-secondary)] uppercase block tracking-wider mb-0.5">Engraver Quick Code</span>
+                  <span className="text-xl font-mono font-semibold tabular-nums text-red-700 dark:text-red-400 tracking-widest">{createdOrder?.id}</span>
                 </div>
 
                 <button
                   type="button"
                   onClick={() => setIsQrMaximized(false)}
-                  className="min-h-11 w-full bg-gradient-to-r from-red-700 to-red-800 hover:from-red-600 hover:to-red-700 text-white font-mono font-semibold py-3 rounded-[var(--radius-control)] uppercase text-xs tracking-wider transition shadow-lg shadow-red-900/30"
+                  className="min-h-11 w-full bg-red-700 hover:bg-red-600 text-white font-mono font-semibold py-2.5 rounded-xl uppercase text-xs tracking-wider transition"
                 >
-                  Done Scanning, Back to Status
+                  Done Scanning
                 </button>
               </DialogSurface>
             )}
           </div>
 
           {/* Live Status Tracker Stepper */}
-          <div className="max-w-2xl mx-auto glass-inset p-6">
-            <h3 className="text-xs font-semibold uppercase font-display tracking-widest text-[var(--text-secondary)] mb-6">
+          <div className="max-w-2xl mx-auto rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-3 sm:p-5">
+            <h3 className="text-xs font-semibold uppercase font-display tracking-widest text-[var(--text-secondary)] mb-4">
               Live Laser Operations Tracker
             </h3>
 
@@ -1072,36 +1079,37 @@ export default function CustomerForm({
         </div>
       )}
 
-      {/* CUSTOM CONFIRMATION DIALOG FOR CANCEL ORDER */}
+      {/* BOTTOM-ANCHORED CONFIRMATION SHEET FOR CANCEL ORDER */}
       {showCancelConfirm && (
         <DialogSurface
           alert
+          variant="sheet"
           titleId="cancel-medal-order-title"
           onRequestClose={() => setShowCancelConfirm(false)}
-          className="glass-panel border-red-500/20 p-6 sm:p-8 max-w-md w-full text-center space-y-6 relative"
+          className="sm:inset-0 sm:m-auto h-fit rounded-t-[20px] sm:rounded-2xl border border-red-500/30 bg-[var(--surface-card)] text-[var(--text-primary)] p-4 sm:p-6 max-w-md w-full text-center space-y-4"
         >
-          <div className="mx-auto w-12 h-12 bg-red-500/10 text-red-700 dark:text-red-400 rounded-full flex items-center justify-center">
-            <AlertTriangle className="w-6 h-6" aria-hidden="true" />
+          <div className="mx-auto w-11 h-11 bg-red-500/10 text-red-700 dark:text-red-400 rounded-full flex items-center justify-center">
+            <AlertTriangle className="w-5 h-5" aria-hidden="true" />
           </div>
-          <div className="space-y-2">
-            <h3 id="cancel-medal-order-title" className="heading-float text-lg font-semibold text-[var(--text-primary)] uppercase tracking-tight">Cancel Medal Registration?</h3>
-            <p className="text-xs text-[var(--text-secondary)] lg:text-sm leading-relaxed">
+          <div className="space-y-1.5">
+            <h3 id="cancel-medal-order-title" className="text-base font-semibold text-[var(--text-primary)] uppercase tracking-tight">Cancel Medal Registration?</h3>
+            <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
               This cancels and deletes your engraving request immediately.
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 pt-2">
+          <div className="grid grid-cols-2 gap-2.5 pt-1">
             <button
               type="button"
               onClick={() => setShowCancelConfirm(false)}
-              className="min-h-11 w-full glass-inset hover:bg-[var(--surface-hover)] text-[var(--text-primary)] font-semibold py-3 px-4 text-xs uppercase tracking-wider transition"
+              className="min-h-11 w-full rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] font-semibold py-2.5 px-3 text-xs uppercase tracking-wider transition"
             >
               No, Keep It
             </button>
             <button
               type="button"
               onClick={handleExecuteCancelOrder}
-              className="min-h-11 w-full bg-gradient-to-r from-red-700 to-red-800 hover:from-red-600 hover:to-red-700 text-white font-semibold py-3 px-4 rounded-[var(--radius-control)] text-xs uppercase tracking-wider transition shadow-lg shadow-red-900/30"
+              className="min-h-11 w-full bg-red-700 hover:bg-red-600 text-white font-semibold py-2.5 px-3 rounded-xl text-xs uppercase tracking-wider transition"
             >
               Yes, Cancel Order
             </button>

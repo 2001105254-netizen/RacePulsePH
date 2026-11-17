@@ -195,6 +195,7 @@ interface RunnerRemindersPanelProps {
   requestAlerts: () => Promise<void>;
   onOpenPass?: (raceId: string) => void;
   onClose?: () => void;
+  titleId?: string;
 }
 
 export function RunnerRemindersPanel({
@@ -204,22 +205,23 @@ export function RunnerRemindersPanel({
   requestAlerts,
   onOpenPass,
   onClose,
+  titleId,
 }: RunnerRemindersPanelProps) {
   return (
     <section
       aria-label="Race day and kit updates"
-      className="shrink-0 border border-[var(--border-default)] lg:border-x-0 lg:border-t-0 rounded-2xl lg:rounded-none bg-[var(--surface-card)] mb-4 lg:mb-0 px-3 sm:px-4 py-3 space-y-2.5"
+      className="shrink-0 border-b border-[var(--border-default)] bg-[var(--surface-card)] px-3 sm:px-4 py-3 space-y-2.5"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <BellRing className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
-          <h2 className="text-xs font-semibold font-display uppercase tracking-wider text-[var(--text-primary)] whitespace-nowrap">
+          <h2 id={titleId} className="text-xs font-semibold font-display uppercase tracking-wider text-[var(--text-primary)] whitespace-nowrap">
             Race Day &amp; Kit Alerts
           </h2>
           <span className="font-mono text-xs font-semibold tabular-nums px-2 py-0.5 rounded-md bg-[var(--surface-inset)] border border-[var(--border-default)] text-[var(--text-primary)]">
             {reminders.length}
           </span>
-          <span className="text-xs text-[var(--text-secondary)] truncate hidden sm:inline">
+          <span className="text-xs text-[var(--text-secondary)] truncate hidden sm:inline tabular-nums">
             {reminders.length
               ? `${reminders.length} active reminder${reminders.length === 1 ? '' : 's'} across your registered races`
               : 'All pre-race checkpoints and kits are up to date'}
@@ -239,7 +241,7 @@ export function RunnerRemindersPanel({
               onClick={() => void requestAlerts()}
               className="min-h-11 lg:min-h-8 px-3 py-1.5 rounded-lg bg-red-700/10 text-red-700 dark:text-red-400 border border-red-700/25 dark:border-red-400/25 hover:bg-red-700 hover:text-white text-xs font-semibold uppercase tracking-wide transition inline-flex items-center"
             >
-              Enable Browser Alerts
+              Enable Alerts
             </button>
           )}
           {onClose && (
@@ -256,12 +258,12 @@ export function RunnerRemindersPanel({
       </div>
 
       {reminders.length === 0 ? (
-        <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3.5 py-2.5 text-xs text-[var(--text-secondary)] flex items-center gap-2">
+        <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 py-2 text-xs text-[var(--text-secondary)] flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 text-emerald-700 dark:text-emerald-400 shrink-0" aria-hidden="true" />
           No action needed right now.
         </div>
       ) : (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-2.5">
+        <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] divide-y divide-[var(--border-subtle)] overflow-hidden">
           {reminders.slice(0, 4).map((reminder) => {
             const Icon = reminder.kind === 'result' ? Trophy : reminder.kind === 'kit' ? PackageCheck : CalendarDays;
             const iconColor =
@@ -279,11 +281,11 @@ export function RunnerRemindersPanel({
             return (
               <div
                 key={reminder.id}
-                className={`rounded-xl border border-[var(--border-default)] border-l-4 ${leftBorder} bg-[var(--surface-inset)] px-3.5 py-2.5 flex items-center gap-3`}
+                className={`border-l-4 ${leftBorder} px-3 py-2 flex items-center gap-2.5`}
               >
                 <Icon className={`w-4 h-4 shrink-0 ${iconColor}`} aria-hidden="true" />
                 <div className="min-w-0 flex-1">
-                  <span className="block text-xs font-semibold text-[var(--text-primary)]">{reminder.title}</span>
+                  <span className="block text-xs font-semibold text-[var(--text-primary)] truncate">{reminder.title}</span>
                   <span className="block text-xs text-[var(--text-secondary)] mt-0.5 leading-snug">{reminder.detail}</span>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
@@ -310,7 +312,7 @@ export function RunnerRemindersPanel({
             );
           })}
           {reminders.length > 4 && (
-            <p className="text-xs text-[var(--text-secondary)] font-semibold xl:col-span-2">
+            <p className="px-3 py-2 text-xs text-[var(--text-secondary)] font-semibold tabular-nums">
               + {reminders.length - 4} more reminders
             </p>
           )}

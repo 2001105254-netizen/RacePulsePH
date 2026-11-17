@@ -172,41 +172,46 @@ export default function QrScannerModal({
 
   return (
     <DialogSurface
+      variant="sheet"
+      dismissOnBackdropClick
       titleId="qr-scanner-modal-title"
       onRequestClose={onClose}
-      className="bg-[var(--surface-card)] border border-[var(--border-default)] rounded-[26px] w-full max-w-sm md:max-w-md p-0 shadow-2xl flex flex-col"
+      className="sm:inset-0 sm:m-auto h-fit bg-[var(--surface-card)] border border-[var(--border-default)] rounded-t-[20px] sm:rounded-2xl w-full sm:w-[calc(100%-2rem)] max-w-sm md:max-w-md max-h-[92dvh] overflow-y-auto p-0 flex flex-col"
     >
       {/* Hidden container for file decoder */}
       <div id="temporary-file-qr-decoder" className="hidden" />
 
       <div className="flex flex-col">
         {/* Header */}
-        <div className="p-5 border-b border-[var(--border-subtle)] flex items-center justify-between bg-[var(--surface-inset)]">
-          <div className="flex items-center gap-2">
-            <Camera className="w-5 h-5 text-violet-700 dark:text-violet-400 shrink-0" aria-hidden="true" />
-            <div>
-              <h2 id="qr-scanner-modal-title" className="heading-float text-base font-semibold tracking-tight font-display text-[var(--text-primary)] uppercase">{title}</h2>
-              <p className="text-xs text-[var(--text-secondary)] font-mono">{subtitle}</p>
+        <div className="px-3 sm:px-4 py-3 border-b border-[var(--border-subtle)] flex items-center justify-between gap-2 bg-[var(--surface-inset)]">
+          <div className="flex items-center gap-2 min-w-0">
+            <Camera className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+            <div className="min-w-0">
+              <h2 id="qr-scanner-modal-title" className="text-sm sm:text-base font-semibold tracking-tight font-display text-[var(--text-primary)] uppercase truncate">
+                {title}
+              </h2>
+              <p className="text-xs text-[var(--text-secondary)] font-mono truncate">{subtitle}</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close QR scanner"
-            className="min-h-11 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition bg-[var(--surface-card)] border border-[var(--border-default)] py-2 px-3 rounded-[20px] text-xs font-semibold uppercase flex items-center gap-1"
+            className="min-h-11 min-w-11 sm:min-w-0 sm:px-3 text-[var(--text-primary)] bg-[var(--surface-card)] border border-[var(--border-default)] hover:bg-[var(--surface-hover)] rounded-xl text-xs font-semibold uppercase flex items-center justify-center gap-1 shrink-0 transition"
           >
-            <X className="w-4 h-4" aria-hidden="true" /> Close
+            <X className="w-4 h-4" aria-hidden="true" />
+            <span className="hidden sm:inline">Close</span>
           </button>
         </div>
 
         {/* Body */}
-        <div className="p-6 flex flex-col items-center justify-center space-y-4">
-          <div className="text-center text-xs text-[var(--text-secondary)] max-w-sm bg-[var(--surface-inset)] p-3 rounded-[20px] border border-[var(--border-subtle)] leading-relaxed font-sans">
+        <div className="p-3 sm:p-4 flex flex-col items-center justify-center space-y-3">
+          <p className="text-center text-xs text-[var(--text-secondary)] max-w-sm leading-relaxed">
             {instructions}
-          </div>
+          </p>
 
           {/* Active Scanning Frame */}
-          <div className="relative w-full aspect-square max-w-[280px] rounded-[26px] overflow-hidden border-2 border-dashed border-[var(--border-default)] bg-black flex items-center justify-center shadow-inner">
+          <div className="relative w-full aspect-square max-w-[260px] rounded-2xl overflow-hidden border-2 border-dashed border-[var(--border-default)] bg-black flex items-center justify-center">
             <div id={scannerId} className="w-full h-full" />
             {!cameraActive && (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-200 p-5 text-center bg-black/70 backdrop-blur-sm">
