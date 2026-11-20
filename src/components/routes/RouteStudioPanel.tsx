@@ -699,8 +699,8 @@ export default function RouteStudioPanel({
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-    if (file.size > 8 * 1024 * 1024) {
-      setErrorNotice('The GPX route file exceeds the 8 MB limit.');
+    if (file.size > 50 * 1024 * 1024) {
+      setErrorNotice('The GPX route file exceeds the 50 MB limit.');
       return;
     }
     const text = await file.text();
@@ -2742,7 +2742,7 @@ export default function RouteStudioPanel({
                 {/* GPX Import */}
                 <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3 space-y-2">
                   <p className="text-xs font-semibold text-[var(--text-primary)]">
-                    Import GPX Track or Route (max 8 MB, 100,000 points)
+                    Import GPX Track or Route (max 50 MB, 100,000 points)
                   </p>
                   <input
                     ref={gpxInputRef}

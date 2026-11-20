@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Running · Stride</title>
+  <!-- Stride design system: colours, fonts and radius. Remove class="dark" above for the light theme. -->
+  <link rel="stylesheet" href="../tokens.css">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.11"></script>
+  <style type="text/tailwindcss">
+    @custom-variant dark (&:where(.dark, .dark *));
+    @theme inline {
+      --color-background: var(--background);
+      --color-foreground: var(--foreground);
+      --color-card: var(--card);
+      --color-card-foreground: var(--card-foreground);
+      --color-popover: var(--popover);
+      --color-popover-foreground: var(--popover-foreground);
+      --color-primary: var(--primary);
+      --color-primary-foreground: var(--primary-foreground);
+      --color-secondary: var(--secondary);
+      --color-secondary-foreground: var(--secondary-foreground);
+      --color-muted: var(--muted);
+      --color-muted-foreground: var(--muted-foreground);
+      --color-accent: var(--accent);
+      --color-accent-foreground: var(--accent-foreground);
+      --color-destructive: var(--destructive);
+      --color-border: var(--border);
+      --color-input: var(--input);
+      --color-ring: var(--ring);
+      --color-chart-1: var(--chart-1);
+      --color-chart-2: var(--chart-2);
+      --color-chart-3: var(--chart-3);
+      --color-chart-4: var(--chart-4);
+      --color-chart-5: var(--chart-5);
+      --font-sans: var(--font-sans);
+      --font-heading: var(--font-heading);
+      --radius-sm: calc(var(--radius) - 4px);
+      --radius-md: calc(var(--radius) - 2px);
+      --radius-lg: var(--radius);
+      --radius-xl: calc(var(--radius) + 4px);
+      --spacing-touch: var(--touch);
+      --spacing-screen: var(--screen-padding);
+      --spacing-tab-bar: var(--tab-bar);
+    }
+    @layer base {
+      body { @apply bg-background font-sans font-medium text-foreground antialiased; }
+    }
+  </style>
+</head>
+<body>
+  <main class="mx-auto flex h-[844px] w-[390px] flex-col overflow-hidden bg-background">
+    <div class="flex h-12 shrink-0 items-center justify-between px-8 pt-2 text-[15px] font-semibold">
+      <span class="tabular-nums">9:41</span>
+      <span class="flex items-center gap-1.5" aria-hidden="true">
+        <svg class="h-3 w-[18px]" viewBox="0 0 18 12" fill="currentColor"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+        <svg class="h-3 w-4" viewBox="0 0 16 12" fill="currentColor"><path d="M8 2.2c2.3 0 4.4.9 6 2.4l1.2-1.3A10.4 10.4 0 0 0 8 .5 10.4 10.4 0 0 0 .8 3.3L2 4.6a8.6 8.6 0 0 1 6-2.4Zm0 3.6c1.3 0 2.5.5 3.4 1.3l1.2-1.3A6.6 6.6 0 0 0 8 4a6.6 6.6 0 0 0-4.6 1.8l1.2 1.3c.9-.8 2.1-1.3 3.4-1.3Zm0 3.5c.5 0 .9.2 1.2.5L8 11.2 6.8 9.8c.3-.3.7-.5 1.2-.5Z"/></svg>
+        <svg class="h-3 w-[26px]" viewBox="0 0 26 12" fill="none"><rect x=".5" y=".5" width="22" height="11" rx="3" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="16" height="8" rx="1.8" fill="currentColor"/><path d="M24 4v4a2 2 0 0 0 0-4Z" fill="currentColor" opacity=".4"/></svg>
+      </span>
+    </div>
+    <div class="flex flex-1 flex-col px-screen pt-2">
+      <div class="flex items-center justify-between text-[13px] font-semibold">
+        <span class="flex items-center gap-2 text-muted-foreground"><span class="size-2 rounded-full bg-chart-2"></span>GPS</span>
+        <span class="text-muted-foreground">10 km goal</span>
+        <button class="flex size-touch items-center justify-end text-muted-foreground" aria-label="Lock screen"><svg class="size-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></button>
+      </div>
+      <section class="mt-4 flex flex-col items-center" aria-label="Distance">
+        <p class="font-heading text-[128px] leading-[0.9] font-bold tabular-nums">6.42</p>
+        <p class="font-heading text-[19px] font-bold tracking-[0.04em] text-muted-foreground uppercase">Kilometers</p>
+        <div class="mt-4 h-2 w-full overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow="64" aria-valuemin="0" aria-valuemax="100"><div class="h-full w-[64%] rounded-full bg-primary"></div></div>
+        <p class="mt-2 self-end text-[13px] text-muted-foreground">3.58 km to go</p>
+      </section>
+      <section class="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-lg bg-border" aria-label="Live stats">
+        <div class="bg-card p-4"><div>
+            <p class="font-heading text-[40px] leading-none font-bold tabular-nums">5:08<span class="ml-0.5 text-[15px] text-muted-foreground">/km</span></p>
+            <p class="mt-1 text-[13px] text-muted-foreground">Current pace</p>
+          </div></div>
+        <div class="bg-card p-4"><div>
+            <p class="font-heading text-[40px] leading-none font-bold tabular-nums">33:01<span class="ml-0.5 text-[15px] text-muted-foreground"></span></p>
+            <p class="mt-1 text-[13px] text-muted-foreground">Time</p>
+          </div></div>
+        <div class="bg-card p-4"><div>
+            <p class="font-heading text-[40px] leading-none font-bold tabular-nums">5:09<span class="ml-0.5 text-[15px] text-muted-foreground">/km</span></p>
+            <p class="mt-1 text-[13px] text-muted-foreground">Avg pace</p>
+          </div></div>
+        <div class="bg-card p-4">
+          <p class="flex items-center gap-1.5 font-heading text-[40px] leading-none font-bold tabular-nums">162<span class="text-chart-5"><svg class="size-6 fill-current" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"/></svg></span></p>
+          <p class="mt-1 text-[13px] text-muted-foreground">Heart rate · Zone 4</p>
+        </div>
+      </section>
+      <p class="mt-4 flex items-center justify-center gap-2 rounded-full bg-secondary py-2 text-[13px] font-semibold"><svg class="size-4 text-chart-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z"/></svg>Km 6 in 5:04 · your fastest today</p>
+      <div class="mt-auto flex items-center justify-center gap-8 pb-6">
+        <button class="flex size-[72px] items-center justify-center rounded-full bg-secondary text-foreground" aria-label="End run (hold)"><svg class="size-7 fill-current" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/></svg></button>
+        <button class="flex size-[104px] items-center justify-center rounded-full bg-primary text-primary-foreground" aria-label="Pause"><svg class="size-11 fill-current" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="14" y="3" width="5" height="18" rx="1"/><rect x="5" y="3" width="5" height="18" rx="1"/></svg></button>
+        <span class="size-[72px]"></span>
+      </div>
+      <p class="pb-2 text-center text-[13px] text-muted-foreground">Hold ■ to end</p>
+    </div>
+    <div class="flex h-[34px] shrink-0 items-end justify-center pb-2" aria-hidden="true"><span class="h-[5px] w-[134px] rounded-full bg-foreground/80"></span></div>
+  </main>
+</body>
+</html>

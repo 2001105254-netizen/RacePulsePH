@@ -6,6 +6,7 @@ import {
   selectPublishedCourseForDistance,
 } from '../src/lib/routes/useRunnerGeolocation';
 import {
+  MAX_GPX_BYTES,
   exportSanitizedGpx,
   geodesicDistanceM,
   parseGpxRoute,
@@ -1686,4 +1687,10 @@ test('22. Route Studio GPS manual pinpoint and simulate walk on empty canvas gen
   assert.equal(simState.acceptedPoints.length, 11); // 1 noisy step (step 5) rejected
   assert.equal(simState.rejectedCount, 1);
   assert.ok(simState.totalDistanceM > 50);
+});
+
+test('23. MAX_GPX_BYTES is 50 MB and parseGpxCourse rejects files exceeding the 50 MB limit', () => {
+  assert.equal(MAX_GPX_BYTES, 50 * 1024 * 1024);
+  const oversizedGpx = ' '.repeat(50 * 1024 * 1024 + 1);
+  assert.throws(() => parseGpxRoute(oversizedGpx), /The GPX route file exceeds the 50 MB limit\./);
 });

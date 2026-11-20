@@ -419,8 +419,8 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
       setError('Upload a GPX route file with a .gpx extension.');
       return;
     }
-    if (file.size > 8 * 1024 * 1024) {
-      setError('Keep the GPX route file under 8 MB.');
+    if (file.size > 50 * 1024 * 1024) {
+      setError('Keep the GPX route file under 50 MB.');
       return;
     }
     setError('');
@@ -1124,7 +1124,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
               <button type="button" onClick={() => routeGpxInputRef.current?.click()} disabled={(!!editingId && !can('race.artwork'))} className="mt-4 flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-[12px] border-2 border-dashed border-[var(--border-default)] px-4 text-center text-[var(--text-secondary)] transition hover:border-red-500/50 hover:text-red-700 dark:hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-50">
                 <Upload className="h-5 w-5" />
                 <span className="text-xs font-semibold">Upload GPX route</span>
-                <span className="text-xs text-[var(--text-secondary)]">GPX only, maximum 8 MB</span>
+                <span className="text-xs text-[var(--text-secondary)]">GPX only, maximum 50 MB</span>
               </button>
             )}
           </div>

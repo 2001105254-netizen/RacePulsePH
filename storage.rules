@@ -61,8 +61,10 @@ service firebase.storage {
       allow create, update: if writeAllowed()
         && raceId.matches('^[a-zA-Z0-9_-]{1,64}$')
         && file.matches('^[a-zA-Z0-9._-]+\\.[a-zA-Z0-9]+$')
-        && (isRaceImage() || (isRouteGpx() && file.matches('^[a-zA-Z0-9._-]+\\.(gpx|GPX)$')))
-        && request.resource.size < 8 * 1024 * 1024;
+        && (
+          (isRaceImage() && request.resource.size < 8 * 1024 * 1024)
+          || (isRouteGpx() && file.matches('^[a-zA-Z0-9._-]+\\.(gpx|GPX)$') && request.resource.size < 50 * 1024 * 1024)
+        );
       allow delete: if writeAllowed();
     }
     function canHighlight(action) {
@@ -113,7 +115,7 @@ service firebase.storage {
         && (canRoute('routes.edit') || canRoute('routes.media'))
         && presetId.matches('^[a-zA-Z0-9_-]{1,64}$')
         && file.matches('^[a-zA-Z0-9._-]+\\.(gpx|GPX|json|JSON|png|jpg|jpeg|webp|PNG|JPG|JPEG|WEBP)$')
-        && request.resource.size < 8 * 1024 * 1024;
+        && (file.matches('.*\\.(gpx|GPX)$') ? request.resource.size < 50 * 1024 * 1024 : request.resource.size < 8 * 1024 * 1024);
       allow delete: if request.auth != null
         && (request.auth.uid == ownerUid || isPlatformOwner() || profile().role == 'superadmin')
         && canRoute('routes.edit');
@@ -124,7 +126,7 @@ service firebase.storage {
         && canRoutePublish()
         && publicationId.matches('^[a-zA-Z0-9_-]{1,64}$')
         && file.matches('^[a-zA-Z0-9._-]+\\.(gpx|GPX|json|JSON|png|jpg|jpeg|webp|PNG|JPG|JPEG|WEBP)$')
-        && request.resource.size < 8 * 1024 * 1024;
+        && (file.matches('.*\\.(gpx|GPX)$') ? request.resource.size < 50 * 1024 * 1024 : request.resource.size < 8 * 1024 * 1024);
       allow delete: if request.auth != null && (isPlatformOwner() || profile().role == 'superadmin');
     }
   }

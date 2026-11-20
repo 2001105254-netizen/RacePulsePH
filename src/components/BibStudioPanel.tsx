@@ -3,7 +3,8 @@ import { FileDown, FileSpreadsheet, ImagePlus, Printer, RefreshCw, Upload, WandS
 import { Race, RaceBibCustomFont, RaceBibFont, RaceBibLayout, RaceBibTemplate, RunnerProfile } from '../types';
 import { generateRaceBibsPdf } from '../lib/raceBibPdf';
 import { resizeImageToDataUrl } from '../lib/image';
-import { raceBibFontFamily } from '../lib/raceBibFont';
+import { ensureRaceBibCustomFont, raceBibFontFamily } from '../lib/raceBibFont';
+import { MAX_ROSTER_ROWS, MAX_XLSX_BYTES, assertSafeImportFile, stripUnsafeKeys } from '../lib/security';
 
 type StudioRow = { id: string; fullName: string; bibNumber: string; distance: string };
 

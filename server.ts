@@ -412,7 +412,7 @@ async function startServer() {
       imageryLayer: 'racepulse-ph-sat',
       coverage: 'Philippines',
       bounds: { west: 115.6, south: 4.1, east: 127.8, north: 21.6 },
-      maxGpxBytes: 8 * 1024 * 1024,
+      maxGpxBytes: 50 * 1024 * 1024,
       maxGpxPoints: 100000,
       timestamp: new Date().toISOString(),
     });

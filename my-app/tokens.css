@@ -1,0 +1,84 @@
+/*
+ * RacePulsePH Movement & Running Design System Tokens
+ * Palette: Red (Primary Accent), Granite Black (Background & Surfaces), Crisp White (Foreground & Text)
+ * Dark is the default: screens put class="dark" on <html>; remove it for the light theme.
+ */
+@import url("https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;700&family=Barlow:wght@500;600&display=swap");
+
+:root {
+  --radius: 1rem;
+  --touch: 48px;
+  --screen-padding: 20px;
+  --tab-bar: 64px;
+  --font-sans: "Barlow", system-ui, sans-serif;
+  --font-heading: "Barlow Condensed", system-ui, sans-serif;
+  --font-mono: "Barlow Condensed", system-ui, sans-serif;
+
+  /* Light Theme: Crisp Canvas, Granite Text, RacePulse Deep Red (#CC251C) */
+  --background: oklch(0.985 0.002 90);
+  --foreground: oklch(0.15 0.005 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.15 0.005 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.15 0.005 260);
+  --primary: oklch(0.55 0.22 27); /* #CC251C RacePulse Red */
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.955 0.003 90);
+  --secondary-foreground: oklch(0.15 0.005 260);
+  --muted: oklch(0.955 0.003 90);
+  --muted-foreground: oklch(0.48 0.015 260);
+  --accent: oklch(0.93 0.004 90);
+  --accent-foreground: oklch(0.15 0.005 260);
+  --destructive: oklch(0.55 0.22 27);
+  --border: oklch(0.88 0.005 260);
+  --input: oklch(0.82 0.006 260);
+  --ring: oklch(0.55 0.22 27);
+  --chart-1: oklch(0.55 0.22 27);
+  --chart-2: oklch(0.20 0.006 260);
+  --chart-3: oklch(0.48 0.015 260);
+  --chart-4: oklch(0.70 0.010 260);
+  --chart-5: oklch(0.55 0.22 27);
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.15 0.005 260);
+  --sidebar-primary: oklch(0.55 0.22 27);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.955 0.003 90);
+  --sidebar-accent-foreground: oklch(0.15 0.005 260);
+  --sidebar-border: oklch(0.88 0.005 260);
+  --sidebar-ring: oklch(0.55 0.22 27);
+}
+
+.dark {
+  /* Dark Theme: Granite Black (#0A0A0A), Radiant Red (#FF3B30), Crisp White (#FAF9F7) */
+  --background: oklch(0.12 0.005 260); /* #0A0A0A Deep Granite Black */
+  --foreground: oklch(0.985 0.002 90);  /* #FAF9F7 Crisp White */
+  --card: oklch(0.16 0.006 260);        /* #121316 Charcoal Card */
+  --card-foreground: oklch(0.985 0.002 90);
+  --popover: oklch(0.16 0.006 260);
+  --popover-foreground: oklch(0.985 0.002 90);
+  --primary: oklch(0.63 0.25 25);       /* #FF3B30 RacePulse Radiant Red */
+  --primary-foreground: oklch(1 0 0);   /* Crisp White */
+  --secondary: oklch(0.20 0.008 260);   /* #18191C Surface Inset */
+  --secondary-foreground: oklch(0.985 0.002 90);
+  --muted: oklch(0.23 0.009 260);       /* #1F2024 Subtle Dark */
+  --muted-foreground: oklch(0.70 0.015 260); /* #A1A1AA Light Grey */
+  --accent: oklch(0.25 0.01 260);
+  --accent-foreground: oklch(0.985 0.002 90);
+  --destructive: oklch(0.63 0.25 25);
+  --border: oklch(0.28 0.01 260);
+  --input: oklch(0.32 0.012 260);
+  --ring: oklch(0.63 0.25 25);
+  --chart-1: oklch(0.63 0.25 25);
+  --chart-2: oklch(0.985 0.002 90);
+  --chart-3: oklch(0.70 0.015 260);
+  --chart-4: oklch(0.50 0.015 260);
+  --chart-5: oklch(0.63 0.25 25);
+  --sidebar: oklch(0.16 0.006 260);
+  --sidebar-foreground: oklch(0.985 0.002 90);
+  --sidebar-primary: oklch(0.63 0.25 25);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.20 0.008 260);
+  --sidebar-accent-foreground: oklch(0.985 0.002 90);
+  --sidebar-border: oklch(0.28 0.01 260);
+  --sidebar-ring: oklch(0.63 0.25 25);
+}

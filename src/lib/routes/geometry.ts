@@ -12,7 +12,7 @@ import type {
 } from './types';
 import { PHILIPPINES_NATIONAL_BOUNDS, samplePhilippineDemElevationM } from './philippinesMapTiles';
 
-export const MAX_GPX_BYTES = 8 * 1024 * 1024;
+export const MAX_GPX_BYTES = 50 * 1024 * 1024;
 export const MAX_GPX_POINTS = 100_000;
 export const ELEVATION_ALGORITHM_VERSION = 'rp-elev-v1' as const;
 export const MEDIAN_WINDOW_M = 60;
@@ -964,7 +964,7 @@ export function parseGpxCourse(
 ): ProcessedRoute {
   const bytes = new TextEncoder().encode(source).length;
   if (bytes > MAX_GPX_BYTES) {
-    throw new Error('The GPX route file exceeds the 8 MB limit.');
+    throw new Error('The GPX route file exceeds the 50 MB limit.');
   }
   if (/<!DOCTYPE|<!ENTITY/i.test(source)) {
     throw new Error('GPX document declarations are unsupported.');

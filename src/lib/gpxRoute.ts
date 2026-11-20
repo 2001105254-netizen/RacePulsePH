@@ -38,6 +38,7 @@ export type {
 };
 
 export {
+  MAX_GPX_BYTES,
   exportSanitizedGpx,
   geodesicDistanceM,
   processCanonicalGeometry,
@@ -76,7 +77,7 @@ export async function fetchGpxText(url: string, signal?: AbortSignal): Promise<s
   }
   const contentLength = Number(response.headers.get('content-length') || 0);
   if (Number.isFinite(contentLength) && contentLength > MAX_GPX_BYTES) {
-    throw new Error('The GPX route file exceeds the 8 MB limit.');
+    throw new Error('The GPX route file exceeds the 50 MB limit.');
   }
   if (!response.body) {
     throw new Error('The route download returned no content.');
@@ -92,7 +93,7 @@ export async function fetchGpxText(url: string, signal?: AbortSignal): Promise<s
       bytes += value.byteLength;
       if (bytes > MAX_GPX_BYTES) {
         await reader.cancel();
-        throw new Error('The GPX route file exceeds the 8 MB limit.');
+        throw new Error('The GPX route file exceeds the 50 MB limit.');
       }
       source += decoder.decode(value, { stream: true });
     }
