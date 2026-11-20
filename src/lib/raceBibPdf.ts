@@ -78,6 +78,7 @@ function drawFittedText(
   strokeColor: string,
   strokeWidthPercent: number,
   fontFamily: string,
+  shadowEnabled = true,
 ): void {
   let fontSize = Math.max(12, (width * sizePercent) / 100);
   const maxWidth = width * 0.9;
@@ -100,10 +101,12 @@ function drawFittedText(
     ctx.strokeText(text, x, y);
   }
   ctx.fillStyle = color;
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
-  ctx.shadowBlur = Math.max(1.5, fontSize * 0.035);
-  ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = Math.max(1, fontSize * 0.025);
+  if (shadowEnabled) {
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+    ctx.shadowBlur = Math.max(1.5, fontSize * 0.035);
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = Math.max(1, fontSize * 0.025);
+  }
   ctx.fillText(text, x, y);
   ctx.shadowColor = 'transparent';
   ctx.shadowBlur = 0;
@@ -122,9 +125,10 @@ function drawFittedTextLines(
   strokeColor: string,
   strokeWidthPercent: number,
   fontFamily: string,
+  shadowEnabled = true,
 ): void {
   if (lines.length <= 1) {
-    drawFittedText(ctx, lines[0] || '', width, height, xPercent, yPercent, sizePercent, color, strokeColor, strokeWidthPercent, fontFamily);
+    drawFittedText(ctx, lines[0] || '', width, height, xPercent, yPercent, sizePercent, color, strokeColor, strokeWidthPercent, fontFamily, shadowEnabled);
     return;
   }
 
@@ -150,10 +154,12 @@ function drawFittedTextLines(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = color;
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
-  ctx.shadowBlur = Math.max(1.5, fontSize * 0.035);
-  ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = Math.max(1, fontSize * 0.025);
+  if (shadowEnabled) {
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+    ctx.shadowBlur = Math.max(1.5, fontSize * 0.035);
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = Math.max(1, fontSize * 0.025);
+  }
   if (strokeWidth > 0) {
     ctx.lineJoin = 'round';
     ctx.lineWidth = strokeWidth * 2;
@@ -235,13 +241,13 @@ export async function generateRaceBibsPdf(race: Race, runners: RunnerProfile[], 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(template, 0, 0, canvas.width, canvas.height);
     const { layout } = bibTemplate;
-    drawFittedText(ctx, runner.bibNumber, canvas.width, canvas.height, layout.bibNumberX, layout.bibNumberY, layout.bibNumberSize ?? 12, layout.bibNumberColor ?? '#FFFFFF', layout.bibNumberStrokeColor ?? '#000000', layout.bibNumberStrokeWidth ?? 0, raceBibFontFamily(layout.bibNumberFont, race.raceBibCustomFont, true));
+    drawFittedText(ctx, runner.bibNumber, canvas.width, canvas.height, layout.bibNumberX, layout.bibNumberY, layout.bibNumberSize ?? 12, layout.bibNumberColor ?? '#FFFFFF', layout.bibNumberStrokeColor ?? '#000000', layout.bibNumberStrokeWidth ?? 0, raceBibFontFamily(layout.bibNumberFont, race.raceBibCustomFont, true), layout.bibNumberShadowEnabled !== false);
     if (race.raceBibShowRaffleNumber) {
-      drawFittedText(ctx, runner.bibNumber, canvas.width, canvas.height, layout.raffleNumberX ?? 50, layout.raffleNumberY ?? 88, layout.raffleNumberSize ?? 7, layout.raffleNumberColor ?? '#FFFFFF', layout.raffleNumberStrokeColor ?? '#000000', layout.raffleNumberStrokeWidth ?? 0, raceBibFontFamily(layout.raffleNumberFont ?? 'mono', race.raceBibCustomFont, true));
+      drawFittedText(ctx, runner.bibNumber, canvas.width, canvas.height, layout.raffleNumberX ?? 50, layout.raffleNumberY ?? 88, layout.raffleNumberSize ?? 7, layout.raffleNumberColor ?? '#FFFFFF', layout.raffleNumberStrokeColor ?? '#000000', layout.raffleNumberStrokeWidth ?? 0, raceBibFontFamily(layout.raffleNumberFont ?? 'mono', race.raceBibCustomFont, true), layout.raffleNumberShadowEnabled !== false);
     }
     const nameLines = runner.isFreeSlot ? [] : runner.entryCategory === 'group' ? [runnerName] : raceBibNameLines(runner);
     if (nameLines.length > 0) {
-      drawFittedTextLines(ctx, nameLines, canvas.width, canvas.height, layout.runnerNameX, layout.runnerNameY, layout.runnerNameSize ?? 5, layout.runnerNameColor ?? '#FFFFFF', layout.runnerNameStrokeColor ?? '#000000', layout.runnerNameStrokeWidth ?? 0, raceBibFontFamily(layout.runnerNameFont, race.raceBibCustomFont, true));
+      drawFittedTextLines(ctx, nameLines, canvas.width, canvas.height, layout.runnerNameX, layout.runnerNameY, layout.runnerNameSize ?? 5, layout.runnerNameColor ?? '#FFFFFF', layout.runnerNameStrokeColor ?? '#000000', layout.runnerNameStrokeWidth ?? 0, raceBibFontFamily(layout.runnerNameFont, race.raceBibCustomFont, true), layout.runnerNameShadowEnabled !== false);
     }
     if (race.raceBibShowQrCode === true) {
       const qrPayload = `RPCHIPv1|${race.id}|${runner.bibNumber}`;

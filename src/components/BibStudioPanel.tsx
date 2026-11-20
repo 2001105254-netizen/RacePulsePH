@@ -1,11 +1,9 @@
-import { ChangeEvent, useMemo, useRef, useState } from 'react';
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { FileDown, FileSpreadsheet, ImagePlus, Printer, RefreshCw, Upload, WandSparkles } from 'lucide-react';
-import { Race, RaceBibFont, RaceBibLayout, RaceBibTemplate, RunnerProfile } from '../types';
+import { Race, RaceBibCustomFont, RaceBibFont, RaceBibLayout, RaceBibTemplate, RunnerProfile } from '../types';
 import { generateRaceBibsPdf } from '../lib/raceBibPdf';
 import { resizeImageToDataUrl } from '../lib/image';
 import { raceBibFontFamily } from '../lib/raceBibFont';
-import { MAX_ROSTER_ROWS, MAX_XLSX_BYTES, assertSafeImportFile, stripUnsafeKeys } from '../lib/security';
-import { Select } from './ui/Select';
 
 type StudioRow = { id: string; fullName: string; bibNumber: string; distance: string };
 
@@ -28,6 +26,9 @@ const defaultLayout: RaceBibLayout = {
   bibNumberStrokeWidth: 0,
   raffleNumberStrokeWidth: 0,
   runnerNameStrokeWidth: 0,
+  bibNumberShadowEnabled: true,
+  raffleNumberShadowEnabled: true,
+  runnerNameShadowEnabled: true,
   bibNumberFont: 'mono',
   raffleNumberFont: 'mono',
   runnerNameFont: 'display',
@@ -65,6 +66,8 @@ export default function BibStudioPanel() {
   const [templateImage, setTemplateImage] = useState('');
   const [distanceTemplates, setDistanceTemplates] = useState<Record<string, RaceBibTemplate>>({});
   const [layout, setLayout] = useState<RaceBibLayout>(defaultLayout);
+  const [customFont, setCustomFont] = useState<RaceBibCustomFont>();
+  const [customFontMessage, setCustomFontMessage] = useState('');
   const [hideRunnerNames, setHideRunnerNames] = useState(false);
   const [showRaffleNumber, setShowRaffleNumber] = useState(false);
   const [quickPrefix, setQuickPrefix] = useState('');
@@ -76,10 +79,15 @@ export default function BibStudioPanel() {
   const [message, setMessage] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const templateInputRef = useRef<HTMLInputElement>(null);
+  const customFontInputRef = useRef<HTMLInputElement>(null);
   const distanceInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const distances = useMemo(() => [...new Set(rows.map((row) => row.distance).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })), [rows]);
   const preview = rows[0] || { fullName: 'RUNNER NAME', bibNumber: 'BIB-001', distance: 'General' };
+
+  useEffect(() => () => {
+    if (customFont?.url.startsWith('blob:')) URL.revokeObjectURL(customFont.url);
+  }, [customFont?.url]);
 
   const readRoster = async (file: File) => {
     setMessage('');
@@ -127,9 +135,53 @@ export default function BibStudioPanel() {
     if (file) void loadTemplate(file, distance);
   };
 
+  const onCustomFontSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    if (!extension || !['woff2', 'woff', 'ttf', 'otf'].includes(extension)) {
+      setCustomFontMessage('Choose a WOFF2, WOFF, TTF, or OTF font file.');
+      return;
+    }
+    if (file.size > 1.5 * 1024 * 1024) {
+      setCustomFontMessage('Keep the custom font under 1.5 MB so the PDF stays fast to prepare.');
+      return;
+    }
+
+    const nextFont: RaceBibCustomFont = {
+      family: `BibStudio-${Date.now()}`,
+      name: file.name,
+      url: URL.createObjectURL(file),
+    };
+    setBusy(true);
+    setCustomFontMessage('Loading custom font...');
+    try {
+      await ensureRaceBibCustomFont(nextFont);
+      setCustomFont(nextFont);
+      setCustomFontMessage(`${file.name} is ready. Select Custom upload in any font menu.`);
+    } catch {
+      URL.revokeObjectURL(nextFont.url);
+      setCustomFontMessage('This font could not load. Try another WOFF2, WOFF, TTF, or OTF file.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const updateLayout = (patch: Partial<RaceBibLayout>) => {
     setLayout((current) => ({ ...current, ...patch }));
     setDistanceTemplates((current) => Object.fromEntries(Object.entries(current).map(([distance, template]) => [distance, { ...template, layout: { ...template.layout, ...patch } }])));
+  };
+
+  const removeCustomFont = () => {
+    updateLayout({
+      ...(layout.bibNumberFont === 'custom' ? { bibNumberFont: 'mono' } : {}),
+      ...(layout.runnerNameFont === 'custom' ? { runnerNameFont: 'display' } : {}),
+      ...(layout.raffleNumberFont === 'custom' ? { raffleNumberFont: 'mono' } : {}),
+    });
+    setCustomFont(undefined);
+    setCustomFontMessage('Custom font removed. Built-in font choices remain available.');
   };
 
   const createBlankBibs = () => {
@@ -177,6 +229,7 @@ export default function BibStudioPanel() {
         createdAt: new Date().toISOString(),
         raceBibTemplateImage: templateImage || undefined,
         raceBibLayout: layout,
+        raceBibCustomFont: customFont,
         raceBibShowRaffleNumber: showRaffleNumber,
         raceBibTemplatesByDistance: Object.keys(distanceTemplates).length ? distanceTemplates : undefined,
       };
@@ -207,6 +260,8 @@ export default function BibStudioPanel() {
     setTemplateImage('');
     setDistanceTemplates({});
     setLayout(defaultLayout);
+    setCustomFont(undefined);
+    setCustomFontMessage('');
     setHideRunnerNames(false);
     setShowRaffleNumber(false);
     setQuickPrefix('');
@@ -259,16 +314,43 @@ export default function BibStudioPanel() {
         </section>
 
         <section className="glass-panel p-5 space-y-5">
-          <div><p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">3. Text & print layout</p><p className="mt-1 text-xs text-[var(--text-secondary)]">Settings apply to the default and all distance designs.</p></div>
-          <label className="min-h-11 flex cursor-pointer items-center gap-2 rounded-xl border border-amber-500/25 bg-amber-500/[0.04] px-3 py-2 text-xs font-semibold text-[var(--text-primary)]"><input type="checkbox" checked={showRaffleNumber} onChange={(event) => setShowRaffleNumber(event.target.checked)} className="rp-checkbox shrink-0" /> Print raffle number at bottom <span className="text-xs font-normal text-[var(--text-secondary)]">(same as bib number)</span></label>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <LayoutControls title="Bib number" layout={layout} onChange={updateLayout} prefix="bibNumber" />
-            <LayoutControls title="Runner name" layout={layout} onChange={updateLayout} prefix="runnerName" />
-            {showRaffleNumber && <LayoutControls title="Raffle number" layout={layout} onChange={updateLayout} prefix="raffleNumber" />}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">3. Text & print layout</p>
+            <p className="mt-1 text-xs text-[var(--text-secondary)]">Choose a text block, then adjust it while the live bib stays beside the controls. Settings apply to the default and all distance designs.</p>
           </div>
-          <div className="rounded-2xl overflow-hidden border border-[var(--border-default)] bg-black relative aspect-[3/2]" style={{ containerType: 'inline-size' }}>
-            {templateImage ? <img src={distanceTemplates[preview.distance]?.image || templateImage} alt="Race bib preview" className="absolute inset-0 w-full h-full object-cover" /> : <div className="absolute inset-0 grid place-items-center bg-gradient-to-br from-zinc-800 to-zinc-950 text-xs text-zinc-300">Upload a design to preview</div>}
-            {templateImage && <><span style={{ left: `${layout.bibNumberX}%`, top: `${layout.bibNumberY}%`, fontSize: `${layout.bibNumberSize || 18}cqw`, color: layout.bibNumberColor, fontFamily: raceBibFontFamily(layout.bibNumberFont, undefined), WebkitTextStroke: `${Math.max(0, layout.bibNumberStrokeWidth || 0)}cqw ${layout.bibNumberStrokeColor || '#000000'}`, paintOrder: 'stroke fill' }} className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black whitespace-nowrap">{preview.bibNumber}</span>{showRaffleNumber && <span style={{ left: `${layout.raffleNumberX ?? 50}%`, top: `${layout.raffleNumberY ?? 88}%`, fontSize: `${layout.raffleNumberSize ?? 7}cqw`, color: layout.raffleNumberColor ?? '#FFFFFF', fontFamily: raceBibFontFamily(layout.raffleNumberFont ?? 'mono', undefined), WebkitTextStroke: `${Math.max(0, layout.raffleNumberStrokeWidth || 0)}cqw ${layout.raffleNumberStrokeColor || '#000000'}`, paintOrder: 'stroke fill' }} className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black whitespace-nowrap">{preview.bibNumber}</span>}{!hideRunnerNames && <span style={{ left: `${layout.runnerNameX}%`, top: `${layout.runnerNameY}%`, fontSize: `${layout.runnerNameSize || 6}cqw`, color: layout.runnerNameColor, fontFamily: raceBibFontFamily(layout.runnerNameFont, undefined), WebkitTextStroke: `${Math.max(0, layout.runnerNameStrokeWidth || 0)}cqw ${layout.runnerNameStrokeColor || '#000000'}`, paintOrder: 'stroke fill' }} className="absolute -translate-x-1/2 -translate-y-1/2 leading-none font-black whitespace-nowrap max-w-[90%] truncate">{preview.fullName}</span>}</>}
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(280px,1.05fr)] xl:items-start">
+            <div className="space-y-3 xl:sticky xl:top-4">
+              <BibPreview
+                templateImage={templateImage}
+                previewImage={distanceTemplates[preview.distance]?.image}
+                preview={preview}
+                layout={layout}
+                customFont={customFont}
+                hideRunnerNames={hideRunnerNames}
+                showRaffleNumber={showRaffleNumber}
+              />
+              <p id="bib-studio-preview-help" className="rounded-xl border border-violet-500/25 bg-violet-500/[0.05] px-3 py-2 text-xs text-[var(--text-secondary)]">Live preview updates as you change position, size, border, color, or font.</p>
+            </div>
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-violet-500/25 bg-violet-500/[0.04] p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-primary)]">Custom font</p>
+                    <p id="bib-studio-custom-font-help" className="mt-1 text-xs text-[var(--text-secondary)]">Add one font for this printing job. It stays on this device and is included in the PDF render.</p>
+                  </div>
+                  <input ref={customFontInputRef} type="file" accept=".woff2,.woff,.ttf,.otf,font/woff2,font/woff,font/ttf,font/otf,application/font-woff,application/x-font-ttf" className="hidden" onChange={(event) => void onCustomFontSelected(event)} />
+                  <button type="button" onClick={() => customFontInputRef.current?.click()} disabled={busy} className="min-h-11 shrink-0 rounded-xl border border-violet-600/40 bg-[var(--surface-card)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-violet-700 hover:border-violet-700 hover:bg-violet-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-60 dark:text-violet-400">{customFont ? 'Replace font' : 'Upload custom font'}</button>
+                </div>
+                {customFont && <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2"><p className="min-w-0 truncate text-xs font-semibold text-[var(--text-primary)]">Loaded: {customFont.name}</p><button type="button" onClick={removeCustomFont} className="min-h-11 shrink-0 px-2 text-xs font-semibold text-red-700 hover:underline dark:text-red-400">Remove</button></div>}
+                {customFontMessage && <p role={customFontMessage.includes('could not') || customFontMessage.includes('Choose') || customFontMessage.includes('Keep') ? 'alert' : 'status'} className={`mt-3 rounded-xl px-3 py-2 text-xs font-semibold ${customFontMessage.includes('could not') || customFontMessage.includes('Choose') || customFontMessage.includes('Keep') ? 'bg-red-500/10 text-red-700 dark:text-red-400' : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'}`}>{customFontMessage}</p>}
+              </div>
+              <label className="min-h-11 flex cursor-pointer items-center gap-2 rounded-xl border border-amber-500/25 bg-amber-500/[0.04] px-3 py-2 text-xs font-semibold text-[var(--text-primary)]"><input type="checkbox" checked={showRaffleNumber} onChange={(event) => setShowRaffleNumber(event.target.checked)} className="rp-checkbox shrink-0" /> Print raffle number at bottom <span className="text-xs font-normal text-[var(--text-secondary)]">(same as bib number)</span></label>
+              <div className="space-y-4" aria-describedby="bib-studio-preview-help">
+                <LayoutControls title="Bib number" layout={layout} customFont={customFont} onChange={updateLayout} prefix="bibNumber" />
+                <LayoutControls title="Runner name" layout={layout} customFont={customFont} onChange={updateLayout} prefix="runnerName" />
+                {showRaffleNumber && <LayoutControls title="Raffle number" layout={layout} customFont={customFont} onChange={updateLayout} prefix="raffleNumber" />}
+              </div>
+            </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <button type="button" onClick={() => void generate()} disabled={busy || rows.length === 0} className="min-h-11 rounded-xl bg-red-700 px-4 py-3 text-xs font-semibold uppercase tracking-widest text-white hover:bg-red-800 disabled:opacity-60 flex items-center justify-center gap-2">{busy ? <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <FileDown className="w-4 h-4" aria-hidden="true" />} Download all PDF</button>
@@ -281,7 +363,38 @@ export default function BibStudioPanel() {
   );
 }
 
-function LayoutControls({ title, layout, onChange, prefix }: { title: string; layout: RaceBibLayout; onChange: (patch: Partial<RaceBibLayout>) => void; prefix: 'bibNumber' | 'runnerName' | 'raffleNumber' }) {
+function previewTextShadow(enabled: boolean, size: number): string | undefined {
+  if (!enabled) return undefined;
+  return `0 ${Math.max(0.2, size * 0.025)}cqw ${Math.max(0.3, size * 0.035)}cqw rgba(0, 0, 0, 0.75)`;
+}
+
+function BibPreview({ templateImage, previewImage, preview, layout, customFont, hideRunnerNames, showRaffleNumber }: {
+  templateImage: string;
+  previewImage?: string;
+  preview: Pick<StudioRow, 'fullName' | 'bibNumber' | 'distance'>;
+  layout: RaceBibLayout;
+  customFont?: RaceBibCustomFont;
+  hideRunnerNames: boolean;
+  showRaffleNumber: boolean;
+}) {
+  const imageSrc = previewImage || templateImage;
+
+  return (
+    <figure className="overflow-hidden rounded-2xl border border-[var(--border-default)] bg-black">
+      <div className="relative aspect-[3/2]" style={{ containerType: 'inline-size' }}>
+        {imageSrc ? <img src={imageSrc} alt="Live race bib preview" className="absolute inset-0 h-full w-full object-cover" /> : <div className="absolute inset-0 grid place-items-center bg-gradient-to-br from-zinc-800 to-zinc-950 px-4 text-center text-xs text-zinc-300">Upload a design to preview</div>}
+        {imageSrc && <>
+          <span style={{ left: `${layout.bibNumberX}%`, top: `${layout.bibNumberY}%`, fontSize: `${layout.bibNumberSize || 18}cqw`, color: layout.bibNumberColor, fontFamily: raceBibFontFamily(layout.bibNumberFont, customFont), textShadow: previewTextShadow(layout.bibNumberShadowEnabled !== false, layout.bibNumberSize || 18), WebkitTextStroke: `${Math.max(0, layout.bibNumberStrokeWidth || 0)}cqw ${layout.bibNumberStrokeColor || '#000000'}`, paintOrder: 'stroke fill' }} className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap font-black leading-none">{preview.bibNumber}</span>
+          {showRaffleNumber && <span style={{ left: `${layout.raffleNumberX ?? 50}%`, top: `${layout.raffleNumberY ?? 88}%`, fontSize: `${layout.raffleNumberSize ?? 7}cqw`, color: layout.raffleNumberColor ?? '#FFFFFF', fontFamily: raceBibFontFamily(layout.raffleNumberFont ?? 'mono', customFont), textShadow: previewTextShadow(layout.raffleNumberShadowEnabled !== false, layout.raffleNumberSize ?? 7), WebkitTextStroke: `${Math.max(0, layout.raffleNumberStrokeWidth || 0)}cqw ${layout.raffleNumberStrokeColor || '#000000'}`, paintOrder: 'stroke fill' }} className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap font-black leading-none">{preview.bibNumber}</span>}
+          {!hideRunnerNames && <span style={{ left: `${layout.runnerNameX}%`, top: `${layout.runnerNameY}%`, fontSize: `${layout.runnerNameSize || 6}cqw`, color: layout.runnerNameColor, fontFamily: raceBibFontFamily(layout.runnerNameFont, customFont), textShadow: previewTextShadow(layout.runnerNameShadowEnabled !== false, layout.runnerNameSize || 6), WebkitTextStroke: `${Math.max(0, layout.runnerNameStrokeWidth || 0)}cqw ${layout.runnerNameStrokeColor || '#000000'}`, paintOrder: 'stroke fill' }} className="absolute -translate-x-1/2 -translate-y-1/2 max-w-[90%] truncate whitespace-nowrap font-black leading-none">{preview.fullName}</span>}
+        </>}
+      </div>
+      <figcaption className="border-t border-[var(--border-default)] bg-[var(--surface-inset)] px-3 py-2 text-xs font-semibold text-[var(--text-primary)]">Live race bib preview</figcaption>
+    </figure>
+  );
+}
+
+function LayoutControls({ title, layout, customFont, onChange, prefix }: { title: string; layout: RaceBibLayout; customFont?: RaceBibCustomFont; onChange: (patch: Partial<RaceBibLayout>) => void; prefix: 'bibNumber' | 'runnerName' | 'raffleNumber' }) {
   const isMainBib = prefix === 'bibNumber';
   const isName = prefix === 'runnerName';
   const defaultSize = isMainBib ? 18 : isName ? 6 : 7;
@@ -291,8 +404,9 @@ function LayoutControls({ title, layout, onChange, prefix }: { title: string; la
   const colorKey = `${prefix}Color` as const;
   const strokeColorKey = `${prefix}StrokeColor` as const;
   const strokeWidthKey = `${prefix}StrokeWidth` as const;
+  const shadowKey = `${prefix}ShadowEnabled` as const;
   const fontKey = `${prefix}Font` as const;
-  return <div className="glass-inset p-4 space-y-3"><p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-primary)]">{title}</p><Range label="X position" value={layout[xKey] ?? 50} min={5} max={95} suffix="%" onChange={(value) => onChange({ [xKey]: value })} /><Range label="Y position" value={layout[yKey] ?? (isName ? 70 : isMainBib ? 48 : 88)} min={5} max={95} suffix="%" onChange={(value) => onChange({ [yKey]: value })} /><Range label="Size" value={layout[sizeKey] || defaultSize} min={isName ? 3 : isMainBib ? 8 : 3} max={isMainBib ? 30 : 16} step={0.5} onChange={(value) => onChange({ [sizeKey]: value })} /><div className="grid grid-cols-2 gap-2"><Color label="Text" value={layout[colorKey] || '#FFFFFF'} onChange={(value) => onChange({ [colorKey]: value })} /><Color label="Border" value={layout[strokeColorKey] || '#000000'} onChange={(value) => onChange({ [strokeColorKey]: value })} /></div><Range label="Border thickness" value={layout[strokeWidthKey] || 0} min={0} max={2} step={0.1} onChange={(value) => onChange({ [strokeWidthKey]: value })} /><div className="space-y-1"><label htmlFor={`bib-font-${prefix}`} className="block text-xs font-semibold text-[var(--text-secondary)]">Font</label><Select id={`bib-font-${prefix}`} value={layout[fontKey] || (isName ? 'display' : 'mono')} onChange={(value) => onChange({ [fontKey]: value as RaceBibFont })} surface="card" size="md" triggerClassName="text-xs" options={[{ value: 'display', label: 'Racing Bold' }, { value: 'sans', label: 'Clean Sans' }, { value: 'mono', label: 'Timing Mono' }, { value: 'condensed', label: 'Condensed' }]} /></div></div>;
+  return <div className="glass-inset p-4 space-y-3"><p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-primary)]">{title}</p><Range label="X position" value={layout[xKey] ?? 50} min={5} max={95} suffix="%" onChange={(value) => onChange({ [xKey]: value })} /><Range label="Y position" value={layout[yKey] ?? (isName ? 70 : isMainBib ? 48 : 88)} min={5} max={95} suffix="%" onChange={(value) => onChange({ [yKey]: value })} /><Range label="Size" value={layout[sizeKey] || defaultSize} min={isName ? 3 : isMainBib ? 8 : 3} max={isMainBib ? 30 : 16} step={0.5} onChange={(value) => onChange({ [sizeKey]: value })} /><div className="grid grid-cols-2 gap-2"><Color label="Text" value={layout[colorKey] || '#FFFFFF'} onChange={(value) => onChange({ [colorKey]: value })} /><Color label="Border" value={layout[strokeColorKey] || '#000000'} onChange={(value) => onChange({ [strokeColorKey]: value })} /></div><Range label="Border thickness" value={layout[strokeWidthKey] || 0} min={0} max={2} step={0.1} onChange={(value) => onChange({ [strokeWidthKey]: value })} /><label className="block text-xs font-semibold text-[var(--text-secondary)]">Font<select value={layout[fontKey] || (isName ? 'display' : 'mono')} onChange={(event) => onChange({ [fontKey]: event.target.value as RaceBibFont })} className="mt-1 min-h-11 w-full glass-inset px-2 py-2 text-xs font-semibold text-[var(--text-primary)]"><option value="display">Racing Bold</option><option value="sans">Clean Sans</option><option value="mono">Timing Mono</option><option value="condensed">Condensed</option></select></label></div>;
 }
 
 function Range({ label, value, min, max, step = 1, suffix = '', onChange }: { label: string; value: number; min: number; max: number; step?: number; suffix?: string; onChange: (value: number) => void }) {

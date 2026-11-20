@@ -154,6 +154,11 @@ export interface RaceBibLayout {
   raffleNumberStrokeWidth?: number;
   runnerNameStrokeColor?: string;
   runnerNameStrokeWidth?: number;
+  // Legacy bibs keep their existing printed shadow unless an organizer turns
+  // it off for a clean flat-text treatment.
+  bibNumberShadowEnabled?: boolean;
+  raffleNumberShadowEnabled?: boolean;
+  runnerNameShadowEnabled?: boolean;
   bibNumberFont?: RaceBibFont;
   raffleNumberFont?: RaceBibFont;
   runnerNameFont?: RaceBibFont;
