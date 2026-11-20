@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Activity,
   AlertTriangle,
@@ -14,6 +15,7 @@ import {
   Hand,
   History,
   Layers,
+  LocateFixed,
   Lock,
   MapPin,
   Maximize2,
@@ -35,14 +37,23 @@ import {
   Undo2,
   Unlock,
   Upload,
+  X,
 } from 'lucide-react';
 import { fetchGpxText, parseGpxRoute } from '../../lib/gpxRoute';
 import { useAccess, useScopedRaces } from '../../lib/access';
 import { locateAtChainage, projectCoordinateToRoute, reanchorMarkersForRoute } from '../../lib/routes/anchoring';
 import { buildCourseAnalytics } from '../../lib/routes/courseAnalytics';
-import { geodesicDistanceM, processCanonicalGeometry, reverseCanonicalGeometry } from '../../lib/routes/geometry';
+import {
+  createEmptyRouteGeometry,
+  geodesicDistanceM,
+  processCanonicalGeometry,
+  reverseCanonicalGeometry,
+} from '../../lib/routes/geometry';
 import type { MapThemeMode } from '../../lib/routes/mapProviders';
-import { prepareCourseMapLayerManifest } from '../../lib/routes/philippinesMapTiles';
+import {
+  prepareCourseMapLayerManifest,
+  RACEPULSE_TERRAIN_LABEL,
+} from '../../lib/routes/philippinesMapTiles';
 import { createSyntheticLandmarkPhoto, processLandmarkPhotoFile } from '../../lib/routes/photoProcessor';
 import {
   archivePresetCommand,
@@ -50,9 +61,9 @@ import {
   createPresetDraftCommand,
   createPresetVersionCommand,
   DEMO_BAGUIO_RACE,
+  describePresetConfigStatus,
   duplicatePresetCommand,
   ensureDemoCoursesSeeded,
-  ensurePresetForRaceDistanceCommand,
   getRouteStoreSnapshot,
   isDemoSeedEnabled,
   migrateLegacyRaceGpxCommand,
@@ -60,6 +71,7 @@ import {
   runQuarterlyNationalMosaicRefreshCommand,
   runWeeklyClearImageryCheckCommand,
   savePresetDraftCommand,
+  sortRoutePresetsForDistance,
   subscribeRouteStore,
   validatePublicationReadiness,
   withdrawPublicationCommand,
@@ -78,6 +90,7 @@ import {
   estimatePhilippineTopographicElevationM,
   generateSimulatedGpsWalk,
   generateSplitKmMarkers,
+  isDefaultStarterGeometry,
   mirrorOutAndBackRoute,
   processGpsBreadcrumbFix,
   relocateStartPointInGeometry,
@@ -86,6 +99,7 @@ import {
   smoothEntireGeometry,
   SURFACE_LABELS,
   TERRAIN_SCENARIO_LABELS,
+  type GpsBreadcrumbFix,
   type GpsTrailState,
 } from '../../lib/routes/trailTools';
 import { buildRaceCoursePath } from '../../lib/routes/routing';
@@ -97,6 +111,7 @@ import type {
   RouteSurfaceType,
   TerrainScenarioTag,
 } from '../../lib/routes/types';
+import { useWorkspaceHeader } from '../../lib/workspaceHeader';
 import type { Race, UserProfile } from '../../types';
 import RouteElevationProfile from '../RouteElevationProfile';
 import RouteMapCanvas, { type MapColorMode, type MapDrawMode } from './RouteMapCanvas';
@@ -133,25 +148,7 @@ interface RouteStudioPanelProps {
   initialPresetId?: string;
   racesOverride?: Race[];
   onNavigateUrl?: (url: string) => void;
-}
-
-function starterGeometry(): CanonicalRouteGeometry {
-  return {
-    version: 1,
-    sourceKind: 'drawn',
-    segments: densifyAndElevateDrawnSegments([
-      {
-        id: 'drawn_1',
-        name: 'Drawn course section',
-        sourceKind: 'drawn',
-        points: [
-          { lat: 16.4119, lon: 120.5947 },
-          { lat: 16.4136, lon: 120.5988 },
-          { lat: 16.4121, lon: 120.6022 },
-        ],
-      },
-    ]),
-  };
+  onBackHome?: () => void;
 }
 
 export default function RouteStudioPanel({
@@ -160,6 +157,7 @@ export default function RouteStudioPanel({
   initialPresetId,
   racesOverride,
   onNavigateUrl,
+  onBackHome,
 }: RouteStudioPanelProps) {
   const { confirm } = useFeedback();
   const { can } = useAccess();
@@ -178,12 +176,12 @@ export default function RouteStudioPanel({
 
   // Draft working copy with Undo / Redo history
   const [draftTitle, setDraftTitle] = useState('');
-  const [draftRegion, setDraftRegion] = useState('Philippines');
+  const [draftRegion, setDraftRegion] = useState('');
   const [editSummary, setEditSummary] = useState('');
   const [sourceFileName, setSourceFileName] = useState('');
   const [rawGpxText, setRawGpxText] = useState('');
   const [selectedTracks, setSelectedTracks] = useState<number[]>([0]);
-  const [geometry, setGeometry] = useState<CanonicalRouteGeometry>(starterGeometry);
+  const [geometry, setGeometry] = useState<CanonicalRouteGeometry>(createEmptyRouteGeometry);
   const [markers, setMarkers] = useState<RouteMarker[]>([]);
   const [undoStack, setUndoStack] = useState<Array<{ geometry: CanonicalRouteGeometry; markers: RouteMarker[] }>>([]);
   const [redoStack, setRedoStack] = useState<Array<{ geometry: CanonicalRouteGeometry; markers: RouteMarker[] }>>([]);
@@ -197,21 +195,50 @@ export default function RouteStudioPanel({
   const [eraseRadiusM, setEraseRadiusM] = useState<number>(50);
   const [mapPanLocked, setMapPanLocked] = useState<boolean>(false);
   const [studioFullscreen, setStudioFullscreen] = useState<boolean>(false);
+  const [importFitNonce, setImportFitNonce] = useState<number>(0);
+  const justCreatedPresetIdRef = useRef<string | null>(null);
   const [activeSurfaceType, setActiveSurfaceType] = useState<RouteSurfaceType>('singletrack');
   const [activeTerrainScenario, setActiveTerrainScenario] = useState<TerrainScenarioTag>('normal');
-  const [rangeFromKm, setRangeFromKm] = useState('0');
-  const [rangeToKm, setRangeToKm] = useState('2');
+  const [rangeFromKm, setRangeFromKm] = useState('');
+  const [rangeToKm, setRangeToKm] = useState('');
   const [selection, setSelection] = useState<RouteSelectionState | null>(null);
   const [selectedMarkerId, setSelectedMarkerId] = useState<string>('');
-  const [coordLat, setCoordLat] = useState('16.4095');
-  const [coordLon, setCoordLon] = useState('120.6075');
+  const [coordLat, setCoordLat] = useState('');
+  const [coordLon, setCoordLon] = useState('');
   const [coordEle, setCoordEle] = useState('');
 
-  // Live Accurate GPS Trail Tracking State
+  // Live Accurate GPS Trail Tracking State + Refs to avoid stale closure in GNSS callback
   const [gpsState, setGpsState] = useState<GpsTrailState>(() => createGpsTrailState({ maxAccuracyM: 25 }));
   const [gpsError, setGpsError] = useState('');
+  const [flyToTrigger, setFlyToTrigger] = useState<{
+    lat: number;
+    lon: number;
+    zoom?: number;
+    nonce: number;
+  } | null>(null);
+  const initialGpsCenteredRef = useRef(false);
+  const currentMapCenterRef = useRef<{ lat: number; lon: number }>({ lat: 16.4121, lon: 120.595 });
   const gpsWatchIdRef = useRef<number | null>(null);
   const gpsFixReceivedRef = useRef(false);
+  const activeSurfaceTypeRef = useRef(activeSurfaceType);
+  activeSurfaceTypeRef.current = activeSurfaceType;
+  const activeTerrainScenarioRef = useRef(activeTerrainScenario);
+  activeTerrainScenarioRef.current = activeTerrainScenario;
+  const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
+
+  const headerCtx = useWorkspaceHeader();
+  const setDesktopLocked = headerCtx?.setDesktopLocked;
+  const setSplitViewportLocked = headerCtx?.setSplitViewportLocked;
+
+  useEffect(() => {
+    if (!onBackHome) return;
+    setDesktopLocked?.(true);
+    setSplitViewportLocked?.(true);
+    return () => {
+      setDesktopLocked?.(false);
+      setSplitViewportLocked?.(false);
+    };
+  }, [onBackHome, setDesktopLocked, setSplitViewportLocked]);
 
   // Photo Upload State
   const [photoCaption, setPhotoCaption] = useState('');
@@ -396,7 +423,7 @@ export default function RouteStudioPanel({
     }
   }, [targetRace, targetDistanceId]);
 
-  // Scope presets strictly to the currently selected existing race.
+  // Scope presets to the selected race and sort Active configuration first, Archived last.
   const presetList = useMemo(() => {
     if (!targetRace) return [];
     const boundIdsForRace = new Set(
@@ -404,39 +431,76 @@ export default function RouteStudioPanel({
         .filter((b) => b.raceId === targetRace.id)
         .map((b) => b.presetId),
     );
-    return Object.values(store.presets)
-      .filter((p) => p.raceId === targetRace.id || boundIdsForRace.has(p.id))
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  }, [store.presets, store.bindings, targetRace]);
+    const scoped = Object.values(store.presets).filter(
+      (p) => p.raceId === targetRace.id || boundIdsForRace.has(p.id),
+    );
+    return sortRoutePresetsForDistance(scoped, store, targetRace.id, targetDistanceId);
+  }, [store, targetRace, targetDistanceId]);
+
+  const lastContextKeyRef = useRef<string>('');
+
+  const resetWorkspaceToEmpty = (keepNotices = false) => {
+    setSelectedPresetId('');
+    setDraftTitle('');
+    setDraftRegion('');
+    setEditSummary('');
+    setSourceFileName('');
+    setRawGpxText('');
+    setSelectedTracks([0]);
+    setGeometry(createEmptyRouteGeometry());
+    setMarkers([]);
+    setUndoStack([]);
+    setRedoStack([]);
+    setExpectedRevision(1);
+    setDirty(false);
+    setSelectedMarkerId('');
+    setSelectedVersionId('');
+    setCoordLat('');
+    setCoordLon('');
+    setCoordEle('');
+    setRangeFromKm('');
+    setRangeToKm('');
+    if (!keepNotices) {
+      setStatusNotice('');
+      setErrorNotice('');
+    }
+  };
 
   useEffect(() => {
     if (!targetRace) return;
-    if (selectedPresetId && presetList.some((p) => p.id === selectedPresetId)) return;
-    if (initialPresetId && presetList.some((p) => p.id === initialPresetId)) {
-      setSelectedPresetId(initialPresetId);
+    const contextKey = `${targetRace.id}::${targetDistanceId || ''}`;
+    const contextChanged = lastContextKeyRef.current !== contextKey;
+    if (!contextChanged && selectedPresetId && presetList.some((p) => p.id === selectedPresetId)) {
       return;
     }
+    if (!contextChanged) {
+      return;
+    }
+    lastContextKeyRef.current = contextKey;
+
+    const boundPresetId = targetDistanceId
+      ? store.bindings[`${targetRace.id}_${targetDistanceId}`]?.presetId
+      : undefined;
+    const boundMatch = boundPresetId
+      ? presetList.find((p) => p.id === boundPresetId)
+      : undefined;
+    const initialMatch = initialPresetId
+      ? presetList.find(
+          (p) =>
+            p.id === initialPresetId &&
+            (!targetDistanceId || !p.distanceId || p.distanceId === targetDistanceId),
+        )
+      : undefined;
     const distMatch = presetList.find((p) => p.distanceId === targetDistanceId);
-    if (distMatch) {
-      setSelectedPresetId(distMatch.id);
+    const fallbackMatch = !targetDistanceId ? presetList[0] : undefined;
+    const match = boundMatch || initialMatch || distMatch || fallbackMatch;
+
+    if (match) {
+      setSelectedPresetId(match.id);
       return;
     }
-    if (presetList.length > 0) {
-      setSelectedPresetId(presetList[0].id);
-      return;
-    }
-    // Initialize a course draft linked directly to the selected existing race + distance.
-    if (targetDistanceId) {
-      const ensured = ensurePresetForRaceDistanceCommand({
-        actorUid: profile.uid,
-        actorName: profile.displayName || profile.email,
-        race: targetRace,
-        distanceId: targetDistanceId,
-        starterGeometry: starterGeometry(),
-      });
-      if (ensured) setSelectedPresetId(ensured.preset.id);
-    }
-  }, [presetList, selectedPresetId, initialPresetId, targetRace, targetDistanceId, profile.uid, profile.displayName, profile.email]);
+    resetWorkspaceToEmpty();
+  }, [presetList, selectedPresetId, initialPresetId, targetRace, targetDistanceId, store.bindings]);
 
   const activePreset = store.presets[selectedPresetId];
   const activeDraft = activePreset
@@ -446,6 +510,11 @@ export default function RouteStudioPanel({
   // Hydrate editor working copy when switching presets
   useEffect(() => {
     if (!activePreset || !activeDraft) return;
+    if (justCreatedPresetIdRef.current === activePreset.id) {
+      justCreatedPresetIdRef.current = null;
+      setSelectedVersionId(activePreset.latestVersionId || '');
+      return;
+    }
     setDraftTitle(activeDraft.title);
     setDraftRegion(activeDraft.region);
     setSourceFileName(activeDraft.sourceFileName || '');
@@ -471,9 +540,15 @@ export default function RouteStudioPanel({
     try {
       return processCanonicalGeometry(geometry);
     } catch {
-      return processCanonicalGeometry(starterGeometry());
+      return processCanonicalGeometry(createEmptyRouteGeometry());
     }
   }, [geometry]);
+
+  const isCanvasEmpty = Boolean(
+    processedRoute.canonicalGeometry.isCanvasCleared && processedRoute.points.length === 0,
+  );
+  const hasRoutePath =
+    !processedRoute.canonicalGeometry.isCanvasCleared && processedRoute.points.length >= 2;
 
   const analyticsBundle = useMemo(
     () => buildCourseAnalytics(processedRoute, markers, { targetFlatPaceMinPerKm: 6.0, race: targetRace }),
@@ -611,6 +686,7 @@ export default function RouteStudioPanel({
               },
             ];
       pushHistory(parsed.canonicalGeometry, reanchored);
+      setImportFitNonce((n) => n + 1);
       setStatusNotice(
         `Imported ${fileLabel}: ${parsed.distanceKm.toFixed(2)} km across ${parsed.canonicalSegments.length} segment(s), ${parsed.points.length} points.`,
       );
@@ -642,6 +718,10 @@ export default function RouteStudioPanel({
   };
 
   const handleReverseCourse = () => {
+    if (!hasRoutePath) {
+      setErrorNotice('Draw, paint, record GPS, or import a GPX route before reversing.');
+      return;
+    }
     const reversed = reverseCanonicalGeometry(geometry);
     const reprocessed = processCanonicalGeometry(reversed);
     const reanchored = reanchorMarkersForRoute(reprocessed, markers);
@@ -669,53 +749,189 @@ export default function RouteStudioPanel({
     return err.message || 'Location permission denied or GNSS signal lost.';
   };
 
+  const handleSetGpsLocation = (lat: number, lon: number, accuracyM = 10) => {
+    const manualFix: GpsBreadcrumbFix = {
+      latitude: Number(lat.toFixed(6)),
+      longitude: Number(lon.toFixed(6)),
+      accuracyM,
+      timestamp: Date.now(),
+    };
+    gpsFixReceivedRef.current = true;
+    setGpsError('');
+    setGpsState((prev) =>
+      processGpsBreadcrumbFix(
+        prev,
+        manualFix,
+        activeSurfaceTypeRef.current,
+        activeTerrainScenarioRef.current,
+      ),
+    );
+    setFlyToTrigger({
+      lat: manualFix.latitude,
+      lon: manualFix.longitude,
+      zoom: 16,
+      nonce: Date.now(),
+    });
+    setStatusNotice(
+      `GPS pinpoint set to ${manualFix.latitude.toFixed(5)}, ${manualFix.longitude.toFixed(5)} (±${accuracyM}m).`,
+    );
+  };
+
+  const handlePinpointMapCenter = () => {
+    const center = currentMapCenterRef.current || { lat: 16.4121, lon: 120.595 };
+    handleSetGpsLocation(center.lat, center.lon, 12);
+  };
+
   const startGpsWatch = (highAccuracy: boolean) => {
     clearGpsWatch();
-    gpsWatchIdRef.current = navigator.geolocation.watchPosition(
-      (pos) => {
-        gpsFixReceivedRef.current = true;
-        setGpsError('');
-        const fix = {
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          altitude: pos.coords.altitude ?? undefined,
-          accuracyM: pos.coords.accuracy ?? 999,
-          timestamp: pos.timestamp || Date.now(),
-          headingDeg: pos.coords.heading ?? undefined,
-        };
-        setGpsState((prev) => processGpsBreadcrumbFix(prev, fix, activeSurfaceType, activeTerrainScenario));
-      },
-      (err) => {
-        if (err.code === 1) {
+    initialGpsCenteredRef.current = false;
+    gpsFixReceivedRef.current = false;
+
+    if (typeof navigator !== 'undefined' && 'permissions' in navigator && navigator.permissions?.query) {
+      navigator.permissions
+        .query({ name: 'geolocation' })
+        .then((perm) => {
+          if (perm.state === 'prompt') {
+            setStatusNotice('Awaiting location approval: please click "Allow" in your browser address bar.');
+          } else if (perm.state === 'denied') {
+            setGpsError(
+              'Location permission is blocked. Click the tune/lock icon in your browser address bar and enable Location access for RacePulsePH.',
+            );
+            setGpsState((prev) => ({ ...prev, status: 'paused' }));
+          }
+          perm.onchange = () => {
+            if (perm.state === 'granted') {
+              startGpsWatch(true);
+            } else if (perm.state === 'denied') {
+              setGpsError('Location permission denied.');
+              setGpsState((prev) => ({ ...prev, status: 'paused' }));
+            }
+          };
+        })
+        .catch(() => {});
+    }
+
+    const recordFixAndCenter = (fix: {
+      latitude: number;
+      longitude: number;
+      altitude?: number;
+      accuracyM: number;
+      timestamp: number;
+      headingDeg?: number;
+    }) => {
+      gpsFixReceivedRef.current = true;
+      setGpsError('');
+      setGpsState((prev) =>
+        processGpsBreadcrumbFix(
+          prev,
+          fix,
+          activeSurfaceTypeRef.current,
+          activeTerrainScenarioRef.current,
+        ),
+      );
+      if (!initialGpsCenteredRef.current) {
+        initialGpsCenteredRef.current = true;
+        setFlyToTrigger({
+          lat: fix.latitude,
+          lon: fix.longitude,
+          zoom: 16,
+          nonce: Date.now(),
+        });
+        if (fix.accuracyM <= gpsState.maxAccuracyM) {
+          setStatusNotice(`Live GNSS locked (±${Math.round(fix.accuracyM)}m). Recording trail breadcrumbs.`);
+        } else {
+          setStatusNotice(
+            `Initial location locked (±${Math.round(fix.accuracyM)}m). Acquiring high-accuracy GNSS satellites...`,
+          );
+        }
+      }
+    };
+
+    // Fast-path immediate coarse / cached lock so the map centers within milliseconds
+    if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (coarsePos) => {
+          const fix = {
+            latitude: coarsePos.coords.latitude,
+            longitude: coarsePos.coords.longitude,
+            altitude: coarsePos.coords.altitude ?? undefined,
+            accuracyM: coarsePos.coords.accuracy ?? 999,
+            timestamp: coarsePos.timestamp || Date.now(),
+            headingDeg: coarsePos.coords.heading ?? undefined,
+          };
+          recordFixAndCenter(fix);
+        },
+        () => {
+          // Fast coarse lock unavailable or permission prompt still open; watchPosition will catch it
+        },
+        { enableHighAccuracy: false, maximumAge: 120000, timeout: 4000 },
+      );
+    }
+
+    if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
+      gpsWatchIdRef.current = navigator.geolocation.watchPosition(
+        (pos) => {
+          const fix = {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            altitude: pos.coords.altitude ?? undefined,
+            accuracyM: pos.coords.accuracy ?? 999,
+            timestamp: pos.timestamp || Date.now(),
+            headingDeg: pos.coords.heading ?? undefined,
+          };
+          recordFixAndCenter(fix);
+        },
+        (err) => {
+          if (err.code === 1) {
+            clearGpsWatch();
+            setGpsError(formatGeolocationError(err));
+            setGpsState((prev) => ({ ...prev, status: 'paused' }));
+            return;
+          }
+          if (gpsFixReceivedRef.current) {
+            setGpsError(
+              err.code === 3
+                ? 'Waiting for next GNSS fix (signal momentarily weak)...'
+                : 'GNSS signal momentarily unavailable; waiting for next fix...',
+            );
+            return;
+          }
+          if (highAccuracy && (err.code === 2 || err.code === 3)) {
+            setStatusNotice('High-accuracy GNSS unavailable. Checking network / Wi-Fi position...');
+            navigator.geolocation.getCurrentPosition(
+              (coarsePos) => {
+                const fix = {
+                  latitude: coarsePos.coords.latitude,
+                  longitude: coarsePos.coords.longitude,
+                  altitude: coarsePos.coords.altitude ?? undefined,
+                  accuracyM: coarsePos.coords.accuracy ?? 999,
+                  timestamp: coarsePos.timestamp || Date.now(),
+                  headingDeg: coarsePos.coords.heading ?? undefined,
+                };
+                recordFixAndCenter(fix);
+              },
+              (fallbackErr) => {
+                clearGpsWatch();
+                setGpsError(
+                  fallbackErr.code === 1
+                    ? 'Location permission denied. Please allow location in your browser.'
+                    : 'Device GPS fix unavailable (Windows location may be off or no GPS/Wi-Fi positioning hardware present). Click "Pinpoint Map Center" or click on the map to set your location.',
+                );
+                setGpsState((prev) => ({ ...prev, status: 'paused' }));
+              },
+              { enableHighAccuracy: false, maximumAge: 30000, timeout: 6000 },
+            );
+            return;
+          }
           clearGpsWatch();
           setGpsError(formatGeolocationError(err));
           setGpsState((prev) => ({ ...prev, status: 'paused' }));
-          return;
-        }
-        // Once fixes have started arriving, transient signal drops (e.g. heavy canopy)
-        // keep the watch alive so tracking resumes automatically on the next fix.
-        if (gpsFixReceivedRef.current) {
-          setGpsError(
-            err.code === 3
-              ? 'Waiting for next GNSS fix (signal momentarily weak)...'
-              : 'GNSS signal momentarily unavailable; waiting for next fix...',
-          );
-          return;
-        }
-        // Before the first fix arrives, fall back once from high-accuracy GPS to fused location.
-        if (highAccuracy && (err.code === 2 || err.code === 3)) {
-          setStatusNotice('Switching to fused device location while acquiring GNSS lock.');
-          startGpsWatch(false);
-          return;
-        }
-        clearGpsWatch();
-        setGpsError(formatGeolocationError(err));
-        setGpsState((prev) => ({ ...prev, status: 'paused' }));
-      },
-      highAccuracy
-        ? { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 }
-        : { enableHighAccuracy: false, maximumAge: 5000, timeout: 15000 },
-    );
+        },
+        highAccuracy
+          ? { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 }
+          : { enableHighAccuracy: false, maximumAge: 5000, timeout: 10000 },
+      );
+    }
   };
 
   const handleStartGpsTracking = () => {
@@ -726,13 +942,17 @@ export default function RouteStudioPanel({
       return;
     }
     if (typeof window !== 'undefined' && window.isSecureContext === false) {
-      setGpsError('Live GPS requires HTTPS, localhost, or the RacePulsePH Android app. Use Simulate GPS walk on local HTTP.');
-      return;
+      const isLocalhost = window.location?.hostname === 'localhost' || window.location?.hostname === '127.0.0.1';
+      if (!isLocalhost) {
+        setGpsError('Live GPS requires HTTPS, localhost, or the RacePulsePH Android app. Use Simulate GPS walk on local HTTP.');
+        return;
+      }
     }
     gpsFixReceivedRef.current = false;
+    initialGpsCenteredRef.current = false;
     setTrailOption('gps');
     setGpsState((prev) => ({ ...prev, status: 'tracking' }));
-    setStatusNotice(`Live GNSS tracking started (accuracy gate <= ${gpsState.maxAccuracyM} m).`);
+    setStatusNotice(`Live GNSS tracking started (accuracy gate <= ${gpsState.maxAccuracyM} m). Locating your spot...`);
     startGpsWatch(true);
   };
 
@@ -742,23 +962,50 @@ export default function RouteStudioPanel({
     setStatusNotice('GPS field recording paused. Review captured fixes or commit to the route.');
   };
 
+  const handleCenterOnGps = () => {
+    if (latestGpsFix) {
+      setFlyToTrigger({
+        lat: latestGpsFix.latitude,
+        lon: latestGpsFix.longitude,
+        zoom: 16,
+        nonce: Date.now(),
+      });
+      setStatusNotice(
+        `Centered on GPS fix (${latestGpsFix.latitude.toFixed(5)}, ${latestGpsFix.longitude.toFixed(5)} · ±${Math.round(latestGpsFix.accuracyM)}m).`,
+      );
+    } else {
+      handlePinpointMapCenter();
+    }
+  };
+
   const handleSimulateGpsWalk = () => {
     setGpsError('');
     setErrorNotice('');
     setTrailOption('gps');
     const anchorPt =
-      selection ||
-      (processedRoute.points[0]
-        ? {
-            latitude: processedRoute.points[0].latitude,
-            longitude: processedRoute.points[0].longitude,
-            elevation: processedRoute.points[0].elevation ?? 1400,
-          }
-        : { latitude: 16.4119, longitude: 120.5947, elevation: 1450 });
+      selection && processedRoute.points.length > 0
+        ? selection
+        : processedRoute.points[0]
+          ? {
+              latitude: processedRoute.points[0].latitude,
+              longitude: processedRoute.points[0].longitude,
+              elevation: processedRoute.points[0].elevation ?? 0,
+            }
+          : currentMapCenterRef.current
+            ? {
+                latitude: currentMapCenterRef.current.lat,
+                longitude: currentMapCenterRef.current.lon,
+                elevation: 1450,
+              }
+            : {
+                latitude: 16.4121,
+                longitude: 120.595,
+                elevation: 1450,
+              };
     const fixes = generateSimulatedGpsWalk(
       anchorPt.latitude,
       anchorPt.longitude,
-      anchorPt.elevation ?? 1400,
+      anchorPt.elevation ?? 0,
       12,
     );
     let nextState = {
@@ -769,6 +1016,14 @@ export default function RouteStudioPanel({
       nextState = processGpsBreadcrumbFix(nextState, fix, activeSurfaceType, activeTerrainScenario);
     }
     setGpsState(nextState);
+    if (fixes.length > 0) {
+      setFlyToTrigger({
+        lat: fixes[0].latitude,
+        lon: fixes[0].longitude,
+        zoom: 16,
+        nonce: Date.now(),
+      });
+    }
     setStatusNotice(
       `Simulated GPS survey captured ${nextState.acceptedPoints.length} accurate fixes (${nextState.rejectedCount} noisy outlier rejected).`,
     );
@@ -803,7 +1058,7 @@ export default function RouteStudioPanel({
       spacingM: paintSpacingM,
       surfaceType: activeSurfaceType,
       terrainScenario: activeTerrainScenario,
-      replaceStarter: geometry.segments.length === 1 && geometry.segments[0]?.id === 'drawn_1',
+      replaceStarter: isDefaultStarterGeometry(geometry),
     });
     const reprocessed = processCanonicalGeometry(nextGeom);
     pushHistory(nextGeom, reanchorMarkersForRoute(reprocessed, markers));
@@ -848,10 +1103,10 @@ export default function RouteStudioPanel({
   const handleClearCanvas = () => {
     setErrorNotice('');
     const cleared = clearRouteCanvas(geometry);
-    const reprocessed = processCanonicalGeometry(cleared);
-    pushHistory(cleared, reanchorMarkersForRoute(reprocessed, markers));
+    pushHistory(cleared, []);
+    setSelectedMarkerId('');
     setStatusNotice(
-      'Course canvas cleared and starting point removed. Click the map or use Start Point (S) to place a new starting point.',
+      'Course canvas cleared. Use Start Point (S), Paint Trail (B), Draw Points (P), GPS Survey, or Import GPX.',
     );
   };
 
@@ -920,6 +1175,10 @@ export default function RouteStudioPanel({
 
   const handleApplyTerrainRange = () => {
     setErrorNotice('');
+    if (!hasRoutePath) {
+      setErrorNotice('Draw, paint, record GPS, or import a route before tagging terrain.');
+      return;
+    }
     const fromKm = Number(rangeFromKm);
     const toKm = Number(rangeToKm);
     if (!Number.isFinite(fromKm) || !Number.isFinite(toKm) || fromKm < 0 || toKm <= fromKm) {
@@ -942,6 +1201,10 @@ export default function RouteStudioPanel({
 
   const handleSampleElevation = async () => {
     setErrorNotice('');
+    if (!hasRoutePath) {
+      setErrorNotice('Draw, paint, record GPS, or import a route before sampling terrain elevation.');
+      return;
+    }
     const res = await sampleTerrainElevationForGeometry(geometry);
     const reprocessed = processCanonicalGeometry(res.geometry);
     pushHistory(res.geometry, reanchorMarkersForRoute(reprocessed, markers));
@@ -953,6 +1216,10 @@ export default function RouteStudioPanel({
   };
 
   const handleSmoothTrail = () => {
+    if (!hasRoutePath) {
+      setErrorNotice('Draw, paint, record GPS, or import a route before smoothing.');
+      return;
+    }
     const nextGeom = smoothEntireGeometry(geometry, paintSpacingM);
     const reprocessed = processCanonicalGeometry(nextGeom);
     pushHistory(nextGeom, reanchorMarkersForRoute(reprocessed, markers));
@@ -960,6 +1227,10 @@ export default function RouteStudioPanel({
   };
 
   const handleMirrorOutAndBack = () => {
+    if (!hasRoutePath) {
+      setErrorNotice('Draw, paint, record GPS, or import a route before mirroring out-and-back.');
+      return;
+    }
     const nextGeom = mirrorOutAndBackRoute(geometry);
     const reprocessed = processCanonicalGeometry(nextGeom);
     pushHistory(nextGeom, reanchorMarkersForRoute(reprocessed, markers));
@@ -967,6 +1238,10 @@ export default function RouteStudioPanel({
   };
 
   const handleCloseLoop = () => {
+    if (!hasRoutePath) {
+      setErrorNotice('Draw, paint, record GPS, or import a route before closing a loop.');
+      return;
+    }
     const nextGeom = closeRouteLoopToStart(geometry);
     const reprocessed = processCanonicalGeometry(nextGeom);
     pushHistory(nextGeom, reanchorMarkersForRoute(reprocessed, markers));
@@ -974,6 +1249,10 @@ export default function RouteStudioPanel({
   };
 
   const handleGenerateSplitMarkers = () => {
+    if (!hasRoutePath) {
+      setErrorNotice('Draw, paint, record GPS, or import a route before generating 1 km markers.');
+      return;
+    }
     const nextMarkers = generateSplitKmMarkers(processedRoute, 1, markers);
     pushHistory(geometry, nextMarkers);
     setStatusNotice(`Generated 1 km distance and water split markers (${nextMarkers.length} total markers).`);
@@ -1057,6 +1336,37 @@ export default function RouteStudioPanel({
     setStatusNotice('Appended manually drawn point to course.');
   };
 
+  const createDraftFromCurrentCanvas = (
+    nextGeometry = geometry,
+    nextMarkers = markers,
+  ) => {
+    if (!targetRace) {
+      throw new Error('Create an existing race in Race Setup first.');
+    }
+    const distLabel = selectedDistanceObj?.label || targetDistanceId || 'Course';
+    const resolvedTitle = draftTitle.trim() || `${targetRace.name} (${distLabel})`;
+    const resolvedRegion = draftRegion.trim() || 'Philippines';
+    const created = createPresetDraftCommand({
+      actorUid: profile.uid,
+      actorName: profile.displayName || profile.email,
+      title: resolvedTitle,
+      region: resolvedRegion,
+      activity: (selectedDistanceObj?.km ?? 0) >= 21 ? 'trail' : 'road',
+      raceId: targetRace.id,
+      distanceId: selectedDistanceObj?.id || targetDistanceId || undefined,
+      geometry: nextGeometry,
+      markers: nextMarkers,
+      sourceFileName,
+    });
+    justCreatedPresetIdRef.current = created.preset.id;
+    setSelectedPresetId(created.preset.id);
+    setDraftTitle(created.draft.title);
+    setDraftRegion(created.draft.region);
+    setExpectedRevision(created.draft.revision);
+    setDirty(false);
+    return created;
+  };
+
   const handleNewPreset = () => {
     if (!canCreateRoute) {
       setErrorNotice('Creating course presets is disabled for your account.');
@@ -1066,20 +1376,9 @@ export default function RouteStudioPanel({
       setErrorNotice('Create an existing race in Race Setup before creating a course preset.');
       return;
     }
+    resetWorkspaceToEmpty(true);
     setErrorNotice('');
-    const created = createPresetDraftCommand({
-      actorUid: profile.uid,
-      actorName: profile.displayName || profile.email,
-      title: `${targetRace.name} ${selectedDistanceObj?.label ?? 'Course'} ${presetList.length + 1}`,
-      region: draftRegion || 'Philippines',
-      activity: (selectedDistanceObj?.km ?? 0) >= 21 ? 'trail' : 'road',
-      geometry: starterGeometry(),
-      markers: [],
-      raceId: targetRace.id,
-      distanceId: targetDistanceId || undefined,
-    });
-    setSelectedPresetId(created.preset.id);
-    setStatusNotice(`Created course preset "${created.preset.title}" linked to ${targetRace.name}.`);
+    setStatusNotice(`Ready for a new empty course draft in ${targetRace.name}.`);
   };
 
   const handleDuplicatePreset = () => {
@@ -1087,7 +1386,10 @@ export default function RouteStudioPanel({
       setErrorNotice('Duplicating course presets is disabled for your account.');
       return;
     }
-    if (!activePreset) return;
+    if (!activePreset) {
+      setErrorNotice('Save a course draft first before duplicating.');
+      return;
+    }
     setErrorNotice('');
     try {
       const dup = duplicatePresetCommand({
@@ -1107,9 +1409,17 @@ export default function RouteStudioPanel({
       setErrorNotice('Editing course drafts is disabled for your account.');
       return;
     }
-    if (!activePreset) return;
+    if (isCanvasEmpty && markers.length === 0) {
+      setErrorNotice('Draw, paint, record GPS, or import a GPX route before saving.');
+      return;
+    }
     setErrorNotice('');
     try {
+      if (!activePreset) {
+        const { draft } = createDraftFromCurrentCanvas();
+        setStatusNotice(`Saved new course draft "${draft.title}" (revision ${draft.revision}).`);
+        return;
+      }
       const saved = savePresetDraftCommand({
         actorUid: profile.uid,
         actorName: profile.displayName || profile.email,
@@ -1152,16 +1462,24 @@ export default function RouteStudioPanel({
       setErrorNotice('Creating reviewed versions is disabled for your account.');
       return;
     }
-    if (!activePreset) return;
+    if (!hasRoutePath) {
+      setErrorNotice('Draw, paint, record GPS, or import a GPX route before creating a version.');
+      return;
+    }
     setErrorNotice('');
     try {
+      let presetRef = activePreset;
       let currentRev = expectedRevision;
-      if (dirty) {
+      if (!presetRef) {
+        const created = createDraftFromCurrentCanvas();
+        presetRef = created.preset;
+        currentRev = created.draft.revision;
+      } else if (dirty) {
         const saved = savePresetDraftCommand({
           actorUid: profile.uid,
           actorName: profile.displayName || profile.email,
-          presetId: activePreset.id,
-          draftId: activePreset.latestDraftId,
+          presetId: presetRef.id,
+          draftId: presetRef.latestDraftId,
           expectedRevision: currentRev,
           title: draftTitle,
           region: draftRegion,
@@ -1177,8 +1495,8 @@ export default function RouteStudioPanel({
       const ver = createPresetVersionCommand({
         actorUid: profile.uid,
         actorName: profile.displayName || profile.email,
-        presetId: activePreset.id,
-        draftId: activePreset.latestDraftId,
+        presetId: presetRef.id,
+        draftId: presetRef.latestDraftId,
         expectedRevision: currentRev,
         reviewNotes,
       });
@@ -1191,10 +1509,14 @@ export default function RouteStudioPanel({
   };
 
   const handleAddMarkerAtSelection = (
-    lat = selection?.latitude ?? processedRoute.points[0].latitude,
-    lon = selection?.longitude ?? processedRoute.points[0].longitude,
+    lat = selection?.latitude ?? processedRoute.points[0]?.latitude,
+    lon = selection?.longitude ?? processedRoute.points[0]?.longitude,
     kind: RouteMarkerKind = 'aid',
   ) => {
+    if (!hasRoutePath || lat === undefined || lon === undefined) {
+      setErrorNotice('Draw, paint, record GPS, or import a route before adding checkpoints.');
+      return;
+    }
     const projected = projectCoordinateToRoute(processedRoute, lat, lon);
     const id = `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`;
     const newMarker: RouteMarker = {
@@ -1348,11 +1670,11 @@ export default function RouteStudioPanel({
       setErrorNotice('Attaching and publishing courses requires routes.publish and routes.assign permissions.');
       return;
     }
-    if (!targetRace || !targetDistanceId || !activePreset) {
+    if (!targetRace || !targetDistanceId) {
       setErrorNotice('Select an event and distance category first.');
       return;
     }
-    if (processedRoute.canonicalGeometry.isCanvasCleared || processedRoute.points.length < 2) {
+    if (!hasRoutePath) {
       setErrorNotice('Draw, paint, or import a route with at least 2 points before attaching it to the event.');
       return;
     }
@@ -1419,28 +1741,37 @@ export default function RouteStudioPanel({
         setMarkers(workingMarkers);
       }
 
-      const saved = savePresetDraftCommand({
-        actorUid: profile.uid,
-        actorName: profile.displayName || profile.email,
-        presetId: activePreset.id,
-        draftId: activePreset.latestDraftId,
-        expectedRevision,
-        title: draftTitle,
-        region: draftRegion,
-        geometry,
-        markers: workingMarkers,
-        sourceFileName,
-        editSummary: editSummary || `Attached to ${targetRace.name}`,
-      });
-      setExpectedRevision(saved.revision);
-      setDirty(false);
+      let presetRef = activePreset;
+      let draftRev = expectedRevision;
+      if (!presetRef) {
+        const created = createDraftFromCurrentCanvas(geometry, workingMarkers);
+        presetRef = created.preset;
+        draftRev = created.draft.revision;
+      } else {
+        const saved = savePresetDraftCommand({
+          actorUid: profile.uid,
+          actorName: profile.displayName || profile.email,
+          presetId: presetRef.id,
+          draftId: presetRef.latestDraftId,
+          expectedRevision: draftRev,
+          title: draftTitle,
+          region: draftRegion,
+          geometry,
+          markers: workingMarkers,
+          sourceFileName,
+          editSummary: editSummary || `Attached to ${targetRace.name}`,
+        });
+        draftRev = saved.revision;
+        setExpectedRevision(draftRev);
+        setDirty(false);
+      }
 
       const ver = createPresetVersionCommand({
         actorUid: profile.uid,
         actorName: profile.displayName || profile.email,
-        presetId: activePreset.id,
-        draftId: activePreset.latestDraftId,
-        expectedRevision: saved.revision,
+        presetId: presetRef.id,
+        draftId: presetRef.latestDraftId,
+        expectedRevision: draftRev,
         reviewNotes: reviewNotes || `Attached to ${targetRace.name}`,
       });
       setSelectedVersionId(ver.id);
@@ -1450,7 +1781,7 @@ export default function RouteStudioPanel({
         actorName: profile.displayName || profile.email,
         race: targetRace,
         distanceId: targetDistanceId,
-        presetId: activePreset.id,
+        presetId: presetRef.id,
         versionId: ver.id,
         checkpointLinks,
         overrideFreeze,
@@ -1531,7 +1862,7 @@ export default function RouteStudioPanel({
       actorName: profile.displayName || profile.email,
     });
     setStatusNotice(
-      `Weekly Sentinel-2 check finished: ${res.updatedCount} course(s) validated and updated (${res.skippedCount} skipped).`,
+      `Weekly imagery check finished: ${res.updatedCount} course(s) validated and updated (${res.skippedCount} skipped).`,
     );
   };
 
@@ -1561,6 +1892,53 @@ export default function RouteStudioPanel({
       (targetRace?.waveStartTimes && Object.keys(targetRace.waveStartTimes).length > 0),
   );
   const selectedDistanceObj = targetRace?.distances.find((d) => d.id === targetDistanceId);
+  const activeBoundPreset = currentBinding ? store.presets[currentBinding.presetId] : undefined;
+  const distLabel = selectedDistanceObj?.label || targetDistanceId || 'Distance';
+  const isEditingActiveConfig = Boolean(
+    currentPublication?.status === 'published' &&
+      currentBinding &&
+      activePreset &&
+      activePreset.id === currentBinding.presetId,
+  );
+
+  const buildDistanceOptions = (useAdvertisedLabel = false) => {
+    if (!targetRace) return [];
+    return targetRace.distances.map((d) => {
+      const binding = store.bindings[`${targetRace.id}_${d.id}`];
+      const pub = binding?.currentPublicationId
+        ? store.publications[binding.currentPublicationId]
+        : undefined;
+      const presetTitle = binding?.presetId ? store.presets[binding.presetId]?.title : undefined;
+      const label = useAdvertisedLabel
+        ? `${d.label} (Advertised ${d.km} km)`
+        : `${d.label} (${d.km} km)`;
+      if (pub?.status === 'published') {
+        return {
+          value: d.id,
+          label,
+          sublabel: `Active: ${presetTitle || 'Published course'} · v${pub.versionNumber}`,
+          badge: 'Active',
+          badgeTone: 'success' as const,
+          accentDot: '#10b981',
+        };
+      }
+      if (pub?.status === 'withdrawn') {
+        return {
+          value: d.id,
+          label,
+          sublabel: `Withdrawn · v${pub.versionNumber}`,
+          badge: 'Withdrawn',
+          badgeTone: 'warning' as const,
+          accentDot: '#f59e0b',
+        };
+      }
+      return {
+        value: d.id,
+        label,
+        sublabel: 'No active configuration',
+      };
+    });
+  };
 
   const latestGpsFix = gpsState.lastFix ?? (
     gpsState.acceptedPoints.length > 0
@@ -1568,13 +1946,14 @@ export default function RouteStudioPanel({
           latitude: gpsState.acceptedPoints[gpsState.acceptedPoints.length - 1].lat,
           longitude: gpsState.acceptedPoints[gpsState.acceptedPoints.length - 1].lon,
           accuracyM: gpsState.acceptedPoints[gpsState.acceptedPoints.length - 1].accuracyM,
+          headingDeg: undefined as number | undefined,
         }
       : null
   );
 
   if (allRaces.length === 0 || !targetRace) {
     return (
-      <section className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-6 space-y-3">
+      <section className="m-auto max-w-lg rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-6 space-y-3">
         <h1 className="text-xl sm:text-2xl font-semibold text-[var(--text-primary)]">
           Route Studio
         </h1>
@@ -1602,238 +1981,276 @@ export default function RouteStudioPanel({
   const maxGradePct = processedRoute.canonicalGeometry.isCanvasCleared
     ? 0
     : processedRoute.points.reduce((m, pt) => Math.max(m, Math.abs(pt.gradePct ?? 0)), 0);
-  const startDotVisible = !geometry.isStartPointRemoved;
+  const startDotVisible =
+    !geometry.isStartPointRemoved &&
+    !(geometry.isCanvasCleared && geometry.segments.length === 0);
   const isPanCurrentlyLocked = mapPanLocked || (drawMode !== 'view' && drawMode !== 'set-start');
 
   const studioContextualBar = (
-    <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2 space-y-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Map editor tools">
-          {(
-            [
-              ['view', 'Inspect'],
-              ['set-start', 'Start Point'],
-              ['paint', 'Paint Trail'],
-              ['draw', 'Draw Points'],
-              ['erase', 'Erase'],
-              ['edit', 'Edit vertices'],
-              ['place-marker', 'Place marker'],
-            ] as const
-          ).map(([mode, label]) => (
-            <button
-              key={mode}
-              type="button"
-              disabled={!canEditRoute && mode !== 'view'}
-              aria-pressed={drawMode === mode}
-              onClick={() => {
-                setDrawMode(mode);
-                if (mode === 'paint' || mode === 'draw' || mode === 'erase') {
-                  setTrailOption('draw');
-                }
-              }}
-              className={`min-h-10 rounded-xl border px-3 text-xs font-semibold disabled:opacity-45 disabled:cursor-not-allowed ${
-                drawMode === mode
-                  ? 'border-red-600 bg-red-700 text-white'
-                  : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600/50'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <div className="inline-flex items-center gap-1.5">
-            <label htmlFor="route-studio-color-mode" className="sr-only">
-              Map color layer
-            </label>
-            <Select
-              id="route-studio-color-mode"
-              aria-label="Map color layer"
-              value={colorMode}
-              onChange={(val) => setColorMode(val as MapColorMode)}
-              surface="inset"
-              size="sm"
-              className="w-auto min-w-[144px]"
-              triggerClassName="min-h-10 rounded-xl"
-              options={[
-                { value: 'default', label: 'Standard Route' },
-                { value: 'gradient', label: 'Slope Heatmap' },
-                { value: 'surface', label: 'Surface & Terrain' },
-              ]}
-            />
-          </div>
-          <button
-            type="button"
-            onClick={handleUndo}
-            disabled={undoStack.length === 0}
-            aria-label="Undo course edit"
-            className="inline-flex min-h-10 items-center gap-1 rounded-xl border border-[var(--border-default)] px-2.5 text-xs font-semibold disabled:opacity-40"
-          >
-            <Undo2 className="h-3.5 w-3.5" aria-hidden="true" />
-            Undo
-          </button>
-          <button
-            type="button"
-            onClick={handleRedo}
-            disabled={redoStack.length === 0}
-            aria-label="Redo course edit"
-            className="inline-flex min-h-10 items-center gap-1 rounded-xl border border-[var(--border-default)] px-2.5 text-xs font-semibold disabled:opacity-40"
-          >
-            <Redo2 className="h-3.5 w-3.5" aria-hidden="true" />
-            Redo
-          </button>
-          <button
-            type="button"
-            onClick={handleReverseCourse}
-            className="inline-flex min-h-10 items-center gap-1 rounded-xl border border-[var(--border-default)] px-2.5 text-xs font-semibold hover:border-red-600/50"
-          >
-            <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden="true" />
-            Reverse
-          </button>
-          <button
-            type="button"
-            onClick={handleClearCanvas}
-            aria-label="Clear canvas"
-            className="inline-flex min-h-10 items-center gap-1 rounded-xl border border-[var(--border-default)] px-2.5 text-xs font-semibold text-red-700 hover:border-red-600/50 dark:text-red-300"
-          >
-            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-            Clear
-          </button>
-          <button
-            type="button"
-            aria-pressed={studioFullscreen}
-            onClick={() => setStudioFullscreen((v) => !v)}
-            className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold ${
-              studioFullscreen
-                ? 'border-red-600 bg-red-700 text-white'
-                : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600/50'
-            }`}
-          >
-            {studioFullscreen ? (
-              <Minimize2 className="h-3.5 w-3.5" aria-hidden="true" />
-            ) : (
-              <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />
-            )}
-            {studioFullscreen ? 'Exit fullscreen' : 'Fullscreen editor'}
-          </button>
-        </div>
+    <div className="shrink-0 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+      <div className="flex flex-wrap items-center gap-2 font-mono tabular-nums">
+        <span className="font-semibold text-[var(--text-primary)]">
+          {isCanvasEmpty
+            ? '0.00 km (Empty)'
+            : processedRoute.canonicalGeometry.isCanvasCleared
+              ? '0.00 km (Start placed)'
+              : `${processedRoute.distanceKm.toFixed(2)} km`}
+        </span>
+        <span className="text-[var(--text-secondary)]">
+          +{Math.round(processedRoute.elevationGainM)}m / -{Math.round(processedRoute.elevationLossM)}m
+        </span>
+        <span className="hidden sm:inline text-[var(--text-secondary)]">
+          Max {maxGradePct.toFixed(1)}% · {processedRoute.validationReport.pointCount} pts · {markers.length} CPs
+        </span>
       </div>
 
-      {/* Contextual Photoshop Tool Options + Live Distance/Elevation HUD Strip */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border-default)] pt-2 text-xs">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-lg bg-[var(--surface-inset)] px-2 py-1 font-mono font-semibold text-[var(--text-primary)]">
-            {processedRoute.canonicalGeometry.isCanvasCleared
-              ? '0.00 km (Cleared)'
-              : `${processedRoute.distanceKm.toFixed(2)} km`}
-          </span>
-          <span className="rounded-lg bg-[var(--surface-inset)] px-2 py-1 font-mono text-[var(--text-secondary)]">
-            +{Math.round(processedRoute.elevationGainM)}m / -{Math.round(processedRoute.elevationLossM)}m
-          </span>
-          <span className="rounded-lg bg-[var(--surface-inset)] px-2 py-1 font-mono text-[var(--text-secondary)]">
-            Max grade {maxGradePct.toFixed(1)}% · {processedRoute.points.length} pts · {markers.length} markers
-          </span>
-        </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {drawMode === 'erase' && (
+          <div className="flex items-center gap-1" role="group" aria-label="Eraser radius presets">
+            {[15, 25, 50, 100].map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setEraseRadiusM(r)}
+                className={`min-h-8 rounded-lg border px-2 font-mono font-semibold ${
+                  eraseRadiusM === r
+                    ? 'border-red-600 bg-red-700 text-white'
+                    : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)]'
+                }`}
+              >
+                {r}m
+              </button>
+            ))}
+          </div>
+        )}
 
-        <div className="flex flex-wrap items-center gap-1.5">
-          {drawMode === 'erase' && (
-            <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Eraser radius presets">
-              <span className="text-[var(--text-secondary)]">Eraser radius:</span>
-              {[15, 25, 50, 100].map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => setEraseRadiusM(r)}
-                  className={`min-h-8 rounded-lg border px-2 font-mono font-semibold ${
-                    eraseRadiusM === r
-                      ? 'border-red-600 bg-red-700 text-white'
-                      : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)]'
-                  }`}
-                >
-                  {r}m
-                </button>
-              ))}
-            </div>
-          )}
+        {(drawMode === 'paint' || drawMode === 'draw') && (
+          <div className="flex items-center gap-1" role="group" aria-label="Paint step presets">
+            {[5, 12, 25].map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setPaintSpacingM(s)}
+                className={`min-h-8 rounded-lg border px-2 font-mono font-semibold ${
+                  paintSpacingM === s
+                    ? 'border-red-600 bg-red-700 text-white'
+                    : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)]'
+                }`}
+              >
+                {s}m
+              </button>
+            ))}
+            <span className="hidden xl:inline rounded-lg bg-[var(--surface-inset)] px-2 py-1 text-[var(--text-secondary)]">
+              {SURFACE_LABELS[activeSurfaceType]}
+            </span>
+          </div>
+        )}
 
-          {(drawMode === 'paint' || drawMode === 'draw') && (
-            <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Paint step presets">
-              <span className="text-[var(--text-secondary)]">Step:</span>
-              {[5, 12, 25].map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setPaintSpacingM(s)}
-                  className={`min-h-8 rounded-lg border px-2 font-mono font-semibold ${
-                    paintSpacingM === s
-                      ? 'border-red-600 bg-red-700 text-white'
-                      : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)]'
-                  }`}
-                >
-                  {s}m
-                </button>
-              ))}
-              <span className="ml-1 rounded-lg bg-[var(--surface-inset)] px-2 py-1 text-[var(--text-secondary)]">
-                {SURFACE_LABELS[activeSurfaceType]}
-              </span>
-            </div>
-          )}
-
-          {(drawMode === 'set-start' || geometry.isCanvasCleared) && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[var(--text-secondary)]">
-                {startDotVisible
-                  ? 'Click map or drag red dot to move start'
-                  : 'Click anywhere on map to place starting point'}
-              </span>
-              {startDotVisible && (
-                <button
-                  type="button"
-                  onClick={handleRemoveStartPoint}
-                  className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-red-500/40 bg-red-500/10 px-2 font-semibold text-red-700 hover:bg-red-500/20 dark:text-red-300"
-                >
-                  <Trash2 className="h-3 w-3" aria-hidden="true" />
-                  Remove start dot
-                </button>
-              )}
-            </div>
-          )}
-
+        {(drawMode === 'set-start' || geometry.isCanvasCleared) && startDotVisible && (
           <button
             type="button"
-            aria-pressed={isPanCurrentlyLocked}
-            onClick={() => setMapPanLocked((v) => !v)}
-            className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+            onClick={handleRemoveStartPoint}
+            className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-red-500/40 bg-red-500/10 px-2 font-semibold text-red-700 hover:bg-red-500/20 dark:text-red-300"
           >
-            {isPanCurrentlyLocked ? (
-              <Lock className="h-3 w-3 text-amber-600 dark:text-amber-400" aria-hidden="true" />
-            ) : (
-              <Unlock className="h-3 w-3" aria-hidden="true" />
-            )}
-            {isPanCurrentlyLocked ? 'Pan locked (Space = pan)' : 'Pan unlocked'}
+            <Trash2 className="h-3 w-3" aria-hidden="true" />
+            Remove start dot
           </button>
+        )}
+
+        <div className="inline-flex items-center">
+          <label htmlFor="route-studio-color-mode" className="sr-only">
+            Map color layer
+          </label>
+          <Select
+            id="route-studio-color-mode"
+            aria-label="Map color layer"
+            value={colorMode}
+            onChange={(val) => setColorMode(val as MapColorMode)}
+            surface="inset"
+            size="sm"
+            className="w-auto min-w-[126px]"
+            triggerClassName="min-h-8 rounded-lg text-xs"
+            options={[
+              { value: 'default', label: 'Standard Route' },
+              { value: 'gradient', label: 'Slope Heatmap' },
+              { value: 'surface', label: 'Surface & Terrain' },
+            ]}
+          />
         </div>
+
+        <button
+          type="button"
+          onClick={handleUndo}
+          disabled={undoStack.length === 0}
+          aria-label="Undo course edit"
+          title="Undo (Ctrl+Z)"
+          className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[var(--border-default)] px-2 font-semibold disabled:opacity-40"
+        >
+          <Undo2 className="h-3.5 w-3.5" aria-hidden="true" />
+          <span className="hidden xl:inline">Undo</span>
+        </button>
+        <button
+          type="button"
+          onClick={handleRedo}
+          disabled={redoStack.length === 0}
+          aria-label="Redo course edit"
+          title="Redo (Ctrl+Y)"
+          className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[var(--border-default)] px-2 font-semibold disabled:opacity-40"
+        >
+          <Redo2 className="h-3.5 w-3.5" aria-hidden="true" />
+          <span className="hidden xl:inline">Redo</span>
+        </button>
+        <button
+          type="button"
+          disabled={!hasRoutePath}
+          onClick={handleReverseCourse}
+          title="Reverse direction"
+          className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[var(--border-default)] px-2 font-semibold hover:border-red-600/50 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden="true" />
+          <span className="hidden xl:inline">Reverse</span>
+        </button>
+        <button
+          type="button"
+          aria-pressed={isPanCurrentlyLocked}
+          onClick={() => setMapPanLocked((v) => !v)}
+          className="hidden sm:inline-flex min-h-8 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2 font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+        >
+          {isPanCurrentlyLocked ? (
+            <Lock className="h-3 w-3 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+          ) : (
+            <Unlock className="h-3 w-3" aria-hidden="true" />
+          )}
+          {isPanCurrentlyLocked ? 'Pan lock' : 'Pan free'}
+        </button>
+        {latestGpsFix ? (
+          <button
+            type="button"
+            onClick={handleCenterOnGps}
+            aria-label="Center map on live GPS position"
+            title={`Center on GPS (${latestGpsFix.latitude.toFixed(5)}, ${latestGpsFix.longitude.toFixed(5)} · ±${Math.round(latestGpsFix.accuracyM)}m)`}
+            className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-red-500/50 bg-red-500/10 px-2 font-semibold text-red-700 hover:bg-red-500/20 dark:text-red-300"
+          >
+            <LocateFixed className="h-3 w-3" aria-hidden="true" />
+            <span className="hidden xl:inline">Center GPS</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handlePinpointMapCenter}
+            aria-label="Pinpoint GPS marker at map center"
+            title="Set your GPS pinpoint to the center of the current map view"
+            className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2 font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+          >
+            <MapPin className="h-3 w-3 text-red-600 dark:text-red-400" aria-hidden="true" />
+            <span className="hidden xl:inline">Pinpoint Center</span>
+          </button>
+        )}
       </div>
     </div>
   );
 
+  const activeConfigStatusControl =
+    currentPublication?.status === 'published' && currentBinding ? (
+      isEditingActiveConfig ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="inline-flex min-h-8 max-w-full items-center gap-1.5 rounded-lg border border-emerald-600/35 bg-emerald-50 px-2.5 text-xs font-semibold text-emerald-800 dark:border-emerald-400/40 dark:bg-emerald-950/60 dark:text-emerald-300"
+        >
+          <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+          <span className="truncate">
+            Active ({distLabel}): {activeBoundPreset?.title || activePreset?.title || 'Published course'} · v
+            {currentPublication.versionNumber}
+            {dirty ? ' · Unsaved edits' : ''}
+          </span>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setSelectedPresetId(currentBinding.presetId)}
+          title="Switch editor to the active published configuration"
+          className="inline-flex min-h-8 max-w-full items-center gap-1.5 rounded-lg border border-emerald-600/40 bg-emerald-50 px-2.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-400/40 dark:bg-emerald-950/60 dark:text-emerald-300 dark:hover:bg-emerald-950/80"
+        >
+          <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+          <span className="truncate">
+            Active ({distLabel}): {activeBoundPreset?.title || 'Published course'} · v
+            {currentPublication.versionNumber}
+          </span>
+          <span className="shrink-0 underline underline-offset-2">View active</span>
+        </button>
+      )
+    ) : currentPublication?.status === 'withdrawn' ? (
+      <button
+        type="button"
+        onClick={() => setActiveTab('publish')}
+        className="inline-flex min-h-8 max-w-full items-center gap-1.5 rounded-lg border border-amber-600/35 bg-amber-50 px-2.5 text-xs font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-400/40 dark:bg-amber-950/60 dark:text-amber-300 dark:hover:bg-amber-950/80"
+      >
+        <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+        <span className="truncate">
+          {distLabel} withdrawn · v{currentPublication.versionNumber}
+        </span>
+      </button>
+    ) : (
+      <button
+        type="button"
+        onClick={() => setActiveTab('publish')}
+        className="inline-flex min-h-8 max-w-full items-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 text-xs font-semibold text-[var(--text-secondary)] hover:border-red-600/50 hover:text-[var(--text-primary)]"
+      >
+        <span className="h-2 w-2 rounded-full bg-zinc-400 dark:bg-zinc-500 shrink-0" aria-hidden="true" />
+        <span className="truncate">
+          No active configuration for {distLabel}
+        </span>
+      </button>
+    );
+
   return (
-    <div className="space-y-3">
-      {/* Compact Top Studio Command Bar */}
-      <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-3">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-semibold text-[var(--text-primary)]">
+    <div className="flex flex-1 min-h-0 flex-col overflow-hidden bg-[var(--surface-page)]">
+      {/* Portal concise Route Studio context into App.tsx header when rendered standalone */}
+      {onBackHome &&
+        headerCtx?.leftSlotEl &&
+        createPortal(
+          <div className="flex min-w-0 items-center gap-2">
+            <h1 className="truncate text-sm sm:text-base font-semibold tracking-tight text-white">
               Route Studio
             </h1>
-            <p className="text-xs text-[var(--text-secondary)]">
-              Linked to existing races: record GPS surveys, paint trails with terrain tags, and publish immutable race versions.
-            </p>
-          </div>
+            <span className="hidden md:inline truncate text-xs text-zinc-300">
+              {targetRace.name}
+            </span>
+          </div>,
+          headerCtx.leftSlotEl,
+        )}
 
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)]">
-              <label htmlFor="route-studio-race-select" className="sr-only">Select existing race</label>
+      {onBackHome &&
+        headerCtx?.rightSlotEl &&
+        onNavigateUrl &&
+        createPortal(
+          <a
+            href="/routes"
+            onClick={(e) => {
+              e.preventDefault();
+              onNavigateUrl('/routes');
+            }}
+            className="inline-flex min-h-9 items-center rounded-lg border border-white/15 bg-white/10 px-2.5 text-xs font-semibold text-white hover:border-red-400/60"
+          >
+            Public Explorer
+          </a>,
+          headerCtx.rightSlotEl,
+        )}
+
+      {/* Compact Top Studio Command Bar & Slim Section Tabs */}
+      <div className="shrink-0 border-b border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 py-1.5 space-y-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+            {!onBackHome && (
+              <h1 className="mr-1 text-sm sm:text-base font-semibold text-[var(--text-primary)]">
+                Route Studio
+              </h1>
+            )}
+            <div className="inline-flex items-center">
+              <label htmlFor="route-studio-race-select" className="sr-only">
+                Select existing race
+              </label>
               <Select
                 id="route-studio-race-select"
                 aria-label="Select existing race"
@@ -1842,72 +2259,103 @@ export default function RouteStudioPanel({
                 searchable={allRaces.length >= 6}
                 searchPlaceholder="Filter existing races..."
                 surface="inset"
-                size="md"
-                className="w-auto min-w-[180px]"
-                triggerClassName="text-xs"
+                size="sm"
+                className="w-auto min-w-[150px] sm:min-w-[180px]"
+                triggerClassName="min-h-9 text-xs"
                 options={allRaces.map((r) => ({
                   value: r.id,
                   label: `${r.name} (${r.date})`,
                 }))}
               />
             </div>
-            <div className="inline-flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)]">
-              <label htmlFor="route-studio-distance-select" className="sr-only">Select race distance</label>
+            <div className="inline-flex items-center">
+              <label htmlFor="route-studio-distance-select" className="sr-only">
+                Select race distance
+              </label>
               <Select
                 id="route-studio-distance-select"
                 aria-label="Select race distance"
                 value={targetDistanceId}
                 onChange={setTargetDistanceId}
                 surface="inset"
-                size="md"
-                className="w-auto min-w-[130px]"
-                triggerClassName="text-xs"
-                options={targetRace.distances.map((d) => ({
-                  value: d.id,
-                  label: `${d.label} (${d.km} km)`,
-                }))}
+                size="sm"
+                className="w-auto min-w-[115px]"
+                minMenuWidth={240}
+                triggerClassName="min-h-9 text-xs"
+                options={buildDistanceOptions(false)}
               />
             </div>
-            <div className="inline-flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)]">
-              <label htmlFor="route-studio-preset-select" className="sr-only">Select route preset</label>
+            <div className="inline-flex items-center max-w-full">
+              <label htmlFor="route-studio-preset-select" className="sr-only">
+                Select route preset
+              </label>
               <Select
                 id="route-studio-preset-select"
                 aria-label="Select route preset"
                 value={selectedPresetId}
-                onChange={setSelectedPresetId}
+                onChange={(val) => {
+                  if (!val) {
+                    resetWorkspaceToEmpty();
+                  } else {
+                    setSelectedPresetId(val);
+                  }
+                }}
                 searchable={presetList.length >= 6}
                 searchPlaceholder="Filter route presets..."
                 surface="inset"
-                size="md"
-                className="w-auto min-w-[200px]"
-                triggerClassName="text-xs"
-                options={
-                  presetList.length > 0
-                    ? presetList.map((p) => ({
-                        value: p.id,
-                        label: `${p.title} ${p.archived ? '(Archived)' : `(v${p.latestVersionNumber})`}`,
-                      }))
-                    : [{ value: '', label: `${targetRace.name} Course Draft` }]
-                }
+                size="sm"
+                className="w-auto min-w-[190px] max-w-[300px]"
+                minMenuWidth={320}
+                triggerClassName="min-h-9 text-xs"
+                options={[
+                  ...(!selectedPresetId || presetList.length === 0
+                    ? [
+                        {
+                          value: '',
+                          label: 'Unconfigured (Empty)',
+                          sublabel: 'No route configuration selected',
+                          badge: 'Not active',
+                          badgeTone: 'neutral' as const,
+                        },
+                      ]
+                    : []),
+                  ...presetList.map((p) => {
+                    const cfg = describePresetConfigStatus(p, store, targetRace.id, targetDistanceId);
+                    return {
+                      value: p.id,
+                      label: p.title,
+                      sublabel: cfg.sublabel,
+                      badge: cfg.badge,
+                      badgeTone: cfg.badgeTone,
+                      accentDot: cfg.accentDot,
+                    };
+                  }),
+                ]}
               />
             </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
               hidden={!canCreateRoute}
               onClick={handleNewPreset}
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+              title="New variant"
+              className="hidden md:inline-flex min-h-9 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
             >
-              <Plus className="h-4 w-4" aria-hidden="true" />
-              New variant
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              New
             </button>
             <button
               type="button"
               hidden={!canCreateRoute}
+              disabled={!activePreset}
               onClick={handleDuplicatePreset}
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+              title="Duplicate"
+              className="hidden md:inline-flex min-h-9 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50 disabled:opacity-45 disabled:cursor-not-allowed"
             >
-              <Copy className="h-4 w-4" aria-hidden="true" />
-              Duplicate
+              <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+              Dup
             </button>
             {activePreset && (
               <button
@@ -1921,9 +2369,10 @@ export default function RouteStudioPanel({
                     archived: !activePreset.archived,
                   })
                 }
-                className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+                title={activePreset.archived ? 'Restore' : 'Archive'}
+                className="hidden xl:inline-flex min-h-9 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
               >
-                <Archive className="h-4 w-4" aria-hidden="true" />
+                <Archive className="h-3.5 w-3.5" aria-hidden="true" />
                 {activePreset.archived ? 'Restore' : 'Archive'}
               </button>
             )}
@@ -1931,67 +2380,81 @@ export default function RouteStudioPanel({
               type="button"
               disabled={!canEditRoute}
               onClick={handleSaveDraft}
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-4 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50 disabled:opacity-45 disabled:cursor-not-allowed"
+              className="hidden sm:inline-flex min-h-9 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50 disabled:opacity-45 disabled:cursor-not-allowed"
             >
-              <Save className="h-4 w-4" aria-hidden="true" />
-              Save draft {dirty ? '*' : ''}
+              <Save className="h-3.5 w-3.5" aria-hidden="true" />
+              Save {dirty ? '*' : ''}
             </button>
             <button
               type="button"
               disabled={!canPublishRoute || !canAssignRoute}
               onClick={handleQuickAttachAndPublish}
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-red-700 px-4 text-xs font-semibold text-white hover:bg-red-600 disabled:opacity-45 disabled:cursor-not-allowed"
+              className="inline-flex min-h-9 items-center gap-1 rounded-lg bg-red-700 px-3 text-xs font-semibold text-white hover:bg-red-600 disabled:opacity-45 disabled:cursor-not-allowed"
             >
-              <Flag className="h-4 w-4" aria-hidden="true" />
-              Attach &amp; Publish to Event
+              <Flag className="h-3.5 w-3.5" aria-hidden="true" />
+              Attach &amp; Publish
             </button>
           </div>
         </div>
 
-        {/* Section Bar (wraps cleanly across phone, tablet, and desktop widths) */}
-        <div
-          role="tablist"
-          aria-label="Route Studio sections"
-          className="mt-4 flex flex-wrap gap-2 border-t border-[var(--border-default)] pt-3"
-        >
-          {(
-            [
-              ['course', 'Course, GPS & Paint', Layers],
-              ['markers', 'Checkpoints', MapPin],
-              ['photos', 'Photo Landmarks', Camera],
-              ['analytics', 'Race Intelligence', Activity],
-              ['versions', 'Versions', History],
-              ['publish', 'Publish & Bind', Flag],
-            ] as const
-          ).map(([id, label, Icon]) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={activeTab === id}
-              onClick={() => setActiveTab(id)}
-              className={`inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl border px-3 text-xs font-semibold transition ${
-                activeTab === id
-                  ? 'border-red-600 bg-red-700 text-white'
-                  : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600/50'
-              }`}
-            >
-              <Icon className="h-4 w-4" aria-hidden="true" />
-              {label}
-            </button>
-          ))}
+        {/* Desktop Slim Section Tabs Bar & Persistent Active Configuration Bar */}
+        <div className="hidden lg:flex items-center justify-between gap-2 border-t border-[var(--border-default)] pt-1.5">
+          <div
+            role="tablist"
+            aria-label="Route Studio sections"
+            className="flex items-center gap-1.5 overflow-x-auto"
+          >
+            {(
+              [
+                ['course', 'Course, GPS & Paint', Layers],
+                ['markers', 'Checkpoints', MapPin],
+                ['photos', 'Photo Landmarks', Camera],
+                ['analytics', 'Race Intelligence', Activity],
+                ['versions', 'Versions', History],
+                ['publish', 'Publish & Bind', Flag],
+              ] as const
+            ).map(([id, label, Icon]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === id}
+                onClick={() => setActiveTab(id)}
+                className={`inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition ${
+                  activeTab === id
+                    ? 'border-red-600 bg-red-700 text-white'
+                    : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600/50'
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="shrink-0 min-w-0 max-w-[340px]">
+            {activeConfigStatusControl}
+          </div>
+        </div>
+        <div className="flex lg:hidden items-center justify-between gap-2 border-t border-[var(--border-default)] pt-1.5">
+          {activeConfigStatusControl}
         </div>
       </div>
 
       {statusNotice && (
-        <div role="status" className="flex items-center gap-2 rounded-xl border border-emerald-500/35 bg-emerald-500/10 px-4 py-2.5 text-xs font-semibold text-emerald-800 dark:text-emerald-300">
+        <div
+          role="status"
+          className="shrink-0 mx-2 mt-1.5 flex items-center gap-2 rounded-xl border border-emerald-500/35 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-300"
+        >
           <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-          <span>{statusNotice}</span>
+          <span className="truncate">{statusNotice}</span>
         </div>
       )}
 
       {errorNotice && (
-        <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-2.5 text-xs font-semibold text-red-700 dark:text-red-300">
+        <div
+          role="alert"
+          className="shrink-0 mx-2 mt-1.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-700 dark:text-red-300"
+        >
           <span className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
             {errorNotice}
@@ -1999,24 +2462,24 @@ export default function RouteStudioPanel({
           <button
             type="button"
             onClick={handleReloadLatestDraft}
-            className="min-h-9 rounded-lg border border-red-500/40 px-2.5 font-semibold hover:bg-red-500/10"
+            className="min-h-8 rounded-lg border border-red-500/40 px-2.5 font-semibold hover:bg-red-500/10"
           >
             Reload latest draft
           </button>
         </div>
       )}
 
-      {/* Synchronized Photoshop-Style Workspace visible in Course, Markers, Photos, Analytics tabs */}
+      {/* Synchronized Workspace visible in Course, Checkpoints, Photos, Intelligence tabs */}
       {activeTab !== 'versions' && activeTab !== 'publish' && selection && (
-        <div className="grid grid-cols-1 gap-3 xl:grid-cols-12 xl:items-start">
-          <div className="space-y-2.5 xl:col-span-8">
+        <div className="flex flex-1 min-h-0 flex-col lg:grid lg:grid-cols-[minmax(0,64%)_36%] lg:overflow-hidden">
+          <div className="flex flex-1 min-h-0 flex-col gap-1.5 p-2 lg:overflow-hidden">
             {studioContextualBar}
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
-              {/* Vertical Photoshop Left Tool Rail */}
+            <div className="flex flex-1 min-h-0 flex-col gap-1.5 sm:flex-row">
+              {/* Vertical Quick Trail Tool Rail */}
               <aside
                 aria-label="Quick trail tool dock"
-                className="flex flex-row flex-wrap items-center justify-start gap-1 rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-1.5 sm:w-13 sm:flex-col sm:flex-nowrap"
+                className="flex flex-row sm:w-12 shrink-0 items-center justify-start gap-1 overflow-x-auto sm:flex-col sm:overflow-y-auto rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] p-1"
               >
                 {(
                   [
@@ -2041,7 +2504,7 @@ export default function RouteStudioPanel({
                         setTrailOption('draw');
                       }
                     }}
-                    className={`flex min-h-10 min-w-10 items-center justify-center rounded-xl border transition ${
+                    className={`flex min-h-11 min-w-11 lg:min-h-9 lg:min-w-9 shrink-0 items-center justify-center rounded-lg border transition ${
                       drawMode === mode
                         ? 'border-red-600 bg-red-700 text-white'
                         : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600/50'
@@ -2050,13 +2513,27 @@ export default function RouteStudioPanel({
                     <Icon className="h-4 w-4" aria-hidden="true" />
                   </button>
                 ))}
+                <button
+                  type="button"
+                  aria-label="Tool shortcut: Center map on GPS"
+                  title={latestGpsFix ? `Center on GPS (${latestGpsFix.latitude.toFixed(5)}, ${latestGpsFix.longitude.toFixed(5)})` : 'Center on GPS (Start GPS first)'}
+                  onClick={handleCenterOnGps}
+                  className={`flex min-h-11 min-w-11 lg:min-h-9 lg:min-w-9 shrink-0 items-center justify-center rounded-lg border transition ${
+                    latestGpsFix
+                      ? 'border-red-600 bg-red-700 text-white hover:bg-red-600'
+                      : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600/50'
+                  }`}
+                >
+                  <LocateFixed className="h-4 w-4" aria-hidden="true" />
+                </button>
                 <div className="hidden sm:block my-0.5 h-px w-7 bg-[var(--border-default)]" />
                 <button
                   type="button"
                   aria-label="Tool shortcut: Clear canvas"
                   title="Clear course canvas"
+                  disabled={isCanvasEmpty && markers.length === 0 && Boolean(geometry.isStartPointRemoved)}
                   onClick={handleClearCanvas}
-                  className="flex min-h-10 min-w-10 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] text-red-700 hover:border-red-600/50 dark:text-red-300"
+                  className="flex min-h-11 min-w-11 lg:min-h-9 lg:min-w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] text-red-700 hover:border-red-600/50 dark:text-red-300 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Trash2 className="h-4 w-4" aria-hidden="true" />
                 </button>
@@ -2065,16 +2542,17 @@ export default function RouteStudioPanel({
                   aria-label="Tool shortcut: Fullscreen editor"
                   title="Fullscreen editor (F)"
                   onClick={() => setStudioFullscreen((v) => !v)}
-                  className="flex min-h-10 min-w-10 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600/50"
+                  className="flex min-h-11 min-w-11 lg:min-h-9 lg:min-w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600/50"
                 >
                   <Maximize2 className="h-4 w-4" aria-hidden="true" />
                 </button>
               </aside>
 
-              <div className="min-w-0 flex-1">
-                <RouteMapCanvas
+              <div className="relative min-w-0 flex-1 min-h-[240px]">
+                <div className="absolute inset-0">
+                  <RouteMapCanvas
                   route={processedRoute}
-                  routeIdentityKey={`${targetRace.id}:${targetDistanceId}:${selectedPresetId}`}
+                  routeIdentityKey={`${targetRace.id}:${targetDistanceId}:${selectedPresetId || 'empty'}:${importFitNonce}`}
                   markers={markers}
                   selection={selection}
                   selectedMarkerId={selectedMarkerId}
@@ -2089,16 +2567,29 @@ export default function RouteStudioPanel({
                   isFullscreen={studioFullscreen}
                   onToggleFullscreen={() => setStudioFullscreen((v) => !v)}
                   studioOverlaySlot={studioContextualBar}
+                  hideHud
+                  flyToTrigger={flyToTrigger}
+                  locateStatus={gpsState.status === 'tracking' ? 'active' : 'idle'}
+                  onLocateMe={handleStartGpsTracking}
+                  onCenterOnUser={handleCenterOnGps}
+                  onCameraMove={(lat, lon) => {
+                    currentMapCenterRef.current = { lat, lon };
+                  }}
                   gpsLivePosition={
                     latestGpsFix
                       ? {
                           lat: latestGpsFix.latitude,
                           lon: latestGpsFix.longitude,
                           accuracyM: latestGpsFix.accuracyM,
+                          headingDeg: latestGpsFix.headingDeg ?? null,
                         }
                       : null
                   }
-                  heightClassName="h-[440px] lg:h-[520px]"
+                  gpsBreadcrumbPoints={gpsState.acceptedPoints.map((pt) => ({
+                    lat: pt.lat,
+                    lon: pt.lon,
+                  }))}
+                  heightClassName="h-full"
                   onSelectChainage={handleSelectChainageWithCursor}
                   onSelectMarker={(m) => {
                     setSelectedMarkerId(m.id);
@@ -2107,7 +2598,9 @@ export default function RouteStudioPanel({
                   onMapClickCoordinate={(lat, lon, proj) => {
                     if (drawMode === 'place-marker') {
                       handleAddMarkerAtSelection(lat, lon, activeTab === 'photos' ? 'landmark' : 'aid');
-                    } else if (!geometry.isCanvasCleared) {
+                    } else if (trailOption === 'gps' && gpsState.status === 'tracking') {
+                      handleSetGpsLocation(lat, lon);
+                    } else if (hasRoutePath) {
                       handleSelectChainageWithCursor(proj.chainageM, proj.passNumber);
                     }
                   }}
@@ -2133,21 +2626,84 @@ export default function RouteStudioPanel({
                     pushHistory(nextGeom, reanchorMarkersForRoute(reprocessed, markers));
                   }}
                 />
+                </div>
               </div>
             </div>
 
-            <RouteElevationProfile
-              route={processedRoute}
-              selectedChainageM={selection.chainageM}
-              onSelectChainage={handleSelectChainageWithCursor}
-              markers={markers}
-              selectedMarkerId={selectedMarkerId}
-              onSelectMarker={(m) => setSelectedMarkerId(m.id)}
-            />
+            <div className="hidden sm:block shrink-0">
+              <RouteElevationProfile
+                route={processedRoute}
+                selectedChainageM={selection.chainageM}
+                onSelectChainage={handleSelectChainageWithCursor}
+                markers={markers}
+                selectedMarkerId={selectedMarkerId}
+                onSelectMarker={(m) => setSelectedMarkerId(m.id)}
+                compact
+              />
+            </div>
           </div>
 
-          {/* Right Photoshop Inspector Rail for Course / Markers / Photos / Intelligence */}
-          <div className="space-y-3 xl:col-span-4 xl:max-h-[820px] xl:overflow-y-auto xl:pr-1">
+          {/* Right Inspector Rail (Desktop docked side pane; Mobile overlay sheet when toggled) */}
+          <aside
+            aria-label="Route Studio inspector"
+            className={
+              mobileInspectorOpen
+                ? 'fixed inset-0 z-50 flex flex-col bg-[var(--surface-card)] p-3 lg:static lg:inset-auto lg:z-auto lg:min-h-0 lg:border-l lg:border-[var(--border-default)] lg:p-0'
+                : 'hidden lg:flex lg:min-h-0 lg:flex-col lg:border-l lg:border-[var(--border-default)] lg:bg-[var(--surface-card)]'
+            }
+          >
+            <div className="lg:hidden shrink-0 mb-2 space-y-2 border-b border-[var(--border-default)] pb-2">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-base font-semibold text-[var(--text-primary)]">
+                  Studio Inspector
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setMobileInspectorOpen(false)}
+                  aria-label="Close studio inspector"
+                  className="flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-[var(--border-default)]"
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Mobile studio tabs">
+                {(
+                  [
+                    ['course', 'Course & GPS'],
+                    ['markers', 'Checkpoints'],
+                    ['photos', 'Photos'],
+                    ['analytics', 'Intel'],
+                    ['versions', 'Versions'],
+                    ['publish', 'Publish'],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === id}
+                    onClick={() => {
+                      setActiveTab(id);
+                      if (id === 'versions' || id === 'publish') {
+                        setMobileInspectorOpen(false);
+                      }
+                    }}
+                    className={`min-h-10 rounded-lg border px-2.5 text-xs font-semibold ${
+                      activeTab === id
+                        ? 'border-red-600 bg-red-700 text-white'
+                        : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div
+              className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3"
+              style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 420px' }}
+            >
             {activeTab === 'course' && (
               <section className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-3.5 space-y-3">
                 <h2 className="text-sm sm:text-base font-semibold text-[var(--text-primary)]">
@@ -2164,6 +2720,7 @@ export default function RouteStudioPanel({
                         setDraftTitle(e.target.value);
                         setDirty(true);
                       }}
+                      placeholder={`${targetRace.name} (${selectedDistanceObj?.label || targetDistanceId || 'Course'})`}
                       className="mt-1 min-h-11 w-full rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-sm text-[var(--text-primary)]"
                     />
                   </label>
@@ -2176,6 +2733,7 @@ export default function RouteStudioPanel({
                         setDraftRegion(e.target.value);
                         setDirty(true);
                       }}
+                      placeholder="e.g., Luzon, Visayas, or Mindanao"
                       className="mt-1 min-h-11 w-full rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-sm text-[var(--text-primary)]"
                     />
                   </label>
@@ -2383,6 +2941,24 @@ export default function RouteStudioPanel({
                         )}
                         <button
                           type="button"
+                          onClick={handleCenterOnGps}
+                          className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+                          title={latestGpsFix ? `Center map on your GPS coordinates (${latestGpsFix.latitude.toFixed(5)}, ${latestGpsFix.longitude.toFixed(5)})` : 'Center map on GPS location'}
+                        >
+                          <LocateFixed className="h-3.5 w-3.5 text-red-600 dark:text-red-400" aria-hidden="true" />
+                          Center on GPS
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handlePinpointMapCenter}
+                          className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+                          title="Pinpoint your live spot at the current center of the map"
+                        >
+                          <MapPin className="h-3.5 w-3.5 text-red-600 dark:text-red-400" aria-hidden="true" />
+                          Pinpoint Map Center
+                        </button>
+                        <button
+                          type="button"
                           onClick={handleSimulateGpsWalk}
                           className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
                         >
@@ -2440,35 +3016,6 @@ export default function RouteStudioPanel({
 
                   {trailOption === 'draw' && (
                     <div className="space-y-3 border-t border-[var(--border-default)] pt-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          aria-pressed={drawMode === 'paint'}
-                          onClick={() => setDrawMode(drawMode === 'paint' ? 'view' : 'paint')}
-                          className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold ${
-                            drawMode === 'paint'
-                              ? 'border-red-600 bg-red-700 text-white'
-                              : 'border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)]'
-                          }`}
-                        >
-                          <Paintbrush className="h-3.5 w-3.5" aria-hidden="true" />
-                          {drawMode === 'paint' ? 'Painting on map (drag)' : 'Paintbrush on map'}
-                        </button>
-                        <button
-                          type="button"
-                          aria-pressed={drawMode === 'erase'}
-                          onClick={() => setDrawMode(drawMode === 'erase' ? 'view' : 'erase')}
-                          className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold ${
-                            drawMode === 'erase'
-                              ? 'border-red-600 bg-red-700 text-white'
-                              : 'border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)]'
-                          }`}
-                        >
-                          <Eraser className="h-3.5 w-3.5" aria-hidden="true" />
-                          {drawMode === 'erase' ? 'Erasing on map' : 'Eraser brush'}
-                        </button>
-                      </div>
-
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                         <div className="space-y-1">
                           <label htmlFor="route-studio-brush-spacing" className="block text-xs text-[var(--text-secondary)]">
@@ -2555,6 +3102,7 @@ export default function RouteStudioPanel({
                             type="text"
                             value={rangeFromKm}
                             onChange={(e) => setRangeFromKm(e.target.value)}
+                            placeholder="0.0"
                             className="mt-1 min-h-9 w-full rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2 text-xs text-[var(--text-primary)]"
                           />
                         </label>
@@ -2564,6 +3112,7 @@ export default function RouteStudioPanel({
                             type="text"
                             value={rangeToKm}
                             onChange={(e) => setRangeToKm(e.target.value)}
+                            placeholder="2.0"
                             className="mt-1 min-h-9 w-full rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2 text-xs text-[var(--text-primary)]"
                           />
                         </label>
@@ -2631,6 +3180,7 @@ export default function RouteStudioPanel({
                         type="text"
                         value={coordLat}
                         onChange={(e) => setCoordLat(e.target.value)}
+                        placeholder="e.g., 14.5995"
                         className="mt-1 min-h-10 w-full rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2 text-xs text-[var(--text-primary)]"
                       />
                     </label>
@@ -2640,6 +3190,7 @@ export default function RouteStudioPanel({
                         type="text"
                         value={coordLon}
                         onChange={(e) => setCoordLon(e.target.value)}
+                        placeholder="e.g., 120.9842"
                         className="mt-1 min-h-10 w-full rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2 text-xs text-[var(--text-primary)]"
                       />
                     </label>
@@ -2676,10 +3227,16 @@ export default function RouteStudioPanel({
                   <p className="text-[var(--text-secondary)]">
                     Distance: <strong className="text-[var(--text-primary)]">{processedRoute.distanceKm.toFixed(2)} km</strong> ·{' '}
                     Segments: <strong className="text-[var(--text-primary)]">{processedRoute.canonicalSegments.length}</strong> ·{' '}
-                    Points: <strong className="text-[var(--text-primary)]">{processedRoute.points.length}</strong>
+                    Points: <strong className="text-[var(--text-primary)]">{processedRoute.validationReport.pointCount}</strong>
                   </p>
                   <p className="text-[var(--text-secondary)]">
-                    Elevation: {processedRoute.elevationProvenance.source.toUpperCase()} ({processedRoute.elevationProvenance.coveragePct}% coverage, {processedRoute.elevationProvenance.algorithmVersion})
+                    {isCanvasEmpty || processedRoute.canonicalGeometry.isCanvasCleared
+                      ? 'Elevation: Not calculated yet (draw or import a route)'
+                      : `Elevation: ${processedRoute.elevationProvenance.coveragePct}% verified (${
+                          processedRoute.elevationProvenance.source === 'gpx'
+                            ? 'track elevation'
+                            : 'terrain relief'
+                        })`}
                   </p>
                   {processedRoute.validationReport.warnings.map((warn, idx) => (
                     <p key={idx} className="text-amber-700 dark:text-amber-300">
@@ -2697,13 +3254,6 @@ export default function RouteStudioPanel({
                         className="mt-1 min-h-10 w-full rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 text-xs text-[var(--text-primary)]"
                       />
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => setExpectedRevision((r) => Math.max(0, r - 1))}
-                      className="mt-5 min-h-10 rounded-lg border border-[var(--border-default)] px-2.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                    >
-                      Simulate stale revision
-                    </button>
                   </div>
                 </div>
               </section>
@@ -3077,13 +3627,19 @@ export default function RouteStudioPanel({
               <section className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-4 space-y-4">
                 <div>
                   <h2 className="text-sm sm:text-base font-semibold text-[var(--text-primary)]">
-                    Strava Metrics & Race-Day Intelligence
+                    Course Metrics & Race-Day Intelligence
                   </h2>
                   <p className="text-xs text-[var(--text-secondary)]">
                     Deterministic climb grading, pack congestion screening, cutoff margin checks, and gear advisories computed from your active course geometry.
                   </p>
                 </div>
 
+                {!hasRoutePath ? (
+                  <div className="rounded-xl border border-dashed border-[var(--border-default)] bg-[var(--surface-inset)] p-4 text-xs text-[var(--text-secondary)]">
+                    No route configured yet. Paint a trail, draw points, record GPS, or import a GPX file to compute climbs, grade splits, and gear recommendations.
+                  </div>
+                ) : (
+                  <>
                 <div className="grid grid-cols-3 gap-2 text-xs">
                   <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-2.5">
                     <span className="text-[var(--text-secondary)]">Difficulty Index</span>
@@ -3108,7 +3664,7 @@ export default function RouteStudioPanel({
                 {/* Categorized Climbs */}
                 <div className="space-y-2">
                   <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
-                    Categorized Climbs (Strava-Class)
+                    Categorized Climbs
                   </h3>
                   {analyticsBundle.climbs.length === 0 ? (
                     <p className="text-xs text-[var(--text-secondary)]">
@@ -3177,10 +3733,10 @@ export default function RouteStudioPanel({
                   </div>
                 </div>
 
-                {/* Pack Bottleneck Screening (Beyond Strava) */}
+                {/* Pack Bottleneck Screening */}
                 <div className="space-y-2 text-xs">
                   <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
-                    Pack Bottleneck Hotspots (Beyond Strava)
+                    Pack Bottleneck Hotspots
                   </h3>
                   {analyticsBundle.bottlenecks.length === 0 ? (
                     <p className="text-xs text-emerald-700 dark:text-emerald-400">
@@ -3224,12 +3780,26 @@ export default function RouteStudioPanel({
                     </p>
                   ))}
                 </div>
+                  </>
+                )}
               </section>
             )}
-          </div>
+            </div>
+          </aside>
         </div>
       )}
 
+      {(activeTab === 'versions' || activeTab === 'publish') && (
+        <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-4">
+          <div className="flex lg:hidden items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveTab('course')}
+              className="min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-[var(--text-primary)]"
+            >
+              Back to Map &amp; Tools
+            </button>
+          </div>
       {/* Versions Tab */}
       {activeTab === 'versions' && (
         <section className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-5 space-y-4">
@@ -3269,20 +3839,40 @@ export default function RouteStudioPanel({
             ) : (
               presetVersions.map((ver) => {
                 const usedIn = Object.values(store.bindings).filter((b) => b.versionId === ver.id);
+                const liveUsedIn = usedIn.filter(
+                  (b) =>
+                    Boolean(b.currentPublicationId) &&
+                    store.publications[b.currentPublicationId!]?.status === 'published',
+                );
+                const isActiveForSelectedDist =
+                  currentBinding?.versionId === ver.id && currentPublication?.status === 'published';
                 return (
                   <div
                     key={ver.id}
                     className="flex flex-col justify-between gap-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-4 sm:flex-row sm:items-center"
                   >
                     <div className="space-y-1">
-                      <p className="text-sm font-semibold text-[var(--text-primary)]">
-                        Version {ver.versionNumber}: {ver.title}
-                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold text-[var(--text-primary)]">
+                          Version {ver.versionNumber}: {ver.title}
+                        </p>
+                        {isActiveForSelectedDist && (
+                          <span className="inline-flex items-center gap-1 rounded-md border border-emerald-600/35 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800 dark:border-emerald-400/40 dark:bg-emerald-950/70 dark:text-emerald-300">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+                            Active on {distLabel}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-[var(--text-secondary)]">
                         {(ver.distanceM / 1000).toFixed(2)} km · +{Math.round(ver.elevationGainM)} m · Hash {ver.geometryHash}
                       </p>
                       <p className="text-xs text-[var(--text-secondary)]">
-                        Notes: {ver.reviewNotes} · Used by {usedIn.length} race distance(s)
+                        Notes: {ver.reviewNotes} ·{' '}
+                        {liveUsedIn.length > 0
+                          ? `Active on ${liveUsedIn.map((b) => b.distanceLabel).join(', ')}`
+                          : usedIn.length > 0
+                            ? `Bound (not live): ${usedIn.map((b) => b.distanceLabel).join(', ')}`
+                            : 'Not currently bound'}
                       </p>
                     </div>
                     <button
@@ -3338,10 +3928,7 @@ export default function RouteStudioPanel({
                   surface="inset"
                   size="md"
                   triggerClassName="font-normal"
-                  options={targetRace.distances.map((d) => ({
-                    value: d.id,
-                    label: `${d.label} (Advertised ${d.km} km)`,
-                  }))}
+                  options={buildDistanceOptions(true)}
                 />
               </div>
               <div className="text-xs font-semibold text-[var(--text-secondary)] space-y-1">
@@ -3356,16 +3943,28 @@ export default function RouteStudioPanel({
                   options={
                     presetVersions.length === 0
                       ? [{ value: '', label: 'Create a version first' }]
-                      : presetVersions.map((v) => ({
-                          value: v.id,
-                          label: `v${v.versionNumber} (${(v.distanceM / 1000).toFixed(2)} km measured)`,
-                        }))
+                      : presetVersions.map((v) => {
+                          const isLiveVersion =
+                            currentBinding?.versionId === v.id &&
+                            currentPublication?.status === 'published';
+                          return {
+                            value: v.id,
+                            label: `v${v.versionNumber} (${(v.distanceM / 1000).toFixed(2)} km measured)`,
+                            ...(isLiveVersion
+                              ? {
+                                  accentDot: '#10b981',
+                                  badge: 'Active',
+                                  badgeTone: 'success' as const,
+                                }
+                              : {}),
+                          };
+                        })
                   }
                 />
               </div>
             </div>
 
-            {selectedVersion && selectedDistanceObj && (
+            {selectedDistanceObj && (
               <div className="grid grid-cols-1 gap-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-4 sm:grid-cols-3 text-xs">
                 <div>
                   <p className="text-[var(--text-secondary)]">Advertised category distance</p>
@@ -3374,15 +3973,33 @@ export default function RouteStudioPanel({
                   </p>
                 </div>
                 <div>
-                  <p className="text-[var(--text-secondary)]">Measured GPX course distance</p>
+                  <p className="text-[var(--text-secondary)]">
+                    {selectedVersion ? 'Measured GPX course distance' : 'Current draft distance'}
+                  </p>
                   <p className="mt-0.5 text-base font-semibold text-[var(--text-primary)]">
-                    {(selectedVersion.distanceM / 1000).toFixed(2)} km
+                    {selectedVersion
+                      ? `${(selectedVersion.distanceM / 1000).toFixed(2)} km`
+                      : hasRoutePath
+                        ? `${(processedRoute.distanceM / 1000).toFixed(2)} km draft`
+                        : 'No route yet'}
                   </p>
                 </div>
                 <div>
-                  <p className="text-[var(--text-secondary)]">Current public publication</p>
-                  <p className="mt-0.5 text-base font-semibold text-[var(--text-primary)]">
-                    {currentPublication ? `v${currentPublication.versionNumber} (${currentPublication.status})` : 'Not published'}
+                  <p className="text-[var(--text-secondary)]">Active configuration</p>
+                  <p
+                    className={`mt-0.5 text-base font-semibold ${
+                      currentPublication?.status === 'published'
+                        ? 'text-emerald-700 dark:text-emerald-300'
+                        : currentPublication?.status === 'withdrawn'
+                          ? 'text-amber-700 dark:text-amber-300'
+                          : 'text-[var(--text-secondary)]'
+                    }`}
+                  >
+                    {currentPublication?.status === 'published'
+                      ? `${activeBoundPreset?.title || currentPublication.raceName} · v${currentPublication.versionNumber} (Active)`
+                      : currentPublication?.status === 'withdrawn'
+                        ? `v${currentPublication.versionNumber} (Withdrawn)`
+                        : 'No active configuration'}
                   </p>
                 </div>
               </div>
@@ -3414,69 +4031,81 @@ export default function RouteStudioPanel({
               )}
             </div>
 
-            {/* Automatic Copernicus GLO-30 & Sentinel-2 Tile Preparation & Refresh */}
+            {/* Automatic Philippines Terrain & Imagery Tile Preparation & Refresh */}
             <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-4 space-y-3 text-xs">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="font-semibold text-[var(--text-primary)]">
-                    Copernicus GLO-30 & Sentinel-2 Tile Pipeline (Auto-Prepared from GPX)
+                    Philippines Terrain & Imagery Pipeline (Auto-Prepared from GPX)
                   </p>
                   <p className="text-[var(--text-secondary)]">
-                    {draftTileManifest.islandGroup} · {draftTileManifest.province} · {draftTileManifest.imageryPeriod} · {draftTileManifest.terrainRelease}
+                    {!hasRoutePath
+                      ? 'Unconfigured course draft'
+                      : `${draftTileManifest.islandGroup} · ${draftTileManifest.province} · ${draftTileManifest.imageryPeriod} · ${RACEPULSE_TERRAIN_LABEL}`}
                   </p>
                 </div>
-                <span
-                  className={`rounded-lg px-2.5 py-1 font-semibold ${
-                    draftTileManifest.validation.passed
-                      ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300'
-                      : 'bg-red-700/15 text-red-700 dark:text-red-300'
-                  }`}
-                >
-                  {draftTileManifest.validation.passed ? 'Tiles validated' : 'Tile validation failed'}
-                </span>
+                {hasRoutePath && (
+                  <span
+                    className={`rounded-lg px-2.5 py-1 font-semibold ${
+                      draftTileManifest.validation.passed
+                        ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300'
+                        : 'bg-red-700/15 text-red-700 dark:text-red-300'
+                    }`}
+                  >
+                    {draftTileManifest.validation.passed ? 'Tiles validated' : 'Tile validation failed'}
+                  </span>
+                )}
               </div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <div>
-                  <span className="text-[var(--text-secondary)]">Imagery date</span>
-                  <p className="font-mono font-semibold text-[var(--text-primary)]">
-                    {draftTileManifest.imageryDate}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-[var(--text-secondary)]">Cloud mask fill</span>
-                  <p className="font-mono font-semibold text-[var(--text-primary)]">
-                    {draftTileManifest.cloudMaskCheck.routeCorridorCloudPct}% via {draftTileManifest.cloudMaskCheck.patchedFromMosaicQuarter}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-[var(--text-secondary)]">Course detail tiles</span>
-                  <p className="font-mono font-semibold text-[var(--text-primary)]">
-                    {draftTileManifest.validation.courseDetailTileCount} tiles (z12-16)
-                  </p>
-                </div>
-                <div>
-                  <span className="text-[var(--text-secondary)]">CDN storage est.</span>
-                  <p className="font-mono font-semibold text-[var(--text-primary)]">
-                    {((draftTileManifest.validation.estimatedImageryBytes + draftTileManifest.validation.estimatedDemBytes) / 1024).toFixed(0)} KB
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={handleWeeklyImageryCheck}
-                  className="min-h-10 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 font-semibold text-[var(--text-primary)] hover:border-red-600/50"
-                >
-                  Run weekly clear-imagery check
-                </button>
-                <button
-                  type="button"
-                  onClick={handleQuarterlyMosaicRefresh}
-                  className="min-h-10 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 font-semibold text-[var(--text-primary)] hover:border-red-600/50"
-                >
-                  Refresh quarterly national mosaic
-                </button>
-              </div>
+              {!hasRoutePath ? (
+                <p className="text-[var(--text-secondary)]">
+                  No route geometry configured yet. Draw, paint, record GPS, or import a GPX course before preparing imagery and elevation tiles.
+                </p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <div>
+                      <span className="text-[var(--text-secondary)]">Imagery date</span>
+                      <p className="font-mono font-semibold text-[var(--text-primary)]">
+                        {draftTileManifest.imageryDate}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-[var(--text-secondary)]">Cloud mask fill</span>
+                      <p className="font-mono font-semibold text-[var(--text-primary)]">
+                        {draftTileManifest.cloudMaskCheck.routeCorridorCloudPct}% via {draftTileManifest.cloudMaskCheck.patchedFromMosaicQuarter}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-[var(--text-secondary)]">Course detail tiles</span>
+                      <p className="font-mono font-semibold text-[var(--text-primary)]">
+                        {draftTileManifest.validation.courseDetailTileCount} tiles (z12-16)
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-[var(--text-secondary)]">CDN storage est.</span>
+                      <p className="font-mono font-semibold text-[var(--text-primary)]">
+                        {((draftTileManifest.validation.estimatedImageryBytes + draftTileManifest.validation.estimatedDemBytes) / 1024).toFixed(0)} KB
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={handleWeeklyImageryCheck}
+                      className="min-h-10 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+                    >
+                      Run weekly clear-imagery check
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleQuarterlyMosaicRefresh}
+                      className="min-h-10 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+                    >
+                      Refresh quarterly national mosaic
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Race-Day Freeze Guard */}
@@ -3705,6 +4334,48 @@ export default function RouteStudioPanel({
           </section>
         </div>
       )}
+        </div>
+      )}
+
+      {/* Mobile Sticky Bottom Thumb-Zone Dock */}
+      <div className="lg:hidden shrink-0 border-t border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] grid grid-cols-3 gap-2">
+        {gpsState.status !== 'tracking' ? (
+          <button
+            type="button"
+            onClick={handleStartGpsTracking}
+            className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-2 text-xs font-semibold text-[var(--text-primary)]"
+          >
+            <Play className="h-4 w-4 text-red-600 dark:text-red-400" aria-hidden="true" />
+            <span>Track GPS</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleStopGpsTracking}
+            className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-amber-500/60 bg-amber-500/15 px-2 text-xs font-semibold text-amber-800 dark:text-amber-300"
+          >
+            <Square className="h-4 w-4" aria-hidden="true" />
+            <span>Pause GPS</span>
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => setMobileInspectorOpen(true)}
+          className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-red-700 px-2 text-xs font-semibold text-white hover:bg-red-600"
+        >
+          <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+          <span>Inspector</span>
+        </button>
+        <button
+          type="button"
+          disabled={!canEditRoute}
+          onClick={handleSaveDraft}
+          className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-2 text-xs font-semibold text-[var(--text-primary)] disabled:opacity-45"
+        >
+          <Save className="h-4 w-4" aria-hidden="true" />
+          <span>Save {dirty ? '*' : ''}</span>
+        </button>
+      </div>
     </div>
   );
 }

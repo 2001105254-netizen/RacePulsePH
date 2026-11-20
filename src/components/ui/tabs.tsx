@@ -1,9 +1,13 @@
 import * as React from 'react';
+import { LayoutGroup, m } from 'motion/react';
 import { cn } from '../../lib/utils';
+import { KINETIC_SPRING } from './MotionPrimitives';
 
 interface TabsContextValue {
   value: string;
   onValueChange: (value: string) => void;
+  variant: 'default' | 'accent';
+  pillLayoutId: string;
 }
 
 const TabsContext = React.createContext<TabsContextValue | undefined>(undefined);
@@ -12,11 +16,13 @@ interface TabsProps extends React.HTMLAttributes<HTMLDivElement> {
   value?: string;
   defaultValue?: string;
   onValueChange?: (value: string) => void;
+  variant?: 'default' | 'accent';
 }
 
 const Tabs = React.forwardRef<HTMLDivElement, TabsProps>(
-  ({ value: controlledValue, defaultValue = '', onValueChange, className, children, ...props }, ref) => {
+  ({ value: controlledValue, defaultValue = '', onValueChange, variant = 'default', className, children, ...props }, ref) => {
     const [uncontrolledValue, setUncontrolledValue] = React.useState(defaultValue);
+    const groupId = React.useId();
     const isControlled = controlledValue !== undefined;
     const value = isControlled ? controlledValue : uncontrolledValue;
 
@@ -31,11 +37,20 @@ const Tabs = React.forwardRef<HTMLDivElement, TabsProps>(
     );
 
     return (
-      <TabsContext.Provider value={{ value, onValueChange: handleValueChange }}>
-        <div ref={ref} className={cn('w-full', className)} {...props}>
-          {children}
-        </div>
-      </TabsContext.Provider>
+      <LayoutGroup id={groupId}>
+        <TabsContext.Provider
+          value={{
+            value,
+            onValueChange: handleValueChange,
+            variant,
+            pillLayoutId: `${groupId}-pill`,
+          }}
+        >
+          <div ref={ref} className={cn('w-full', className)} {...props}>
+            {children}
+          </div>
+        </TabsContext.Provider>
+      </LayoutGroup>
     );
   }
 );
@@ -48,7 +63,7 @@ const TabsList = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      'inline-flex flex-wrap max-w-full min-h-11 items-center justify-center gap-1 rounded-full bg-[var(--surface-inset)] dark:bg-[#0f0f12] p-1 text-[var(--text-secondary)] border border-[var(--border-default)] shadow-[inset_0_1px_2px_rgba(0,0,0,0.25)]',
+      'inline-flex flex-wrap max-w-full min-h-11 items-center justify-center gap-1 rounded-xl bg-[var(--surface-inset)] p-1 text-[var(--text-secondary)] border border-[var(--border-default)]',
       className
     )}
     {...props}
@@ -66,6 +81,7 @@ const TabsTrigger = React.forwardRef<HTMLButtonElement, TabsTriggerProps>(
     if (!context) throw new Error('TabsTrigger must be used within Tabs');
 
     const isSelected = context.value === value;
+    const isAccent = context.variant === 'accent';
 
     return (
       <button
@@ -75,15 +91,32 @@ const TabsTrigger = React.forwardRef<HTMLButtonElement, TabsTriggerProps>(
         aria-selected={isSelected}
         onClick={() => context.onValueChange(value)}
         className={cn(
-          'relative inline-flex items-center justify-center whitespace-normal text-center leading-tight min-w-0 rounded-full border px-4 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-700 dark:focus-visible:ring-red-400 disabled:pointer-events-none disabled:opacity-50 select-none motion-safe:active:scale-[0.97]',
+          'relative overflow-hidden inline-flex items-center justify-center whitespace-normal text-center leading-tight min-w-0 rounded-lg border border-transparent px-4 py-2 text-xs font-semibold cursor-pointer transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 select-none motion-safe:active:scale-[0.98]',
           isSelected
-            ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-400 shadow-sm'
-            : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]',
+            ? isAccent
+              ? 'text-white'
+              : 'text-[var(--text-primary)]'
+            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]',
           className
         )}
         {...props}
       >
-        {children}
+        {isSelected && (
+          <m.span
+            layoutId={context.pillLayoutId}
+            transition={KINETIC_SPRING}
+            aria-hidden="true"
+            className={cn(
+              'rp-tab-pill pointer-events-none absolute inset-0 rounded-[7px]',
+              isAccent
+                ? 'bg-red-700 border border-red-500/35'
+                : 'bg-[var(--surface-card)] border border-[var(--border-button)]',
+            )}
+          />
+        )}
+        <span className="relative z-10 inline-flex items-center justify-center gap-2">
+          {children}
+        </span>
       </button>
     );
   }

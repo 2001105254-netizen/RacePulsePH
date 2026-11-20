@@ -11,13 +11,14 @@ import {
   parseGpxRoute,
   reverseCanonicalGeometry,
 } from '../src/lib/gpxRoute';
-import { processCanonicalGeometry } from '../src/lib/routes/geometry';
-import { locateAtChainage, projectCoordinateToRoute, reanchorMarkersForRoute } from '../src/lib/routes/anchoring';
+import { createEmptyRouteGeometry, processCanonicalGeometry } from '../src/lib/routes/geometry';
+import { locateAtChainage, projectCoordinateToRoute, reanchorMarkersForRoute, deriveDefaultChapters } from '../src/lib/routes/anchoring';
 import {
   bindAndPublishRaceRouteCommand,
   createPresetDraftCommand,
   createPresetVersionCommand,
   DEMO_BAGUIO_RACE,
+  describePresetConfigStatus,
   duplicatePresetCommand,
   getPublishedCoursesForRace,
   getRouteStoreSnapshot,
@@ -30,16 +31,27 @@ import {
   runWeeklyClearImageryCheckCommand,
   savePresetDraftCommand,
   seedPilotCoursesFromGpxText,
+  sortRoutePresetsForDistance,
+  stripDemoArtifacts,
   validatePublicationReadiness,
   withdrawPublicationCommand,
+  type RouteWorkspaceStore,
 } from '../src/lib/routes/routeStore';
 import {
+  buildGpsAccuracyCircleGeoJson,
+  createGpsFilterState,
+  ingestGpsFix,
+} from '../src/lib/routes/gpsFilter';
+import {
+  buildPhilippinesWorldMaskGeoJson,
   COPERNICUS_TERRAIN_RELEASE,
   decodeTerrariumRgb,
   encodeTerrariumRgb,
   getRolloutBudgetBenchmarks,
   getTileTelemetrySnapshot,
   isPointInPhilippineIslands,
+  isTileInPhilippines,
+  PHILIPPINES_NATIONAL_BOUNDS,
   prepareCourseMapLayerManifest,
   resetTileTelemetry,
   synthesizePhilippineTileRgba,
@@ -976,4 +988,702 @@ test('15. Runner geolocation projection computes on-route status, off-course off
   assert.equal(selectPublishedCourseForDistance(sampleCourses, '10k')?.distanceId, '10k');
   assert.equal(selectPublishedCourseForDistance(sampleCourses, '42k')?.distanceId, '10k');
   assert.equal(selectPublishedCourseForDistance([], '21k'), null);
+});
+
+test('16. Philippines tile bounds gate and world mask GeoJSON block foreign landmasses', () => {
+  // Manila, Cebu, and Davao tiles pass at z12
+  assert.equal(isTileInPhilippines(12, 3421, 1879), true); // Metro Manila region
+  assert.equal(isTileInPhilippines(12, 3457, 1933), true); // Cebu highlands
+  assert.equal(isTileInPhilippines(12, 3472, 1957), true); // Bukidnon / Davao
+
+  // Out-of-country locations must be blocked (Tokyo, Taipei, Singapore/Borneo)
+  assert.equal(isTileInPhilippines(12, 3636, 1612), false); // Tokyo
+  assert.equal(isTileInPhilippines(12, 3428, 1756), false); // Taipei
+  assert.equal(isTileInPhilippines(12, 3230, 2033), false); // Singapore
+
+  const mask = buildPhilippinesWorldMaskGeoJson();
+  assert.equal(mask.features.length, 1);
+  assert.equal(mask.features[0].geometry.type, 'Polygon');
+  assert.equal(mask.features[0].geometry.coordinates.length, 2);
+});
+
+test('17. Pilot Cebu 21K & Bukidnon 32K Finish markers anchor to end of course instead of 0.00 km', () => {
+  const cebuGpx = fs.readFileSync('public/fixtures/cebu-highlands-21k.gpx', 'utf8');
+  const bukGpx = fs.readFileSync('public/fixtures/bukidnon-kitanglad-32k.gpx', 'utf8');
+  seedPilotCoursesFromGpxText(cebuGpx, bukGpx);
+
+  const store = getRouteStoreSnapshot();
+  const cebuPub = store.publications['pub_cebu_highlands_21k_v1'];
+  const bukPub = store.publications['pub_bukidnon_kitanglad_32k_v1'];
+  assert.ok(cebuPub);
+  assert.ok(bukPub);
+
+  const cebuStart = cebuPub.markers.find((m) => m.kind === 'start');
+  const cebuFinish = cebuPub.markers.find((m) => m.kind === 'finish');
+  assert.ok(cebuStart && cebuFinish);
+  assert.equal(cebuStart.chainageM, 0);
+  assert.ok(cebuFinish.chainageM > 20_000, `Expected Cebu Finish > 20km, got ${cebuFinish.chainageM}`);
+
+  const bukFinish = bukPub.markers.find((m) => m.kind === 'finish');
+  assert.ok(bukFinish);
+  assert.ok(bukFinish.chainageM > 30_000, `Expected Bukidnon Finish > 30km, got ${bukFinish.chainageM}`);
+});
+
+test('18. GPS filter rejects noise spikes/teleports, smooths accurate track, and disambiguates out-and-back passes', () => {
+  let state = createGpsFilterState({ maxAccuracyM: 35, initialCoarseLimitM: 100 });
+  const t0 = 1_760_000_000_000;
+
+  // Initial coarse 180m reading must be rejected
+  state = ingestGpsFix(state, { lat: 10.32, lon: 123.9, accuracyM: 180, timestampMs: t0 });
+  assert.equal(state.current, null);
+  assert.equal(state.rejectedCount, 1);
+
+  // Accurate 8m reading locks cleanly
+  state = ingestGpsFix(state, { lat: 10.32, lon: 123.9, accuracyM: 8, timestampMs: t0 + 1000 });
+  assert.ok(state.current);
+  assert.equal(state.current.quality, 'high');
+
+  // Sudden 180m noise spike jumps far away and must be rejected without corrupting smoothed fix
+  state = ingestGpsFix(state, { lat: 10.39, lon: 123.98, accuracyM: 180, timestampMs: t0 + 2000 });
+  assert.equal(state.rejectedCount, 2);
+  assert.ok(Math.abs((state.current?.lat ?? 0) - 10.32) < 0.001);
+
+  // Single-fix teleport (>15 m/s) is held back as pendingJump
+  state = ingestGpsFix(state, { lat: 10.36, lon: 123.94, accuracyM: 8, timestampMs: t0 + 3000 });
+  assert.ok(state.pendingJump !== null);
+  assert.ok(Math.abs((state.current?.lat ?? 0) - 10.32) < 0.001);
+
+  // Normal ~10m step after 3s is smoothed and computes bearing
+  state = ingestGpsFix(state, { lat: 10.3201, lon: 123.9, accuracyM: 8, timestampMs: t0 + 6000 });
+  assert.ok(state.current);
+  assert.ok(state.current.headingDeg !== null);
+
+  const circle = buildGpsAccuracyCircleGeoJson(state.current.lat, state.current.lon, 18);
+  assert.equal(circle.features.length, 1);
+  assert.equal(circle.features[0].geometry.type, 'Polygon');
+
+  // Out-and-back pass disambiguation chooses pass 2 when previousChainageM is near return leg
+  const oabGeom = {
+    version: 1 as const,
+    sourceKind: 'drawn' as const,
+    segments: [
+      {
+        id: 'seg_oab',
+        sourceKind: 'drawn' as const,
+        points: [
+          { lat: 10.32, lon: 123.9, ele: 100 },
+          { lat: 10.33, lon: 123.9, ele: 200 },
+          { lat: 10.32, lon: 123.9, ele: 100 },
+        ],
+      },
+    ],
+  };
+  const oabRoute = processCanonicalGeometry(oabGeom);
+  const midSpot = locateAtChainage(oabRoute, 600, 1);
+  const pass2Proj = computeRunnerLocationRelativeToRoute(
+    oabRoute,
+    midSpot.latitude,
+    midSpot.longitude,
+    [],
+    2,
+    { accuracyM: 12, previousChainageM: oabRoute.distanceM - 620 },
+  );
+  assert.ok(pass2Proj);
+  assert.equal(pass2Proj.passNumber, 2);
+  assert.ok(pass2Proj.chainageM > oabRoute.distanceM / 2);
+});
+
+test('19. Empty default route geometry processes safely, validates unready for publish, and stripDemoArtifacts purges unmodified Baguio starter presets', () => {
+  const empty = createEmptyRouteGeometry();
+  assert.equal(empty.isCanvasCleared, true);
+  assert.equal(empty.isStartPointRemoved, true);
+  assert.equal(empty.segments.length, 0);
+
+  const processed = processCanonicalGeometry(empty);
+  assert.equal(processed.distanceM, 0);
+  assert.equal(processed.distanceKm, 0);
+  assert.equal(processed.points.length, 0);
+  assert.equal(processed.canonicalSegments.length, 0);
+  assert.equal(processed.displaySegments.length, 0);
+  assert.deepEqual(processed.bounds, PHILIPPINES_NATIONAL_BOUNDS);
+  assert.equal(processed.elevationProvenance.status, 'unavailable');
+  assert.equal(processed.validationReport.pointCount, 0);
+  assert.equal(processed.validationReport.valid, false);
+
+  const loc = locateAtChainage(processed, 0, 1);
+  assert.equal(loc.chainageM, 0);
+  assert.ok(Number.isFinite(loc.latitude) && Number.isFinite(loc.longitude));
+
+  const proj = projectCoordinateToRoute(processed, 14.5995, 120.9842);
+  assert.equal(proj.hasAmbiguousPasses, false);
+  assert.equal(proj.best.offsetMeters, 0);
+
+  assert.deepEqual(reanchorMarkersForRoute(processed, []), []);
+  assert.deepEqual(deriveDefaultChapters(processed, []), []);
+
+  const analytics = buildCourseAnalytics(processed, []);
+  assert.equal(analytics.climbs.length, 0);
+  assert.equal(analytics.gapSplits.length, 0);
+
+  const manifest = prepareCourseMapLayerManifest(empty, { courseId: 'empty_test' });
+  assert.equal(manifest.validation.passed, false);
+  assert.equal(manifest.validation.courseDetailTileCount, 0);
+
+  const readiness = validatePublicationReadiness({
+    title: 'Draft Without Path',
+    geometry: empty,
+    markers: [],
+  });
+  assert.equal(readiness.ready, false);
+  assert.ok(readiness.issues.some((i) => i.code === 'empty-geometry' && i.severity === 'error'));
+
+  const dirtyStore = {
+    presets: {
+      preset_baguio_21k: {
+        id: 'preset_baguio_21k',
+        title: 'Demo Baguio',
+        region: 'Cordillera',
+        activity: 'trail' as const,
+        raceId: DEMO_BAGUIO_RACE.id,
+        distanceId: '21k',
+        ownerUid: 'demo',
+        editorIds: [],
+        archived: false,
+        latestDraftId: 'draft_main',
+        latestVersionNumber: 1,
+        revision: 1,
+        createdAt: '2026-11-01T00:00:00Z',
+        updatedAt: '2026-11-01T00:00:00Z',
+        updatedBy: 'demo',
+      },
+      preset_legacy_starter: {
+        id: 'preset_legacy_starter',
+        title: 'My Race (21K)',
+        region: 'Philippines',
+        activity: 'trail' as const,
+        raceId: 'real-race-1',
+        distanceId: '21k',
+        ownerUid: 'org-1',
+        editorIds: [],
+        archived: false,
+        latestDraftId: 'draft_main',
+        latestVersionNumber: 0,
+        revision: 1,
+        createdAt: '2026-11-01T00:00:00Z',
+        updatedAt: '2026-11-01T00:00:00Z',
+        updatedBy: 'org-1',
+      },
+      preset_real_custom: {
+        id: 'preset_real_custom',
+        title: 'Custom Real Course',
+        region: 'Cebu',
+        activity: 'trail' as const,
+        raceId: 'real-race-1',
+        distanceId: '21k',
+        ownerUid: 'org-1',
+        editorIds: [],
+        archived: false,
+        latestDraftId: 'draft_main',
+        latestVersionNumber: 0,
+        revision: 2,
+        createdAt: '2026-11-01T00:00:00Z',
+        updatedAt: '2026-11-01T00:00:00Z',
+        updatedBy: 'org-1',
+      },
+    },
+    drafts: {
+      'preset_legacy_starter::draft_main': {
+        id: 'draft_main',
+        presetId: 'preset_legacy_starter',
+        raceId: 'real-race-1',
+        distanceId: '21k',
+        title: 'My Race (21K)',
+        region: 'Philippines',
+        revision: 1,
+        processingState: 'ready' as const,
+        selectedTrackIndices: [0],
+        canonicalGeometry: {
+          version: 1 as const,
+          sourceKind: 'drawn' as const,
+          segments: [
+            {
+              id: 'drawn_1',
+              name: 'Drawn course section',
+              sourceKind: 'drawn' as const,
+              points: [
+                { lat: 16.4119, lon: 120.5947 },
+                { lat: 16.4136, lon: 120.5988 },
+                { lat: 16.4121, lon: 120.6022 },
+              ],
+            },
+          ],
+        },
+        elevationProvenance: processed.elevationProvenance,
+        validationReport: processed.validationReport,
+        markers: [],
+        distanceM: 800,
+        elevationGainM: 0,
+        elevationLossM: 0,
+        editSummary: 'Created course preset',
+        updatedAt: '2026-11-01T00:00:00Z',
+        updatedBy: 'org-1',
+      },
+      'preset_real_custom::draft_main': {
+        id: 'draft_main',
+        presetId: 'preset_real_custom',
+        raceId: 'real-race-1',
+        distanceId: '21k',
+        title: 'Custom Real Course',
+        region: 'Cebu',
+        revision: 2,
+        processingState: 'ready' as const,
+        selectedTrackIndices: [0],
+        canonicalGeometry: {
+          version: 1 as const,
+          sourceKind: 'drawn' as const,
+          segments: [
+            {
+              id: 'painted_1',
+              sourceKind: 'drawn' as const,
+              points: [
+                { lat: 10.3157, lon: 123.8854, ele: 50 },
+                { lat: 10.3201, lon: 123.8902, ele: 120 },
+              ],
+            },
+          ],
+        },
+        elevationProvenance: processed.elevationProvenance,
+        validationReport: processed.validationReport,
+        markers: [],
+        distanceM: 710,
+        elevationGainM: 70,
+        elevationLossM: 0,
+        editSummary: 'Custom trail',
+        updatedAt: '2026-11-01T00:00:00Z',
+        updatedBy: 'org-1',
+      },
+    },
+    versions: {},
+    bindings: {},
+    publications: {
+      pub_cebu_highlands_21k_v1: {} as never,
+    },
+    catalog: {
+      'cebu-highlands-trail-2026_21k': {} as never,
+    },
+    audit: [{ id: 'audit_seed_baguio_v1', action: 'publish' as const, actorUid: 'demo', actorName: 'Demo', at: '2026-11-01T00:00:00Z' }],
+    migratedLegacyKeys: {},
+  };
+
+  const cleaned = stripDemoArtifacts(dirtyStore);
+  assert.equal(cleaned.presets['preset_baguio_21k'], undefined);
+  assert.equal(cleaned.presets['preset_legacy_starter'], undefined);
+  assert.equal(cleaned.drafts['preset_legacy_starter::draft_main'], undefined);
+  assert.equal(cleaned.publications['pub_cebu_highlands_21k_v1'], undefined);
+  assert.equal(cleaned.catalog['cebu-highlands-trail-2026_21k'], undefined);
+  assert.ok(cleaned.presets['preset_real_custom']);
+  assert.ok(cleaned.drafts['preset_real_custom::draft_main']);
+});
+
+test('20. Preset configuration status identifies Active, Active on other distance, Withdrawn, Draft, and Archived and sorts Active first', () => {
+  const empty = createEmptyRouteGeometry();
+  const emptyProcessed = processCanonicalGeometry(empty);
+  const sampleGeom = {
+    version: 1 as const,
+    sourceKind: 'drawn' as const,
+    segments: [
+      {
+        id: 'seg_1',
+        sourceKind: 'drawn' as const,
+        points: [
+          { lat: 10.3157, lon: 123.8854, ele: 40 },
+          { lat: 10.3205, lon: 123.8902, ele: 85 },
+        ],
+      },
+    ],
+  };
+
+  const presetActive10k = {
+    id: 'preset_active_10k',
+    title: 'Persevere Main 10K',
+    region: 'Cebu',
+    activity: 'road' as const,
+    raceId: 'persevere-2026',
+    distanceId: '10k',
+    ownerUid: 'org-1',
+    editorIds: [],
+    archived: false,
+    latestDraftId: 'draft_main',
+    latestVersionId: 'ver_10k_v2',
+    latestVersionNumber: 2,
+    revision: 3,
+    createdAt: '2026-09-01T00:00:00Z',
+    updatedAt: '2026-09-02T00:00:00Z',
+    updatedBy: 'org-1',
+  };
+  const presetOther21k = {
+    id: 'preset_other_21k',
+    title: 'Persevere Half Marathon',
+    region: 'Cebu',
+    activity: 'road' as const,
+    raceId: 'persevere-2026',
+    distanceId: '21k',
+    ownerUid: 'org-1',
+    editorIds: [],
+    archived: false,
+    latestDraftId: 'draft_main',
+    latestVersionId: 'ver_21k_v1',
+    latestVersionNumber: 1,
+    revision: 2,
+    createdAt: '2026-09-01T00:00:00Z',
+    updatedAt: '2026-09-03T00:00:00Z',
+    updatedBy: 'org-1',
+  };
+  const presetDraft10k = {
+    id: 'preset_draft_10k',
+    title: 'Persevere Alt 10K',
+    region: 'Cebu',
+    activity: 'road' as const,
+    raceId: 'persevere-2026',
+    distanceId: '10k',
+    ownerUid: 'org-1',
+    editorIds: [],
+    archived: false,
+    latestDraftId: 'draft_main',
+    latestVersionNumber: 0,
+    revision: 1,
+    createdAt: '2026-09-01T00:00:00Z',
+    updatedAt: '2026-09-04T00:00:00Z',
+    updatedBy: 'org-1',
+  };
+  const presetArchivedNewest = {
+    id: 'preset_archived',
+    title: 'Persevere Old Route',
+    region: 'Cebu',
+    activity: 'road' as const,
+    raceId: 'persevere-2026',
+    distanceId: '10k',
+    ownerUid: 'org-1',
+    editorIds: [],
+    archived: true,
+    latestDraftId: 'draft_main',
+    latestVersionNumber: 1,
+    revision: 2,
+    createdAt: '2026-09-01T00:00:00Z',
+    updatedAt: '2026-09-10T00:00:00Z',
+    updatedBy: 'org-1',
+  };
+  const presetWithdrawn5k = {
+    id: 'preset_withdrawn_5k',
+    title: 'Persevere Pulled 5K',
+    region: 'Cebu',
+    activity: 'road' as const,
+    raceId: 'persevere-2026',
+    distanceId: '5k',
+    ownerUid: 'org-1',
+    editorIds: [],
+    archived: false,
+    latestDraftId: 'draft_main',
+    latestVersionId: 'ver_5k_v1',
+    latestVersionNumber: 1,
+    revision: 2,
+    createdAt: '2026-09-01T00:00:00Z',
+    updatedAt: '2026-09-05T00:00:00Z',
+    updatedBy: 'org-1',
+  };
+
+  const store: RouteWorkspaceStore = {
+    presets: {
+      [presetArchivedNewest.id]: presetArchivedNewest,
+      [presetDraft10k.id]: presetDraft10k,
+      [presetOther21k.id]: presetOther21k,
+      [presetActive10k.id]: presetActive10k,
+      [presetWithdrawn5k.id]: presetWithdrawn5k,
+    },
+    drafts: {
+      [`${presetDraft10k.id}::draft_main`]: {
+        id: 'draft_main',
+        presetId: presetDraft10k.id,
+        raceId: 'persevere-2026',
+        distanceId: '10k',
+        title: presetDraft10k.title,
+        region: 'Cebu',
+        revision: 1,
+        processingState: 'ready',
+        selectedTrackIndices: [0],
+        canonicalGeometry: sampleGeom,
+        elevationProvenance: emptyProcessed.elevationProvenance,
+        validationReport: emptyProcessed.validationReport,
+        markers: [],
+        distanceM: 880,
+        elevationGainM: 45,
+        elevationLossM: 0,
+        editSummary: 'Draft alignment',
+        updatedAt: '2026-09-04T00:00:00Z',
+        updatedBy: 'org-1',
+      },
+    },
+    versions: {},
+    bindings: {
+      'persevere-2026_10k': {
+        id: 'persevere-2026_10k',
+        raceId: 'persevere-2026',
+        distanceId: '10k',
+        distanceLabel: '10K',
+        advertisedKm: 10,
+        presetId: presetActive10k.id,
+        versionId: 'ver_10k_v1',
+        versionNumber: 1,
+        currentPublicationId: 'pub_10k_v1',
+        bindingRevision: 1,
+        checkpointLinks: {},
+        updatedAt: '2026-09-02T00:00:00Z',
+        updatedBy: 'org-1',
+      },
+      'persevere-2026_21k': {
+        id: 'persevere-2026_21k',
+        raceId: 'persevere-2026',
+        distanceId: '21k',
+        distanceLabel: '21K',
+        advertisedKm: 21,
+        presetId: presetOther21k.id,
+        versionId: 'ver_21k_v1',
+        versionNumber: 1,
+        currentPublicationId: 'pub_21k_v1',
+        bindingRevision: 1,
+        checkpointLinks: {},
+        updatedAt: '2026-09-03T00:00:00Z',
+        updatedBy: 'org-1',
+      },
+      'persevere-2026_5k': {
+        id: 'persevere-2026_5k',
+        raceId: 'persevere-2026',
+        distanceId: '5k',
+        distanceLabel: '5K',
+        advertisedKm: 5,
+        presetId: presetWithdrawn5k.id,
+        versionId: 'ver_5k_v1',
+        versionNumber: 1,
+        currentPublicationId: 'pub_5k_v1',
+        bindingRevision: 2,
+        checkpointLinks: {},
+        updatedAt: '2026-09-05T00:00:00Z',
+        updatedBy: 'org-1',
+      },
+    },
+    publications: {
+      pub_10k_v1: {
+        id: 'pub_10k_v1',
+        raceId: 'persevere-2026',
+        raceName: 'PERSEVERE RUN 2026',
+        raceDate: '2026-09-19',
+        distanceId: '10k',
+        distanceLabel: '10K',
+        advertisedKm: 10,
+        measuredDistanceM: 10040,
+        elevationGainM: 120,
+        elevationLossM: 118,
+        presetId: presetActive10k.id,
+        versionId: 'ver_10k_v1',
+        versionNumber: 1,
+        geometryHash: 'hash_10k',
+        canonicalGeometry: sampleGeom,
+        elevationProvenance: emptyProcessed.elevationProvenance,
+        markers: [],
+        chapters: [],
+        status: 'published',
+        publishedAt: '2026-09-02T00:00:00Z',
+        publishedBy: 'org-1',
+        reviewedAt: '2026-09-02T00:00:00Z',
+      },
+      pub_21k_v1: {
+        id: 'pub_21k_v1',
+        raceId: 'persevere-2026',
+        raceName: 'PERSEVERE RUN 2026',
+        raceDate: '2026-09-19',
+        distanceId: '21k',
+        distanceLabel: '21K',
+        advertisedKm: 21,
+        measuredDistanceM: 21100,
+        elevationGainM: 250,
+        elevationLossM: 248,
+        presetId: presetOther21k.id,
+        versionId: 'ver_21k_v1',
+        versionNumber: 1,
+        geometryHash: 'hash_21k',
+        canonicalGeometry: sampleGeom,
+        elevationProvenance: emptyProcessed.elevationProvenance,
+        markers: [],
+        chapters: [],
+        status: 'published',
+        publishedAt: '2026-09-03T00:00:00Z',
+        publishedBy: 'org-1',
+        reviewedAt: '2026-09-03T00:00:00Z',
+      },
+      pub_5k_v1: {
+        id: 'pub_5k_v1',
+        raceId: 'persevere-2026',
+        raceName: 'PERSEVERE RUN 2026',
+        raceDate: '2026-09-19',
+        distanceId: '5k',
+        distanceLabel: '5K',
+        advertisedKm: 5,
+        measuredDistanceM: 5000,
+        elevationGainM: 40,
+        elevationLossM: 40,
+        presetId: presetWithdrawn5k.id,
+        versionId: 'ver_5k_v1',
+        versionNumber: 1,
+        geometryHash: 'hash_5k',
+        canonicalGeometry: sampleGeom,
+        elevationProvenance: emptyProcessed.elevationProvenance,
+        markers: [],
+        chapters: [],
+        status: 'withdrawn',
+        publishedAt: '2026-09-04T00:00:00Z',
+        publishedBy: 'org-1',
+        reviewedAt: '2026-09-04T00:00:00Z',
+        withdrawalReason: 'Road closure',
+      },
+    },
+    catalog: {},
+    audit: [],
+    migratedLegacyKeys: {},
+  };
+
+  const activeStatus = describePresetConfigStatus(presetActive10k, store, 'persevere-2026', '10k');
+  assert.equal(activeStatus.kind, 'active');
+  assert.equal(activeStatus.sortRank, 0);
+  assert.equal(activeStatus.badge, 'Active · v1');
+  assert.equal(activeStatus.badgeTone, 'success');
+  assert.equal(activeStatus.accentDot, '#10b981');
+  assert.ok(activeStatus.sublabel.includes('Live on 10K'));
+  assert.ok(activeStatus.sublabel.includes('v2 staged'));
+
+  const otherStatus = describePresetConfigStatus(presetOther21k, store, 'persevere-2026', '10k');
+  assert.equal(otherStatus.kind, 'active_other_distance');
+  assert.equal(otherStatus.badge, 'Active (21K)');
+  assert.equal(otherStatus.badgeTone, 'info');
+  assert.ok(otherStatus.sublabel.includes('Live on 21K v1'));
+
+  const draftStatus = describePresetConfigStatus(presetDraft10k, store, 'persevere-2026', '10k');
+  assert.equal(draftStatus.kind, 'draft');
+  assert.equal(draftStatus.badge, 'Draft');
+  assert.equal(draftStatus.badgeTone, 'neutral');
+  assert.ok(draftStatus.sublabel.includes('Not active'));
+  assert.ok(draftStatus.sublabel.includes('0.88 km draft'));
+
+  const archivedStatus = describePresetConfigStatus(presetArchivedNewest, store, 'persevere-2026', '10k');
+  assert.equal(archivedStatus.kind, 'archived');
+  assert.equal(archivedStatus.badge, 'Archived');
+  assert.equal(archivedStatus.badgeTone, 'neutral');
+
+  const withdrawnStatus = describePresetConfigStatus(presetWithdrawn5k, store, 'persevere-2026', '5k');
+  assert.equal(withdrawnStatus.kind, 'withdrawn');
+  assert.equal(withdrawnStatus.badge, 'Withdrawn');
+  assert.equal(withdrawnStatus.badgeTone, 'warning');
+
+  const sortedFor10k = sortRoutePresetsForDistance(
+    [presetArchivedNewest, presetDraft10k, presetOther21k, presetActive10k],
+    store,
+    'persevere-2026',
+    '10k',
+  );
+  assert.deepEqual(
+    sortedFor10k.map((p) => p.id),
+    [presetActive10k.id, presetOther21k.id, presetDraft10k.id, presetArchivedNewest.id],
+  );
+});
+
+test('21. Route Studio GPS pinpointing tracks coarse quick-lock fixes, preserves live coordinates for camera centering, and gates trail recording', () => {
+  let state = createGpsTrailState({ maxAccuracyM: 25 });
+  const t0 = 1_760_000_000_000;
+
+  // 1. Initial coarse quick-lock (e.g. WiFi / cellular triangulation ±65m before GNSS locks)
+  // Must update lastFix for instant pinpointing and camera fly-to, while keeping acceptedPoints clean
+  state = processGpsBreadcrumbFix(state, {
+    latitude: 16.4119,
+    longitude: 120.5947,
+    accuracyM: 65,
+    timestamp: t0,
+  });
+
+  assert.ok(state.lastFix);
+  assert.equal(state.lastFix.latitude, 16.4119);
+  assert.equal(state.lastFix.longitude, 120.5947);
+  assert.equal(state.lastFix.accuracyM, 65);
+  assert.equal(state.acceptedPoints.length, 0); // Preserves strict trail accuracy
+  assert.equal(state.rejectedCount, 1);
+
+  // Deriving latestGpsFix in RouteStudioPanel uses lastFix to pinpoint on the map immediately
+  const liveFix1 = state.lastFix ?? (state.acceptedPoints.length > 0 ? {
+    latitude: state.acceptedPoints[state.acceptedPoints.length - 1].lat,
+    longitude: state.acceptedPoints[state.acceptedPoints.length - 1].lon,
+    accuracyM: state.acceptedPoints[state.acceptedPoints.length - 1].accuracyM,
+  } : null);
+  assert.ok(liveFix1);
+  assert.equal(liveFix1.latitude, 16.4119);
+  assert.equal(liveFix1.longitude, 120.5947);
+
+  // 2. High-accuracy GNSS fix locks in (±6m)
+  state = processGpsBreadcrumbFix(state, {
+    latitude: 16.4121,
+    longitude: 120.5950,
+    accuracyM: 6,
+    altitude: 1455,
+    timestamp: t0 + 2000,
+  });
+
+  assert.equal(state.acceptedPoints.length, 1);
+  assert.equal(state.acceptedPoints[0].lat, 16.4121);
+  assert.equal(state.acceptedPoints[0].lon, 120.5950);
+  assert.equal(state.lastFix.accuracyM, 6);
+
+  // 3. Second accurate fix builds the trail breadcrumb polyline
+  state = processGpsBreadcrumbFix(state, {
+    latitude: 16.4123,
+    longitude: 120.5953,
+    accuracyM: 5,
+    altitude: 1458,
+    timestamp: t0 + 6000,
+  });
+
+  assert.equal(state.acceptedPoints.length, 2);
+  const liveFix2 = state.lastFix ?? null;
+  assert.ok(liveFix2);
+  assert.equal(liveFix2.latitude, 16.4123);
+  assert.equal(liveFix2.longitude, 120.5953);
+});
+
+test('22. Route Studio GPS manual pinpoint and simulate walk on empty canvas generates valid fixes and centers map', () => {
+  // 1. Manual pinpoint creates a valid fix and centers map
+  let state = createGpsTrailState({ maxAccuracyM: 25 });
+  const centerLat = 16.4121;
+  const centerLon = 120.5950;
+
+  const manualFix = {
+    latitude: centerLat,
+    longitude: centerLon,
+    accuracyM: 10,
+    timestamp: Date.now(),
+  };
+
+  state = processGpsBreadcrumbFix(state, manualFix, 'dirt', 'normal');
+  assert.ok(state.lastFix);
+  assert.equal(state.lastFix.latitude, centerLat);
+  assert.equal(state.lastFix.longitude, centerLon);
+  assert.equal(state.acceptedPoints.length, 1);
+  assert.equal(state.acceptedPoints[0].lat, centerLat);
+  assert.equal(state.acceptedPoints[0].lon, centerLon);
+
+  // 2. Simulate walk from center creates a clean survey trail
+  let simState = createGpsTrailState({ maxAccuracyM: 25 });
+  const fixes = generateSimulatedGpsWalk(centerLat, centerLon, 1450, 12);
+  assert.equal(fixes.length, 12);
+  for (const fix of fixes) {
+    simState = processGpsBreadcrumbFix(simState, fix, 'dirt', 'normal');
+  }
+  assert.equal(simState.acceptedPoints.length, 11); // 1 noisy step (step 5) rejected
+  assert.equal(simState.rejectedCount, 1);
+  assert.ok(simState.totalDistanceM > 50);
 });

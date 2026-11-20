@@ -155,10 +155,8 @@ export default function PublicRaceResults({
       aria-label={`${race.name} official results`}
     >
       {!embedded && (
-        <div className="relative p-4 sm:p-6 border-b border-[var(--border-default)] hero-glow overflow-x-clip">
-          {race.posterImage && <img src={race.posterImage} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover opacity-[0.1]" />}
-          <div className="absolute inset-0 bg-gradient-to-r from-red-950/35 to-[var(--surface-card)]/90" />
-          <div className="relative flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+        <div className="p-4 sm:p-6 border-b border-[var(--border-default)] bg-[var(--surface-card)]">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="font-display text-base sm:text-lg font-semibold tracking-tight text-[var(--text-primary)]">
                 {resultsArePublic ? 'Official leaderboard & finisher certificates' : 'Event schedule, distances & route preview'}
@@ -168,14 +166,18 @@ export default function PublicRaceResults({
                   <Calendar className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
                   <span>{race.date}</span>
                 </p>
-                <span className="inline-flex items-center gap-2 rounded-full border border-emerald-700/30 bg-emerald-700/10 px-3 py-1 text-xs font-semibold text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300">
+                <span className="inline-flex items-center gap-2 rounded-lg border border-emerald-700/30 bg-emerald-700/10 px-3 py-1 text-xs font-semibold text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300">
                   <Trophy className="w-3.5 h-3.5" aria-hidden="true" />{' '}
                   {resultsArePublic ? 'Official results' : registrationOpen ? 'Registration open' : 'Upcoming event'}
                 </span>
               </div>
             </div>
             {registrationOpen && (
-              <button type="button" onClick={() => onRegister(race.id)} className="shrink-0 min-h-11 h-11 px-5 rounded-full font-semibold text-xs text-white bg-red-700 hover:bg-red-600 border border-[#3d0b09] dark:border-red-500/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.35)] transition-[background-color,transform] duration-150 flex items-center justify-center gap-2 motion-safe:active:scale-[0.97]">
+              <button
+                type="button"
+                onClick={() => onRegister(race.id)}
+                className="shrink-0 min-h-11 h-11 px-5 rounded-xl font-semibold text-xs text-white bg-red-700 hover:bg-red-600 border border-red-800 dark:border-red-500/40 cursor-pointer transition-[background-color,transform] duration-150 flex items-center justify-center gap-2 motion-safe:active:scale-[0.98]"
+              >
                 <UserPlus className="w-4 h-4" aria-hidden="true" /> {registerLabel}
               </button>
             )}

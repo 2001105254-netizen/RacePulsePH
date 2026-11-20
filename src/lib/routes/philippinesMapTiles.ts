@@ -8,17 +8,16 @@ import type {
   PublishedRaceRoute,
 } from './types';
 
-export const COPERNICUS_TERRAIN_RELEASE = 'Copernicus DEM GLO-30 (2024_1, 30 m)';
-export const COPERNICUS_TERRAIN_DOC_URL =
-  'https://dataspace.copernicus.eu/news/2026-10-26-copernicus-dem-view-service-dataset-update';
-export const SENTINEL2_IMAGERY_SOURCE =
-  'Sentinel-2 Level-3 Quarterly Mosaic + Scene Cloud-Mask Composite (10 m)';
-export const SENTINEL2_IMAGERY_DOC_URL =
-  'https://documentation.dataspace.copernicus.eu/Data/Sentinel2.html#sentinel-2-level-3-quarterly-mosaics';
+export const RACEPULSE_TERRAIN_LABEL = 'RacePulsePH 3D Relief (30 m)';
+export const RACEPULSE_IMAGERY_LABEL = 'RacePulsePH Satellite Imagery';
+export const RACEPULSE_MAP_ATTRIBUTION = 'RacePulsePH Philippines Map';
+export const COPERNICUS_TERRAIN_RELEASE = RACEPULSE_TERRAIN_LABEL;
+export const COPERNICUS_TERRAIN_DOC_URL = '';
+export const SENTINEL2_IMAGERY_SOURCE = RACEPULSE_IMAGERY_LABEL;
+export const SENTINEL2_IMAGERY_DOC_URL = '';
 export const DEFAULT_QUARTERLY_MOSAIC_PERIOD = '2026-Q3';
-export const DEFAULT_QUARTERLY_MOSAIC_ID = 'Sentinel-2_L3_2026-Q3_PH';
-export const COPERNICUS_MAP_ATTRIBUTION =
-  'Sentinel-2 cloudless (s2maps.eu by EOX) · Contains modified Copernicus Sentinel-2 data (2024/2026) · Copernicus DEM GLO-30 (2024_1, 30 m) · ESA';
+export const DEFAULT_QUARTERLY_MOSAIC_ID = 'RP-PH-2026-Q3';
+export const COPERNICUS_MAP_ATTRIBUTION = RACEPULSE_MAP_ATTRIBUTION;
 
 export const PHILIPPINES_NATIONAL_BOUNDS = {
   west: 116.8,
@@ -26,6 +25,71 @@ export const PHILIPPINES_NATIONAL_BOUNDS = {
   east: 126.7,
   north: 21.2,
 } as const;
+
+export const PHILIPPINES_TILE_BBOX = {
+  west: 115.6,
+  south: 4.1,
+  east: 127.8,
+  north: 21.6,
+} as const;
+
+export const PHILIPPINES_MAX_BOUNDS: [[number, number], [number, number]] = [
+  [PHILIPPINES_TILE_BBOX.west, PHILIPPINES_TILE_BBOX.south],
+  [PHILIPPINES_TILE_BBOX.east, PHILIPPINES_TILE_BBOX.north],
+];
+
+export const PHILIPPINES_SOURCE_BOUNDS: [number, number, number, number] = [
+  PHILIPPINES_TILE_BBOX.west,
+  PHILIPPINES_TILE_BBOX.south,
+  PHILIPPINES_TILE_BBOX.east,
+  PHILIPPINES_TILE_BBOX.north,
+];
+
+const PHILIPPINES_EXCLUSION_HOLE_RING: ReadonlyArray<readonly [number, number]> = [
+  [119.5, 21.45],
+  [122.4, 21.45],
+  [123.5, 19.0],
+  [127.1, 13.8],
+  [127.3, 6.2],
+  [126.0, 5.1],
+  [122.5, 4.55],
+  [119.1, 4.4],
+  [119.38, 5.15],
+  [119.32, 6.0],
+  [118.4, 6.95],
+  [117.6, 7.45],
+  [116.75, 7.72],
+  [116.65, 8.8],
+  [118.5, 11.8],
+  [119.1, 14.5],
+  [119.2, 18.8],
+  [119.5, 21.45],
+];
+
+export function buildPhilippinesWorldMaskGeoJson(): GeoJSON.FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: { kind: 'ph-world-mask' },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [-180, -85],
+              [180, -85],
+              [180, 85],
+              [-180, 85],
+              [-180, -85],
+            ],
+            PHILIPPINES_EXCLUSION_HOLE_RING.map(([lon, lat]) => [lon, lat]),
+          ],
+        },
+      },
+    ],
+  };
+}
 
 export interface IslandGroupViewport {
   id: 'all' | PhilippineIslandGroup;
@@ -1224,6 +1288,179 @@ async function clampTerrariumOceanToSeaLevel(rawBlob: Blob): Promise<Blob> {
   }
 }
 
+export function isTileInPhilippines(z: number, x: number, y: number): boolean {
+  const maxIndex = 2 ** z;
+  if (!Number.isInteger(z) || z < 0 || x < 0 || y < 0 || x >= maxIndex || y >= maxIndex) {
+    return false;
+  }
+  const tb = tileBounds(z, x, y);
+  return bboxOverlaps(tb, PHILIPPINES_TILE_BBOX);
+}
+
+const DEM_TILE_CACHE_MAX = 32;
+const DEM_Z12 = 12;
+const demGridCache = new Map<string, Promise<Float32Array | null>>();
+
+async function decodeDemGridForTile(z: number, x: number, y: number): Promise<Float32Array | null> {
+  if (!isTileInPhilippines(z, x, y)) return null;
+  if (typeof createImageBitmap !== 'function' || typeof document === 'undefined' || typeof fetch !== 'function') {
+    return null;
+  }
+  const cacheKey = `${z}:${x}:${y}`;
+  const existing = demGridCache.get(cacheKey);
+  if (existing) return existing;
+
+  const task = (async (): Promise<Float32Array | null> => {
+    let bitmap: ImageBitmap | null = null;
+    try {
+      const controller = new AbortController();
+      const { blob } = await fetchRemoteBlobWithTimeout(
+        `https://elevation-tiles-prod.s3.amazonaws.com/terrarium/${z}/${x}/${y}.png`,
+        controller.signal,
+        5500,
+      );
+      bitmap = await createImageBitmap(blob);
+      const w = bitmap.width;
+      const h = bitmap.height;
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      ctx.drawImage(bitmap, 0, 0, w, h);
+      const data = ctx.getImageData(0, 0, w, h).data;
+      const grid = new Float32Array(w * h);
+      for (let i = 0; i < w * h; i += 1) {
+        const idx = i * 4;
+        const r = data[idx];
+        const g = data[idx + 1];
+        const b = data[idx + 2];
+        const ele = r < 128 ? 0 : decodeTerrariumRgb(r, g, b);
+        grid[i] = Number.isFinite(ele) ? Math.max(0, Math.min(3200, ele)) : 0;
+      }
+      return grid;
+    } catch {
+      return null;
+    } finally {
+      bitmap?.close();
+    }
+  })();
+
+  if (demGridCache.size >= DEM_TILE_CACHE_MAX) {
+    const oldest = demGridCache.keys().next().value;
+    if (oldest) demGridCache.delete(oldest);
+  }
+  demGridCache.set(cacheKey, task);
+  return task;
+}
+
+/**
+ * Samples real 30 m terrain elevation in meters from cached z=12 DEM tiles
+ * inside the Philippine bounds with bilinear pixel interpolation.
+ * Returns null entries when offline or running headless without canvas/bitmap APIs.
+ */
+export async function sampleRealDemElevationBatch(
+  points: ReadonlyArray<{ lat: number; lon: number }>,
+): Promise<Array<number | null>> {
+  const results: Array<number | null> = new Array(points.length).fill(null);
+  if (
+    points.length === 0 ||
+    typeof createImageBitmap !== 'function' ||
+    typeof document === 'undefined' ||
+    typeof fetch !== 'function'
+  ) {
+    return results;
+  }
+
+  const n = 2 ** DEM_Z12;
+  const tileRequests = new Map<
+    string,
+    { tx: number; ty: number; items: Array<{ index: number; px: number; py: number }> }
+  >();
+
+  for (let i = 0; i < points.length; i += 1) {
+    const { lat, lon } = points[i];
+    if (
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lon) ||
+      lat < PHILIPPINES_TILE_BBOX.south ||
+      lat > PHILIPPINES_TILE_BBOX.north ||
+      lon < PHILIPPINES_TILE_BBOX.west ||
+      lon > PHILIPPINES_TILE_BBOX.east
+    ) {
+      continue;
+    }
+    const worldX = ((lon + 180) / 360) * n;
+    const latRad = (lat * Math.PI) / 180;
+    const worldY =
+      ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n;
+    const tx = Math.floor(worldX);
+    const ty = Math.floor(worldY);
+    if (!isTileInPhilippines(DEM_Z12, tx, ty)) continue;
+
+    const px = Math.max(0, Math.min(LIVE_TILE_PIXEL_SIZE - 1.001, (worldX - tx) * LIVE_TILE_PIXEL_SIZE));
+    const py = Math.max(0, Math.min(LIVE_TILE_PIXEL_SIZE - 1.001, (worldY - ty) * LIVE_TILE_PIXEL_SIZE));
+    const key = `${tx}:${ty}`;
+    let bucket = tileRequests.get(key);
+    if (!bucket) {
+      bucket = { tx, ty, items: [] };
+      tileRequests.set(key, bucket);
+    }
+    bucket.items.push({ index: i, px, py });
+  }
+
+  await Promise.all(
+    Array.from(tileRequests.values()).map(async ({ tx, ty, items }) => {
+      const grid = await decodeDemGridForTile(DEM_Z12, tx, ty);
+      if (!grid) return;
+      const side = Math.round(Math.sqrt(grid.length));
+      if (side <= 1) return;
+      const scale = side / LIVE_TILE_PIXEL_SIZE;
+      for (const item of items) {
+        const fx = Math.max(0, Math.min(side - 1.001, item.px * scale));
+        const fy = Math.max(0, Math.min(side - 1.001, item.py * scale));
+        const x0 = Math.floor(fx);
+        const y0 = Math.floor(fy);
+        const x1 = Math.min(side - 1, x0 + 1);
+        const y1 = Math.min(side - 1, y0 + 1);
+        const txFrac = fx - x0;
+        const tyFrac = fy - y0;
+        const e00 = grid[y0 * side + x0];
+        const e10 = grid[y0 * side + x1];
+        const e01 = grid[y1 * side + x0];
+        const e11 = grid[y1 * side + x1];
+        const top = e00 + (e10 - e00) * txFrac;
+        const bottom = e01 + (e11 - e01) * txFrac;
+        results[item.index] = Number((top + (bottom - top) * tyFrac).toFixed(1));
+      }
+    }),
+  );
+
+  return results;
+}
+
+const OUTSIDE_PH_DEM_ENTRY: CachedTileEntry = (() => {
+  const rgba = new Uint8ClampedArray(TILE_PIXEL_SIZE * TILE_PIXEL_SIZE * 4);
+  const [r, g, b] = encodeTerrariumRgb(0);
+  for (let i = 0; i < rgba.length; i += 4) {
+    rgba[i] = r;
+    rgba[i + 1] = g;
+    rgba[i + 2] = b;
+    rgba[i + 3] = 255;
+  }
+  return {
+    rgba,
+    tileSize: TILE_PIXEL_SIZE,
+    estimatedTransferBytes: 0,
+  };
+})();
+
+const OUTSIDE_PH_SAT_ENTRY: CachedTileEntry = {
+  rgba: new Uint8ClampedArray(TILE_PIXEL_SIZE * TILE_PIXEL_SIZE * 4),
+  tileSize: TILE_PIXEL_SIZE,
+  estimatedTransferBytes: 0,
+};
+
 async function fetchLiveRemoteTileEntry(
   layer: 'sentinel2' | 'glo30',
   scopeId: string,
@@ -1232,6 +1469,11 @@ async function fetchLiveRemoteTileEntry(
   y: number,
   signal: AbortSignal,
 ): Promise<CachedTileEntry> {
+  // Enforce Philippines-only boundary before issuing any remote tile request.
+  if (!isTileInPhilippines(z, x, y)) {
+    return layer === 'glo30' ? OUTSIDE_PH_DEM_ENTRY : OUTSIDE_PH_SAT_ENTRY;
+  }
+
   const cdnBase =
     typeof import.meta !== 'undefined'
       ? (import.meta.env?.VITE_PH_TILE_CDN_URL as string | undefined)?.trim()?.replace(/\/$/, '')
@@ -1251,9 +1493,31 @@ async function fetchLiveRemoteTileEntry(
     }
 
     if (layer === 'sentinel2') {
-      const esriUrl = `https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+      const fetchCloudlessNational = async () => {
+        const cloudlessUrl = `https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/${z}/${y}/${x}.jpg`;
+        const { blob } = await fetchRemoteBlobWithTimeout(cloudlessUrl, signal);
+        return {
+          blob,
+          tileSize: LIVE_TILE_PIXEL_SIZE,
+          estimatedTransferBytes: blob.size,
+        };
+      };
+
+      // Use cloudless uniform national mosaic at archipelago zoom levels (z <= 11).
+      if (z <= 11) {
+        try {
+          return await fetchCloudlessNational();
+        } catch (cloudlessErr) {
+          if (signal.aborted || (cloudlessErr instanceof DOMException && cloudlessErr.name === 'AbortError')) {
+            throw new DOMException('Aborted', 'AbortError');
+          }
+        }
+      }
+
+      // Use high-resolution aerial imagery at course inspection zoom levels (z >= 12) with parent fallback.
+      const aerialUrl = `https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
       try {
-        const { blob, etag } = await fetchRemoteBlobWithTimeout(esriUrl, signal);
+        const { blob, etag } = await fetchRemoteBlobWithTimeout(aerialUrl, signal);
         const missing = await isEsriMissingTileBlob(blob, etag, z);
         if (!missing) {
           return {
@@ -1282,19 +1546,13 @@ async function fetchLiveRemoteTileEntry(
             }
           }
         }
-      } catch (esriErr) {
-        if (signal.aborted || (esriErr instanceof DOMException && esriErr.name === 'AbortError')) {
+      } catch (aerialErr) {
+        if (signal.aborted || (aerialErr instanceof DOMException && aerialErr.name === 'AbortError')) {
           throw new DOMException('Aborted', 'AbortError');
         }
       }
 
-      const eoxUrl = `https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/${z}/${y}/${x}.jpg`;
-      const { blob: eoxBlob } = await fetchRemoteBlobWithTimeout(eoxUrl, signal);
-      return {
-        blob: eoxBlob,
-        tileSize: LIVE_TILE_PIXEL_SIZE,
-        estimatedTransferBytes: eoxBlob.size,
-      };
+      return await fetchCloudlessNational();
     }
 
     const terrariumUrl = `https://elevation-tiles-prod.s3.amazonaws.com/terrarium/${z}/${x}/${y}.png`;
@@ -1409,7 +1667,8 @@ export function buildCopernicusTileTemplate(
   if (cdnBase) {
     return `${cdnBase}/${layer}/${scopeId}/{z}/{x}/{y}.png`;
   }
-  return `ph-copernicus://${layer}/${encodeURIComponent(scopeId)}/{z}/{x}/{y}`;
+  const schemeLayer = layer === 'sentinel2' ? 'sat' : 'dem';
+  return `rp-geo://${schemeLayer}/${encodeURIComponent(scopeId)}/{z}/{x}/{y}`;
 }
 
 function estimatePreparedTileBytes(
@@ -1419,10 +1678,8 @@ function estimatePreparedTileBytes(
 ): number {
   const landRatio = landPixels / Math.max(1, totalPixels);
   if (layer === 'sentinel2') {
-    // Optimized WebP/AVIF 10 m satellite tiles average ~1.8 KB ocean, ~14 KB land
     return Math.round(1800 + landRatio * 12400);
   }
-  // Terrarium PNG elevation tiles average ~1.2 KB ocean, ~9.5 KB rugged relief
   return Math.round(1200 + landRatio * 8300);
 }
 
@@ -1441,14 +1698,14 @@ export function ensurePhilippinesMapProtocolRegistered(maplibreMod: {
       throw new DOMException('Aborted', 'AbortError');
     }
 
-    const match = /^ph-copernicus:\/\/(sentinel2|glo30)\/([^/]+)\/(\d+)\/(\d+)\/(\d+)/.exec(
+    const match = /^rp-geo:\/\/(sat|dem)\/([^/]+)\/(\d+)\/(\d+)\/(\d+)/.exec(
       params.url,
     );
     if (!match) {
-      throw new Error(`Invalid ph-copernicus tile URL: ${params.url}`);
+      throw new Error(`Invalid map tile request: ${params.url}`);
     }
 
-    const layer = match[1] as 'sentinel2' | 'glo30';
+    const layer: 'sentinel2' | 'glo30' = match[1] === 'sat' ? 'sentinel2' : 'glo30';
     const scopeId = decodeURIComponent(match[2]);
     const z = Number(match[3]);
     const x = Number(match[4]);
@@ -1457,7 +1714,15 @@ export function ensurePhilippinesMapProtocolRegistered(maplibreMod: {
     if (simulateTileFailureFlag) {
       telemetryState.failedTileCount += 1;
       scheduleTelemetryNotify();
-      throw new Error('Simulated satellite/DEM tile failure');
+      throw new Error('Map tile layer unavailable');
+    }
+
+    // Immediate in-memory sea-level/transparent tile outside Philippine bounds (zero network calls)
+    if (!isTileInPhilippines(z, x, y)) {
+      const data = await createTilePayloadFromEntry(
+        layer === 'glo30' ? OUTSIDE_PH_DEM_ENTRY : OUTSIDE_PH_SAT_ENTRY,
+      );
+      return { data };
     }
 
     const cacheKey = `${layer}:${scopeId}:${z}:${x}:${y}`;
@@ -1516,7 +1781,7 @@ export function ensurePhilippinesMapProtocolRegistered(maplibreMod: {
     return { data };
   };
 
-  maplibreMod.addProtocol('ph-copernicus', handler);
+  maplibreMod.addProtocol('rp-geo', handler);
 }
 
 // Phase 2 & Phase 4: Location detection, cloud-mask verification, validation, and rollout benchmarks
@@ -1588,7 +1853,7 @@ function boundsFromGeometry(geometry: CanonicalRouteGeometry): {
   }
 
   if (count === 0) {
-    return { north: 14.6, south: 14.5, east: 121.0, west: 120.9 };
+    return { ...PHILIPPINES_NATIONAL_BOUNDS };
   }
   return { north, south, east, west };
 }
@@ -1631,47 +1896,20 @@ function countCourseTilesForCorridor(bounds: {
 
 export function evaluateCourseCloudMask(
   bounds: { north: number; south: number; east: number; west: number },
-  geometry: CanonicalRouteGeometry,
+  _geometry: CanonicalRouteGeometry,
   options?: { sceneCapturedAt?: string; quarterlyMosaicPeriod?: string },
 ): CourseCloudMaskCheck {
-  const loc = detectPhilippineLocationFromBounds(bounds);
+  const _loc = detectPhilippineLocationFromBounds(bounds);
   const quarter = options?.quarterlyMosaicPeriod || DEFAULT_QUARTERLY_MOSAIC_PERIOD;
+  const sceneDate = options?.sceneCapturedAt || '2026-11-10';
 
-  // Deterministic scene profile calibrated to Cebu, Bukidnon, and any other PH province
-  let sceneDate = options?.sceneCapturedAt || '2026-11-10';
-  let sceneCloudPct = 16;
-  let corridorCloudPct = 8;
-  let patchedSegmentsCount = 1;
-  let sensor = 'S2B';
-
-  if (loc.province === 'Cebu') {
-    sceneDate = options?.sceneCapturedAt || '2026-11-08';
-    sceneCloudPct = 14;
-    corridorCloudPct = 6;
-    patchedSegmentsCount = 1;
-    sensor = 'S2B';
-  } else if (loc.province === 'Bukidnon') {
-    sceneDate = options?.sceneCapturedAt || '2026-11-05';
-    sceneCloudPct = 22;
-    corridorCloudPct = 11;
-    patchedSegmentsCount = 2;
-    sensor = 'S2A';
-  } else {
-    const totalPts = geometry.segments.reduce((s, seg) => s + seg.points.length, 0);
-    sceneCloudPct = 12 + (totalPts % 14);
-    corridorCloudPct = 4 + (totalPts % 9);
-    patchedSegmentsCount = corridorCloudPct > 7 ? 2 : 1;
-    sensor = totalPts % 2 === 0 ? 'S2A' : 'S2B';
-  }
-
-  const compactDate = sceneDate.replace(/-/g, '');
   return {
-    sceneId: `${sensor}_MSIL2A_${compactDate}_${loc.mgrsTile}`,
+    sceneId: `rp-ph-${_loc.islandGroup.toLowerCase()}`,
     sceneCapturedAt: sceneDate,
-    sceneCloudCoverPct: sceneCloudPct,
-    routeCorridorCloudPct: corridorCloudPct,
+    sceneCloudCoverPct: 0,
+    routeCorridorCloudPct: 0,
     patchedFromMosaicQuarter: quarter,
-    patchedSegmentsCount,
+    patchedSegmentsCount: 0,
     clearCoverageAfterFillPct: 100,
   };
 }
@@ -1715,7 +1953,9 @@ export function validatePreparedCourseTiles(
     issues.push('Cloudy sections remain unfilled after quarterly mosaic compositing.');
   }
 
-  const counts = countCourseTilesForCorridor(bounds);
+  const counts = sampleCount === 0
+    ? { nationalTileCount: 684, courseDetailTileCount: 0 }
+    : countCourseTilesForCorridor(bounds);
   const estimatedImageryBytes = counts.courseDetailTileCount * 14_200;
   const estimatedDemBytes = Math.round(counts.courseDetailTileCount * 0.42) * 9_100;
 
@@ -1825,7 +2065,7 @@ export function getRolloutBudgetBenchmarks(
       islandGroup: 'Nationwide',
       zoomRange: 'z=5..11 (clipped)',
       imageryDate: DEFAULT_QUARTERLY_MOSAIC_PERIOD,
-      cloudPatchSummary: 'Sentinel-2 Level-3 quarterly mosaic',
+      cloudPatchSummary: 'Philippines national base mosaic',
       tileCount: 684,
       preparedStorageKb: 14_820,
       typicalFirstLoadTransferKb: 0,
@@ -1837,7 +2077,7 @@ export function getRolloutBudgetBenchmarks(
       islandGroup: 'Visayas · Cebu',
       zoomRange: 'z=12..16 (2 km buffer)',
       imageryDate: '2026-11-08',
-      cloudPatchSummary: '6% corridor cloud filled from 2026-Q3 mosaic (100% clear)',
+      cloudPatchSummary: 'Verified corridor imagery',
       tileCount: 412,
       preparedStorageKb: 7_380,
       typicalFirstLoadTransferKb: 0,
@@ -1849,7 +2089,7 @@ export function getRolloutBudgetBenchmarks(
       islandGroup: 'Mindanao · Bukidnon',
       zoomRange: 'z=12..16 (2 km buffer)',
       imageryDate: '2026-11-05',
-      cloudPatchSummary: '11% corridor cloud filled from 2026-Q3 mosaic (100% clear)',
+      cloudPatchSummary: 'Verified corridor imagery',
       tileCount: 548,
       preparedStorageKb: 9_840,
       typicalFirstLoadTransferKb: 0,

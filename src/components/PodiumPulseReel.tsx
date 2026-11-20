@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import '../styles/highlights.css';
 import { Award, Pause, Play, RefreshCw } from 'lucide-react';
 import {
   applyPlaylistRules,

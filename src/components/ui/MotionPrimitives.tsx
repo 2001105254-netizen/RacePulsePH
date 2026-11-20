@@ -20,6 +20,12 @@ export const TAB_PILL_SPRING = {
   mass: 0.75,
 };
 
+export const KINETIC_SPRING = {
+  type: 'spring' as const,
+  stiffness: 380,
+  damping: 32,
+};
+
 /**
  * Computes navigation direction from ordered tab indices so sibling tab switches
  * slide left or right consistently on mobile and desktop.
@@ -281,19 +287,19 @@ export function CardSkeletonLoader({
   );
 }
 
-export function RaceCardSkeletonGrid({ count = 3 }: { count?: number }) {
+export function RaceCardSkeletonGrid({ count = 4 }: { count?: number }) {
   return (
     <ul
       aria-busy="true"
       aria-label="Loading published races"
-      className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+      className="grid grid-cols-1 md:grid-cols-2 gap-6"
     >
       {Array.from({ length: count }, (_, idx) => (
         <li key={idx} className="flex">
           <div className="relative w-full overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] flex flex-col justify-between">
             <ShimmerSweep />
             <div>
-              <div className="h-36 sm:h-40 w-full bg-[var(--surface-inset)] border-b border-[var(--border-default)]" />
+              <div className="aspect-video w-full bg-[var(--surface-inset)] border-b border-[var(--border-default)]" />
               <div className="p-4 sm:p-5 space-y-3">
                 <div className="space-y-2">
                   <div className="h-5 w-3/4 rounded-md bg-[var(--surface-inset)]" />
@@ -305,8 +311,9 @@ export function RaceCardSkeletonGrid({ count = 3 }: { count?: number }) {
                 </div>
               </div>
             </div>
-            <div className="px-4 sm:px-5 pb-4 sm:pb-5">
-              <div className="h-11 w-full rounded-full bg-[var(--surface-inset)]" />
+            <div className="px-4 sm:px-5 pb-4 sm:pb-5 flex gap-2">
+              <div className="h-11 flex-1 rounded-xl bg-[var(--surface-inset)]" />
+              <div className="h-11 w-28 rounded-xl bg-[var(--surface-inset)]" />
             </div>
           </div>
         </li>

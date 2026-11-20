@@ -184,8 +184,8 @@ export default function EventCourseRunnerPanel({
   const pendingFlyToUserRef = useRef(false);
 
   useEffect(() => {
-    void ensurePilotCoursesSeeded();
     if (isDemoSeedEnabled()) {
+      void ensurePilotCoursesSeeded();
       void ensureDemoCoursesSeeded();
     }
     return subscribeRacePublishedCourses(race.id, setCourses);
@@ -313,6 +313,8 @@ export default function EventCourseRunnerPanel({
     };
   }, [analytics, activeRoute]);
 
+  const lastGpsChainageRef = useRef<number | undefined>(undefined);
+
   const locationProjection = useMemo(() => {
     if (!activeRoute || !geo.position) return null;
     return computeRunnerLocationRelativeToRoute(
@@ -321,8 +323,19 @@ export default function EventCourseRunnerPanel({
       geo.position.lon,
       activeMarkers,
       activePass,
+      {
+        accuracyM: geo.position.accuracyM,
+        previousChainageM: lastGpsChainageRef.current,
+        headingDeg: geo.position.headingDeg,
+      },
     );
   }, [activeRoute, geo.position, activeMarkers, activePass]);
+
+  useEffect(() => {
+    if (locationProjection) {
+      lastGpsChainageRef.current = locationProjection.chainageM;
+    }
+  }, [locationProjection]);
 
   const cursorSurfaceLabel = useMemo(() => {
     if (!activeRoute || !selection) return 'Unknown surface';
@@ -349,10 +362,11 @@ export default function EventCourseRunnerPanel({
   };
 
   useEffect(() => {
-    if (!geo.position || !pendingFlyToUserRef.current) return;
+    if (!geo.position) return;
+    if (!pendingFlyToUserRef.current && !geo.autoFollow) return;
     pendingFlyToUserRef.current = false;
     flyCameraTo(geo.position.lat, geo.position.lon, 15);
-  }, [geo.position]);
+  }, [geo.position, geo.autoFollow]);
 
   // Keyboard navigation in snapshot lightbox
   useEffect(() => {
@@ -401,6 +415,7 @@ export default function EventCourseRunnerPanel({
 
   const handleCenterOnUser = () => {
     if (geo.position) {
+      geo.setAutoFollow(true);
       flyCameraTo(geo.position.lat, geo.position.lon, 15);
     } else {
       handleLocateMe();
@@ -492,6 +507,8 @@ export default function EventCourseRunnerPanel({
         lat: geo.position.lat,
         lon: geo.position.lon,
         accuracyM: geo.position.accuracyM,
+        headingDeg: geo.position.headingDeg,
+        isStale: geo.position.isStale,
       }
     : null;
 
@@ -742,6 +759,18 @@ export default function EventCourseRunnerPanel({
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
+                    aria-pressed={geo.autoFollow}
+                    onClick={() => geo.setAutoFollow(!geo.autoFollow)}
+                    className={`min-h-9 rounded-lg border px-2.5 font-semibold ${
+                      geo.autoFollow
+                        ? 'border-sky-600 bg-sky-600 text-white'
+                        : 'border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)]'
+                    }`}
+                  >
+                    Follow
+                  </button>
+                  <button
+                    type="button"
                     onClick={() =>
                       handleSelectChainage(
                         locationProjection.chainageM,
@@ -787,6 +816,7 @@ export default function EventCourseRunnerPanel({
                 onToggleImagery={setSatelliteEnabled}
                 is3DEnabled={terrain3DEnabled}
                 onToggle3D={setTerrain3DEnabled}
+                hideBuiltInLayerToggles
                 provenance={activePub?.mapLayerProvenance}
                 courseScopeId={
                   activePub ? `${activePub.raceId}_${activePub.distanceId}` : `legacy_${race.id}`

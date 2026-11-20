@@ -5,7 +5,8 @@ import { parseRetryAfterSeconds } from '../resilientFetch';
 import type { Race } from '../../types';
 import { fetchGpxText, parseGpxRoute } from '../gpxRoute';
 import { deriveDefaultChapters, evaluateMarkerOffset, reanchorMarkersForRoute } from './anchoring';
-import { processCanonicalGeometry, type ProcessedRoute } from './geometry';
+import { createEmptyRouteGeometry, processCanonicalGeometry, type ProcessedRoute } from './geometry';
+import { isDefaultStarterGeometry } from './trailTools';
 import {
   DEFAULT_QUARTERLY_MOSAIC_PERIOD,
   prepareCourseMapLayerManifest,
@@ -342,15 +343,55 @@ function buildDemoMarkersFor10K(route: ProcessedRoute): RouteMarker[] {
   return reanchorMarkersForRoute(route, base);
 }
 
+function snapCoordinateIfOffCourse(
+  route: ProcessedRoute,
+  lat: number,
+  lon: number,
+  fallbackChainageM: number,
+): { latitude: number; longitude: number } {
+  const start = route.points[0];
+  if (!start) return { latitude: lat, longitude: lon };
+  // Use the nearest actual route vertex along fallbackChainage when hardcoded coords drift off trail.
+  let best = route.points[0];
+  let bestDiff = Infinity;
+  for (const pt of route.points) {
+    const dLat = (pt.latitude - lat) * 111_132;
+    const dLon = (pt.longitude - lon) * 109_000;
+    const d2 = dLat * dLat + dLon * dLon;
+    if (d2 < bestDiff) {
+      bestDiff = d2;
+      best = pt;
+    }
+  }
+  if (Math.sqrt(bestDiff) <= 60) {
+    return { latitude: best.latitude, longitude: best.longitude };
+  }
+  const byChainage = route.points.reduce(
+    (prev, curr) =>
+      Math.abs(curr.chainageM - fallbackChainageM) < Math.abs(prev.chainageM - fallbackChainageM)
+        ? curr
+        : prev,
+    route.points[0],
+  );
+  return { latitude: byChainage.latitude, longitude: byChainage.longitude };
+}
+
 function buildPilotMarkersForCebu(route: ProcessedRoute): RouteMarker[] {
+  const startPt = route.points[0];
+  const endPt = route.points[route.points.length - 1] || startPt;
+  const babagCoord = snapCoordinateIfOffCourse(route, 10.3972, 123.8548, route.distanceM * 0.16);
+  const mauyogCoord = snapCoordinateIfOffCourse(route, 10.4252, 123.8308, route.distanceM * 0.36);
+  const manunggalCoord = snapCoordinateIfOffCourse(route, 10.4462, 123.8168, route.distanceM * 0.5);
+  const cantiplaCoord = snapCoordinateIfOffCourse(route, 10.4295, 123.8342, route.distanceM * 0.68);
+
   const base: RouteMarker[] = [
     {
       id: 'm_cebu_start',
       kind: 'start',
       name: 'Busay Highlands Start',
       description: 'Official Cebu 21K trailhead start gantry overlooking Metro Cebu.',
-      latitude: 10.3782,
-      longitude: 123.8675,
+      latitude: startPt.latitude,
+      longitude: startPt.longitude,
       chainageM: 0,
       segmentIndex: 0,
       pointIndex: 0,
@@ -370,9 +411,9 @@ function buildPilotMarkersForCebu(route: ProcessedRoute): RouteMarker[] {
       kind: 'aid',
       name: 'Babag Ridge Aid Station',
       description: 'Hydration and fruit station along the Babag limestone ridge.',
-      latitude: 10.3972,
-      longitude: 123.8548,
-      chainageM: 3200,
+      latitude: babagCoord.latitude,
+      longitude: babagCoord.longitude,
+      chainageM: route.distanceM * 0.16,
       segmentIndex: 0,
       pointIndex: 27,
       passNumber: 1,
@@ -392,9 +433,9 @@ function buildPilotMarkersForCebu(route: ProcessedRoute): RouteMarker[] {
       kind: 'landmark',
       name: 'Mt. Mauyog Ridge Viewpoint',
       description: 'Narrow karst ridge singletrack crest in Central Cebu.',
-      latitude: 10.4252,
-      longitude: 123.8308,
-      chainageM: 7100,
+      latitude: mauyogCoord.latitude,
+      longitude: mauyogCoord.longitude,
+      chainageM: route.distanceM * 0.36,
       segmentIndex: 0,
       pointIndex: 54,
       passNumber: 1,
@@ -426,8 +467,8 @@ function buildPilotMarkersForCebu(route: ProcessedRoute): RouteMarker[] {
       kind: 'timing',
       name: 'Mt. Manunggal Turnaround',
       description: 'Highest highland turnaround mat at 1,003 m.',
-      latitude: 10.4462,
-      longitude: 123.8168,
+      latitude: manunggalCoord.latitude,
+      longitude: manunggalCoord.longitude,
       chainageM: route.distanceM * 0.5,
       segmentIndex: 1,
       pointIndex: 0,
@@ -447,12 +488,12 @@ function buildPilotMarkersForCebu(route: ProcessedRoute): RouteMarker[] {
       kind: 'medical',
       name: 'Cantipla Forest Medical',
       description: 'Inbound forest corridor hydration and medical outpost.',
-      latitude: 10.4295,
-      longitude: 123.8342,
-      chainageM: route.distanceM * 0.65,
+      latitude: cantiplaCoord.latitude,
+      longitude: cantiplaCoord.longitude,
+      chainageM: route.distanceM * 0.68,
       segmentIndex: 1,
       pointIndex: 18,
-      passNumber: 1,
+      passNumber: 2,
       offsetMeters: 0,
       needsReview: false,
       offCourseBlocked: false,
@@ -468,12 +509,12 @@ function buildPilotMarkersForCebu(route: ProcessedRoute): RouteMarker[] {
       kind: 'finish',
       name: 'Busay Finish Arch',
       description: 'Official Cebu 21K finish timing mat.',
-      latitude: 10.3782,
-      longitude: 123.8675,
+      latitude: endPt.latitude,
+      longitude: endPt.longitude,
       chainageM: route.distanceM,
       segmentIndex: 1,
       pointIndex: route.canonicalSegments[1]?.length ? route.canonicalSegments[1].length - 1 : 0,
-      passNumber: 1,
+      passNumber: 2,
       offsetMeters: 0,
       needsReview: false,
       offCourseBlocked: false,
@@ -489,14 +530,16 @@ function buildPilotMarkersForCebu(route: ProcessedRoute): RouteMarker[] {
 }
 
 function buildPilotMarkersForBukidnon(route: ProcessedRoute): RouteMarker[] {
+  const startPt = route.points[0];
+  const endPt = route.points[route.points.length - 1] || startPt;
   const base: RouteMarker[] = [
     {
       id: 'm_buk_start',
       kind: 'start',
       name: 'Impasugong Ranch Start',
       description: 'Communal Ranch grass paddock start line at 820 m.',
-      latitude: 8.2185,
-      longitude: 125.0210,
+      latitude: startPt.latitude,
+      longitude: startPt.longitude,
       chainageM: 0,
       segmentIndex: 0,
       pointIndex: 0,
@@ -599,7 +642,7 @@ function buildPilotMarkersForBukidnon(route: ProcessedRoute): RouteMarker[] {
       chainageM: route.distanceM * 0.72,
       segmentIndex: 1,
       pointIndex: 36,
-      passNumber: 1,
+      passNumber: 2,
       offsetMeters: 0,
       needsReview: false,
       offCourseBlocked: false,
@@ -615,12 +658,12 @@ function buildPilotMarkersForBukidnon(route: ProcessedRoute): RouteMarker[] {
       kind: 'finish',
       name: 'Impasugong Finish Arch',
       description: 'Official Bukidnon 32K finish timing gantry.',
-      latitude: 8.2185,
-      longitude: 125.0210,
+      latitude: endPt.latitude,
+      longitude: endPt.longitude,
       chainageM: route.distanceM,
       segmentIndex: 1,
       pointIndex: route.canonicalSegments[1]?.length ? route.canonicalSegments[1].length - 1 : 0,
-      passNumber: 1,
+      passNumber: 2,
       offsetMeters: 0,
       needsReview: false,
       offCourseBlocked: false,
@@ -658,23 +701,78 @@ export function isDemoSeedEnabled(): boolean {
   return new URLSearchParams(window.location.search).get('seedDemo') === '1';
 }
 
-function stripDemoArtifacts(store: RouteWorkspaceStore): RouteWorkspaceStore {
-  const demoPresetIds = new Set(['preset_baguio_21k', 'preset_baguio_10k']);
-  const demoPubIds = new Set(['pub_baguio_21k_v1', 'pub_baguio_10k_v1']);
-  const demoCatalogIds = new Set(['baguio-cordillera-2026_21k', 'baguio-cordillera-2026_10k']);
+export function stripDemoArtifacts(store: RouteWorkspaceStore): RouteWorkspaceStore {
+  const demoPresetIds = new Set([
+    'preset_baguio_21k',
+    'preset_baguio_10k',
+    'preset_pilot_cebu_21k',
+    'preset_pilot_bukidnon_32k',
+  ]);
+  const demoPubIds = new Set([
+    'pub_baguio_21k_v1',
+    'pub_baguio_10k_v1',
+    'pub_cebu_highlands_21k_v1',
+    'pub_bukidnon_kitanglad_32k_v1',
+  ]);
+  const demoCatalogIds = new Set([
+    'baguio-cordillera-2026_21k',
+    'baguio-cordillera-2026_10k',
+    'cebu-highlands-trail-2026_21k',
+    'bukidnon-kitanglad-trail-2026_32k',
+  ]);
 
   for (const id of demoPresetIds) delete store.presets[id];
   delete store.drafts['preset_baguio_21k::draft_main'];
   delete store.drafts['preset_baguio_10k::draft_main'];
+  delete store.drafts['preset_pilot_cebu_21k::draft_main'];
+  delete store.drafts['preset_pilot_bukidnon_32k::draft_main'];
   delete store.versions['preset_baguio_21k_v1'];
   delete store.versions['preset_baguio_10k_v1'];
+  delete store.versions['preset_pilot_cebu_21k_v1'];
+  delete store.versions['preset_pilot_bukidnon_32k_v1'];
   for (const id of demoPubIds) delete store.publications[id];
   for (const id of demoCatalogIds) {
     delete store.bindings[id];
     delete store.catalog[id];
   }
   store.audit = store.audit.filter((a) => a.id !== 'audit_seed_baguio_v1');
+
+  // Purge legacy auto-created unmodified 3-point Baguio starter drafts not bound/published
+  const referencedPresetIds = new Set<string>();
+  for (const binding of Object.values(store.bindings)) {
+    if (binding.presetId) referencedPresetIds.add(binding.presetId);
+  }
+  for (const publication of Object.values(store.publications)) {
+    if (publication.presetId) referencedPresetIds.add(publication.presetId);
+  }
+  for (const [presetId, preset] of Object.entries(store.presets)) {
+    if (referencedPresetIds.has(presetId) || preset.latestVersionNumber !== 0) continue;
+    const draftKey = `${presetId}::${preset.latestDraftId || 'draft_main'}`;
+    const draft = store.drafts[draftKey];
+    if (
+      draft &&
+      draft.revision === 1 &&
+      draft.markers.length === 0 &&
+      isDefaultStarterGeometry(draft.canonicalGeometry)
+    ) {
+      delete store.presets[presetId];
+      delete store.drafts[draftKey];
+      store.audit = store.audit.filter((a) => a.presetId !== presetId);
+    }
+  }
   return store;
+}
+
+function storeFingerprint(store: RouteWorkspaceStore): string {
+  return [
+    Object.keys(store.presets).length,
+    Object.keys(store.drafts).length,
+    Object.keys(store.versions).length,
+    Object.keys(store.bindings).length,
+    Object.keys(store.publications).length,
+    Object.keys(store.catalog).length,
+    store.audit.length,
+  ].join(':');
 }
 
 function loadFromStorage(): RouteWorkspaceStore {
@@ -693,7 +791,17 @@ function loadFromStorage(): RouteWorkspaceStore {
       audit: Array.isArray(parsed.audit) ? parsed.audit : [],
       migratedLegacyKeys: parsed.migratedLegacyKeys || {},
     };
-    return isDemoSeedEnabled() ? loaded : stripDemoArtifacts(loaded);
+    if (isDemoSeedEnabled()) return loaded;
+    const before = storeFingerprint(loaded);
+    const cleaned = stripDemoArtifacts(loaded);
+    if (storeFingerprint(cleaned) !== before) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
+      } catch {
+        // Ignore storage write errors on read cleanup
+      }
+    }
+    return cleaned;
   } catch {
     return emptyStore();
   }
@@ -1207,8 +1315,9 @@ export function seedPilotCoursesFromGpxText(cebuGpxText: string, bukidnonGpxText
   saveToStorage(store);
 }
 
-export async function ensurePilotCoursesSeeded(): Promise<void> {
+export async function ensurePilotCoursesSeeded(force = false): Promise<void> {
   if (typeof window === 'undefined') return;
+  if (!force && !isDemoSeedEnabled()) return;
   const current = getRouteStoreSnapshot();
   const cebuPub = current.publications['pub_cebu_highlands_21k_v1'];
   const bukPub = current.publications['pub_bukidnon_kitanglad_32k_v1'];
@@ -1484,7 +1593,9 @@ export async function loadPublishedCourse(
   withdrawn: boolean;
   withdrawalReason?: string;
 }> {
-  await Promise.all([ensurePilotCoursesSeeded(), ensureDemoCoursesSeeded()]);
+  if (isDemoSeedEnabled()) {
+    await Promise.all([ensurePilotCoursesSeeded(), ensureDemoCoursesSeeded()]);
+  }
   const store = getRouteStoreSnapshot();
   const bindingKey = `${raceId}_${distanceId}`;
   let currentPubId = store.bindings[bindingKey]?.currentPublicationId || store.catalog[bindingKey]?.currentPublicationId;
@@ -1590,6 +1701,13 @@ export function validatePublicationReadiness(params: {
     issues.push({ code: 'title', severity: 'error', message: 'Course title is required.' });
   }
   const processed = processCanonicalGeometry(params.geometry);
+  if (processed.canonicalGeometry.isCanvasCleared || processed.points.length < 2) {
+    issues.push({
+      code: 'empty-geometry',
+      severity: 'error',
+      message: 'Course has no route path yet. Draw, paint, record GPS, or import a GPX file before publishing.',
+    });
+  }
   if (processed.canonicalSegments.length > 1) {
     issues.push({
       code: 'multi-segment',
@@ -1809,7 +1927,7 @@ export function ensurePresetForRaceDistanceCommand(input: {
   actorName: string;
   race: Race;
   distanceId: string;
-  starterGeometry: CanonicalRouteGeometry;
+  starterGeometry?: CanonicalRouteGeometry;
 }): { preset: RoutePreset; draft: RouteDraft } | null {
   const store = getRouteStoreSnapshot();
   const binding = store.bindings[`${input.race.id}_${input.distanceId}`];
@@ -1836,7 +1954,7 @@ export function ensurePresetForRaceDistanceCommand(input: {
     activity: distObj && distObj.km >= 21 ? 'trail' : 'road',
     raceId: input.race.id,
     distanceId: distObj?.id || input.distanceId,
-    geometry: input.starterGeometry,
+    geometry: input.starterGeometry ?? createEmptyRouteGeometry(),
   });
 }
 
@@ -2507,7 +2625,7 @@ export function runWeeklyClearImageryCheckCommand(input: {
     action: 'refresh_imagery',
     actorUid: input.actorUid,
     actorName: input.actorName,
-    reason: `Weekly clear Sentinel-2 check (${sceneDate}): ${updatedCount} validated and updated, ${skippedCount} held`,
+    reason: `Course imagery check (${sceneDate}): ${updatedCount} validated and updated, ${skippedCount} held`,
   });
   saveToStorage(store);
   return { checkedCount, updatedCount, skippedCount };
@@ -2550,7 +2668,7 @@ export function runQuarterlyNationalMosaicRefreshCommand(input: {
     action: 'refresh_mosaic',
     actorUid: input.actorUid,
     actorName: input.actorName,
-    reason: `Quarterly Sentinel-2 L3 mosaic refresh (${quarter}): ${updatedCount} course layers validated`,
+    reason: `National map mosaic refresh (${quarter}): ${updatedCount} course layers validated`,
   });
   saveToStorage(store);
   return { checkedCount, updatedCount, skippedCount, quarter };
@@ -2569,4 +2687,144 @@ export async function refreshRemotePresets(): Promise<void> {
   } catch {
     // Permission/offline fallback
   }
+}
+
+export type RoutePresetConfigKind =
+  | 'active'
+  | 'active_other_distance'
+  | 'withdrawn'
+  | 'draft'
+  | 'archived';
+
+export interface RoutePresetConfigStatus {
+  kind: RoutePresetConfigKind;
+  isActiveForDistance: boolean;
+  sortRank: number;
+  badge: string;
+  badgeTone: 'neutral' | 'success' | 'warning' | 'info';
+  accentDot?: string;
+  sublabel: string;
+  activeVersionNumber?: number;
+  activeDistanceLabels: string[];
+}
+
+export function describePresetConfigStatus(
+  preset: RoutePreset,
+  store: RouteWorkspaceStore,
+  raceId: string,
+  distanceId: string,
+): RoutePresetConfigStatus {
+  const currentBinding = distanceId ? store.bindings[`${raceId}_${distanceId}`] : undefined;
+  const currentPub = currentBinding?.currentPublicationId
+    ? store.publications[currentBinding.currentPublicationId]
+    : undefined;
+
+  if (currentBinding?.presetId === preset.id && currentPub?.status === 'published') {
+    const stagedSuffix =
+      preset.latestVersionNumber > currentPub.versionNumber
+        ? ` · v${preset.latestVersionNumber} staged`
+        : '';
+    const archivedSuffix = preset.archived ? ' · Archived preset' : '';
+    return {
+      kind: 'active',
+      isActiveForDistance: true,
+      sortRank: 0,
+      accentDot: '#10b981',
+      badge: `Active · v${currentPub.versionNumber}`,
+      badgeTone: 'success',
+      activeVersionNumber: currentPub.versionNumber,
+      activeDistanceLabels: [currentPub.distanceLabel],
+      sublabel: `Live on ${currentPub.distanceLabel} · ${(currentPub.measuredDistanceM / 1000).toFixed(2)} km${stagedSuffix}${archivedSuffix}`,
+    };
+  }
+
+  const otherLiveBindings = Object.values(store.bindings).filter(
+    (b) =>
+      b.raceId === raceId &&
+      b.distanceId !== distanceId &&
+      b.presetId === preset.id &&
+      Boolean(b.currentPublicationId) &&
+      store.publications[b.currentPublicationId!]?.status === 'published',
+  );
+
+  if (otherLiveBindings.length > 0) {
+    const labels = otherLiveBindings.map((b) => b.distanceLabel);
+    const liveDetails = otherLiveBindings
+      .map((b) => {
+        const pub = b.currentPublicationId ? store.publications[b.currentPublicationId] : undefined;
+        return `${b.distanceLabel} v${pub?.versionNumber ?? b.versionNumber}`;
+      })
+      .join(', ');
+    return {
+      kind: 'active_other_distance',
+      isActiveForDistance: false,
+      sortRank: 1,
+      accentDot: '#0ea5e9',
+      badge: `Active (${labels.join(', ')})`,
+      badgeTone: 'info',
+      activeDistanceLabels: labels,
+      sublabel: `Live on ${liveDetails}`,
+    };
+  }
+
+  if (currentBinding?.presetId === preset.id && currentPub?.status === 'withdrawn') {
+    return {
+      kind: 'withdrawn',
+      isActiveForDistance: false,
+      sortRank: 2,
+      accentDot: '#f59e0b',
+      badge: 'Withdrawn',
+      badgeTone: 'warning',
+      activeDistanceLabels: [],
+      sublabel: `Withdrawn from ${currentPub.distanceLabel} · v${currentPub.versionNumber}`,
+    };
+  }
+
+  if (preset.archived) {
+    return {
+      kind: 'archived',
+      isActiveForDistance: false,
+      sortRank: 4,
+      accentDot: '#71717a',
+      badge: 'Archived',
+      badgeTone: 'neutral',
+      activeDistanceLabels: [],
+      sublabel:
+        preset.latestVersionNumber > 0
+          ? `Archived · v${preset.latestVersionNumber} · Not active`
+          : 'Archived · Not active',
+    };
+  }
+
+  const draft = store.drafts[`${preset.id}::${preset.latestDraftId}`];
+  const distText =
+    draft && draft.distanceM > 0 && !draft.canonicalGeometry?.isCanvasCleared
+      ? `${(draft.distanceM / 1000).toFixed(2)} km draft`
+      : 'Empty draft';
+
+  return {
+    kind: 'draft',
+    isActiveForDistance: false,
+    sortRank: distanceId && preset.distanceId === distanceId ? 2 : 3,
+    accentDot: undefined,
+    badge: preset.latestVersionNumber > 0 ? `Draft · v${preset.latestVersionNumber}` : 'Draft',
+    badgeTone: 'neutral',
+    activeDistanceLabels: [],
+    sublabel: `Not active · ${distText}`,
+  };
+}
+
+export function sortRoutePresetsForDistance(
+  presets: RoutePreset[],
+  store: RouteWorkspaceStore,
+  raceId: string,
+  distanceId: string,
+): RoutePreset[] {
+  return [...presets].sort((a, b) => {
+    const rankDiff =
+      describePresetConfigStatus(a, store, raceId, distanceId).sortRank -
+      describePresetConfigStatus(b, store, raceId, distanceId).sortRank;
+    if (rankDiff !== 0) return rankDiff;
+    return b.updatedAt.localeCompare(a.updatedAt);
+  });
 }

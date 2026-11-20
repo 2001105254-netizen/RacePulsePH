@@ -23,16 +23,13 @@ interface RouteElevationProfileProps {
   onSelectPass?: (passNumber: number) => void;
   comparisonRoute?: ProcessedRoute | null;
   comparisonLabel?: string;
+  compact?: boolean;
 }
 
-const CHART_WIDTH = 680;
-const CHART_HEIGHT = 156;
 const PAD_LEFT = 42;
 const PAD_RIGHT = 14;
-const PAD_TOP = 14;
-const PAD_BOTTOM = 26;
-const PLOT_W = CHART_WIDTH - PAD_LEFT - PAD_RIGHT;
-const PLOT_H = CHART_HEIGHT - PAD_TOP - PAD_BOTTOM;
+const PAD_TOP = 12;
+const PAD_BOTTOM = 22;
 
 export default function RouteElevationProfile({
   route,
@@ -50,7 +47,12 @@ export default function RouteElevationProfile({
   onSelectPass,
   comparisonRoute,
   comparisonLabel,
+  compact = false,
 }: RouteElevationProfileProps) {
+  const CHART_WIDTH = compact ? 920 : 680;
+  const CHART_HEIGHT = compact ? 102 : 156;
+  const PLOT_W = CHART_WIDTH - PAD_LEFT - PAD_RIGHT;
+  const PLOT_H = CHART_HEIGHT - PAD_TOP - PAD_BOTTOM;
   const svgRef = useRef<SVGSVGElement>(null);
   const rafRef = useRef<number>(0);
 
@@ -188,13 +190,17 @@ export default function RouteElevationProfile({
     emitChainage(target.chainageM, target.passNumber);
   };
 
+  const isClearedRoute = Boolean(route.canonicalGeometry?.isCanvasCleared);
   const prov = route.elevationProvenance;
-  const provLabel =
-    prov.status === 'unavailable'
+  const provLabel = isClearedRoute
+    ? 'No route yet'
+    : prov.status === 'unavailable'
       ? 'Elevation unavailable'
       : prov.status === 'partial'
-        ? `${prov.source.toUpperCase()} elevation · ${prov.coveragePct}% coverage (gaps left blank)`
-        : `${prov.source.toUpperCase()} elevation · smoothed (${prov.algorithmVersion})`;
+        ? `Terrain elevation · ${prov.coveragePct}% coverage (gaps left blank)`
+        : prov.source === 'gpx'
+          ? 'Track elevation · smoothed'
+          : 'Terrain elevation · smoothed';
 
   const cursorX = chartData.xForChainage(activeChainageM);
   const runnerX =
@@ -214,14 +220,16 @@ export default function RouteElevationProfile({
   return (
     <section
       aria-label="Course elevation profile"
-      className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-4"
+      className={`rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] ${
+        compact ? 'px-3 py-2' : 'p-4'
+      }`}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-sm sm:text-base font-semibold text-[var(--text-primary)]">
+        <div className="flex items-center gap-2">
+          <h2 className="text-xs sm:text-sm font-semibold text-[var(--text-primary)]">
             Elevation profile
           </h2>
-          <p className="text-xs text-[var(--text-secondary)]">{provLabel}</p>
+          {!compact && <p className="text-xs text-[var(--text-secondary)]">{provLabel}</p>}
         </div>
         <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--text-secondary)]">
           {prov.status !== 'unavailable' ? (
@@ -249,7 +257,7 @@ export default function RouteElevationProfile({
             </>
           ) : (
             <span className="font-semibold text-[var(--text-primary)]">
-              Elevation data unavailable
+              {isClearedRoute ? 'No route yet' : 'Elevation data unavailable'}
             </span>
           )}
         </div>
@@ -259,7 +267,7 @@ export default function RouteElevationProfile({
         <div
           role="group"
           aria-label="Select course pass at this coordinate"
-          className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 py-2 text-xs"
+          className="mt-1.5 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 py-1.5 text-xs"
         >
           <span className="font-semibold text-[var(--text-primary)]">
             Multiple passes share this road:
@@ -273,7 +281,7 @@ export default function RouteElevationProfile({
                 emitChainage(cand.chainageM, cand.passNumber);
               }}
               aria-pressed={activePass === cand.passNumber}
-              className={`min-h-9 rounded-lg border px-2.5 font-semibold transition ${
+              className={`min-h-8 rounded-lg border px-2 font-semibold transition ${
                 activePass === cand.passNumber
                   ? 'border-red-600 bg-red-700 text-white'
                   : 'border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] hover:border-red-600/50'
@@ -286,11 +294,15 @@ export default function RouteElevationProfile({
       )}
 
       {chartData.hasElevation ? (
-        <div className="mt-3">
+        <div className={compact ? 'mt-1.5' : 'mt-3'}>
           <svg
             ref={svgRef}
             viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-            className="block w-full touch-pan-y select-none"
+            className={
+              compact
+                ? 'block h-auto max-h-[108px] w-full cursor-pointer touch-pan-y select-none'
+                : 'block w-full touch-pan-y select-none'
+            }
             role="img"
             aria-label="Course elevation profile by cumulative distance"
             onPointerDown={(event) => handleSvgPointer(event.clientX)}
@@ -487,7 +499,9 @@ export default function RouteElevationProfile({
         </div>
       ) : (
         <div className="mt-3 rounded-xl border border-dashed border-[var(--border-default)] bg-[var(--surface-inset)] px-4 py-5 text-center text-xs text-[var(--text-secondary)]">
-          Elevation is unavailable for this file. Distance position along the map remains active.
+          {isClearedRoute
+            ? 'No route drawn or imported yet. Paint a trail, draw points, record GPS, or import a GPX file.'
+            : 'Elevation is unavailable for this file. Distance position along the map remains active.'}
         </div>
       )}
 
@@ -519,63 +533,134 @@ export default function RouteElevationProfile({
       )}
 
       {/* Keyboard range slider + checkpoint stepper + readout */}
-      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <label className="flex-1 text-xs font-semibold text-[var(--text-primary)]">
-          Course position
+      {compact ? (
+        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+          <output className="shrink-0 font-mono text-[var(--text-primary)]">
+            {isClearedRoute ? (
+              '0.00 km · No route yet'
+            ) : (
+              <>
+                {(activeChainageM / 1000).toFixed(2)} km
+                {' · '}
+                {activePoint.elevation === undefined
+                  ? 'Elev N/A'
+                  : `${Math.round(activePoint.elevation)} m`}
+                {activePoint.gradePct !== undefined
+                  ? ` · ${activePoint.gradePct > 0 ? '+' : ''}${activePoint.gradePct}%`
+                  : ''}
+                {activePoint.passNumber > 1 ? ` · P${activePoint.passNumber}` : ''}
+              </>
+            )}
+          </output>
           <input
             type="range"
+            aria-label="Course position"
+            disabled={isClearedRoute || route.distanceM <= 0}
             min={0}
             max={Math.round(totalDistanceM)}
             step={Math.max(10, Math.round(totalDistanceM / 400))}
             value={Math.round(activeChainageM)}
             onChange={(event) => emitChainage(event.currentTarget.valueAsNumber)}
-            aria-valuetext={`${(activeChainageM / 1000).toFixed(2)} km, ${
-              activePoint.elevation === undefined
-                ? 'elevation unavailable'
-                : `${Math.round(activePoint.elevation)} meters`
-            }`}
-            className="mt-1 block h-11 w-full accent-red-700 dark:accent-red-400"
+            aria-valuetext={
+              isClearedRoute
+                ? 'No route configured yet'
+                : `${(activeChainageM / 1000).toFixed(2)} km, ${
+                    activePoint.elevation === undefined
+                      ? 'elevation unavailable'
+                      : `${Math.round(activePoint.elevation)} meters`
+                  }`
+            }
+            className="h-8 min-w-[120px] flex-1 accent-red-700 dark:accent-red-400 disabled:opacity-45"
           />
-        </label>
+          {orderedMarkers.length > 0 && (
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={() => stepMarker(-1)}
+                className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
+                Prev
+              </button>
+              <button
+                type="button"
+                onClick={() => stepMarker(1)}
+                className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+              >
+                Next
+                <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <label className="flex-1 text-xs font-semibold text-[var(--text-primary)]">
+              Course position
+              <input
+                type="range"
+                disabled={isClearedRoute || route.distanceM <= 0}
+                min={0}
+                max={Math.round(totalDistanceM)}
+                step={Math.max(10, Math.round(totalDistanceM / 400))}
+                value={Math.round(activeChainageM)}
+                onChange={(event) => emitChainage(event.currentTarget.valueAsNumber)}
+                aria-valuetext={
+                  isClearedRoute
+                    ? 'No route configured yet'
+                    : `${(activeChainageM / 1000).toFixed(2)} km, ${
+                        activePoint.elevation === undefined
+                          ? 'elevation unavailable'
+                          : `${Math.round(activePoint.elevation)} meters`
+                      }`
+                }
+                className="mt-1 block h-11 w-full accent-red-700 dark:accent-red-400 disabled:opacity-45"
+              />
+            </label>
 
-        {orderedMarkers.length > 0 && (
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={() => stepMarker(-1)}
-              className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50 hover:text-red-700 dark:hover:text-red-400"
-            >
-              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-              Prev checkpoint
-            </button>
-            <button
-              type="button"
-              onClick={() => stepMarker(1)}
-              className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50 hover:text-red-700 dark:hover:text-red-400"
-            >
-              Next checkpoint
-              <ChevronRight className="h-4 w-4" aria-hidden="true" />
-            </button>
+            {orderedMarkers.length > 0 && (
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => stepMarker(-1)}
+                  className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50 hover:text-red-700 dark:hover:text-red-400"
+                >
+                  <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                  Prev checkpoint
+                </button>
+                <button
+                  type="button"
+                  onClick={() => stepMarker(1)}
+                  className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50 hover:text-red-700 dark:hover:text-red-400"
+                >
+                  Next checkpoint
+                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border-default)] pt-2 text-xs text-[var(--text-secondary)]">
-        <output className="font-mono text-[var(--text-primary)]">
-          {(activeChainageM / 1000).toFixed(2)} km
-          {' · '}
-          {activePoint.elevation === undefined
-            ? 'Elevation unavailable here'
-            : `${Math.round(activePoint.elevation)} m`}
-          {activePoint.gradePct !== undefined ? ` · ${activePoint.gradePct > 0 ? '+' : ''}${activePoint.gradePct}% grade` : ''}
-          {activePoint.passNumber > 1 ? ` · Pass ${activePoint.passNumber}` : ''}
-        </output>
-        {comparisonRoute && comparisonLabel && (
-          <span className="text-sky-700 dark:text-sky-300">
-            Dashed line: {comparisonLabel} ({comparisonRoute.distanceKm.toFixed(2)} km)
-          </span>
-        )}
-      </div>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border-default)] pt-2 text-xs text-[var(--text-secondary)]">
+            <output className="font-mono text-[var(--text-primary)]">
+              {(activeChainageM / 1000).toFixed(2)} km
+              {' · '}
+              {activePoint.elevation === undefined
+                ? 'Elevation unavailable here'
+                : `${Math.round(activePoint.elevation)} m`}
+              {activePoint.gradePct !== undefined
+                ? ` · ${activePoint.gradePct > 0 ? '+' : ''}${activePoint.gradePct}% grade`
+                : ''}
+              {activePoint.passNumber > 1 ? ` · Pass ${activePoint.passNumber}` : ''}
+            </output>
+            {comparisonRoute && comparisonLabel && (
+              <span className="text-sky-700 dark:text-sky-300">
+                Dashed line: {comparisonLabel} ({comparisonRoute.distanceKm.toFixed(2)} km)
+              </span>
+            )}
+          </div>
+        </>
+      )}
     </section>
   );
 }

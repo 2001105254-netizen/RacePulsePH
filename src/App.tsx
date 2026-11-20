@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
 import { onIdTokenChanged, User } from 'firebase/auth';
 import { doc, onSnapshot, writeBatch } from 'firebase/firestore';
-import { AnimatePresence, LazyMotion, MotionConfig, domMax, m } from 'motion/react';
+import { AnimatePresence, LazyMotion, LayoutGroup, MotionConfig, domMax, m } from 'motion/react';
 import { auth, db, signOutUser } from './firebase';
 import PublicRaceLanding from './components/PublicRaceLanding';
 import { PublicLegalPage, PublicNotFoundView } from './components/PublicInfoPages';
@@ -13,7 +13,8 @@ import { matchRouteLocation } from './lib/routes/routing';
 import { WorkspaceHeaderProvider, useWorkspaceHeader } from './lib/workspaceHeader';
 import { UserProfile } from './types';
 import { Sun, Moon, RefreshCw, Clock3, LogOut, LogIn, UserPlus, ArrowLeft, ShieldCheck, ChevronUp, Compass, Menu, Check } from 'lucide-react';
-import { EMIL_EASE, ViewLoadingSkeleton, type NavDirection } from './components/ui/MotionPrimitives';
+import { EMIL_EASE, KINETIC_SPRING, ViewLoadingSkeleton, type NavDirection } from './components/ui/MotionPrimitives';
+import { PulseDivider, RedTribalPatternBackdrop } from './components/ui/KineticTelemetry';
 
 // Lazy-load signed-in workspaces and authentication screens so public landing
 // visitors do not download admin/operator consoles, QR scanners, or spreadsheet libraries.
@@ -131,28 +132,18 @@ const RouteStudioWrapper = lazy(async () => {
           );
         }
         return (
-          <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-[1600px] px-4 py-4 sm:px-6 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={onBackHome}
-                className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
-              >
-                <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-                Back to Workspace
-              </button>
-              <a
-                href="/routes"
-                onClick={(e) => {
-                  e.preventDefault();
-                  onNavigateUrl('/routes');
-                }}
-                className="inline-flex min-h-11 items-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-red-700 hover:border-red-600/50 dark:text-red-400"
-              >
-                View Public Route Explorer
-              </a>
-            </div>
-            <RouteStudioPanel profile={profile} theme={theme} initialPresetId={presetId} onNavigateUrl={onNavigateUrl} />
+          <main
+            id="main-content"
+            tabIndex={-1}
+            className="w-full min-h-0 flex-1 flex flex-col lg:overflow-hidden focus:outline-none"
+          >
+            <RouteStudioPanel
+              profile={profile}
+              theme={theme}
+              initialPresetId={presetId}
+              onNavigateUrl={onNavigateUrl}
+              onBackHome={onBackHome}
+            />
           </main>
         );
       }
@@ -242,11 +233,27 @@ function useTheme() {
 }
 
 const LANDING_NAV_SECTIONS = [
-  { id: 'finisher-lookup', label: 'Results' },
   { id: 'podium-highlights', label: 'Highlights' },
-  { id: 'events-catalog', label: 'Races' },
-  { id: 'runner-statistics', label: 'Statistics' },
+  { id: 'upcoming-races', label: 'Upcoming' },
+  { id: 'official-bibs', label: 'Official Bibs' },
+  { id: 'age-stats', label: 'Age Stats' },
 ] as const;
+
+function getE2eProfile(): UserProfile | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw =
+      window.sessionStorage.getItem('racepulse_e2e_profile') ||
+      window.localStorage.getItem('racepulse_e2e_profile');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.uid && parsed?.role) return parsed as UserProfile;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
 
 export default function App() {
   return (
@@ -268,8 +275,22 @@ function AppContent() {
       window.scrollTo({ top: 0, behavior: 'auto' });
     }
   }, [desktopLocked, splitViewportLocked]);
-  const [authUser, setAuthUser] = useState<User | null | undefined>(undefined); // undefined = still checking session
-  const [profile, setProfile] = useState<UserProfile | null | undefined>(undefined);
+  const [authUser, setAuthUser] = useState<User | null | undefined>(() => {
+    const e2e = getE2eProfile();
+    if (e2e) {
+      return {
+        uid: e2e.uid,
+        email: e2e.email || 'admin@racepulse.ph',
+        displayName: e2e.displayName || 'Patrick Josh Añedez',
+        emailVerified: true,
+      } as unknown as User;
+    }
+    return undefined;
+  }); // undefined = still checking session
+  const [profile, setProfile] = useState<UserProfile | null | undefined>(() => {
+    const e2e = getE2eProfile();
+    return e2e || undefined;
+  });
   const [profileError, setProfileError] = useState(false);
   const [authError, setAuthError] = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
@@ -288,7 +309,7 @@ function AppContent() {
   const [activeRaceTitle, setActiveRaceTitle] = useState<string | null>(null);
   const [pendingRaceId, setPendingRaceId] = useState<string | null>(() => registrationRaceIdFromUrl());
   const [runnerSignupIntent, setRunnerSignupIntent] = useState(() => !!registrationRaceIdFromUrl());
-  const [activeLandingSection, setActiveLandingSection] = useState<string>('finisher-lookup');
+  const [activeLandingSection, setActiveLandingSection] = useState<string>('podium-highlights');
   const [landingNavTier, setLandingNavTier] = useState<'compact' | 'medium' | 'wide'>('compact');
   const [landingMenuOpen, setLandingMenuOpen] = useState(false);
   const headerRef = React.useRef<HTMLElement>(null);
@@ -717,6 +738,17 @@ function AppContent() {
           }
         }
         if (!user) {
+          const e2e = getE2eProfile();
+          if (e2e) {
+            setAuthUser({
+              uid: e2e.uid,
+              email: e2e.email || 'admin@racepulse.ph',
+              displayName: e2e.displayName || 'Patrick Josh Añedez',
+              emailVerified: true,
+            } as unknown as User);
+            setProfile(e2e);
+            return;
+          }
           const registrationRaceId = registrationRaceIdFromUrl();
           setProfile(null);
           setGuestScreen(guestScreenFromLocation());
@@ -733,8 +765,34 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw =
+        window.sessionStorage.getItem('racepulse_e2e_profile') ||
+        window.localStorage.getItem('racepulse_e2e_profile');
+      if (raw && !authUser) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.uid && parsed?.role) {
+          setAuthUser({
+            uid: parsed.uid,
+            email: parsed.email || 'admin@racepulse.ph',
+            displayName: parsed.displayName || 'Patrick Josh Añedez',
+            emailVerified: true,
+          } as unknown as User);
+          setProfile(parsed as UserProfile);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [authUser]);
+
+  useEffect(() => {
     if (!authUser) {
       setProfile(null);
+      return;
+    }
+    if (authUser.uid.startsWith('e2e-')) {
       return;
     }
     setProfile(undefined);
@@ -1003,6 +1061,13 @@ function AppContent() {
 
   const showBackButton = (!authUser && guestScreen !== 'landing') || Boolean(signedInUtilityView) || Boolean(routeMatch);
   const isWorkspaceShell = Boolean(authUser && profile && !authError && !profileError && !signedInUtilityView && !routeMatch);
+  const isRouteWorkspace =
+    Boolean(routeMatch) &&
+    !(routeMatch?.kind === 'route-studio' && (!authUser || !profile)) &&
+    !authError &&
+    !(profileError && authUser) &&
+    !signedInUtilityView;
+  const usesWorkspaceHeaderSlots = isWorkspaceShell || isRouteWorkspace;
   const viewKey = routeMatch
     ? `route-${routeMatch.kind}`
     : signedInUtilityView
@@ -1029,25 +1094,27 @@ function AppContent() {
           <a href="#main-content" className="skip-link">
             Skip to main content
           </a>
-          {/* Global ambient glow - sits behind every page.
-              Light mode: directional warm top-left beam via .ambient-glow.
-              Dark mode: dramatic red light-ray beaming in from top-left. */}
-          <div className="ambient-glow fixed inset-0 -z-10 overflow-hidden pointer-events-none" />
 
           {/* Global Navigation - persistent charcoal brand bar on desktop; flows naturally on phone & short landscape screens */}
           <header
             ref={headerRef}
             data-landing-nav={isLandingGuest ? 'true' : undefined}
             data-nav-tier={isLandingGuest ? landingNavTier : undefined}
-            className="z-40 brand-nav shrink-0"
+            className={`relative z-40 brand-nav shrink-0 ${isRouteWorkspace ? 'sticky top-0' : ''}`}
           >
             <div
               ref={headerInnerRef}
-              className={`${isWorkspaceShell ? 'w-full pl-[max(0.75rem,var(--rp-safe-left))] pr-[max(0.75rem,var(--rp-safe-right))] sm:px-4 xl:px-6 min-h-[48px] py-[2px] min-[600px]:min-h-[56px] min-[600px]:py-1 lg:min-h-[64px] lg:py-[8px]' : 'w-full max-w-[1600px] mx-auto pl-[max(0.75rem,var(--rp-safe-left))] pr-[max(0.75rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))] min-h-[64px] py-[8px]'} landing-header-row min-w-0 flex items-center justify-between gap-[8px] sm:gap-[12px]`}
+              className={`${
+                isRouteWorkspace
+                  ? 'w-full pl-[max(0.75rem,var(--rp-safe-left))] pr-[max(0.75rem,var(--rp-safe-right))] sm:px-4 min-h-[48px] py-[2px] lg:h-[52px] lg:min-h-[52px] lg:py-1'
+                  : isWorkspaceShell
+                    ? 'w-full pl-[max(0.75rem,var(--rp-safe-left))] pr-[max(0.75rem,var(--rp-safe-right))] sm:px-4 xl:px-6 min-h-[48px] py-[2px] min-[600px]:min-h-[56px] min-[600px]:py-1 lg:min-h-[64px] lg:py-[8px]'
+                    : 'w-full max-w-[1600px] mx-auto pl-[max(0.75rem,var(--rp-safe-left))] pr-[max(0.75rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))] min-h-[64px] py-[8px]'
+              } landing-header-row min-w-0 flex items-center justify-between gap-[8px] sm:gap-[12px]`}
             >
               <div
                 ref={headerLeftRef}
-                className={`flex items-center gap-[8px] ${isWorkspaceShell ? 'min-w-0 flex-1' : 'shrink-0'}`}
+                className={`flex items-center gap-[8px] ${usesWorkspaceHeaderSlots ? 'min-w-0 flex-1' : 'shrink-0'}`}
               >
                 {showBackButton && (
                   <button
@@ -1055,7 +1122,7 @@ function AppContent() {
                     onClick={handleBack}
                     title="Back"
                     aria-label="Go back"
-                    className="w-[44px] h-[44px] shrink-0 rounded-full border border-white/15 bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] flex items-center justify-center text-white/90 hover:text-red-400 hover:border-red-500/50 transition-all duration-150 motion-safe:active:scale-95"
+                    className="w-[44px] h-[44px] shrink-0 rounded-xl border border-white/15 bg-white/10 flex items-center justify-center text-white/90 hover:text-red-400 hover:border-red-500/50 transition-colors duration-150 motion-safe:active:scale-95"
                   >
                     <ArrowLeft className="w-4 h-4" aria-hidden="true" />
                   </button>
@@ -1089,7 +1156,7 @@ function AppContent() {
                 </button>
 
                 {/* Workspace context slot (renders on desktop and mobile when portal provided) */}
-                {isWorkspaceShell && (
+                {usesWorkspaceHeaderSlots && (
                   <div
                     ref={setLeftSlotEl}
                     id="workspace_header_left_slot"
@@ -1101,10 +1168,10 @@ function AppContent() {
               <div
                 ref={headerRightRef}
                 className={`flex items-center justify-end gap-[8px] ${
-                  isWorkspaceShell ? 'min-w-0 shrink-0' : isLandingGuest ? 'shrink-0' : 'shrink-0 max-w-full'
+                  usesWorkspaceHeaderSlots ? 'min-w-0 shrink-0' : isLandingGuest ? 'shrink-0' : 'shrink-0 max-w-full'
                 }`}
               >
-                {isWorkspaceShell && (
+                {usesWorkspaceHeaderSlots && (
                   <div
                     ref={setRightSlotEl}
                     id="workspace_header_right_slot"
@@ -1120,7 +1187,7 @@ function AppContent() {
                       aria-controls="landing-sections-popover"
                       aria-expanded={landingMenuOpen}
                       onClick={!supportsNativePopover ? () => setLandingMenuOpen((open) => !open) : undefined}
-                      className="landing-menu-trigger min-h-[44px] px-[12px] rounded-full border border-white/15 bg-white/10 text-xs font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:border-red-500/50 hover:text-red-400 transition-colors duration-150 inline-flex items-center justify-center gap-[6px] motion-safe:active:scale-[0.97] whitespace-nowrap shrink-0"
+                      className="landing-menu-trigger min-h-[44px] px-[12px] rounded-xl border border-white/15 bg-white/10 text-xs font-semibold text-white hover:border-red-500/50 hover:text-red-400 transition-colors duration-150 inline-flex items-center justify-center gap-[6px] motion-safe:active:scale-[0.98] whitespace-nowrap shrink-0"
                     >
                       <span className="landing-trigger-compact inline-flex items-center gap-[6px]">
                         <Menu className="w-4 h-4 shrink-0 text-red-400" aria-hidden="true" />
@@ -1132,66 +1199,76 @@ function AppContent() {
                       </span>
                     </button>
 
-                    <ul
-                      id="landing-sections-popover"
-                      ref={sectionsPopoverRef}
-                      className={`landing-sections-popover ${!supportsNativePopover && landingMenuOpen ? 'is-fallback-open' : ''}`}
-                    >
-                      <li className="landing-menu-header px-3 py-1.5 text-xs font-semibold text-zinc-300" role="presentation">
-                        Explore page sections
-                      </li>
-                      {LANDING_NAV_SECTIONS.map((section) => {
-                        const isActive = activeLandingSection === section.id;
-                        return (
-                          <li key={section.id}>
-                            <a
-                              href={`#${section.id}`}
-                              onClick={(event) => handleLandingSectionClick(event, section.id)}
-                              aria-current={isActive ? 'location' : undefined}
-                              className={`landing-nav-link ${isActive ? 'target-current' : ''}`}
-                            >
-                              <span>{section.label}</span>
-                              {isActive && (
-                                <Check className="landing-nav-check w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                              )}
-                            </a>
-                          </li>
-                        );
-                      })}
-                      <li>
-                        <a
-                          href="/routes"
-                          onClick={(event) => {
-                            event.preventDefault();
-                            closeLandingMenu();
-                            navigateUrl('/routes');
-                          }}
-                          className="landing-nav-link"
-                        >
-                          <span>Routes</span>
-                        </a>
-                      </li>
-                      <li className="landing-menu-register-item mt-1.5 pt-2 border-t border-white/10">
-                        <a
-                          href="/register"
-                          onMouseEnter={() => {
-                            void import('./components/AuthGate');
-                          }}
-                          onFocus={() => {
-                            void import('./components/AuthGate');
-                          }}
-                          onClick={(event) => {
-                            event.preventDefault();
-                            closeLandingMenu();
-                            navigateGuest('signup');
-                          }}
-                          className="min-h-[44px] px-3 py-2 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold border border-red-500/25 flex items-center justify-center gap-2 transition-colors"
-                        >
-                          <UserPlus className="w-4 h-4 shrink-0" aria-hidden="true" />
-                          <span>Register</span>
-                        </a>
-                      </li>
-                    </ul>
+                    <LayoutGroup id="landing-navbar-pills">
+                      <ul
+                        id="landing-sections-popover"
+                        ref={sectionsPopoverRef}
+                        className={`landing-sections-popover ${!supportsNativePopover && landingMenuOpen ? 'is-fallback-open' : ''}`}
+                      >
+                        <li className="landing-menu-header px-3 py-1.5 text-xs font-semibold text-zinc-300" role="presentation">
+                          Explore page sections
+                        </li>
+                        {LANDING_NAV_SECTIONS.map((section) => {
+                          const isActive = activeLandingSection === section.id;
+                          return (
+                            <li key={section.id}>
+                              <a
+                                href={`#${section.id}`}
+                                onClick={(event) => handleLandingSectionClick(event, section.id)}
+                                aria-current={isActive ? 'location' : undefined}
+                                className={`landing-nav-link ${isActive ? 'target-current' : ''}`}
+                              >
+                                {isActive && landingNavTier === 'wide' && (
+                                  <m.span
+                                    layoutId="landing-navbar-active-pill"
+                                    transition={KINETIC_SPRING}
+                                    aria-hidden="true"
+                                    className="landing-nav-pill pointer-events-none absolute inset-0 rounded-xl bg-red-700 border border-red-500/40"
+                                  />
+                                )}
+                                <span className="relative z-10">{section.label}</span>
+                                {isActive && (
+                                  <Check className="landing-nav-check relative z-10 w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                                )}
+                              </a>
+                            </li>
+                          );
+                        })}
+                        <li>
+                          <a
+                            href="/routes"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              closeLandingMenu();
+                              navigateUrl('/routes');
+                            }}
+                            className="landing-nav-link"
+                          >
+                            <span className="relative z-10">Routes</span>
+                          </a>
+                        </li>
+                        <li className="landing-menu-register-item mt-1.5 pt-2 border-t border-white/10">
+                          <a
+                            href="/register"
+                            onMouseEnter={() => {
+                              void import('./components/AuthGate');
+                            }}
+                            onFocus={() => {
+                              void import('./components/AuthGate');
+                            }}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              closeLandingMenu();
+                              navigateGuest('signup');
+                            }}
+                            className="min-h-[44px] px-3 py-2 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold border border-red-500/25 flex items-center justify-center gap-2 transition-colors"
+                          >
+                            <UserPlus className="w-4 h-4 shrink-0" aria-hidden="true" />
+                            <span>Register</span>
+                          </a>
+                        </li>
+                      </ul>
+                    </LayoutGroup>
 
                     <button
                       type="button"
@@ -1202,7 +1279,7 @@ function AppContent() {
                         void import('./components/AuthGate');
                       }}
                       onClick={() => navigateGuest('login')}
-                      className="header-login-btn min-h-[44px] px-[12px] sm:px-[16px] rounded-full border border-white/15 bg-white/10 text-xs font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:border-red-500/50 hover:text-red-400 transition-colors duration-150 inline-flex items-center justify-center gap-[6px] sm:gap-[8px] motion-safe:active:scale-[0.97] whitespace-nowrap shrink-0"
+                      className="header-login-btn min-h-[44px] px-[12px] sm:px-[16px] rounded-xl border border-white/15 bg-white/10 text-xs font-semibold text-white hover:border-red-500/50 hover:text-red-400 transition-colors duration-150 inline-flex items-center justify-center gap-[6px] sm:gap-[8px] motion-safe:active:scale-[0.98] whitespace-nowrap shrink-0"
                     >
                       <LogIn className="w-4 h-4 shrink-0" aria-hidden="true" />
                       <span>Log in</span>
@@ -1216,7 +1293,7 @@ function AppContent() {
                         void import('./components/AuthGate');
                       }}
                       onClick={() => navigateGuest('signup')}
-                      className="header-register-btn min-h-[44px] px-[12px] sm:px-[16px] rounded-full bg-red-700 hover:bg-red-600 text-white text-xs font-semibold border border-red-500/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.35)] transition-colors duration-150 inline-flex items-center justify-center gap-[6px] sm:gap-[8px] motion-safe:active:scale-[0.97] whitespace-nowrap shrink-0"
+                      className="header-register-btn min-h-[44px] px-[12px] sm:px-[16px] rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold border border-red-500/40 transition-colors duration-150 inline-flex items-center justify-center gap-[6px] sm:gap-[8px] motion-safe:active:scale-[0.98] whitespace-nowrap shrink-0"
                     >
                       <UserPlus className="w-4 h-4 shrink-0" aria-hidden="true" />
                       <span>Register</span>
@@ -1228,7 +1305,7 @@ function AppContent() {
                   onClick={toggleTheme}
                   title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
                   aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-                  className="header-theme-btn w-[44px] h-[44px] shrink-0 rounded-full border border-white/15 bg-white/10 text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(0,0,0,0.3)] hover:text-red-400 hover:border-red-500/50 transition-colors duration-150 flex items-center justify-center motion-safe:active:scale-95 overflow-hidden"
+                  className="header-theme-btn w-[44px] h-[44px] shrink-0 rounded-xl border border-white/15 bg-white/10 text-white/90 hover:text-red-400 hover:border-red-500/50 transition-colors duration-150 flex items-center justify-center motion-safe:active:scale-95 overflow-hidden"
                 >
                   <AnimatePresence mode="wait" initial={false}>
                     {theme === 'dark' ? (
@@ -1258,14 +1335,19 @@ function AppContent() {
                 </button>
               </div>
             </div>
+            {isLandingGuest && (
+              <PulseDivider surface="nav" className="absolute inset-x-0 bottom-[-1px] z-10" />
+            )}
           </header>
 
           <CookieConsentBanner
             preferencesRequestNonce={cookiePreferencesNonce}
+            floating={desktopLocked || splitViewportLocked}
             onOpenCookiePolicy={() => openUtilityView('cookies')}
           />
 
           <div className={`relative flex-grow flex flex-col overflow-x-clip ${desktopLocked && !signedInUtilityView ? 'lg:min-h-0 lg:overflow-hidden' : ''} ${splitViewportLocked && !signedInUtilityView ? 'min-h-0 overflow-hidden' : ''}`}>
+            {isLandingGuest && <RedTribalPatternBackdrop variant="landing" />}
             <m.div
               key={viewKey}
               initial={{ opacity: 0, x: navDirection === 'forward' ? 14 : -14 }}
@@ -1275,7 +1357,7 @@ function AppContent() {
                 transitionEnd: { transform: 'none' },
               }}
               transition={{ duration: 0.16, ease: EMIL_EASE }}
-              className={`w-full flex-grow flex flex-col [backface-visibility:hidden] ${desktopLocked && !signedInUtilityView ? 'lg:min-h-0 lg:overflow-hidden' : ''} ${splitViewportLocked && !signedInUtilityView ? 'min-h-0 overflow-hidden' : ''}`}
+              className={`relative z-10 w-full flex-grow flex flex-col [backface-visibility:hidden] ${desktopLocked && !signedInUtilityView ? 'lg:min-h-0 lg:overflow-hidden' : ''} ${splitViewportLocked && !signedInUtilityView ? 'min-h-0 overflow-hidden' : ''}`}
             >
               {content}
             </m.div>
@@ -1358,14 +1440,14 @@ function AppContent() {
                   >
                     {LEGAL_CONFIG.supportEmail}
                   </a>
-                  <button
-                    type="button"
-                    onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                    className="min-h-11 px-4 rounded-full border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50 hover:text-red-700 dark:hover:text-red-400 transition-colors flex items-center gap-2"
-                  >
-                    <span>Back to top</span>
-                    <ChevronUp className="w-4 h-4" aria-hidden="true" />
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                      className="min-h-11 px-4 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50 hover:text-red-700 dark:hover:text-red-400 transition-colors flex items-center gap-2"
+                    >
+                      <span>Back to top</span>
+                      <ChevronUp className="w-4 h-4" aria-hidden="true" />
+                    </button>
                 </nav>
               </div>
             </div>

@@ -1,7 +1,6 @@
 /* Fonts loaded non-blocking via <link> in index.html */
 @import "tailwindcss";
 @import './access-ui.css';
-@import './styles/highlights.css';
 @import './components/public-landing.css';
 @import './components/timing-console.css';
 
@@ -79,29 +78,30 @@ html {
   --tracking-section: -0.025em;
   --tracking-lead: -0.011em;
   --tracking-caption: 0.02em;
-  --surface-page: oklch(96.5% 0.008 25);
-  --surface-card: oklch(100% 0 0);
-  --surface-inset: oklch(95% 0.012 25);
-  --surface-hover: oklch(92.5% 0.014 25);
-  --border-default: #27272a;
-  --border-subtle: rgba(39, 39, 42, 0.22);
-  --border-strong: #18181b;
-  --border-button: #27272a;
-  --text-primary: #0a0a0a;
-  --text-secondary: #52525b;
-  --text-muted: #63636e;
+  --surface-page: #FAF9F7;
+  --surface-card: #FFFFFF;
+  --surface-inset: #F3F2EF;
+  --surface-hover: #ECEAE5;
+  --border-default: color-mix(in oklab, #111113 12%, transparent);
+  --border-subtle: color-mix(in oklab, #111113 7%, transparent);
+  --border-strong: #18181B;
+  --border-button: #8E8B88;
+  --text-primary: #111113;
+  --text-secondary: #52525B;
+  --text-muted: #52525B;
+  --accent-red: #CC251C;
   color-scheme: light;
 
   /* Calibrated red text contrast: clears 4.5:1 WCAG AA against light card, page, and inset surfaces */
-  --color-red-500: #c22419;
-  --color-amber-500: #c22419;
+  --color-red-500: #cc251c;
+  --color-amber-500: #cc251c;
 
-  /* Design-system constants: shared across every page for a consistent look */
-  --radius-panel: 26px;
-  --radius-control: 20px;
-  --glass-blur: 28px;
+  /* Design-system constants: shared across every page for a consistent stylish-minimalist look */
+  --radius-panel: 16px;
+  --radius-control: 12px;
+  --glass-blur: 0px;
 
-  /* Custom scrollbar tokens (OKLCH warm-neutral, >= 3:1 non-text contrast) */
+  /* Custom scrollbar tokens (warm-neutral, >= 3:1 non-text contrast) */
   --scrollbar-thumb: oklch(56% 0.012 25);
   --scrollbar-thumb-hover: oklch(43% 0.014 25);
   --scrollbar-thumb-active: oklch(34% 0.014 25);
@@ -114,19 +114,20 @@ html {
 }
 
 .dark {
-  --color-red-500: #ff3b30;
-  --color-amber-500: #ff3b30;
-  --surface-page: #0a0a0a;
-  --surface-card: #141414;
-  --surface-inset: #0a0a0b;
-  --surface-hover: #27272a;
-  --border-default: #27272a;
-  --border-subtle: #1c1c1e;
-  --border-strong: #3f3f46;
-  --border-button: #3f3f46;
-  --text-primary: #ffffff;
-  --text-secondary: #f4f4f5;
-  --text-muted: #a1a1aa;
+  --color-red-500: #ff6259;
+  --color-amber-500: #ff6259;
+  --accent-red: #ff6259;
+  --surface-page: #0B0B0D;
+  --surface-card: #141417;
+  --surface-inset: #1C1C21;
+  --surface-hover: #24242A;
+  --border-default: color-mix(in oklab, #F5F5F7 14%, transparent);
+  --border-subtle: color-mix(in oklab, #F5F5F7 8%, transparent);
+  --border-strong: #676770;
+  --border-button: #676770;
+  --text-primary: #F5F5F7;
+  --text-secondary: #A1A1AA;
+  --text-muted: #A1A1AA;
   --scrollbar-thumb: oklch(57% 0.01 25);
   --scrollbar-thumb-hover: oklch(71% 0.008 25);
   --scrollbar-thumb-active: oklch(85% 0.006 25);
@@ -273,8 +274,7 @@ video {
   --color-red-500: #ff6259;
   --color-amber-500: #ff6259;
   background: #141416;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   padding-top: var(--rp-safe-top);
   padding-left: var(--rp-safe-left);
   padding-right: var(--rp-safe-right);
@@ -291,203 +291,102 @@ video {
 @layer components {
   .glass-panel {
     background: var(--surface-card);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
     border: 1px solid var(--border-default);
     border-radius: var(--radius-panel);
-    box-shadow: 0 1px 2px oklch(20% 0.02 25 / 0.06), 0 12px 32px -16px oklch(20% 0.02 25 / 0.18);
   }
 
   .dark .glass-panel {
-    background: color-mix(in srgb, var(--surface-card) 94%, #000000);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    border: 1px solid color-mix(in srgb, var(--border-default) 85%, transparent);
-    box-shadow: 0 18px 44px -16px rgba(0, 0, 0, 0.55), 0 1px 0 0 rgba(255, 255, 255, 0.04) inset;
+    background: var(--surface-card);
+    border: 1px solid var(--border-default);
   }
 
   .glass-inset {
     background: var(--surface-inset);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
     border: 1px solid var(--border-default);
     border-radius: var(--radius-control);
   }
 
   .dark .glass-inset {
-    background: color-mix(in srgb, var(--surface-inset) 92%, #000000);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
+    background: var(--surface-inset);
     border: 1px solid var(--border-default);
     border-radius: var(--radius-control);
   }
 
   @media (max-width: 767px) {
     .glass-panel {
-      border-radius: 20px;
+      border-radius: 16px;
     }
 
     .glass-inset {
-      border-radius: 16px;
+      border-radius: 12px;
     }
   }
 }
 
-/* Static "floating" heading treatment: elevation is implied through subtle shadow
-   while keeping solid foreground color so contrast samplers and forced colors read true fill. */
+/* Crisp heading treatment anchored to surface typography tokens */
 .heading-float {
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
   color: var(--text-primary);
 }
 
 .dark .heading-float {
-  color: #ffffff;
-  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
+  color: var(--text-primary);
 }
 
 /* Athletic finish-line focal accent: calibrated >= 5.14:1 WCAG AA in both themes */
 .hero-finish-accent {
-  color: #c22e25;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+  color: #cc251c;
 }
 
 .dark .hero-finish-accent {
   color: #ff6259;
-  text-shadow: 0 8px 28px rgba(255, 59, 48, 0.32);
 }
 
-/* Finish-line timing tape underline beneath "FINISH LINE" */
+/* Finish-line timing tape underline */
 .hero-finish-tape {
   height: 4px;
   border-radius: 9999px;
-  background-image: linear-gradient(
-    90deg,
-    #c22e25 0%,
-    #e0362c 68%,
-    transparent 68%,
-    transparent 72%,
-    #c22e25 72%,
-    #c22e25 78%,
-    transparent 78%,
-    transparent 82%,
-    #c22e25 82%,
-    #c22e25 88%,
-    transparent 88%,
-    transparent 92%,
-    #c22e25 92%,
-    #c22e25 100%
-  );
+  background-color: var(--accent-red);
 }
 
 .dark .hero-finish-tape {
-  background-image: linear-gradient(
-    90deg,
-    #ff3b30 0%,
-    #ff6259 68%,
-    transparent 68%,
-    transparent 72%,
-    #ff6259 72%,
-    #ff6259 78%,
-    transparent 78%,
-    transparent 82%,
-    #ff6259 82%,
-    #ff6259 88%,
-    transparent 88%,
-    transparent 92%,
-    #ff6259 92%,
-    #ff6259 100%
-  );
-  box-shadow: 0 0 16px rgba(255, 59, 48, 0.4);
+  background-color: var(--accent-red);
 }
 
 .heading-float-chip {
-  box-shadow: 0 20px 45px -12px rgba(255, 59, 48, 0.45), 0 2px 0 0 rgba(255, 255, 255, 0.15) inset;
+  box-shadow: none;
 }
 
 .dark .heading-float-chip {
-  box-shadow: 0 24px 55px -10px rgba(255, 59, 48, 0.55), 0 2px 0 0 rgba(255, 255, 255, 0.08) inset;
+  box-shadow: none;
 }
 
-/* Hero glow: a concentrated red-to-black corner gradient for page/section
-   headers, layered underneath .glass-panel to create a dramatic banner
-   moment behind big titles (a stronger, focused accent vs. the ambient
-   page-wide glow). */
+/* Flattened section header surfaces: crisp 1px structural borders without radial bloom */
 .hero-glow {
-  background-image:
-    radial-gradient(ellipse 65% 100% at 12% 0%, oklch(62% 0.22 25 / 0.22), transparent 65%),
-    linear-gradient(120deg, oklch(90% 0.08 25 / 0.35), transparent 55%);
+  background-color: var(--surface-card);
 }
 
 .dark .hero-glow {
-  background-image:
-    radial-gradient(ellipse 60% 100% at 12% 0%, rgba(255, 59, 48, 0.35), transparent 60%),
-    linear-gradient(120deg, rgba(255, 59, 48, 0.16), transparent 55%);
+  background-color: var(--surface-card);
 }
 
-/* Hero banner gradient for public landing:
-   Light mode: luminous light red corner wash, subtle diagonal tint, and athletic runner backlight.
-   Dark mode: high-contrast red energy flare consistent with brand identity. */
 .hero-banner-glow {
   background-color: var(--surface-card);
-  background-image:
-    radial-gradient(ellipse 70% 85% at 5% 0%, rgba(255, 59, 48, 0.16) 0%, rgba(255, 235, 233, 0.75) 45%, transparent 75%),
-    radial-gradient(ellipse 65% 85% at 85% 55%, rgba(255, 59, 48, 0.18) 0%, rgba(255, 225, 222, 0.7) 50%, transparent 80%),
-    linear-gradient(135deg, rgba(255, 241, 240, 0.85) 0%, #ffffff 45%, rgba(255, 241, 240, 0.6) 100%);
 }
 
 .dark .hero-banner-glow {
-  background-color: #111215;
-  background-image:
-    radial-gradient(ellipse 70% 85% at 5% 0%, rgba(255, 59, 48, 0.28) 0%, rgba(190, 20, 15, 0.12) 45%, transparent 75%),
-    radial-gradient(ellipse 65% 85% at 85% 55%, rgba(255, 59, 48, 0.32) 0%, rgba(190, 20, 15, 0.15) 50%, transparent 80%),
-    linear-gradient(135deg, rgba(255, 59, 48, 0.10) 0%, transparent 50%, rgba(255, 59, 48, 0.06) 100%);
+  background-color: var(--surface-card);
 }
 
-/* Ambient glow backdrop:
-   Light mode: directional warm light beam from the top-left, matching the light source in dark mode.
-   Dark mode: dramatic red light beam and conic rays from the top-left corner into deep black. */
 .ambient-glow {
   background-color: var(--surface-page);
-  background-image:
-    radial-gradient(ellipse 70% 55% at 0% 0%, oklch(93% 0.05 30 / 0.85), transparent 60%),
-    radial-gradient(ellipse 50% 40% at 100% 100%, oklch(95% 0.02 25 / 0.55), transparent 70%);
-  background-repeat: no-repeat;
 }
 
 .dark .ambient-glow {
-  background-color: #000000;
-  background-image:
-    radial-gradient(circle at 3% 4%, rgba(255, 232, 225, 0.9) 0%, rgba(255, 100, 80, 0.55) 5%, rgba(255, 60, 45, 0.3) 12%, transparent 26%),
-    conic-gradient(from 95deg at 0% 0%,
-      transparent 0deg,
-      rgba(255, 90, 70, 0.16) 8deg,
-      transparent 18deg,
-      rgba(255, 90, 70, 0.12) 32deg,
-      transparent 44deg,
-      rgba(255, 90, 70, 0.15) 58deg,
-      transparent 72deg,
-      transparent 90deg),
-    radial-gradient(ellipse 90% 75% at 0% 0%, rgba(190, 20, 15, 0.4) 0%, rgba(90, 8, 8, 0.2) 32%, transparent 60%);
-  background-repeat: no-repeat;
-}
-
-/* Custom card animations and keyframes */
-@keyframes pulse-ring {
-  0% {
-    transform: scale(0.95);
-    opacity: 0.5;
-  }
-  50% {
-    opacity: 0.2;
-  }
-  100% {
-    transform: scale(1.15);
-    opacity: 0;
-  }
+  background-color: var(--surface-page);
 }
 
 .pulse-ring {
-  animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  opacity: 0.75;
 }
 
 @keyframes fadeIn {
@@ -562,78 +461,32 @@ video {
   color: oklch(86% 0.02 25 / 0.22);
 }
 
-/* Charcoal athletic brand panel for split auth stage (sharp contrast for racepulse-logo.png in both modes) */
+/* Clean charcoal athletic panel for split auth stage (sharp contrast for racepulse-logo.png in both modes) */
 .auth-stage-panel {
   background-color: #141416;
-  background-image:
-    radial-gradient(ellipse 85% 65% at 0% 0%, rgba(255, 59, 48, 0.24), transparent 62%),
-    radial-gradient(ellipse 70% 55% at 100% 100%, rgba(255, 59, 48, 0.12), transparent 65%),
-    linear-gradient(155deg, #1b1c20 0%, #141416 58%, #0f1012 100%);
   color: #f5f5f7;
 }
 
-.auth-backdrop {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  overflow: hidden;
-  pointer-events: none;
-}
+@media (forced-colors: active) {
+  .glass-panel,
+  .glass-inset,
+  .brand-nav {
+    border-color: CanvasText;
+  }
 
-.auth-backdrop > span {
-  position: absolute;
-}
+  button,
+  [role="button"],
+  input,
+  select,
+  textarea {
+    border-color: ButtonBorder;
+  }
 
-.auth-glow {
-  top: -12%;
-  left: -10%;
-  width: 72%;
-  height: 72%;
-  background: radial-gradient(closest-side, rgba(255, 59, 48, 0.14), rgba(255, 59, 48, 0.04) 58%, transparent 100%);
-  transform: translate3d(0, 0, 0);
-}
-
-.auth-beam {
-  bottom: -14%;
-  right: -10%;
-  width: 64%;
-  height: 64%;
-  background: radial-gradient(closest-side, rgba(255, 59, 48, 0.09), rgba(255, 98, 89, 0.02) 60%, transparent 100%);
-  transform: translate3d(0, 0, 0);
-}
-
-.auth-pulse {
-  top: 18%;
-  left: 50%;
-  width: 68vmin;
-  height: 68vmin;
-  margin-left: -34vmin;
-  border-radius: 9999px;
-  border: 1px solid rgba(255, 59, 48, 0.14);
-  opacity: 0;
-  animation: auth-pulse 8s var(--ease-out-quint) infinite;
-}
-
-.auth-pulse-late {
-  animation-delay: 4s;
-}
-
-.dark .auth-glow {
-  background: radial-gradient(closest-side, rgba(255, 59, 48, 0.24), rgba(190, 20, 15, 0.08) 58%, transparent 100%);
-}
-
-.dark .auth-beam {
-  background: radial-gradient(closest-side, rgba(255, 90, 70, 0.14), rgba(255, 59, 48, 0.04) 60%, transparent 100%);
-}
-
-.dark .auth-pulse {
-  border-color: rgba(255, 90, 70, 0.18);
-}
-
-@keyframes auth-pulse {
-  0% { transform: scale3d(0.55, 0.55, 1); opacity: 0; }
-  20% { opacity: 0.7; }
-  100% { transform: scale3d(1.35, 1.35, 1); opacity: 0; }
+  [aria-current],
+  [aria-selected="true"],
+  [aria-pressed="true"] {
+    outline: 2px solid Highlight;
+  }
 }
 
 @keyframes shimmer {
@@ -661,13 +514,9 @@ video {
   .pulse-ring,
   .rp-shimmer-sweep,
   .animate-panel-enter,
-  .animate-error-nudge,
-  .auth-glow,
-  .auth-beam,
-  .auth-pulse {
+  .animate-error-nudge {
     animation: none !important;
   }
-  .auth-pulse,
   .rp-shimmer-sweep {
     opacity: 0;
   }
@@ -736,8 +585,8 @@ video {
   }
 }
 
-/* Tactile button definition: in light mode, interactive buttons have a distinct dark border */
-:root:not(.dark) button.border-\[var\(--border-default\)\] {
+/* Button border contrast definition: satisfies WCAG 1.4.11 (>= 3:1) in both light and dark modes */
+button.border-\[var\(--border-default\)\] {
   border-color: var(--border-button);
 }
 

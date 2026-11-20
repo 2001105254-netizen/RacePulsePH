@@ -10,7 +10,7 @@ import type {
   RouteTrackSummary,
   RouteValidationReport,
 } from './types';
-import { samplePhilippineDemElevationM } from './philippinesMapTiles';
+import { PHILIPPINES_NATIONAL_BOUNDS, samplePhilippineDemElevationM } from './philippinesMapTiles';
 
 export const MAX_GPX_BYTES = 8 * 1024 * 1024;
 export const MAX_GPX_POINTS = 100_000;
@@ -616,6 +616,16 @@ function buildProfileSamples(
   return samples;
 }
 
+export function createEmptyRouteGeometry(): CanonicalRouteGeometry {
+  return {
+    version: 1,
+    sourceKind: 'drawn',
+    isCanvasCleared: true,
+    isStartPointRemoved: true,
+    segments: [],
+  };
+}
+
 export function processCanonicalGeometry(
   geometry: CanonicalRouteGeometry,
   options?: {
@@ -706,6 +716,68 @@ export function processCanonicalGeometry(
   });
 
   if (allPoints.length < 2) {
+    if (geometry.isCanvasCleared) {
+      return {
+        points: [],
+        segments: [],
+        canonicalSegments: [],
+        displaySegments: [],
+        profileSamples: [],
+        distancesM: [],
+        distanceM: 0,
+        distanceKm: 0,
+        elevationGainM: 0,
+        elevationLossM: 0,
+        bounds: { ...PHILIPPINES_NATIONAL_BOUNDS },
+        waypoints: options?.waypoints || [],
+        elevationProvenance: {
+          source: 'unavailable',
+          status: 'unavailable',
+          coverageRatio: 0,
+          coveragePct: 0,
+          validPoints: 0,
+          totalPoints: 0,
+          missingSpansCount: 0,
+          verticalDatum: options?.verticalDatum || 'unknown',
+          algorithmVersion: ELEVATION_ALGORITHM_VERSION,
+          medianWindowM: MEDIAN_WINDOW_M,
+          smoothingWindowM: SMOOTHING_WINDOW_M,
+          hysteresisThresholdM: HYSTERESIS_THRESHOLD_M,
+          gradeWindowM: GRADE_WINDOW_M,
+          calculatedAt: new Date().toISOString(),
+        },
+        validationReport: {
+          valid: false,
+          bytes: options?.bytes ?? 0,
+          pointCount: 0,
+          segmentCount: 0,
+          trackNames: [],
+          tracks: [],
+          selectedTrackIndices: [],
+          duplicatePointsCount: 0,
+          jumpWarnings: [],
+          hasLoops: false,
+          hasOverlapPasses: false,
+          antimeridianWarning: false,
+          hasMissingElevation: true,
+          hasDrawnSections: false,
+          warnings: [
+            ...(options?.extraWarnings || []),
+            'No route configured yet. Paint a trail, draw points, record GPS, or import a GPX file.',
+          ],
+          errors: [
+            'Course has no route path yet. Draw, paint, record GPS, or import a GPX file before publishing.',
+          ],
+        },
+        canonicalGeometry: {
+          version: 1,
+          sourceKind: 'drawn',
+          isCanvasCleared: true,
+          ...(geometry.isStartPointRemoved ? { isStartPointRemoved: true } : {}),
+          segments: [],
+        },
+      };
+    }
     throw new Error('The route needs at least two valid connected points.');
   }
 

@@ -24,16 +24,23 @@ import type { ProcessedRoute } from '../../lib/routes/geometry';
 import { projectCoordinateToRoute } from '../../lib/routes/anchoring';
 import {
   applySatelliteHybridRoadStyling,
-  enhanceBasemapStyleForOceanAndHybrid,
+  createPhilippinesTransformRequest,
   findFirstVectorOverlayLayerId,
   getMapProviderConfig,
+  resolveAndClipPhilippinesVectorStyle,
   supportsWebGL,
   type MapProviderId,
   type MapThemeMode,
 } from '../../lib/routes/mapProviders';
 import {
-  COPERNICUS_TERRAIN_RELEASE,
+  buildGpsAccuracyCircleGeoJson,
+} from '../../lib/routes/gpsFilter';
+import {
   ensurePhilippinesMapProtocolRegistered,
+  PHILIPPINES_MAX_BOUNDS,
+  PHILIPPINES_NATIONAL_BOUNDS,
+  PHILIPPINES_SOURCE_BOUNDS,
+  RACEPULSE_TERRAIN_LABEL,
   recordCourseFirstLoadMs,
   registerCourseCorridorForTiles,
   setSimulateTileFailure,
@@ -86,7 +93,8 @@ interface RouteMapCanvasProps {
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
   studioOverlaySlot?: React.ReactNode;
-  gpsLivePosition?: { lat: number; lon: number; accuracyM: number } | null;
+  gpsLivePosition?: { lat: number; lon: number; accuracyM: number; headingDeg?: number | null; isStale?: boolean } | null;
+  gpsBreadcrumbPoints?: Array<{ lat: number; lon: number }>;
   locateStatus?: 'idle' | 'locating' | 'active' | 'denied' | 'unavailable' | 'error';
   onLocateMe?: () => void;
   onCenterOnUser?: () => void;
@@ -95,6 +103,8 @@ interface RouteMapCanvasProps {
   onToggleImagery?: (enabled: boolean) => void;
   is3DEnabled?: boolean;
   onToggle3D?: (enabled: boolean) => void;
+  hideBuiltInLayerToggles?: boolean;
+  hideHud?: boolean;
   provenance?: CourseMapLayerProvenance;
   courseScopeId?: string;
   simulateTileError?: boolean;
@@ -117,6 +127,7 @@ interface RouteMapCanvasProps {
   onRemoveStartPoint?: () => void;
   onRequestStartPointMode?: () => void;
   flyToTrigger?: { lat: number; lon: number; zoom?: number; nonce: number } | null;
+  onCameraMove?: (lat: number, lon: number, zoom?: number) => void;
 }
 
 function markerColorForKind(kind: RouteMarker['kind']): { bg: string; label: string } {
@@ -273,7 +284,7 @@ function SchematicMapFallback({
   const canClickPlaceStart =
     editable &&
     Boolean(onPlaceStartPoint) &&
-    (drawMode === 'set-start' || (drawMode === 'view' && Boolean(route.canonicalGeometry.isCanvasCleared)));
+    drawMode === 'set-start';
 
   return (
     <div className="relative flex h-full w-full flex-col justify-between overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)]">
@@ -362,8 +373,9 @@ function SchematicMapFallback({
         })}
         {gpsPt && (
           <g transform={`translate(${gpsPt.x}, ${gpsPt.y})`}>
-            <circle r={13} fill="#2563eb" fillOpacity={0.22} stroke="#2563eb" strokeWidth={2} />
-            <circle r={5.5} fill="#2563eb" stroke="#ffffff" strokeWidth={2} />
+            <circle r={13} fill="#dc2626" fillOpacity={0.25} stroke="#ef4444" strokeWidth={1.5} />
+            <circle r={6.5} fill="#dc2626" stroke="#ffffff" strokeWidth={2} />
+            <circle r={2.5} fill="#ffffff" />
           </g>
         )}
         {cursorVisible && (
@@ -395,6 +407,7 @@ export default function RouteMapCanvas({
   onToggleFullscreen,
   studioOverlaySlot,
   gpsLivePosition,
+  gpsBreadcrumbPoints,
   locateStatus = 'idle',
   onLocateMe,
   onCenterOnUser,
@@ -404,6 +417,8 @@ export default function RouteMapCanvas({
   is3DEnabled,
   onToggle3D,
   provenance,
+  hideBuiltInLayerToggles = false,
+  hideHud = false,
   courseScopeId,
   simulateTileError = false,
   onSelectChainage,
@@ -417,6 +432,7 @@ export default function RouteMapCanvas({
   onRemoveStartPoint,
   onRequestStartPointMode,
   flyToTrigger,
+  onCameraMove,
 }: RouteMapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -556,9 +572,23 @@ export default function RouteMapCanvas({
     [theme, providerId, route.bounds, effectiveScopeId],
   );
 
+  const isEmptyCanvas = Boolean(
+    route.canonicalGeometry.isCanvasCleared && route.points.length === 0,
+  );
+
   const fitRouteBounds = useCallback((immediate = false) => {
     const map = mapRef.current;
     if (!map) return;
+    if (isEmptyCanvas) {
+      map.fitBounds(
+        [
+          [PHILIPPINES_NATIONAL_BOUNDS.west, PHILIPPINES_NATIONAL_BOUNDS.south],
+          [PHILIPPINES_NATIONAL_BOUNDS.east, PHILIPPINES_NATIONAL_BOUNDS.north],
+        ],
+        { padding: 24, duration: immediate || reducedMotion ? 0 : 240, maxZoom: 6.5 },
+      );
+      return;
+    }
     map.fitBounds(
       [
         [route.bounds.west, route.bounds.south],
@@ -566,7 +596,7 @@ export default function RouteMapCanvas({
       ],
       { padding: 48, duration: immediate || reducedMotion ? 0 : 240, maxZoom: 16 },
     );
-  }, [route.bounds, reducedMotion]);
+  }, [isEmptyCanvas, route.bounds, reducedMotion]);
 
   const syncRouteLayers = useCallback((map: maplibregl.Map) => {
     if (!map.getStyle()) return;
@@ -595,7 +625,42 @@ export default function RouteMapCanvas({
         data: { type: 'FeatureCollection', features: [] },
       });
     }
+    if (!map.getSource('rp-gps-accuracy')) {
+      map.addSource('rp-gps-accuracy', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+    }
+    if (!map.getSource('rp-gps-survey')) {
+      map.addSource('rp-gps-survey', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+    }
 
+    if (!map.getLayer('rp-gps-accuracy-fill')) {
+      map.addLayer({
+        id: 'rp-gps-accuracy-fill',
+        type: 'fill',
+        source: 'rp-gps-accuracy',
+        paint: {
+          'fill-color': '#dc2626',
+          'fill-opacity': 0.12,
+        },
+      });
+    }
+    if (!map.getLayer('rp-gps-accuracy-ring')) {
+      map.addLayer({
+        id: 'rp-gps-accuracy-ring',
+        type: 'line',
+        source: 'rp-gps-accuracy',
+        paint: {
+          'line-color': '#ef4444',
+          'line-width': 1.5,
+          'line-opacity': 0.6,
+        },
+      });
+    }
     if (!map.getLayer('rp-route-comp-line')) {
       map.addLayer({
         id: 'rp-route-comp-line',
@@ -724,6 +789,34 @@ export default function RouteMapCanvas({
         },
       });
     }
+
+    if (!map.getLayer('rp-gps-survey-casing')) {
+      map.addLayer({
+        id: 'rp-gps-survey-casing',
+        type: 'line',
+        source: 'rp-gps-survey',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': '#000000',
+          'line-width': 6,
+          'line-opacity': 0.75,
+        },
+      });
+    }
+
+    if (!map.getLayer('rp-gps-survey-line')) {
+      map.addLayer({
+        id: 'rp-gps-survey-line',
+        type: 'line',
+        source: 'rp-gps-survey',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': '#ea580c',
+          'line-width': 3.5,
+          'line-opacity': 1,
+        },
+      });
+    }
   }, [route, comparisonRoute, theme, colorMode, activeImagery]);
 
   const syncRouteLayersRef = useRef(syncRouteLayers);
@@ -731,8 +824,8 @@ export default function RouteMapCanvas({
   const fitRouteBoundsRef = useRef(fitRouteBounds);
   fitRouteBoundsRef.current = fitRouteBounds;
 
-  // Initialize MapLibre once immediately with the local WGS84 reference grid,
-  // then progressively upgrade to OpenFreeMap tiles without blocking first paint.
+  // Initialize map once immediately with the local Philippine reference grid,
+  // then progressively load national vector tiles clipped strictly to PH bounds.
   useEffect(() => {
     const el = containerRef.current;
     if (!el || !webglReady) return;
@@ -744,12 +837,18 @@ export default function RouteMapCanvas({
       map = new maplibregl.Map({
         container: el,
         style: providerConfig.fallbackStyle,
-        center: [
-          (route.bounds.west + route.bounds.east) / 2,
-          (route.bounds.south + route.bounds.north) / 2,
-        ],
-        zoom: 13,
+        center: isEmptyCanvas
+          ? [121.8, 12.6]
+          : [
+              (route.bounds.west + route.bounds.east) / 2,
+              (route.bounds.south + route.bounds.north) / 2,
+            ],
+        zoom: isEmptyCanvas ? 5.2 : 13,
+        minZoom: 4.4,
         maxZoom: 19,
+        maxBounds: PHILIPPINES_MAX_BOUNDS,
+        renderWorldCopies: false,
+        transformRequest: createPhilippinesTransformRequest(),
         attributionControl: false,
         cooperativeGestures: false,
       });
@@ -764,16 +863,16 @@ export default function RouteMapCanvas({
       if (cancelled || !map) return;
       const sourceId = (ev as { sourceId?: string })?.sourceId;
       if (
-        sourceId === 'rp-sentinel2-imagery' ||
-        sourceId === 'rp-terrain-dem' ||
-        sourceId === 'rp-terrain-hillshade-dem'
+        sourceId === 'rp-sat-imagery' ||
+        sourceId === 'rp-relief-dem' ||
+        sourceId === 'rp-relief-hillshade-dem'
       ) {
         setTileErrorNotice('Satellite or terrain tiles failed to load. GPX course and elevation profile remain usable.');
         return;
       }
       if (!map.isStyleLoaded()) {
         setProviderId((curr) => (curr === 'openfreemap' ? 'local-fallback' : curr));
-        setBasemapNotice('External basemap tiles unavailable. Showing Philippine archipelago reference.');
+        setBasemapNotice('Live map tiles unavailable. Showing Philippine archipelago reference.');
       }
     });
 
@@ -783,6 +882,13 @@ export default function RouteMapCanvas({
       setStyleLoadedNonce((n) => n + 1);
     });
 
+    const notifyCamera = () => {
+      if (!map || cancelled) return;
+      const c = map.getCenter();
+      onCameraMove?.(c.lat, c.lng, map.getZoom());
+    };
+    map.on('moveend', notifyCamera);
+
     map.on('load', () => {
       if (!map || cancelled) return;
       syncRouteLayersRef.current(map);
@@ -791,6 +897,7 @@ export default function RouteMapCanvas({
         recordCourseFirstLoadMs(effectiveScopeId, performance.now() - mountStartMsRef.current);
       }
       setStyleLoadedNonce((n) => n + 1);
+      notifyCamera();
     });
 
     map.on('click', (ev) => {
@@ -811,17 +918,6 @@ export default function RouteMapCanvas({
       }
 
       if (currentDrawMode === 'set-start' && isEditable && placeStartCb) {
-        void placeStartCb(ev.lngLat.lat, ev.lngLat.lng);
-        setSrAnnouncement('Starting point placed on map.');
-        return;
-      }
-
-      if (
-        currentDrawMode === 'view' &&
-        isEditable &&
-        currentRoute.canonicalGeometry.isCanvasCleared &&
-        placeStartCb
-      ) {
         void placeStartCb(ev.lngLat.lat, ev.lngLat.lng);
         setSrAnnouncement('Starting point placed on map.');
         return;
@@ -883,7 +979,7 @@ export default function RouteMapCanvas({
     };
   }, [webglReady]);
 
-  // Switch map style on theme or provider change without recreating MapLibre instance
+  // Switch map style on theme or provider change without recreating map instance
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -894,20 +990,19 @@ export default function RouteMapCanvas({
         return;
       }
       try {
-        const response = await fetch(providerConfig.styleUrl, {
-          signal: AbortSignal.timeout(4000),
-        });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const json = (await response.json()) as maplibregl.StyleSpecification;
-        if (!cancelled && json && Array.isArray(json.layers)) {
-          enhanceBasemapStyleForOceanAndHybrid(json, theme);
+        const json = await resolveAndClipPhilippinesVectorStyle(
+          providerConfig.styleUrl,
+          theme,
+          AbortSignal.timeout(6000),
+        );
+        if (!cancelled) {
           setBasemapNotice('');
           map.setStyle(json);
         }
       } catch {
         if (!cancelled) {
           setProviderId('local-fallback');
-          setBasemapNotice('External basemap unavailable. Showing local WGS84 course grid.');
+          setBasemapNotice('Live map tiles unavailable. Showing Philippine archipelago grid.');
           map.setStyle(providerConfig.fallbackStyle);
         }
       }
@@ -1016,8 +1111,8 @@ export default function RouteMapCanvas({
 
     if (!activeImagery || !providerConfig.imageryTiles) {
       try {
-        if (map.getLayer('rp-sentinel2-layer')) map.removeLayer('rp-sentinel2-layer');
-        if (map.getSource('rp-sentinel2-imagery')) map.removeSource('rp-sentinel2-imagery');
+        if (map.getLayer('rp-sat-layer')) map.removeLayer('rp-sat-layer');
+        if (map.getSource('rp-sat-imagery')) map.removeSource('rp-sat-imagery');
         applySatelliteHybridRoadStyling(map, false, theme, styleLoadedNonce);
       } catch {
         // Safe cleanup if style swapping
@@ -1027,24 +1122,25 @@ export default function RouteMapCanvas({
 
     try {
       setTileErrorNotice('');
-      if (!map.getSource('rp-sentinel2-imagery')) {
-        map.addSource('rp-sentinel2-imagery', {
+      if (!map.getSource('rp-sat-imagery')) {
+        map.addSource('rp-sat-imagery', {
           type: 'raster',
           tiles: providerConfig.imageryTiles,
           tileSize: 256,
-          minzoom: 0,
+          bounds: PHILIPPINES_SOURCE_BOUNDS,
+          minzoom: 4,
           maxzoom: 19,
         });
       }
-      if (!map.getLayer('rp-sentinel2-layer')) {
-        const beforeLayer = map.getLayer('rp-terrain-hillshade')
-          ? 'rp-terrain-hillshade'
+      if (!map.getLayer('rp-sat-layer')) {
+        const beforeLayer = map.getLayer('rp-relief-hillshade')
+          ? 'rp-relief-hillshade'
           : findFirstVectorOverlayLayerId(map, 'rp-route-comp-line');
         map.addLayer(
           {
-            id: 'rp-sentinel2-layer',
+            id: 'rp-sat-layer',
             type: 'raster',
-            source: 'rp-sentinel2-imagery',
+            source: 'rp-sat-imagery',
             paint: { 'raster-opacity': 1, 'raster-fade-duration': 150 },
           },
           beforeLayer,
@@ -1056,16 +1152,16 @@ export default function RouteMapCanvas({
     }
   }, [activeImagery, providerConfig.imageryTiles, styleLoadedNonce, theme]);
 
-  // 2D / 3D Copernicus GLO-30 (2024_1) Terrain toggle (0 DEM requests until enabled)
+  // 2D / 3D Terrain Relief toggle (0 DEM requests until enabled)
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !map.getStyle()) return;
     if (!active3D) {
       try {
         if (map.getTerrain()) map.setTerrain(null);
-        if (map.getLayer('rp-terrain-hillshade')) map.removeLayer('rp-terrain-hillshade');
-        if (map.getSource('rp-terrain-hillshade-dem')) map.removeSource('rp-terrain-hillshade-dem');
-        if (map.getSource('rp-terrain-dem')) map.removeSource('rp-terrain-dem');
+        if (map.getLayer('rp-relief-hillshade')) map.removeLayer('rp-relief-hillshade');
+        if (map.getSource('rp-relief-hillshade-dem')) map.removeSource('rp-relief-hillshade-dem');
+        if (map.getSource('rp-relief-dem')) map.removeSource('rp-relief-dem');
       } catch {
         // ignore
       }
@@ -1085,24 +1181,25 @@ export default function RouteMapCanvas({
       tiles: providerConfig.terrainDemTiles,
       tileSize: 256,
       encoding: 'terrarium',
+      bounds: PHILIPPINES_SOURCE_BOUNDS,
       minzoom: 4,
       maxzoom: 12,
     };
 
     try {
-      if (!map.getSource('rp-terrain-dem')) {
-        map.addSource('rp-terrain-dem', demSpec);
+      if (!map.getSource('rp-relief-dem')) {
+        map.addSource('rp-relief-dem', demSpec);
       }
-      if (!map.getSource('rp-terrain-hillshade-dem')) {
-        map.addSource('rp-terrain-hillshade-dem', demSpec);
+      if (!map.getSource('rp-relief-hillshade-dem')) {
+        map.addSource('rp-relief-hillshade-dem', demSpec);
       }
-      if (!map.getLayer('rp-terrain-hillshade')) {
+      if (!map.getLayer('rp-relief-hillshade')) {
         const beforeLayer = findFirstVectorOverlayLayerId(map, 'rp-route-comp-line');
         map.addLayer(
           {
-            id: 'rp-terrain-hillshade',
+            id: 'rp-relief-hillshade',
             type: 'hillshade',
-            source: 'rp-terrain-hillshade-dem',
+            source: 'rp-relief-hillshade-dem',
             paint: {
               'hillshade-exaggeration': activeImagery ? 0.22 : 0.42,
               'hillshade-shadow-color': theme === 'dark' ? '#09090b' : '#27272a',
@@ -1111,11 +1208,9 @@ export default function RouteMapCanvas({
           beforeLayer,
         );
       }
-      map.setTerrain({ source: 'rp-terrain-dem', exaggeration: 1.0 });
+      map.setTerrain({ source: 'rp-relief-dem', exaggeration: 1.0 });
       map.easeTo({ pitch: 45, duration: reducedMotion ? 0 : 220 });
-      setTerrainNotice(
-        `3D terrain active (${provenance?.terrainRelease || COPERNICUS_TERRAIN_RELEASE}). Official profile uses GPX elevation.`,
-      );
+      setTerrainNotice(`3D terrain active (${RACEPULSE_TERRAIN_LABEL}). Official profile uses GPX elevation.`);
     } catch {
       map.easeTo({ pitch: 45, duration: reducedMotion ? 0 : 200 });
       setTerrainNotice('3D terrain could not initialize on this device; showing tilted 2D view.');
@@ -1124,7 +1219,6 @@ export default function RouteMapCanvas({
     active3D,
     activeImagery,
     theme,
-    provenance?.terrainRelease,
     providerConfig.terrainDemTiles,
     styleLoadedNonce,
     reducedMotion,
@@ -1436,29 +1530,91 @@ export default function RouteMapCanvas({
     };
   }, [startMenuOpen, editable, cursorVisible, selection.latitude, selection.longitude, styleLoadedNonce]);
 
-  // Render live GPS survey indicator dot when GNSS tracking is active
+  // Render live GPS indicator, meter-scaled accuracy ring, heading indicator, and survey trail
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !gpsLivePosition) {
+    if (!map) return;
+
+    const accSource = map.getSource('rp-gps-accuracy') as maplibregl.GeoJSONSource | undefined;
+    if (accSource) {
+      if (gpsLivePosition) {
+        accSource.setData(
+          buildGpsAccuracyCircleGeoJson(
+            gpsLivePosition.lat,
+            gpsLivePosition.lon,
+            Math.max(4, gpsLivePosition.accuracyM),
+          ),
+        );
+      } else {
+        accSource.setData({ type: 'FeatureCollection', features: [] });
+      }
+    }
+
+    const trailSource = map.getSource('rp-gps-survey') as maplibregl.GeoJSONSource | undefined;
+    if (trailSource) {
+      if (gpsBreadcrumbPoints && gpsBreadcrumbPoints.length >= 2) {
+        trailSource.setData({
+          type: 'FeatureCollection',
+          features: [
+            {
+              type: 'Feature',
+              properties: {},
+              geometry: {
+                type: 'LineString',
+                coordinates: gpsBreadcrumbPoints.map((pt) => [pt.lon, pt.lat]),
+              },
+            },
+          ],
+        });
+      } else {
+        trailSource.setData({ type: 'FeatureCollection', features: [] });
+      }
+    }
+
+    if (!gpsLivePosition) {
       gpsLiveMarkerRef.current?.remove();
       gpsLiveMarkerRef.current = null;
       return;
     }
+
     if (!gpsLiveMarkerRef.current) {
       const gpsNode = document.createElement('div');
-      gpsNode.setAttribute('aria-label', `Live GPS survey fix (±${Math.round(gpsLivePosition.accuracyM)}m)`);
+      gpsNode.className = 'rp-gps-live-marker';
       gpsNode.style.cssText = [
+        'position: relative',
         'width: 24px',
         'height: 24px',
         'border-radius: 9999px',
-        'background: rgba(37, 99, 235, 0.22)',
-        'border: 2px solid #2563eb',
+        'background: #dc2626',
+        'border: 2.5px solid #ffffff',
+        'box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.35), 0 2px 8px rgba(0, 0, 0, 0.5)',
         'display: grid',
         'place-items: center',
         'pointer-events: none',
       ].join(';');
+      const arrowWrap = document.createElement('span');
+      arrowWrap.setAttribute('data-gps-arrow', '1');
+      arrowWrap.style.cssText = [
+        'position: absolute',
+        'inset: -8px',
+        'display: none',
+        'align-items: flex-start',
+        'justify-content: center',
+        'pointer-events: none',
+      ].join(';');
+      const tip = document.createElement('span');
+      tip.style.cssText = [
+        'width: 0',
+        'height: 0',
+        'border-left: 5px solid transparent',
+        'border-right: 5px solid transparent',
+        'border-bottom: 8px solid #dc2626',
+      ].join(';');
+      arrowWrap.appendChild(tip);
       const centerDot = document.createElement('span');
-      centerDot.style.cssText = 'width: 10px; height: 10px; border-radius: 9999px; background: #2563eb; border: 2px solid #ffffff;';
+      centerDot.style.cssText =
+        'width: 8px; height: 8px; border-radius: 9999px; background: #ffffff;';
+      gpsNode.appendChild(arrowWrap);
       gpsNode.appendChild(centerDot);
       gpsLiveMarkerRef.current = new maplibregl.Marker({ element: gpsNode })
         .setLngLat([gpsLivePosition.lon, gpsLivePosition.lat])
@@ -1466,7 +1622,23 @@ export default function RouteMapCanvas({
     } else {
       gpsLiveMarkerRef.current.setLngLat([gpsLivePosition.lon, gpsLivePosition.lat]);
     }
-  }, [gpsLivePosition, styleLoadedNonce]);
+
+    const el = gpsLiveMarkerRef.current.getElement();
+    el.setAttribute('aria-label', `Live GPS position (±${Math.round(gpsLivePosition.accuracyM)}m)`);
+    el.style.opacity = gpsLivePosition.isStale ? '0.6' : '1';
+    const arrowEl = el.querySelector('[data-gps-arrow="1"]') as HTMLElement | null;
+    if (arrowEl) {
+      if (
+        typeof gpsLivePosition.headingDeg === 'number' &&
+        Number.isFinite(gpsLivePosition.headingDeg)
+      ) {
+        arrowEl.style.display = 'flex';
+        arrowEl.style.transform = `rotate(${Math.round(gpsLivePosition.headingDeg)}deg)`;
+      } else {
+        arrowEl.style.display = 'none';
+      }
+    }
+  }, [gpsLivePosition, gpsBreadcrumbPoints, styleLoadedNonce]);
 
   // Lock map pan/rotate & enforce tool-appropriate cursor + live brush/eraser pointer capture
   const lockCamera =
@@ -1767,13 +1939,34 @@ export default function RouteMapCanvas({
     };
   }, [editable, drawMode, styleLoadedNonce]);
 
-  // Course preview playback (respects prefers-reduced-motion)
+  // Course preview playback (pauses off-screen via IntersectionObserver / contentvisibilityautostatechange and respects reduced motion)
   useEffect(() => {
     if (!isPlayingPreview || !onSelectChainage) return;
     if (reducedMotion) {
       setIsPlayingPreview(false);
       return;
     }
+    const el = containerRef.current;
+    const handleVisibilitySkip = (ev: Event) => {
+      if ((ev as { skipped?: boolean }).skipped) {
+        setIsPlayingPreview(false);
+      }
+    };
+    el?.addEventListener('contentvisibilityautostatechange', handleVisibilitySkip);
+
+    const observer =
+      typeof IntersectionObserver !== 'undefined' && el
+        ? new IntersectionObserver(
+            (entries) => {
+              if (entries[0] && !entries[0].isIntersecting) {
+                setIsPlayingPreview(false);
+              }
+            },
+            { threshold: 0.05 },
+          )
+        : null;
+    if (observer && el) observer.observe(el);
+
     const stepM = Math.max(40, route.distanceM / 120);
     const interval = window.setInterval(() => {
       const next = selection.chainageM + stepM;
@@ -1784,7 +1977,11 @@ export default function RouteMapCanvas({
         onSelectChainage(next, selection.passNumber);
       }
     }, 120);
-    return () => window.clearInterval(interval);
+    return () => {
+      window.clearInterval(interval);
+      observer?.disconnect();
+      el?.removeEventListener('contentvisibilityautostatechange', handleVisibilitySkip);
+    };
   }, [isPlayingPreview, selection.chainageM, selection.passNumber, route.distanceM, onSelectChainage, reducedMotion]);
 
   if (!webglReady || mapFatalError) {
@@ -1818,7 +2015,9 @@ export default function RouteMapCanvas({
       className={
         fullscreenActive
           ? 'fixed inset-0 z-50 flex flex-col gap-2 bg-[var(--surface-page)] p-3 sm:p-4'
-          : 'space-y-2'
+          : heightClassName.includes('h-full')
+            ? 'h-full w-full'
+            : 'space-y-2'
       }
     >
       {fullscreenActive && studioOverlaySlot}
@@ -2003,8 +2202,8 @@ export default function RouteMapCanvas({
               }
               className={`flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border text-xs font-semibold shadow-sm ${
                 locateStatus === 'active'
-                  ? 'border-sky-600 bg-sky-600 text-white hover:bg-sky-500'
-                  : 'border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] hover:border-sky-600/60 hover:text-sky-700 dark:hover:text-sky-400'
+                  ? 'border-red-600 bg-red-700 text-white hover:bg-red-600'
+                  : 'border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] hover:border-red-600/60 hover:text-red-700 dark:hover:text-red-400'
               }`}
             >
               <LocateFixed className="h-4 w-4" aria-hidden="true" />
@@ -2028,34 +2227,38 @@ export default function RouteMapCanvas({
               <Maximize2 className="h-4 w-4" aria-hidden="true" />
             )}
           </button>
-          <button
-            type="button"
-            onClick={toggleImagery}
-            aria-pressed={activeImagery}
-            aria-label={activeImagery ? 'Hide Sentinel-2 satellite imagery' : 'Show Sentinel-2 satellite imagery'}
-            title={activeImagery ? 'Hide Satellite' : 'Sentinel-2 Satellite'}
-            className={`flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border text-xs font-semibold shadow-sm ${
-              activeImagery
-                ? 'border-red-600 bg-red-700 text-white'
-                : 'border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] hover:border-red-600/60'
-            }`}
-          >
-            <Globe className="h-4 w-4" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            onClick={toggle3D}
-            aria-pressed={active3D}
-            aria-label={active3D ? 'Switch to 2D map view' : 'Switch to 3D terrain relief view'}
-            title={active3D ? 'Switch to 2D' : '3D Terrain'}
-            className={`flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border text-xs font-semibold shadow-sm ${
-              active3D
-                ? 'border-red-600 bg-red-700 text-white'
-                : 'border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] hover:border-red-600/60'
-            }`}
-          >
-            <Layers className="h-4 w-4" aria-hidden="true" />
-          </button>
+          {!hideBuiltInLayerToggles && (
+            <>
+              <button
+                type="button"
+                onClick={toggleImagery}
+                aria-pressed={activeImagery}
+                aria-label={activeImagery ? 'Hide satellite imagery' : 'Show satellite imagery'}
+                title={activeImagery ? 'Hide Satellite' : 'Satellite imagery'}
+                className={`flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border text-xs font-semibold shadow-sm ${
+                  activeImagery
+                    ? 'border-red-600 bg-red-700 text-white'
+                    : 'border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] hover:border-red-600/60'
+                }`}
+              >
+                <Globe className="h-4 w-4" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={toggle3D}
+                aria-pressed={active3D}
+                aria-label={active3D ? 'Switch to 2D map view' : 'Switch to 3D terrain relief view'}
+                title={active3D ? 'Switch to 2D' : '3D Terrain'}
+                className={`flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border text-xs font-semibold shadow-sm ${
+                  active3D
+                    ? 'border-red-600 bg-red-700 text-white'
+                    : 'border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] hover:border-red-600/60'
+                }`}
+              >
+                <Layers className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </>
+          )}
           {onSelectChainage && !editable && !reducedMotion && (
             <button
               type="button"
@@ -2079,87 +2282,66 @@ export default function RouteMapCanvas({
         </div>
 
         {/* Bottom-left Course Telemetry HUD + Preview Position + Pan Lock status */}
-        <div className="pointer-events-none absolute bottom-2.5 left-2.5 z-10 flex max-w-[calc(100%-6.75rem)] flex-wrap items-center gap-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 px-2.5 py-1.5 text-xs text-[var(--text-primary)] shadow-sm">
-          <Compass className="h-3.5 w-3.5 shrink-0 text-red-700 dark:text-red-400" aria-hidden="true" />
-          <span className="font-mono font-semibold">
-            {route.canonicalGeometry.isCanvasCleared
-              ? '0.00 km (Cleared)'
-              : `${route.distanceKm.toFixed(2)} km`}
-          </span>
-          <span className="font-mono text-[var(--text-secondary)]">
-            +{Math.round(route.elevationGainM)}m / -{Math.round(route.elevationLossM)}m
-          </span>
-          <span className="font-mono text-[var(--text-secondary)]">
-            Max {maxGradePct.toFixed(1)}%
-          </span>
-          <span className="font-mono text-[var(--text-secondary)]">
-            {cursorVisible ? (
-              <>
-                Cursor {(selection.chainageM / 1000).toFixed(2)} km
-                {selection.elevation !== undefined ? ` (${Math.round(selection.elevation)} m)` : ''}
-              </>
-            ) : route.canonicalGeometry.isCanvasCleared ? (
-              'Start point not placed'
-            ) : (
-              'Start dot removed'
+        {(!hideHud || fullscreenActive) && (
+          <div className="pointer-events-none absolute bottom-2.5 left-2.5 z-10 flex max-w-[calc(100%-6.75rem)] flex-wrap items-center gap-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 px-2.5 py-1.5 text-xs text-[var(--text-primary)] shadow-sm">
+            <Compass className="h-3.5 w-3.5 shrink-0 text-red-700 dark:text-red-400" aria-hidden="true" />
+            <span className="font-mono font-semibold">
+              {isEmptyCanvas
+                ? '0.00 km (Empty)'
+                : route.canonicalGeometry.isCanvasCleared
+                  ? '0.00 km (Cleared)'
+                  : `${route.distanceKm.toFixed(2)} km`}
+            </span>
+            <span className="font-mono text-[var(--text-secondary)]">
+              +{Math.round(route.elevationGainM)}m / -{Math.round(route.elevationLossM)}m
+            </span>
+            <span className="font-mono text-[var(--text-secondary)]">
+              Max {maxGradePct.toFixed(1)}%
+            </span>
+            <span className="font-mono text-[var(--text-secondary)]">
+              {cursorVisible ? (
+                <>
+                  Cursor {(selection.chainageM / 1000).toFixed(2)} km
+                  {selection.elevation !== undefined ? ` (${Math.round(selection.elevation)} m)` : ''}
+                </>
+              ) : isEmptyCanvas ? (
+                'No route configured'
+              ) : route.canonicalGeometry.isCanvasCleared ? (
+                'Start point not placed'
+              ) : (
+                'Start dot removed'
+              )}
+            </span>
+            {selection.passNumber > 1 && (
+              <span className="rounded-md bg-red-700/15 px-1.5 py-0.5 font-semibold text-red-700 dark:text-red-300">
+                Pass {selection.passNumber}
+              </span>
             )}
-          </span>
-          {selection.passNumber > 1 && (
-            <span className="rounded-md bg-red-700/15 px-1.5 py-0.5 font-semibold text-red-700 dark:text-red-300">
-              Pass {selection.passNumber}
-            </span>
-          )}
-          {comparisonRoute && comparisonLabel && (
-            <span className="inline-flex items-center gap-1.5 text-sky-700 dark:text-sky-300">
-              <span className="inline-block h-0.5 w-3 border-t-2 border-dashed border-current" aria-hidden="true" />
-              {comparisonLabel}
-            </span>
-          )}
-          {editable && lockCamera && (
-            <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-1.5 py-0.5 font-semibold text-amber-800 dark:text-amber-300">
-              <Lock className="h-3 w-3" aria-hidden="true" />
-              Canvas locked (hold Space to pan)
-            </span>
-          )}
-          {colorMode === 'gradient' && (
-            <span className="rounded-md bg-emerald-600/15 px-1.5 py-0.5 font-semibold text-emerald-700 dark:text-emerald-300">
-              Slope: Green &lt;3% · Amber 3-10% · Red &gt;10%
-            </span>
-          )}
-          {colorMode === 'surface' && (
-            <span className="rounded-md bg-sky-600/15 px-1.5 py-0.5 font-semibold text-sky-700 dark:text-sky-300">
-              Surface: Gray Paved · Amber Gravel · Green Trail · Red Tech
-            </span>
-          )}
-        </div>
+            {comparisonRoute && comparisonLabel && (
+              <span className="inline-flex items-center gap-1.5 text-sky-700 dark:text-sky-300">
+                <span className="inline-block h-0.5 w-3 border-t-2 border-dashed border-current" aria-hidden="true" />
+                {comparisonLabel}
+              </span>
+            )}
+            {editable && lockCamera && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-1.5 py-0.5 font-semibold text-amber-800 dark:text-amber-300">
+                <Lock className="h-3 w-3" aria-hidden="true" />
+                Canvas locked (hold Space to pan)
+              </span>
+            )}
+            {colorMode === 'gradient' && (
+              <span className="rounded-md bg-emerald-600/15 px-1.5 py-0.5 font-semibold text-emerald-700 dark:text-emerald-300">
+                Slope: Green &lt;3% · Amber 3-10% · Red &gt;10%
+              </span>
+            )}
+            {colorMode === 'surface' && (
+              <span className="rounded-md bg-sky-600/15 px-1.5 py-0.5 font-semibold text-sky-700 dark:text-sky-300">
+                Surface: Gray Paved · Amber Gravel · Green Trail · Red Tech
+              </span>
+            )}
+          </div>
+        )}
         {selectedMarkerOverlay}
-      </div>
-
-      {/* Explicit map attribution & fallback toggle footer */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-[var(--text-secondary)]">
-        <span>
-          Map source: {providerConfig.attribution}
-          {activeImagery && providerConfig.imageryAttribution ? ` · ${providerConfig.imageryAttribution}` : ''}
-          {active3D && providerConfig.terrainAttribution ? ` · ${providerConfig.terrainAttribution}` : ''}
-          {provenance ? ` · Imagery date: ${provenance.imageryDate}` : ''}
-        </span>
-        <div className="flex flex-wrap items-center gap-3">
-          {route.validationReport.hasDrawnSections && (
-            <span className="inline-flex items-center gap-1.5 font-semibold text-amber-700 dark:text-amber-300">
-              <span className="inline-block h-0.5 w-3 border-t-2 border-dashed border-current" aria-hidden="true" />
-              Dashed: manually drawn section
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={() =>
-              setProviderId((curr) => (curr === 'openfreemap' ? 'local-fallback' : 'openfreemap'))
-            }
-            className="min-h-8 font-semibold text-[var(--text-primary)] underline decoration-[var(--border-default)] underline-offset-4 hover:text-red-700 dark:hover:text-red-400"
-          >
-            {providerId === 'openfreemap' ? 'Use Philippine reference map' : 'Use OpenFreeMap tiles'}
-          </button>
-        </div>
       </div>
     </div>
   );

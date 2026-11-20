@@ -52,7 +52,6 @@ import {
   RunnerBottomSheetDetent,
   RunnerFilterRail,
   RunnerFloatingStatusPill,
-  RunnerQueueRow,
   RunnerQueueSkeleton,
   RunnerTelemetryStrip,
   RunnerThumbActionBar,
@@ -712,14 +711,14 @@ function OpenEventCanvasView({
               })
             }
             aria-label={`View full poster for ${race.name}`}
-            className="w-full h-36 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] flex items-center justify-center p-2 overflow-hidden"
+            className="aspect-video w-full rounded-xl border border-[var(--border-default)] bg-[#141416] overflow-hidden block cursor-pointer"
           >
             <img
               src={race.posterImage}
               alt={`${race.name} uncropped event poster`}
-              width={640}
-              height={360}
-              className="max-w-full max-h-full w-auto h-auto object-contain rounded"
+              width={800}
+              height={450}
+              className="w-full h-full object-contain block"
             />
           </button>
         )}
@@ -2161,7 +2160,7 @@ export default function RunnerEventsPanel({
                 tabIndex={0}
                 role="region"
                 aria-label="Open events list"
-                className="flex-1 min-h-0 overflow-x-auto overflow-y-auto overscroll-y-contain rp-runner-scroll"
+                className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto overscroll-y-contain rp-runner-scroll"
               >
                 {availableDistances.length > 0 && (
                   <div className="px-3 py-1.5 border-b border-[var(--border-subtle)] bg-[var(--surface-card)] flex items-center gap-1.5 overflow-x-auto racepulse-horizontal-scroll touch-pan-x">
@@ -2244,36 +2243,116 @@ export default function RunnerEventsPanel({
                     </button>
                   </div>
                 ) : !isDesktop ? (
-                  <div id="runner_events_list" className="divide-y divide-[var(--border-subtle)] bg-[var(--surface-card)]">
+                  <div id="runner_events_list" className="p-3 space-y-3 bg-[var(--surface-page)]">
                     {filteredRaces.map((race) => {
                       const isSelected = selectedRace?.id === race.id;
                       const isJoined = registeredRaceIds.has(race.id);
                       const dists = sortedRaceDistances(race);
                       const distSummary = dists.map((d) => d.label).join(' · ');
                       return (
-                        <RunnerQueueRow
+                        <article
                           key={race.id}
-                          selected={isSelected && isSplitPane}
-                          idTag={race.date.slice(5)}
-                          title={race.name}
-                          meta={`${race.date}${distSummary ? ` · ${distSummary}` : ''}`}
-                          metric={formatFeeRangePH(dists)}
-                          metricAccent={isJoined ? 'red' : 'default'}
-                          statusLabel={isJoined ? 'Joined' : 'Reg Open'}
-                          statusTone={isJoined ? 'joined' : 'open'}
-                          onClick={() => {
-                            setSelectedRaceId(race.id);
-                            if (isCompact) setMobileInspecting(true);
-                          }}
-                        />
+                          className={`rounded-2xl border bg-[var(--surface-card)] overflow-hidden transition-colors ${
+                            isSelected && isSplitPane
+                              ? 'border-red-600 ring-2 ring-red-600'
+                              : 'border-[var(--border-default)]'
+                          }`}
+                        >
+                          <div className="relative aspect-video w-full bg-[#141416] border-b border-[var(--border-default)] overflow-hidden">
+                            {race.posterImage ? (
+                              <>
+                                <img
+                                  src={race.posterImage}
+                                  alt={`${race.name} official event poster`}
+                                  width={800}
+                                  height={450}
+                                  loading="lazy"
+                                  className="w-full h-full object-contain block"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setLightboxMedia({
+                                      title: race.name,
+                                      subtitle: race.date,
+                                      src: race.posterImage!,
+                                      alt: `${race.name} full event poster`,
+                                    })
+                                  }
+                                  aria-label={`View full poster for ${race.name}`}
+                                  className="absolute top-2 right-2 min-h-11 px-3 rounded-xl border border-white/20 bg-[#141416]/90 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                                >
+                                  <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />
+                                  <span>Poster</span>
+                                </button>
+                              </>
+                            ) : (
+                              <div className="w-full h-full flex flex-col items-center justify-center p-4 text-center text-white">
+                                <Flag className="w-7 h-7 text-red-400 mb-1.5" aria-hidden="true" />
+                                <span className="font-display text-sm font-semibold line-clamp-2">{race.name}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="p-3.5 space-y-2.5">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span
+                                className={`inline-flex items-center px-2.5 py-0.5 rounded-lg border text-xs font-semibold leading-tight ${
+                                  isJoined
+                                    ? 'bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/30'
+                                    : 'bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700'
+                                }`}
+                              >
+                                {isJoined ? 'Joined' : 'Reg Open'}
+                              </span>
+                              <span className="font-mono text-xs font-semibold tabular-nums text-[var(--text-secondary)]">
+                                {race.date} · {formatFeeRangePH(dists)}
+                              </span>
+                            </div>
+
+                            <h3 className="font-display font-semibold text-base text-[var(--text-primary)] leading-snug">
+                              {race.name}
+                            </h3>
+
+                            {distSummary && (
+                              <p className="font-mono text-xs text-[var(--text-secondary)] truncate">
+                                {distSummary}
+                              </p>
+                            )}
+
+                            <div className="pt-1 flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedRaceId(race.id);
+                                  if (isCompact) setMobileInspecting(true);
+                                }}
+                                className="min-h-11 flex-1 px-3 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] cursor-pointer"
+                              >
+                                Event details
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedRaceId(race.id);
+                                  setShowForm(true);
+                                }}
+                                className="min-h-11 flex-1 px-3 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                              >
+                                <span>{isJoined ? 'Edit entry' : 'Register'}</span>
+                                <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+                              </button>
+                            </div>
+                          </div>
+                        </article>
                       );
                     })}
                     {onScanQr && (
-                      <div className="p-3 bg-[var(--surface-page)]">
+                      <div className="pt-1">
                         <button
                           type="button"
                           onClick={onScanQr}
-                          className="min-h-11 w-full px-4 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] hover:border-red-600 text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 transition-colors"
+                          className="min-h-11 w-full px-4 rounded-xl border border-[var(--border-button)] bg-[var(--surface-card)] hover:border-red-600 text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 transition-colors cursor-pointer"
                         >
                           <QrCode className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" />
                           <span>Scan Race / Bib QR</span>
@@ -2282,175 +2361,155 @@ export default function RunnerEventsPanel({
                     )}
                   </div>
                 ) : (
-                <table id="runner_events_table" className="w-full table-fixed text-left border-collapse">
-                  <thead className="sticky top-0 z-10 bg-[var(--surface-inset)] border-b border-[var(--border-default)] text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-                    <tr>
-                      <th
-                        scope="col"
-                        className="py-2 pl-4 pr-2"
-                        aria-sort={sortKey === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
-                      >
+                  <div id="runner_events_table" className="@container bg-[var(--surface-page)]">
+                    <div
+                      role="group"
+                      aria-label="Sort open events"
+                      className="sticky top-0 z-10 px-4 py-2 border-b border-[var(--border-default)] bg-[var(--surface-card)] flex flex-wrap items-center gap-2 text-xs"
+                    >
+                      <span className="font-semibold text-[var(--text-secondary)] mr-1">Sort by:</span>
+                      {(
+                        [
+                          { key: 'date', label: 'Date' },
+                          { key: 'name', label: 'Event name' },
+                          { key: 'distances', label: 'Distances' },
+                          { key: 'fee', label: 'Entry fee' },
+                        ] as const
+                      ).map((col) => (
                         <button
+                          key={col.key}
                           type="button"
-                          onClick={() => toggleSort('name')}
-                          className="inline-flex items-center hover:text-[var(--text-primary)] transition-colors focus-visible:outline-none focus-visible:underline"
-                        >
-                          <span>Event</span>
-                          {renderSortMarker('name')}
-                        </button>
-                      </th>
-                      <th
-                        scope="col"
-                        className="py-2 px-2 w-[128px]"
-                        aria-sort={sortKey === 'date' ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => toggleSort('date')}
-                          className="inline-flex items-center hover:text-[var(--text-primary)] transition-colors focus-visible:outline-none focus-visible:underline"
-                        >
-                          <span>Date / Status</span>
-                          {renderSortMarker('date')}
-                        </button>
-                      </th>
-                      <th
-                        scope="col"
-                        className="py-2 px-2 w-[140px]"
-                        aria-sort={sortKey === 'distances' ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => toggleSort('distances')}
-                          className="inline-flex items-center hover:text-[var(--text-primary)] transition-colors focus-visible:outline-none focus-visible:underline"
-                        >
-                          <span>Distances</span>
-                          {renderSortMarker('distances')}
-                        </button>
-                      </th>
-                      <th
-                        scope="col"
-                        className="py-2 px-2 w-[112px] text-right"
-                        aria-sort={sortKey === 'fee' ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => toggleSort('fee')}
-                          className="inline-flex items-center justify-end ml-auto hover:text-[var(--text-primary)] transition-colors focus-visible:outline-none focus-visible:underline"
-                        >
-                          <span>Entry Fee</span>
-                          {renderSortMarker('fee')}
-                        </button>
-                      </th>
-                      <th scope="col" className="py-2 pl-2 pr-3 text-right whitespace-nowrap w-[124px]">
-                        Action
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[var(--border-subtle)] text-sm">
-                    {filteredRaces.map((race) => {
-                      const isSelected = selectedRace?.id === race.id;
-                      const isJoined = registeredRaceIds.has(race.id);
-                      const dists = sortedRaceDistances(race);
-                      const distSummary = dists.map((d) => d.label).join(' · ');
-                      return (
-                        <tr
-                          key={race.id}
-                          className={`border-l-4 transition-colors ${
-                            isSelected
-                              ? 'border-l-red-600 bg-red-500/[0.08]'
-                              : isJoined
-                                ? 'border-l-zinc-400 dark:border-l-zinc-600 hover:bg-[var(--surface-hover)]/65'
-                                : 'border-l-emerald-600 dark:border-l-emerald-500 hover:bg-[var(--surface-hover)]/65'
+                          onClick={() => toggleSort(col.key)}
+                          aria-pressed={sortKey === col.key}
+                          className={`min-h-8 px-2.5 rounded-lg border text-xs font-semibold inline-flex items-center cursor-pointer transition-colors ${
+                            sortKey === col.key
+                              ? 'border-red-600 bg-red-500/10 text-red-700 dark:text-red-400'
+                              : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                           }`}
                         >
-                          <td className="py-2.5 pl-3 pr-2 align-middle min-w-0">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-12 h-8 rounded border border-[var(--border-subtle)] bg-[var(--surface-inset)] overflow-hidden shrink-0 flex items-center justify-center">
+                          <span>{col.label}</span>
+                          {renderSortMarker(col.key)}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="p-4 grid grid-cols-1 @xl:grid-cols-2 gap-4">
+                      {filteredRaces.map((race) => {
+                        const isSelected = selectedRace?.id === race.id;
+                        const isJoined = registeredRaceIds.has(race.id);
+                        const dists = sortedRaceDistances(race);
+                        const distSummary = dists.map((d) => d.label).join(' · ');
+
+                        return (
+                          <article
+                            key={race.id}
+                            className={`rounded-2xl border bg-[var(--surface-card)] overflow-hidden flex flex-col justify-between transition-colors ${
+                              isSelected
+                                ? 'border-red-600 ring-2 ring-red-600'
+                                : 'border-[var(--border-default)] hover:border-[var(--border-button)]'
+                            }`}
+                          >
+                            <div>
+                              <div className="relative aspect-video w-full bg-[#141416] border-b border-[var(--border-default)] overflow-hidden">
                                 {race.posterImage ? (
-                                  <img
-                                    src={race.posterImage}
-                                    alt={`${race.name} thumbnail`}
-                                    width={48}
-                                    height={32}
-                                    className="w-12 h-8 object-cover block"
-                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedRaceId(race.id)}
+                                    aria-label={`Select ${race.name}`}
+                                    className="block w-full h-full cursor-pointer"
+                                  >
+                                    <img
+                                      src={race.posterImage}
+                                      alt={`${race.name} official event poster`}
+                                      width={800}
+                                      height={450}
+                                      loading="lazy"
+                                      className="w-full h-full object-contain block"
+                                    />
+                                  </button>
                                 ) : (
-                                  <Flag className="w-3.5 h-3.5 text-[var(--text-secondary)]" aria-hidden="true" />
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedRaceId(race.id)}
+                                    aria-label={`Select ${race.name}`}
+                                    className="w-full h-full flex flex-col items-center justify-center p-4 text-center text-white cursor-pointer"
+                                  >
+                                    <Flag className="w-7 h-7 text-red-400 mb-1.5" aria-hidden="true" />
+                                    <span className="font-display text-sm font-semibold line-clamp-2">{race.name}</span>
+                                  </button>
                                 )}
                               </div>
-                              <div className="min-w-0 flex-1">
+
+                              <div className="p-4 space-y-2">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <span
+                                    className={`inline-flex items-center px-2 py-0.5 rounded-lg border text-xs font-semibold leading-tight ${
+                                      isJoined
+                                        ? 'bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/30'
+                                        : 'bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700'
+                                    }`}
+                                  >
+                                    {isJoined ? 'Registered' : 'Reg Open'}
+                                  </span>
+                                  <span className="font-mono text-xs font-semibold tabular-nums text-[var(--text-secondary)]">
+                                    {race.date}
+                                  </span>
+                                </div>
+
                                 <button
                                   type="button"
                                   onClick={() => setSelectedRaceId(race.id)}
                                   aria-pressed={isSelected}
-                                  className="flex items-center min-h-8 w-full text-left font-display font-semibold text-sm leading-tight text-[var(--text-primary)] truncate hover:text-red-700 dark:hover:text-red-400 focus-visible:outline-none focus-visible:underline"
+                                  className="block w-full text-left font-display font-semibold text-base leading-snug text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400 cursor-pointer"
                                 >
-                                  <span className="truncate">{race.name}</span>
+                                  {race.name}
                                 </button>
-                                <div className="text-xs text-[var(--text-secondary)] truncate leading-tight mt-0.5">
+
+                                <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono text-[var(--text-secondary)]">
+                                  <span className="truncate">{distSummary || 'Custom'}</span>
+                                  <span className="font-semibold text-[var(--text-primary)] shrink-0">
+                                    {formatFeeRangePH(dists)}
+                                  </span>
+                                </div>
+
+                                <p className="text-xs text-[var(--text-secondary)] truncate">
                                   {(race.inclusions || []).length > 0
                                     ? `Includes: ${race.inclusions.slice(0, 3).join(', ')}`
                                     : `${(race.checkpoints || []).length} checkpoints`}
-                                </div>
+                                </p>
                               </div>
                             </div>
-                          </td>
 
-                          <td className="py-2.5 px-2 align-middle whitespace-nowrap">
-                            <div className="font-mono text-xs font-semibold tabular-nums text-[var(--text-primary)] leading-tight">
-                              {race.date}
+                            <div className="px-4 pb-4 flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedRaceId(race.id)}
+                                className="min-h-9 flex-1 px-3 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] cursor-pointer"
+                              >
+                                {isSelected ? 'Selected' : 'Inspect'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedRaceId(race.id);
+                                  setShowForm(true);
+                                }}
+                                className={`min-h-9 px-3.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+                                  isJoined
+                                    ? 'border border-[var(--border-button)] bg-[var(--surface-card)] hover:border-red-600 text-[var(--text-primary)]'
+                                    : 'bg-red-700 hover:bg-red-600 text-white'
+                                }`}
+                              >
+                                <span>{isJoined ? 'Update' : 'Register'}</span>
+                                <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+                              </button>
                             </div>
-                            <span
-                              className={`inline-flex items-center mt-1 px-2 py-0.5 rounded border text-xs font-semibold leading-tight ${
-                                isJoined
-                                  ? 'bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/30'
-                                  : 'bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700'
-                              }`}
-                            >
-                              {isJoined ? 'Registered' : 'Reg Open'}
-                            </span>
-                          </td>
-
-                          <td className="py-2.5 px-2 align-middle">
-                            <div className="text-xs font-mono font-semibold text-[var(--text-primary)] truncate">
-                              {distSummary || 'Custom'}
-                            </div>
-                            <div className="text-xs text-[var(--text-secondary)] mt-0.5 truncate">
-                              {(race.entryCategories?.length ? race.entryCategories : ['solo'])
-                                .map((c) => entryCategoryLabels[c])
-                                .join(', ')}
-                            </div>
-                          </td>
-
-                          <td className="py-2.5 px-2 align-middle text-right whitespace-nowrap">
-                            <span className="font-mono text-xs font-semibold tabular-nums text-[var(--text-primary)]">
-                              {formatFeeRangePH(dists)}
-                            </span>
-                          </td>
-
-                          <td className="py-2.5 pl-2 pr-3 align-middle text-right whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedRaceId(race.id);
-                                setShowForm(true);
-                              }}
-                              className={`h-8 px-3 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${
-                                isJoined
-                                  ? 'border border-[var(--border-default)] bg-[var(--surface-card)] hover:border-red-600 text-[var(--text-primary)]'
-                                  : 'bg-red-700 hover:bg-red-600 text-white'
-                              }`}
-                            >
-                              <span>{isJoined ? 'Update' : 'Register'}</span>
-                              <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
             </div>
           </section>
 
@@ -2511,19 +2570,19 @@ export default function RunnerEventsPanel({
                 </div>
 
                 <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain p-3 sm:p-4 space-y-3">
-                  {/* Uncropped Poster Preview */}
+                  {/* Uncropped 16:9 Poster Preview */}
                   <div
                     aria-label="Uncropped event poster preview"
-                    className="relative h-40 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] flex items-center justify-center p-2 overflow-hidden"
+                    className="relative aspect-video w-full rounded-xl border border-[var(--border-default)] bg-[#141416] overflow-hidden"
                   >
                     {selectedRace.posterImage ? (
                       <>
                         <img
                           src={selectedRace.posterImage}
                           alt={`${selectedRace.name} uncropped event poster`}
-                          width={640}
-                          height={360}
-                          className="max-w-full max-h-full w-auto h-auto object-contain rounded"
+                          width={800}
+                          height={450}
+                          className="w-full h-full object-contain block"
                         />
                         <button
                           type="button"
@@ -2536,16 +2595,16 @@ export default function RunnerEventsPanel({
                             })
                           }
                           aria-label={`Inspect full poster for ${selectedRace.name}`}
-                          className="absolute top-2 right-2 min-h-11 lg:min-h-0 lg:h-8 px-3 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)]/95 hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-1"
+                          className="absolute top-2 right-2 min-h-11 lg:min-h-0 lg:h-8 px-3 rounded-lg border border-white/20 bg-[#141416]/90 hover:bg-[#141416] text-xs font-semibold text-white inline-flex items-center gap-1 cursor-pointer"
                         >
                           <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />
                           <span>Full View</span>
                         </button>
                       </>
                     ) : (
-                      <div className="text-center px-3">
-                        <Flag className="w-6 h-6 text-[var(--text-secondary)] mx-auto mb-1.5" aria-hidden="true" />
-                        <p className="text-xs font-semibold text-[var(--text-secondary)]">
+                      <div className="w-full h-full flex flex-col items-center justify-center text-center px-3 text-white">
+                        <Flag className="w-6 h-6 text-zinc-400 mx-auto mb-1.5" aria-hidden="true" />
+                        <p className="text-xs font-semibold text-zinc-300">
                           No promotional poster uploaded yet.
                         </p>
                       </div>

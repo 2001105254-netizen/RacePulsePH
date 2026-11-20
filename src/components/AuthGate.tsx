@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { doc, getDoc, runTransaction } from 'firebase/firestore';
 import { AnimatePresence, m } from 'motion/react';
 import { directionalTabVariants, type NavDirection } from './ui/MotionPrimitives';
+import { RedTribalPatternBackdrop } from './ui/KineticTelemetry';
 import { db, signUpWithEmail, signInWithEmail, signInWithGoogle, signOutUser } from '../firebase';
 import { clearSignupDraft, getSignupDraft, saveSignupDraft } from '../lib/accountSecurity';
 import { createActionCooldownStore } from '../lib/resilientFetch';
@@ -95,21 +96,16 @@ function GoogleIcon({ className }: { className?: string }) {
   );
 }
 
-// Centered stage with subtle GPU-composited backdrop glow.
+// Centered minimalist auth stage on clean surface canvas framed by red tribal weave.
 function AuthStage({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative isolate flex-grow flex items-center justify-center overflow-x-clip py-6 sm:py-10 px-4">
-      <div className="auth-backdrop" aria-hidden="true">
-        <span className="auth-glow" />
-        <span className="auth-beam" />
-        <span className="auth-pulse" />
-        <span className="auth-pulse auth-pulse-late" />
-      </div>
+    <div className="relative isolate flex-grow flex items-center justify-center overflow-hidden py-6 sm:py-10 px-4">
+      <RedTribalPatternBackdrop variant="auth" />
       <m.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-        className="relative w-full flex justify-center"
+        transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+        className="relative z-10 w-full flex justify-center"
       >
         {children}
       </m.div>

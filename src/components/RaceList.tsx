@@ -55,88 +55,82 @@ export default function RaceList({
           </p>
         </Card>
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {races.map((race) => {
             const isSelected = race.id === selectedRaceId;
             const isRegistered = registeredRaceIds?.has(race.id) ?? false;
             const regOpen = isRaceRegistrationOpen(race);
             const isLive = !!race.liveBroadcastEnabled;
             const isCompleted = !!race.completedAt;
-            const leftBorderClass = isSelected || isRegistered
-              ? 'border-l-red-600'
-              : isCompleted
-              ? 'border-l-zinc-500'
-              : 'border-l-emerald-600';
 
             return (
               <Card
                 key={race.id}
-                className={`group overflow-hidden min-w-0 text-left transition-[border-color,transform] duration-150 border-[var(--border-default)] border-l-4 ${leftBorderClass} hover:border-red-600/60 flex flex-col justify-between ${
+                className={`group overflow-hidden min-w-0 text-left transition-colors duration-150 border-[var(--border-default)] hover:border-red-600/60 flex flex-col justify-between ${
                   isSelected ? 'ring-2 ring-red-600 border-red-600' : ''
                 }`}
               >
                 <div className="min-w-0">
-                  {/* Compact Poster or Fallback Banner */}
-                  <div className="relative h-32 sm:h-36 w-full overflow-hidden bg-zinc-900 border-b border-[var(--border-default)]">
+                  {/* Uncropped 16:9 Official Race Poster */}
+                  <div className="aspect-video w-full overflow-hidden bg-[#141416] border-b border-[var(--border-default)]">
                     {race.posterImage ? (
                       <img
                         src={race.posterImage}
                         alt={race.name}
-                        className="w-full h-full object-cover"
+                        width={800}
+                        height={450}
+                        loading="lazy"
+                        className="w-full h-full object-contain block"
                       />
                     ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-900 p-4 text-center">
+                      <div className="w-full h-full flex flex-col items-center justify-center bg-[#141416] p-4 text-center">
                         <Trophy className="w-8 h-8 text-zinc-400 mb-2" aria-hidden="true" />
                         <span className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
                           RacePulse Official Event
                         </span>
                       </div>
                     )}
+                  </div>
 
-                    {/* Status Badges Overlay */}
-                    <div className="absolute top-3 left-3 right-3 flex flex-wrap gap-2 z-10">
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
                       {isLive && (
-                        <Badge variant="live" className="gap-2 shadow-sm text-xs">
-                          <span className="w-1.5 h-1.5 rounded-full bg-red-600 motion-safe:animate-ping" />
+                        <Badge variant="live" className="gap-2 text-xs">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-600" aria-hidden="true" />
                           Live Timing
                         </Badge>
                       )}
                       {isCompleted ? (
-                        <Badge variant="secondary" className="shadow-sm text-xs font-semibold uppercase">
+                        <Badge variant="secondary" className="text-xs font-semibold">
                           Finished
                         </Badge>
                       ) : regOpen ? (
-                        <Badge variant="success" className="shadow-sm text-xs font-semibold uppercase">
+                        <Badge variant="success" className="text-xs font-semibold">
                           Reg Open
                         </Badge>
                       ) : (
-                        <Badge variant="muted" className="shadow-sm text-xs font-semibold uppercase">
+                        <Badge variant="muted" className="text-xs font-semibold">
                           Reg Closed
                         </Badge>
                       )}
                       {isRegistered && (
-                        <Badge variant="default" className="shadow-sm text-xs font-semibold uppercase">
+                        <Badge variant="default" className="text-xs font-semibold">
                           Registered
+                        </Badge>
+                      )}
+                      {isSelected && (
+                        <Badge variant="outline" className="gap-1 text-xs font-semibold border-red-600 text-red-700 dark:text-red-400">
+                          <CheckCircle2 className="w-3 h-3" aria-hidden="true" /> Selected
                         </Badge>
                       )}
                     </div>
 
-                    {isSelected && (
-                      <div className="absolute top-3 right-3 z-10">
-                        <Badge variant="default" className="gap-1 shadow-sm text-xs font-semibold uppercase">
-                          <CheckCircle2 className="w-3 h-3" /> Selected
-                        </Badge>
-                      </div>
-                    )}
-                  </div>
-
-                  <CardContent className="p-4 space-y-3">
                     <div>
                       <h3 className="text-base font-semibold tracking-tight text-[var(--text-primary)] group-hover:text-red-700 dark:group-hover:text-red-400 transition-colors">
                         {race.name}
                       </h3>
                       <p className="text-xs font-normal text-[var(--text-secondary)] mt-1 flex items-center gap-2 tabular-nums">
-                        <Calendar className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" />
+                        <Calendar className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
                         <span>{race.date}</span>
                       </p>
                     </div>
@@ -162,7 +156,7 @@ export default function RaceList({
                     {/* Inclusions */}
                     {(race.inclusions || []).length > 0 && (
                       <div className="flex items-start gap-2 text-xs text-[var(--text-secondary)] line-clamp-1">
-                        <Tag className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0 mt-1" />
+                        <Tag className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0 mt-1" aria-hidden="true" />
                         <span className="truncate">Includes: {race.inclusions.join(', ')}</span>
                       </div>
                     )}

@@ -37,6 +37,83 @@
       "skillPath": "skills/antislop-ui/SKILL.md",
       "computedHash": "588c3a726f2054c0aa3335f61cea6a3a9e53b2821cafda40d25ebf8d1c37e59e"
     },
+    "maplibre-cartography": {
+      "source": "maplibre/maplibre-agent-skills",
+      "commit": "9aa0f2ea52c07ba22542587ab9da030d04a4db5c",
+      "sourceType": "github",
+      "skillPath": "skills/maplibre-cartography/SKILL.md",
+      "computedHash": "403a0942529a01a2b1bde7ac163e3e558c086814bb6b454b8c74d44da6026374"
+    },
+    "maplibre-fonts-glyphs": {
+      "source": "maplibre/maplibre-agent-skills",
+      "commit": "9aa0f2ea52c07ba22542587ab9da030d04a4db5c",
+      "sourceType": "github",
+      "skillPath": "skills/maplibre-fonts-glyphs/SKILL.md",
+      "computedHash": "ce230d9e0e1d3fe319eeb55aaf6fa015b93313c07722797b15bb5cd4f3c9d824"
+    },
+    "maplibre-mapbox-migration": {
+      "source": "maplibre/maplibre-agent-skills",
+      "commit": "9aa0f2ea52c07ba22542587ab9da030d04a4db5c",
+      "sourceType": "github",
+      "skillPath": "skills/maplibre-mapbox-migration/SKILL.md",
+      "computedHash": "97a8af43568b82eba4a943c3ab69f099793b15f77e4e79c692fcd99a85a3ed1a"
+    },
+    "maplibre-native-gl-js-parity": {
+      "source": "maplibre/maplibre-agent-skills",
+      "commit": "9aa0f2ea52c07ba22542587ab9da030d04a4db5c",
+      "sourceType": "github",
+      "skillPath": "skills/maplibre-native-gl-js-parity/SKILL.md",
+      "computedHash": "a00edb7b9b6d95529af64fe0fe911917f0f87efa0d09e0c7426a9d8eb124df59"
+    },
+    "maplibre-pmtiles-patterns": {
+      "source": "maplibre/maplibre-agent-skills",
+      "commit": "9aa0f2ea52c07ba22542587ab9da030d04a4db5c",
+      "sourceType": "github",
+      "skillPath": "skills/maplibre-pmtiles-patterns/SKILL.md",
+      "computedHash": "678174edca9879b3d4fc0d4682147a214151412e1431d5e8757cf15d67f5415b"
+    },
+    "maplibre-skill-authoring": {
+      "source": "maplibre/maplibre-agent-skills",
+      "commit": "9aa0f2ea52c07ba22542587ab9da030d04a4db5c",
+      "sourceType": "github",
+      "skillPath": "skills/maplibre-skill-authoring/SKILL.md",
+      "computedHash": "9fbfc6878051b93fffa668d9934f0e7478d0c8d9fefed7b01dd816ef97cc1eb1"
+    },
+    "maplibre-source-wiring": {
+      "source": "maplibre/maplibre-agent-skills",
+      "commit": "9aa0f2ea52c07ba22542587ab9da030d04a4db5c",
+      "sourceType": "github",
+      "skillPath": "skills/maplibre-source-wiring/SKILL.md",
+      "computedHash": "6373e797b08b038f9038c248995e237a2bb9d214659bc7689f8d47fc0680b58c"
+    },
+    "maplibre-sprites-icons": {
+      "source": "maplibre/maplibre-agent-skills",
+      "commit": "9aa0f2ea52c07ba22542587ab9da030d04a4db5c",
+      "sourceType": "github",
+      "skillPath": "skills/maplibre-sprites-icons/SKILL.md",
+      "computedHash": "398d4029043f39110118056b1a3e0f6bd2441de9762777a44a1569ce6c10631a"
+    },
+    "maplibre-terrain-rendering": {
+      "source": "maplibre/maplibre-agent-skills",
+      "commit": "9aa0f2ea52c07ba22542587ab9da030d04a4db5c",
+      "sourceType": "github",
+      "skillPath": "skills/maplibre-terrain-rendering/SKILL.md",
+      "computedHash": "333ad6b4fc9e1d2352b9fe8e4866cdaf0f70a67bc06aab7bd507ce655543ce96"
+    },
+    "maplibre-tile-sources": {
+      "source": "maplibre/maplibre-agent-skills",
+      "commit": "9aa0f2ea52c07ba22542587ab9da030d04a4db5c",
+      "sourceType": "github",
+      "skillPath": "skills/maplibre-tile-sources/SKILL.md",
+      "computedHash": "ef014a40acd9d04172ebf9744563aaedbd38994f57640f7747b43fda58abb795"
+    },
+    "maplibre-v6-migration": {
+      "source": "maplibre/maplibre-agent-skills",
+      "commit": "9aa0f2ea52c07ba22542587ab9da030d04a4db5c",
+      "sourceType": "github",
+      "skillPath": "skills/maplibre-v6-migration/SKILL.md",
+      "computedHash": "d82e44b726113da568e0042ac23f08341dd960a6a7285a7c263ac1bb68cc2243"
+    },
     "modern-web-guidance": {
       "source": "GoogleChrome/modern-web-guidance",
       "sourceType": "github",

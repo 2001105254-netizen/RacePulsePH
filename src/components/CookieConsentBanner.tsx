@@ -11,6 +11,7 @@ import {
 interface CookieConsentBannerProps {
   /** Controlled trigger incremented when Footer or Cookie Policy opens preferences. */
   preferencesRequestNonce?: number;
+  floating?: boolean;
   onOpenCookiePolicy: () => void;
 }
 
@@ -20,6 +21,7 @@ interface CookieConsentBannerProps {
  */
 export default function CookieConsentBanner({
   preferencesRequestNonce = 0,
+  floating = false,
   onOpenCookiePolicy,
 }: CookieConsentBannerProps) {
   const [consent, setConsent] = useState<CookieConsentState | null>(() => readConsentState());
@@ -75,11 +77,19 @@ export default function CookieConsentBanner({
   return (
     <>
       {!consent && !showPreferences && (
-        <div className="shrink-0 w-full max-w-[1600px] mx-auto pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))] pt-3 pb-2">
+        <div
+          className={
+            floating
+              ? 'fixed bottom-16 lg:bottom-3 left-3 right-3 lg:left-auto lg:right-3 z-30 w-auto lg:max-w-xl shadow-2xl'
+              : 'shrink-0 w-full max-w-[1600px] mx-auto pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))] pt-3 pb-2'
+          }
+        >
           <section
             role="region"
             aria-label="Cookie and storage preferences"
-            className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-4 sm:px-5 sm:py-4 shadow-md"
+            className={`rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] ${
+              floating ? 'p-3' : 'p-4 sm:px-5 sm:py-4'
+            }`}
           >
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
               <div className="space-y-1 min-w-0">
@@ -139,7 +149,7 @@ export default function CookieConsentBanner({
           descriptionId={`${dialogId}-desc`}
           onRequestClose={() => setShowPreferences(false)}
           initialFocusRef={initialFocusRef}
-          className="fixed inset-0 m-auto h-fit w-[calc(100%-2rem)] max-w-lg max-h-[90dvh] overflow-y-auto rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-6 text-[var(--text-primary)] shadow-2xl"
+          className="fixed inset-0 m-auto h-fit w-[calc(100%-2rem)] max-w-lg max-h-[90dvh] overflow-y-auto rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-6 text-[var(--text-primary)]"
         >
           <div className="flex items-start justify-between gap-4 border-b border-[var(--border-subtle)] pb-4">
             <h2 id={`${dialogId}-title`} className="font-display text-lg font-semibold text-[var(--text-primary)]">

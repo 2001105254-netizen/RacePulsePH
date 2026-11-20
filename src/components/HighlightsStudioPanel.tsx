@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import '../styles/highlights.css';
 import {
   Award,
   CalendarDays,

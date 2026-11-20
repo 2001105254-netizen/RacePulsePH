@@ -2,30 +2,27 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Compass, ExternalLink, Globe, Layers, MapPin, Minus, Plus, RefreshCw } from 'lucide-react';
+import { Focus, Globe, Layers, Minus, Plus, RefreshCw } from 'lucide-react';
 import {
   applySatelliteHybridRoadStyling,
-  enhanceBasemapStyleForOceanAndHybrid,
+  createPhilippinesTransformRequest,
   findFirstVectorOverlayLayerId,
   getMapProviderConfig,
+  resolveAndClipPhilippinesVectorStyle,
   supportsWebGL,
   type MapProviderId,
   type MapThemeMode,
 } from '../../lib/routes/mapProviders';
 import {
   buildPhilippinesArchipelagoGeoJson,
-  COPERNICUS_TERRAIN_DOC_URL,
-  COPERNICUS_TERRAIN_RELEASE,
   DEFAULT_QUARTERLY_MOSAIC_PERIOD,
   ensurePhilippinesMapProtocolRegistered,
   ISLAND_GROUP_VIEWPORTS,
+  PHILIPPINES_MAX_BOUNDS,
   PHILIPPINES_NATIONAL_BOUNDS,
+  PHILIPPINES_SOURCE_BOUNDS,
   recordCourseFirstLoadMs,
   registerCourseCorridorForTiles,
-  SENTINEL2_IMAGERY_DOC_URL,
-  SENTINEL2_IMAGERY_SOURCE,
-  subscribeTileTelemetry,
-  type TileTelemetrySnapshot,
 } from '../../lib/routes/philippinesMapTiles';
 import { getRouteStoreSnapshot } from '../../lib/routes/routeStore';
 import { buildRaceCoursePath } from '../../lib/routes/routing';
@@ -40,6 +37,16 @@ interface PhilippinesNationalMapProps {
   catalog: RaceRouteCatalogEntry[];
   theme: MapThemeMode;
   onNavigateUrl: (url: string) => void;
+  activeRegion?: 'all' | PhilippineIslandGroup;
+  onRegionChange?: (region: 'all' | PhilippineIslandGroup) => void;
+  selectedCourseId?: string | null;
+  onSelectCourseId?: (id: string | null) => void;
+  imageryEnabled?: boolean;
+  onToggleImagery?: (next: boolean) => void;
+  is3DEnabled?: boolean;
+  onToggle3D?: (next: boolean) => void;
+  fullHeight?: boolean;
+  hideInternalToolbar?: boolean;
 }
 
 interface MappedCoursePoint {
@@ -123,7 +130,7 @@ function NationalSchematicFallback({
   return (
     <div className="relative flex h-full w-full flex-col justify-between overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)]">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2 text-xs text-[var(--text-secondary)]">
-        <span>Philippines Overview (Luzon, Visayas, Mindanao · WebGL fallback)</span>
+        <span>Philippines Overview (Luzon, Visayas, Mindanao)</span>
         <span>{courses.length} published course(s)</span>
       </div>
       <svg
@@ -167,7 +174,7 @@ function NationalSchematicFallback({
             >
               <circle r={active ? 10 : 7} fill="#b91c1c" stroke="#ffffff" strokeWidth={2.5} />
               <text x={12} y={4} fill="currentColor" fontSize="11" fontWeight="600">
-                {course.province} ({course.entry.distanceLabel})
+                {course.province} · {course.entry.distanceLabel}
               </text>
             </g>
           );
@@ -181,6 +188,16 @@ export default function PhilippinesNationalMap({
   catalog,
   theme,
   onNavigateUrl,
+  activeRegion: controlledRegion,
+  onRegionChange,
+  selectedCourseId: controlledSelectedCourseId,
+  onSelectCourseId,
+  imageryEnabled: controlledImagery,
+  onToggleImagery,
+  is3DEnabled: controlled3D,
+  onToggle3D,
+  fullHeight = false,
+  hideInternalToolbar = false,
 }: PhilippinesNationalMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -190,13 +207,46 @@ export default function PhilippinesNationalMap({
   const [webglReady] = useState(() => supportsWebGL());
   const [providerId, setProviderId] = useState<MapProviderId>('openfreemap');
   const [styleLoadedNonce, setStyleLoadedNonce] = useState(0);
-  const [activeRegion, setActiveRegion] = useState<'all' | PhilippineIslandGroup>('all');
-  const [imageryEnabled, setImageryEnabled] = useState(false);
-  const [is3D, setIs3D] = useState(false);
+  const [internalRegion, setInternalRegion] = useState<'all' | PhilippineIslandGroup>('all');
+  const [internalImagery, setInternalImagery] = useState(false);
+  const [internal3D, setInternal3D] = useState(false);
   const [notice, setNotice] = useState('');
   const [mapError, setMapError] = useState(false);
-  const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
-  const [telemetry, setTelemetry] = useState<TileTelemetrySnapshot | null>(null);
+  const [internalSelectedCourseId, setInternalSelectedCourseId] = useState<string | null>(null);
+
+  const activeRegion = controlledRegion ?? internalRegion;
+  const selectedCourseId =
+    controlledSelectedCourseId !== undefined ? controlledSelectedCourseId : internalSelectedCourseId;
+  const imageryEnabled = controlledImagery ?? internalImagery;
+  const is3D = controlled3D ?? internal3D;
+
+  const setActiveRegionValue = useCallback(
+    (region: 'all' | PhilippineIslandGroup) => {
+      if (onRegionChange) onRegionChange(region);
+      else setInternalRegion(region);
+    },
+    [onRegionChange],
+  );
+
+  const setSelectedCourseValue = useCallback(
+    (id: string | null) => {
+      if (onSelectCourseId) onSelectCourseId(id);
+      else setInternalSelectedCourseId(id);
+    },
+    [onSelectCourseId],
+  );
+
+  const toggleImageryValue = useCallback(() => {
+    const next = !imageryEnabled;
+    if (onToggleImagery) onToggleImagery(next);
+    else setInternalImagery(next);
+  }, [imageryEnabled, onToggleImagery]);
+
+  const toggle3DValue = useCallback(() => {
+    const next = !is3D;
+    if (onToggle3D) onToggle3D(next);
+    else setInternal3D(next);
+  }, [is3D, onToggle3D]);
 
   const reducedMotion = useMemo(
     () =>
@@ -211,10 +261,6 @@ export default function PhilippinesNationalMap({
     [mappedCourses, selectedCourseId],
   );
 
-  useEffect(() => {
-    return subscribeTileTelemetry(setTelemetry);
-  }, []);
-
   const providerConfig = useMemo(
     () => getMapProviderConfig(theme, providerId, PHILIPPINES_NATIONAL_BOUNDS, 'national'),
     [theme, providerId],
@@ -222,22 +268,33 @@ export default function PhilippinesNationalMap({
 
   const fitIslandGroup = useCallback(
     (group: 'all' | PhilippineIslandGroup, immediate = false) => {
-      setActiveRegion(group);
+      setActiveRegionValue(group);
       const map = mapRef.current;
       if (!map) return;
       const vp = ISLAND_GROUP_VIEWPORTS[group];
       map.fitBounds(vp.bounds, {
-        padding: group === 'all' ? 28 : 36,
+        padding: group === 'all' ? { top: 20, bottom: 48, left: 24, right: 24 } : 34,
         duration: immediate || reducedMotion ? 0 : 240,
       });
     },
-    [reducedMotion],
+    [reducedMotion, setActiveRegionValue],
   );
+
+  useEffect(() => {
+    if (controlledRegion === undefined) return;
+    const map = mapRef.current;
+    if (!map) return;
+    const vp = ISLAND_GROUP_VIEWPORTS[controlledRegion];
+    map.fitBounds(vp.bounds, {
+      padding: controlledRegion === 'all' ? { top: 20, bottom: 48, left: 24, right: 24 } : 34,
+      duration: reducedMotion ? 0 : 240,
+    });
+  }, [controlledRegion, reducedMotion]);
 
   const focusCourse = useCallback(
     (course: MappedCoursePoint) => {
-      setSelectedCourseId(course.entry.id);
-      setActiveRegion(course.islandGroup);
+      setSelectedCourseValue(course.entry.id);
+      setActiveRegionValue(course.islandGroup);
       const map = mapRef.current;
       if (!map) return;
       map.easeTo({
@@ -246,7 +303,7 @@ export default function PhilippinesNationalMap({
         duration: reducedMotion ? 0 : 250,
       });
     },
-    [reducedMotion],
+    [reducedMotion, setActiveRegionValue, setSelectedCourseValue],
   );
 
   const syncNationalOverlays = useCallback(
@@ -324,8 +381,11 @@ export default function PhilippinesNationalMap({
         style: providerConfig.fallbackStyle,
         center: ISLAND_GROUP_VIEWPORTS.all.center,
         zoom: ISLAND_GROUP_VIEWPORTS.all.zoom,
-        minZoom: 4.5,
+        minZoom: 4.4,
         maxZoom: 19,
+        maxBounds: PHILIPPINES_MAX_BOUNDS,
+        renderWorldCopies: false,
+        transformRequest: createPhilippinesTransformRequest(),
         attributionControl: false,
         cooperativeGestures: false,
       });
@@ -340,16 +400,16 @@ export default function PhilippinesNationalMap({
       if (cancelled || !map) return;
       const sourceId = (ev as { sourceId?: string })?.sourceId;
       if (
-        sourceId === 'rp-ph-sentinel2' ||
-        sourceId === 'rp-ph-glo30' ||
-        sourceId === 'rp-ph-glo30-hillshade'
+        sourceId === 'rp-ph-sat' ||
+        sourceId === 'rp-ph-relief' ||
+        sourceId === 'rp-ph-relief-hillshade'
       ) {
         setNotice('National tile layer could not load; course pins remain interactive.');
         return;
       }
       if (!map.isStyleLoaded()) {
         setProviderId((curr) => (curr === 'openfreemap' ? 'local-fallback' : curr));
-        setNotice('Showing clipped Philippine archipelago base vector map.');
+        setNotice('Showing Philippine archipelago base grid.');
       }
     });
 
@@ -362,7 +422,8 @@ export default function PhilippinesNationalMap({
     map.on('load', () => {
       if (!map || cancelled) return;
       syncOverlaysRef.current(map);
-      map.fitBounds(ISLAND_GROUP_VIEWPORTS.all.bounds, { padding: 24, duration: 0 });
+      const initialVp = ISLAND_GROUP_VIEWPORTS[activeRegion] || ISLAND_GROUP_VIEWPORTS.all;
+      map.fitBounds(initialVp.bounds, { padding: 24, duration: 0 });
       if (typeof performance !== 'undefined' && mountMsRef.current > 0) {
         recordCourseFirstLoadMs('national-ph', performance.now() - mountMsRef.current);
       }
@@ -382,7 +443,7 @@ export default function PhilippinesNationalMap({
     };
   }, [webglReady]);
 
-  // Progressive basemap style switch
+  // Progressive basemap style switch clipped strictly to the Philippines
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -393,11 +454,12 @@ export default function PhilippinesNationalMap({
         return;
       }
       try {
-        const res = await fetch(providerConfig.styleUrl, { signal: AbortSignal.timeout(4000) });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = (await res.json()) as maplibregl.StyleSpecification;
-        if (!cancelled && json && Array.isArray(json.layers)) {
-          enhanceBasemapStyleForOceanAndHybrid(json, theme);
+        const json = await resolveAndClipPhilippinesVectorStyle(
+          providerConfig.styleUrl,
+          theme,
+          AbortSignal.timeout(6000),
+        );
+        if (!cancelled) {
           setNotice('');
           map.setStyle(json);
         }
@@ -424,15 +486,15 @@ export default function PhilippinesNationalMap({
     }
   }, [syncNationalOverlays, styleLoadedNonce]);
 
-  // On-demand High-Res Satellite imagery + hybrid road/label overlay
+  // On-demand satellite imagery + hybrid road/label overlay
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !map.getStyle()) return;
 
     if (!imageryEnabled || !providerConfig.imageryTiles) {
       try {
-        if (map.getLayer('rp-ph-sentinel2-layer')) map.removeLayer('rp-ph-sentinel2-layer');
-        if (map.getSource('rp-ph-sentinel2')) map.removeSource('rp-ph-sentinel2');
+        if (map.getLayer('rp-ph-sat-layer')) map.removeLayer('rp-ph-sat-layer');
+        if (map.getSource('rp-ph-sat')) map.removeSource('rp-ph-sat');
         applySatelliteHybridRoadStyling(map, false, theme, styleLoadedNonce);
       } catch {
         // Safe cleanup
@@ -441,24 +503,25 @@ export default function PhilippinesNationalMap({
     }
 
     try {
-      if (!map.getSource('rp-ph-sentinel2')) {
-        map.addSource('rp-ph-sentinel2', {
+      if (!map.getSource('rp-ph-sat')) {
+        map.addSource('rp-ph-sat', {
           type: 'raster',
           tiles: providerConfig.imageryTiles,
           tileSize: 256,
-          minzoom: 0,
+          bounds: PHILIPPINES_SOURCE_BOUNDS,
+          minzoom: 4,
           maxzoom: 19,
         });
       }
-      if (!map.getLayer('rp-ph-sentinel2-layer')) {
+      if (!map.getLayer('rp-ph-sat-layer')) {
         const beforeLayer = map.getLayer('rp-ph-hillshade')
           ? 'rp-ph-hillshade'
           : findFirstVectorOverlayLayerId(map, 'rp-ph-course-halo');
         map.addLayer(
           {
-            id: 'rp-ph-sentinel2-layer',
+            id: 'rp-ph-sat-layer',
             type: 'raster',
-            source: 'rp-ph-sentinel2',
+            source: 'rp-ph-sat',
             paint: { 'raster-opacity': 1, 'raster-fade-duration': 150 },
           },
           beforeLayer,
@@ -470,7 +533,7 @@ export default function PhilippinesNationalMap({
     }
   }, [imageryEnabled, providerConfig.imageryTiles, styleLoadedNonce, theme]);
 
-  // On-demand Copernicus GLO-30 (2024_1) 3D Terrain
+  // On-demand 30 m 3D terrain relief
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !map.getStyle()) return;
@@ -479,8 +542,8 @@ export default function PhilippinesNationalMap({
       try {
         if (map.getTerrain()) map.setTerrain(null);
         if (map.getLayer('rp-ph-hillshade')) map.removeLayer('rp-ph-hillshade');
-        if (map.getSource('rp-ph-glo30-hillshade')) map.removeSource('rp-ph-glo30-hillshade');
-        if (map.getSource('rp-ph-glo30')) map.removeSource('rp-ph-glo30');
+        if (map.getSource('rp-ph-relief-hillshade')) map.removeSource('rp-ph-relief-hillshade');
+        if (map.getSource('rp-ph-relief')) map.removeSource('rp-ph-relief');
       } catch {
         // ignore
       }
@@ -494,15 +557,16 @@ export default function PhilippinesNationalMap({
       tiles: providerConfig.terrainDemTiles,
       tileSize: 256,
       encoding: 'terrarium',
+      bounds: PHILIPPINES_SOURCE_BOUNDS,
       minzoom: 4,
       maxzoom: 12,
     };
     try {
-      if (!map.getSource('rp-ph-glo30')) {
-        map.addSource('rp-ph-glo30', demSpec);
+      if (!map.getSource('rp-ph-relief')) {
+        map.addSource('rp-ph-relief', demSpec);
       }
-      if (!map.getSource('rp-ph-glo30-hillshade')) {
-        map.addSource('rp-ph-glo30-hillshade', demSpec);
+      if (!map.getSource('rp-ph-relief-hillshade')) {
+        map.addSource('rp-ph-relief-hillshade', demSpec);
       }
       if (!map.getLayer('rp-ph-hillshade')) {
         const beforeLayer = findFirstVectorOverlayLayerId(map, 'rp-ph-course-halo');
@@ -510,13 +574,13 @@ export default function PhilippinesNationalMap({
           {
             id: 'rp-ph-hillshade',
             type: 'hillshade',
-            source: 'rp-ph-glo30-hillshade',
+            source: 'rp-ph-relief-hillshade',
             paint: { 'hillshade-exaggeration': imageryEnabled ? 0.22 : 0.42 },
           },
           beforeLayer,
         );
       }
-      map.setTerrain({ source: 'rp-ph-glo30', exaggeration: 1.0 });
+      map.setTerrain({ source: 'rp-ph-relief', exaggeration: 1.0 });
       const targetPitch = map.getZoom() < 8 ? 36 : 45;
       map.easeTo({ pitch: targetPitch, duration: reducedMotion ? 0 : 220 });
     } catch {
@@ -524,7 +588,7 @@ export default function PhilippinesNationalMap({
     }
   }, [is3D, imageryEnabled, providerConfig.terrainDemTiles, styleLoadedNonce, reducedMotion]);
 
-  // Render island group badges and interactive course pins on national map
+  // Render island group labels and interactive course pins
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -573,6 +637,7 @@ export default function PhilippinesNationalMap({
         'font: 600 11px/1 system-ui, sans-serif',
         'box-shadow: 0 2px 8px rgba(0,0,0,0.35)',
         'cursor: pointer',
+        `transform: ${isSelected ? 'scale(1.1)' : 'scale(1)'}`,
       ].join(';');
       btn.textContent = `${course.province} · ${course.entry.distanceLabel}`;
       btn.setAttribute(
@@ -591,249 +656,162 @@ export default function PhilippinesNationalMap({
     }
   }, [mappedCourses, selectedCourseId, styleLoadedNonce, focusCourse, imageryEnabled, theme]);
 
-  const cebuCourse = mappedCourses.find((c) => c.entry.raceId === 'cebu-highlands-trail-2026');
-  const bukidnonCourse = mappedCourses.find((c) => c.entry.raceId === 'bukidnon-kitanglad-trail-2026');
-
   return (
     <section
-      aria-label="Philippines-Wide Race Map"
-      className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-4 sm:p-5 space-y-3"
+      aria-label="Philippines Race Map"
+      className={
+        fullHeight
+          ? 'relative h-full w-full overflow-hidden bg-[var(--surface-inset)]'
+          : 'relative h-[380px] w-full overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)] sm:h-[460px]'
+      }
     >
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h2 className="flex items-center gap-2 text-lg sm:text-xl font-semibold text-[var(--text-primary)]">
-            <Compass className="h-5 w-5 text-red-700 dark:text-red-400" aria-hidden="true" />
-            Philippines Course Coverage Map
-          </h2>
-          <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
-            Browse Luzon, Visayas, and Mindanao freely from the national view, or focus Cebu and Bukidnon to inspect course imagery and 3D terrain.
-          </p>
-        </div>
-
-        <div
-          role="toolbar"
-          aria-label="Philippines map navigation and layers"
-          className="flex flex-wrap items-center gap-1.5"
-        >
-          <div role="group" aria-label="Island group jump controls" className="flex flex-wrap items-center gap-1.5">
-            {(['all', 'Luzon', 'Visayas', 'Mindanao'] as const).map((group) => (
-              <button
-                key={group}
-                type="button"
-                aria-pressed={activeRegion === group}
-                onClick={() => fitIslandGroup(group)}
-                className={`min-h-11 rounded-xl border px-3 text-xs font-semibold transition ${
-                  activeRegion === group
-                    ? 'border-red-600 bg-red-700 text-white'
-                    : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600/50'
-                }`}
-              >
-                {ISLAND_GROUP_VIEWPORTS[group].label}
-              </button>
-            ))}
-          </div>
-
-          <div role="group" aria-label="Satellite and 3D terrain toggles" className="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              aria-pressed={imageryEnabled}
-              onClick={() => setImageryEnabled((v) => !v)}
-              className={`inline-flex min-h-11 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition ${
-                imageryEnabled
-                  ? 'border-red-600 bg-red-700 text-white'
-                  : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600/50'
-              }`}
-            >
-              <Globe className="h-4 w-4" aria-hidden="true" />
-              Sentinel-2 Satellite (10 m)
-            </button>
-            <button
-              type="button"
-              aria-pressed={is3D}
-              onClick={() => setIs3D((v) => !v)}
-              className={`inline-flex min-h-11 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition ${
-                is3D
-                  ? 'border-red-600 bg-red-700 text-white'
-                  : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600/50'
-              }`}
-            >
-              <Layers className="h-4 w-4" aria-hidden="true" />
-              3D Terrain (GLO-30)
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Quick Pilot Focus Strip */}
-      {(cebuCourse || bukidnonCourse) && (
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="font-semibold text-[var(--text-secondary)]">Pilot courses:</span>
-          {cebuCourse && (
-            <>
-              <button
-                type="button"
-                onClick={() => focusCourse(cebuCourse)}
-                className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 font-semibold text-[var(--text-primary)] hover:border-red-600/50"
-              >
-                <MapPin className="h-3.5 w-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
-                Focus Cebu 21K (Visayas)
-              </button>
-              <a
-                href={buildRaceCoursePath(cebuCourse.entry.raceId, cebuCourse.entry.distanceId)}
-                onClick={(e) => {
-                  e.preventDefault();
-                  onNavigateUrl(buildRaceCoursePath(cebuCourse.entry.raceId, cebuCourse.entry.distanceId));
-                }}
-                className="inline-flex min-h-11 items-center rounded-xl border border-red-600/40 bg-red-700/10 px-3 font-semibold text-red-700 hover:bg-red-700/15 dark:text-red-300"
-              >
-                Open Cebu course
-              </a>
-            </>
-          )}
-          {bukidnonCourse && (
-            <>
-              <button
-                type="button"
-                onClick={() => focusCourse(bukidnonCourse)}
-                className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 font-semibold text-[var(--text-primary)] hover:border-red-600/50"
-              >
-                <MapPin className="h-3.5 w-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
-                Focus Bukidnon 32K (Mindanao)
-              </button>
-              <a
-                href={buildRaceCoursePath(bukidnonCourse.entry.raceId, bukidnonCourse.entry.distanceId)}
-                onClick={(e) => {
-                  e.preventDefault();
-                  onNavigateUrl(buildRaceCoursePath(bukidnonCourse.entry.raceId, bukidnonCourse.entry.distanceId));
-                }}
-                className="inline-flex min-h-11 items-center rounded-xl border border-red-600/40 bg-red-700/10 px-3 font-semibold text-red-700 hover:bg-red-700/15 dark:text-red-300"
-              >
-                Open Bukidnon course
-              </a>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Map Viewport */}
-      <div className="relative h-[340px] w-full overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)] sm:h-[420px] lg:h-[460px]">
-        {!webglReady || mapError ? (
-          <NationalSchematicFallback
-            courses={mappedCourses}
-            selectedId={selectedCourseId}
-            onSelectCourse={(c) => setSelectedCourseId(c.entry.id)}
-            onNavigateUrl={onNavigateUrl}
+      {!webglReady || mapError ? (
+        <NationalSchematicFallback
+          courses={mappedCourses}
+          selectedId={selectedCourseId}
+          onSelectCourse={(c) => setSelectedCourseValue(c.entry.id)}
+          onNavigateUrl={onNavigateUrl}
+        />
+      ) : (
+        <>
+          <div
+            ref={containerRef}
+            className="h-full w-full"
+            style={{ backgroundColor: theme === 'dark' ? '#0c2640' : '#cbe1f2' }}
+            aria-label="Interactive Philippines race coverage map across Luzon, Visayas, and Mindanao"
           />
-        ) : (
-          <>
+
+          {!hideInternalToolbar && (
             <div
-              ref={containerRef}
-              className="h-full w-full"
-              style={{ backgroundColor: theme === 'dark' ? '#0c2640' : '#cbe1f2' }}
-              aria-label="Interactive Philippines race coverage map across Luzon, Visayas, and Mindanao"
-            />
-            {notice && (
-              <div
-                role="status"
-                className="pointer-events-auto absolute left-3 top-3 z-10 flex max-w-[calc(100%-5rem)] items-center gap-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 px-3 py-1.5 text-xs text-[var(--text-primary)] shadow-sm"
-              >
-                <span>{notice}</span>
-                {providerId === 'local-fallback' && (
-                  <button
-                    type="button"
-                    onClick={() => setProviderId('openfreemap')}
-                    className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[var(--border-default)] px-2 font-semibold text-red-700 dark:text-red-400"
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-                    Retry
-                  </button>
-                )}
-              </div>
-            )}
-            <div className="pointer-events-auto absolute right-3 top-3 z-10 flex flex-col gap-1.5">
-              <button
-                type="button"
-                onClick={() => mapRef.current?.zoomIn({ duration: reducedMotion ? 0 : 180 })}
-                aria-label="Zoom in Philippines map"
-                className="flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] shadow-sm hover:border-red-600/60"
-              >
-                <Plus className="h-4 w-4" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                onClick={() => mapRef.current?.zoomOut({ duration: reducedMotion ? 0 : 180 })}
-                aria-label="Zoom out Philippines map"
-                className="flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] shadow-sm hover:border-red-600/60"
-              >
-                <Minus className="h-4 w-4" aria-hidden="true" />
-              </button>
-            </div>
-
-            {selectedCourse && (
-              <div className="pointer-events-auto absolute bottom-3 left-3 right-3 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 px-3.5 py-2.5 text-xs shadow-md sm:right-auto sm:max-w-md">
-                <div className="min-w-0">
-                  <p className="truncate font-semibold text-[var(--text-primary)]">
-                    {selectedCourse.entry.raceName} · {selectedCourse.entry.distanceLabel}
-                  </p>
-                  <p className="text-[var(--text-secondary)]">
-                    {selectedCourse.islandGroup} · {selectedCourse.province} · Imagery {selectedCourse.imageryDate}
-                  </p>
-                </div>
-                <a
-                  href={buildRaceCoursePath(selectedCourse.entry.raceId, selectedCourse.entry.distanceId)}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    onNavigateUrl(
-                      buildRaceCoursePath(selectedCourse.entry.raceId, selectedCourse.entry.distanceId),
-                    );
-                  }}
-                  className="inline-flex min-h-11 shrink-0 items-center rounded-xl bg-red-700 px-3 font-semibold text-white hover:bg-red-600"
+              role="toolbar"
+              aria-label="Philippines island group filters"
+              className="pointer-events-auto absolute left-3 top-3 z-10 flex max-w-[calc(100%-5rem)] flex-wrap items-center gap-1.5"
+            >
+              {(['all', 'Luzon', 'Visayas', 'Mindanao'] as const).map((group) => (
+                <button
+                  key={group}
+                  type="button"
+                  aria-pressed={activeRegion === group}
+                  onClick={() => fitIslandGroup(group)}
+                  className={`min-h-11 sm:min-h-9 rounded-xl border px-3 text-xs font-semibold shadow-sm transition ${
+                    activeRegion === group
+                      ? 'border-red-600 bg-red-700 text-white'
+                      : 'border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] hover:border-red-600/50'
+                  }`}
                 >
-                  Explore course
-                </a>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* National Provenance & Telemetry Strip */}
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--text-secondary)]">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span>
-            Terrain: <strong className="text-[var(--text-primary)]">{COPERNICUS_TERRAIN_RELEASE}</strong>
-          </span>
-          <span>
-            Imagery: <strong className="text-[var(--text-primary)]">{SENTINEL2_IMAGERY_SOURCE}</strong> ({DEFAULT_QUARTERLY_MOSAIC_PERIOD})
-          </span>
-          {telemetry && (
-            <span className="font-mono">
-              Imagery reqs: {telemetry.imageryRequestsCount} · DEM reqs: {telemetry.demRequestsCount}
-              {telemetry.firstLoadMsByCourse['national-ph']
-                ? ` · First load: ${telemetry.firstLoadMsByCourse['national-ph']} ms`
-                : ''}
-            </span>
+                  {group === 'all' ? 'All PH' : group}
+                </button>
+              ))}
+            </div>
           )}
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <a
-            href={COPERNICUS_TERRAIN_DOC_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 font-semibold text-red-700 hover:underline dark:text-red-400"
-          >
-            Terrain release <ExternalLink className="h-3 w-3" aria-hidden="true" />
-          </a>
-          <a
-            href={SENTINEL2_IMAGERY_DOC_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 font-semibold text-red-700 hover:underline dark:text-red-400"
-          >
-            Imagery specifications <ExternalLink className="h-3 w-3" aria-hidden="true" />
-          </a>
-        </div>
-      </div>
+
+          {notice && (
+            <div
+              role="status"
+              className="pointer-events-auto absolute left-3 top-16 z-10 flex max-w-[calc(100%-5rem)] items-center gap-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 px-3 py-1.5 text-xs text-[var(--text-primary)] shadow-sm"
+            >
+              <span>{notice}</span>
+              {providerId === 'local-fallback' && (
+                <button
+                  type="button"
+                  onClick={() => setProviderId('openfreemap')}
+                  className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[var(--border-default)] px-2 font-semibold text-red-700 dark:text-red-400"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                  Retry
+                </button>
+              )}
+            </div>
+          )}
+
+          <div className="pointer-events-auto absolute right-2.5 top-2.5 z-10 flex flex-col gap-1.5">
+            <button
+              type="button"
+              onClick={() => mapRef.current?.zoomIn({ duration: reducedMotion ? 0 : 180 })}
+              aria-label="Zoom in Philippines map"
+              title="Zoom in"
+              className="flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] shadow-sm hover:border-red-600/60"
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={() => mapRef.current?.zoomOut({ duration: reducedMotion ? 0 : 180 })}
+              aria-label="Zoom out Philippines map"
+              title="Zoom out"
+              className="flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] shadow-sm hover:border-red-600/60"
+            >
+              <Minus className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={() => fitIslandGroup(activeRegion)}
+              aria-label="Fit Philippines region on map"
+              title="Fit view"
+              className="flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] shadow-sm hover:border-red-600/60"
+            >
+              <Focus className="h-4 w-4" aria-hidden="true" />
+            </button>
+            {!hideInternalToolbar && (
+              <>
+                <button
+                  type="button"
+                  aria-pressed={imageryEnabled}
+                  aria-label={imageryEnabled ? 'Hide satellite imagery' : 'Show satellite imagery'}
+                  title={imageryEnabled ? 'Hide satellite' : 'Satellite imagery'}
+                  onClick={toggleImageryValue}
+                  className={`flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border shadow-sm transition ${
+                    imageryEnabled
+                      ? 'border-red-600 bg-red-700 text-white'
+                      : 'border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] hover:border-red-600/50'
+                  }`}
+                >
+                  <Globe className="h-4 w-4" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={is3D}
+                  aria-label={is3D ? 'Switch to 2D map' : 'Switch to 3D terrain relief'}
+                  title={is3D ? '2D map' : '3D relief'}
+                  onClick={toggle3DValue}
+                  className={`flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border shadow-sm transition ${
+                    is3D
+                      ? 'border-red-600 bg-red-700 text-white'
+                      : 'border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] hover:border-red-600/50'
+                  }`}
+                >
+                  <Layers className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </>
+            )}
+          </div>
+
+          {selectedCourse && (
+            <div className="pointer-events-auto absolute bottom-3 left-3 right-3 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 px-3.5 py-2.5 text-xs shadow-md sm:right-auto sm:max-w-md">
+              <div className="min-w-0">
+                <p className="truncate font-semibold text-[var(--text-primary)]">
+                  {selectedCourse.entry.raceName} · {selectedCourse.entry.distanceLabel}
+                </p>
+                <p className="text-[var(--text-secondary)]">
+                  {selectedCourse.islandGroup} · {selectedCourse.province} · {selectedCourse.imageryDate}
+                </p>
+              </div>
+              <a
+                href={buildRaceCoursePath(selectedCourse.entry.raceId, selectedCourse.entry.distanceId)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  onNavigateUrl(
+                    buildRaceCoursePath(selectedCourse.entry.raceId, selectedCourse.entry.distanceId),
+                  );
+                }}
+                className="inline-flex min-h-11 shrink-0 items-center rounded-xl bg-red-700 px-3.5 font-semibold text-white hover:bg-red-600"
+              >
+                Explore course
+              </a>
+            </div>
+          )}
+        </>
+      )}
     </section>
   );
 }

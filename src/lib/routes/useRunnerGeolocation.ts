@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { locateAtChainage, projectCoordinateToRoute } from './anchoring';
 import { geodesicDistanceM, type ProcessedRoute } from './geometry';
+import {
+  angularDiffDeg,
+  computeBearingDeg,
+  createGpsFilterState,
+  ingestGpsFix,
+  type GpsFilterState,
+  type GpsSignalQuality,
+} from './gpsFilter';
 import type { RouteMarker } from './types';
 
 export type RunnerGeolocationStatus =
@@ -17,6 +25,12 @@ export interface RunnerLivePosition {
   accuracyM: number;
   headingDeg?: number | null;
   speedMps?: number | null;
+  paceMinPerKm?: number | null;
+  quality?: GpsSignalQuality;
+  isStale?: boolean;
+  insidePhilippines?: boolean;
+  rejectedCount?: number;
+  lastRejectReason?: string | null;
   updatedAtMs: number;
 }
 
@@ -35,11 +49,12 @@ export interface RunnerLocationProjection {
   progressPct: number;
 }
 
-const ON_COURSE_TOLERANCE_M = 50;
+const DEFAULT_ON_COURSE_TOLERANCE_M = 50;
+const STALE_FIX_THRESHOLD_MS = 15_000;
 
 /**
  * Computes a runner's live projection relative to a published route, nearest landmark,
- * and next upcoming trailmark ahead along the course.
+ * next upcoming trailmark ahead, and out-and-back / loop pass disambiguation.
  */
 export function computeRunnerLocationRelativeToRoute(
   route: ProcessedRoute,
@@ -47,12 +62,62 @@ export function computeRunnerLocationRelativeToRoute(
   longitude: number,
   markers: RouteMarker[] = [],
   preferredPass?: number,
+  options?: {
+    accuracyM?: number;
+    previousChainageM?: number;
+    headingDeg?: number | null;
+  },
 ): RunnerLocationProjection | null {
   if (!route || !Array.isArray(route.points) || route.points.length === 0) return null;
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
 
   const projection = projectCoordinateToRoute(route, latitude, longitude, preferredPass);
-  const { best } = projection;
+  let best = projection.best;
+
+  // Disambiguate shared outbound/inbound corridors using previous chainage + heading alignment
+  if (
+    preferredPass === undefined &&
+    projection.candidates.length > 1 &&
+    (options?.previousChainageM !== undefined ||
+      (options?.headingDeg !== undefined && options.headingDeg !== null))
+  ) {
+    let bestScore = Infinity;
+    for (const cand of projection.candidates) {
+      let penalty = cand.offsetMeters;
+      if (options?.previousChainageM !== undefined) {
+        const deltaM = cand.chainageM - options.previousChainageM;
+        if (deltaM >= -30 && deltaM <= 600) {
+          penalty -= 25;
+        } else if (deltaM < -120) {
+          penalty += 80;
+        } else if (deltaM > 1500) {
+          penalty += 60;
+        }
+      }
+      if (
+        options?.headingDeg !== undefined &&
+        options.headingDeg !== null &&
+        Number.isFinite(options.headingDeg)
+      ) {
+        const ahead = locateAtChainage(route, Math.min(route.distanceM, cand.chainageM + 25), cand.passNumber);
+        const behind = locateAtChainage(route, Math.max(0, cand.chainageM - 25), cand.passNumber);
+        if (ahead.chainageM > behind.chainageM) {
+          const tangent = computeBearingDeg(
+            { lat: behind.latitude, lon: behind.longitude },
+            { lat: ahead.latitude, lon: ahead.longitude },
+          );
+          const angle = angularDiffDeg(options.headingDeg, tangent);
+          if (angle <= 45) penalty -= 30;
+          else if (angle >= 135) penalty += 45;
+        }
+      }
+      if (penalty < bestScore) {
+        bestScore = penalty;
+        best = cand;
+      }
+    }
+  }
+
   const cursor = locateAtChainage(route, best.chainageM, best.passNumber);
 
   let nearestMarker: RouteMarker | null = null;
@@ -86,11 +151,16 @@ export function computeRunnerLocationRelativeToRoute(
       ? Number(Math.min(100, Math.max(0, (best.chainageM / route.distanceM) * 100)).toFixed(1))
       : 0;
 
+  const onCourseToleranceM =
+    options?.accuracyM !== undefined && Number.isFinite(options.accuracyM)
+      ? Math.max(35, Math.min(65, 25 + options.accuracyM * 0.5))
+      : DEFAULT_ON_COURSE_TOLERANCE_M;
+
   return {
     chainageM: best.chainageM,
     passNumber: best.passNumber,
     offRouteMeters: best.offsetMeters,
-    onCourse: best.offsetMeters <= ON_COURSE_TOLERANCE_M,
+    onCourse: best.offsetMeters <= onCourseToleranceM,
     nearestElevationM: best.elevation ?? cursor.elevation,
     nearestGradePct: cursor.gradePct,
     nearestMarker,
@@ -135,17 +205,21 @@ export function selectPublishedCourseForDistance<
 }
 
 /**
- * Manages live browser/Capacitor runner geolocation with high-accuracy GPS first
- * and automatic fused-location fallback on desktop/hybrid devices.
+ * Manages live browser/Capacitor runner geolocation with accuracy gating,
+ * Kalman/EMA jitter suppression, continuous high-accuracy GNSS lock, and stale-fix tracking.
  */
 export function useRunnerGeolocation() {
   const [status, setStatus] = useState<RunnerGeolocationStatus>('idle');
   const [position, setPosition] = useState<RunnerLivePosition | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [autoFollow, setAutoFollow] = useState(true);
   const watchIdRef = useRef<number | null>(null);
-  const fallbackAttemptedRef = useRef(false);
+  const retryTimerRef = useRef<number | null>(null);
+  const staleIntervalRef = useRef<number | null>(null);
+  const filterRef = useRef<GpsFilterState>(createGpsFilterState({ maxAccuracyM: 35, initialCoarseLimitM: 100 }));
+  const lastRawFixMsRef = useRef<number>(0);
 
-  const clearActiveWatch = useCallback(() => {
+  const clearTimersAndWatch = useCallback(() => {
     if (
       watchIdRef.current !== null &&
       typeof navigator !== 'undefined' &&
@@ -154,100 +228,166 @@ export function useRunnerGeolocation() {
       navigator.geolocation.clearWatch(watchIdRef.current);
       watchIdRef.current = null;
     }
+    if (retryTimerRef.current !== null) {
+      window.clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    if (staleIntervalRef.current !== null) {
+      window.clearInterval(staleIntervalRef.current);
+      staleIntervalRef.current = null;
+    }
   }, []);
 
   const stopTracking = useCallback(() => {
-    clearActiveWatch();
-    fallbackAttemptedRef.current = false;
+    clearTimersAndWatch();
+    filterRef.current = createGpsFilterState({ maxAccuracyM: 35, initialCoarseLimitM: 100 });
+    lastRawFixMsRef.current = 0;
     setStatus('idle');
     setPosition(null);
     setError(null);
-  }, [clearActiveWatch]);
+  }, [clearTimersAndWatch]);
 
-  const startWatch = useCallback(
-    (enableHighAccuracy: boolean) => {
-      if (
-        typeof window === 'undefined' ||
-        typeof navigator === 'undefined' ||
-        !('geolocation' in navigator)
-      ) {
-        setStatus('unavailable');
-        setError('Device location is not supported in this browser.');
-        return;
-      }
+  const applyRawFix = useCallback((pos: GeolocationPosition) => {
+    const nowMs = Date.now();
+    lastRawFixMsRef.current = nowMs;
+    const rawAcc =
+      typeof pos.coords.accuracy === 'number' && Number.isFinite(pos.coords.accuracy) && pos.coords.accuracy > 0
+        ? pos.coords.accuracy
+        : 999;
+    const nextFilter = ingestGpsFix(filterRef.current, {
+      lat: pos.coords.latitude,
+      lon: pos.coords.longitude,
+      accuracyM: rawAcc,
+      altitudeM: pos.coords.altitude,
+      headingDeg: pos.coords.heading,
+      speedMps: pos.coords.speed,
+      timestampMs: pos.timestamp || nowMs,
+    });
+    filterRef.current = nextFilter;
 
-      const hostname = window.location?.hostname || '';
-      const isSecure =
-        window.isSecureContext ||
-        hostname === 'localhost' ||
-        hostname === '127.0.0.1' ||
-        window.location?.protocol === 'file:';
-
-      if (!isSecure) {
-        setStatus('unavailable');
-        setError('Live GPS requires a secure HTTPS connection.');
-        return;
-      }
-
-      clearActiveWatch();
+    if (nextFilter.current) {
+      const c = nextFilter.current;
+      setPosition({
+        lat: c.lat,
+        lon: c.lon,
+        accuracyM: c.accuracyM,
+        headingDeg: c.headingDeg,
+        speedMps: c.speedMps,
+        paceMinPerKm: c.paceMinPerKm,
+        quality: c.quality,
+        isStale: false,
+        insidePhilippines: c.insidePhilippines,
+        rejectedCount: nextFilter.rejectedCount,
+        lastRejectReason: nextFilter.lastRejectReason,
+        updatedAtMs: nowMs,
+      });
+      setStatus('active');
       setError(null);
+    } else if (nextFilter.lastRejectReason) {
       setStatus('locating');
+      setError(nextFilter.lastRejectReason);
+    }
+  }, []);
 
-      watchIdRef.current = navigator.geolocation.watchPosition(
-        (pos) => {
-          setPosition({
-            lat: pos.coords.latitude,
-            lon: pos.coords.longitude,
-            accuracyM: Math.round(pos.coords.accuracy || 15),
-            headingDeg: pos.coords.heading,
-            speedMps: pos.coords.speed,
-            updatedAtMs: pos.timestamp || Date.now(),
-          });
-          setStatus('active');
-          setError(null);
-        },
-        (err) => {
-          if (err.code === 1) {
-            clearActiveWatch();
-            setStatus('denied');
-            setPosition(null);
-            setError('Location access was denied. Enable location permission to see your spot on the map.');
-            return;
+  const startWatch = useCallback(() => {
+    if (
+      typeof window === 'undefined' ||
+      typeof navigator === 'undefined' ||
+      !('geolocation' in navigator)
+    ) {
+      setStatus('unavailable');
+      setError('Device location is not supported in this browser.');
+      return;
+    }
+
+    const hostname = window.location?.hostname || '';
+    const isSecure =
+      window.isSecureContext ||
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      window.location?.protocol === 'file:';
+
+    if (!isSecure) {
+      setStatus('unavailable');
+      setError('Live GPS requires a secure HTTPS connection.');
+      return;
+    }
+
+    clearTimersAndWatch();
+    setError(null);
+    setStatus('locating');
+
+    // Start primary high-accuracy GNSS watch immediately with zero stale cache age.
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      applyRawFix,
+      (err) => {
+        if (err.code === 1) {
+          clearTimersAndWatch();
+          setStatus('denied');
+          setPosition(null);
+          setError('Location access was denied. Enable location permission to see your spot on the map.');
+          return;
+        }
+        // If no lock yet, obtain a one-shot fused position while keeping the high-accuracy watch running
+        // or re-arming it after 15s so the device automatically upgrades once outdoors.
+        if (!filterRef.current.current) {
+          navigator.geolocation.getCurrentPosition(
+            applyRawFix,
+            () => {
+              if (!filterRef.current.current) {
+                setStatus(err.code === 2 ? 'unavailable' : 'error');
+                setError(
+                  err.code === 2
+                    ? 'Device location is currently unavailable. Check GPS settings and retry.'
+                    : 'Waiting for clear GPS satellite lock. Keep moving or step outdoors.',
+                );
+              }
+            },
+            { enableHighAccuracy: false, timeout: 8000, maximumAge: 10000 },
+          );
+          if (retryTimerRef.current === null) {
+            retryTimerRef.current = window.setTimeout(() => {
+              retryTimerRef.current = null;
+              if (watchIdRef.current !== null && !filterRef.current.current) {
+                startWatch();
+              }
+            }, 15000);
           }
-          if (enableHighAccuracy && !fallbackAttemptedRef.current) {
-            fallbackAttemptedRef.current = true;
-            startWatch(false);
-            return;
-          }
-          if (err.code === 2) {
-            setStatus('unavailable');
-            setError('Device location is currently unavailable.');
-          } else {
-            setStatus('error');
-            setError('Location lookup timed out. Check GPS signal and retry.');
-          }
-        },
-        {
-          enableHighAccuracy,
-          timeout: enableHighAccuracy ? 12000 : 15000,
-          maximumAge: enableHighAccuracy ? 5000 : 20000,
-        },
-      );
-    },
-    [clearActiveWatch],
-  );
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
+      },
+    );
+
+    staleIntervalRef.current = window.setInterval(() => {
+      if (filterRef.current.current && lastRawFixMsRef.current > 0) {
+        const stale = Date.now() - lastRawFixMsRef.current > STALE_FIX_THRESHOLD_MS;
+        setPosition((prev) =>
+          prev && Boolean(prev.isStale) !== stale
+            ? { ...prev, isStale: stale, quality: stale ? 'stale' : filterRef.current.current?.quality }
+            : prev,
+        );
+      }
+    }, 5000);
+  }, [applyRawFix, clearTimersAndWatch]);
 
   const startTracking = useCallback(() => {
-    fallbackAttemptedRef.current = false;
-    startWatch(true);
+    filterRef.current = createGpsFilterState({ maxAccuracyM: 35, initialCoarseLimitM: 100 });
+    lastRawFixMsRef.current = 0;
+    startWatch();
   }, [startWatch]);
 
-  useEffect(() => clearActiveWatch, [clearActiveWatch]);
+  useEffect(() => clearTimersAndWatch, [clearTimersAndWatch]);
 
   return {
     status,
     position,
     error,
+    autoFollow,
+    setAutoFollow,
     startTracking,
     stopTracking,
   };

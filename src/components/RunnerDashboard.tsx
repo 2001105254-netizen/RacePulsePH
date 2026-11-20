@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { collection, doc, getDocs, onSnapshot, query, setDoc, where } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, setDoc, where } from 'firebase/firestore';
 import {
   Award,
   BellRing,
@@ -17,6 +17,7 @@ import { useAccess } from '../lib/access';
 import { useAndroidBackHandler } from '../lib/capacitorAndroid';
 import { claimRaceBib, claimableEntryLabel, parseRaceBibQr, previewRaceBibClaim, RaceBibClaimPreview } from '../lib/raceBibClaim';
 import { isRaceRegistrationOpen } from '../lib/raceRegistration';
+import { subscribeSharedLiveResults } from '../lib/liveResultsStore';
 import { subscribeSharedRaces } from '../lib/racesStore';
 import { useWorkspaceHeader } from '../lib/workspaceHeader';
 import { FriendActivity, PublicLiveResults, Race, RunnerProfile, UserProfile } from '../types';
@@ -321,14 +322,11 @@ export default function RunnerDashboard({
   // Publish only a short race summary for accepted friends. Raw registrations,
   // bibs, results, payment state, and medical/emergency data stay private.
   useEffect(() => {
-    if (!runnerProfiles) return;
+    if (!runnerProfiles || !racesLoaded) return;
     let cancelled = false;
     void (async () => {
       try {
-        const snapshot = await getDocs(collection(db, 'races'));
-        if (cancelled) return;
-        const raceById = new Map<string, Race>();
-        snapshot.forEach((item) => raceById.set(item.id, item.data() as Race));
+        const raceById = new Map(sharedRaces.map((r) => [r.id, r]));
         const recentRaces = [...runnerProfiles]
           .map((runner) => {
             const race = raceById.get(runner.raceId);
@@ -337,6 +335,7 @@ export default function RunnerDashboard({
           .filter((item): item is NonNullable<typeof item> => item !== null)
           .sort((a, b) => b.date.localeCompare(a.date))
           .slice(0, 6);
+        if (cancelled) return;
         await setDoc(doc(db, 'friendActivities', profile.uid), {
           uid: profile.uid,
           recentRaces,
@@ -349,7 +348,7 @@ export default function RunnerDashboard({
     return () => {
       cancelled = true;
     };
-  }, [profile.uid, runnerProfiles]);
+  }, [profile.uid, runnerProfiles, racesLoaded, sharedRaces]);
 
   const { reminders, dismiss, notificationPermission, requestAlerts } = useRunnerReminders(runnerProfiles);
 
@@ -1236,23 +1235,19 @@ function RunnerEngravingView({
       setResultsByRaceId({});
       return;
     }
-    const unsubscribes = uniqueRaceIds.map((raceId) =>
-      onSnapshot(
-        doc(db, 'liveResults', raceId),
-        (snapshot) => {
-          setResultsByRaceId((prev) => ({
-            ...prev,
-            [raceId]: snapshot.exists() ? (snapshot.data() as PublicLiveResults) : null,
-          }));
-        },
-        () => {
-          setResultsByRaceId((prev) => ({ ...prev, [raceId]: null }));
-        },
-      ),
-    );
-    return () => {
-      unsubscribes.forEach((unsub) => unsub());
-    };
+    const raceSet = new Set(uniqueRaceIds);
+    return subscribeSharedLiveResults((map, loaded, err) => {
+      if (err) {
+        setResultsByRaceId({});
+        return;
+      }
+      if (!loaded) return;
+      const next: Record<string, PublicLiveResults | null> = {};
+      raceSet.forEach((raceId) => {
+        next[raceId] = map[raceId] ?? null;
+      });
+      setResultsByRaceId(next);
+    });
   }, [uniqueRaceIds]);
 
   const raceById = useMemo(() => new Map(races.map((r) => [r.id, r])), [races]);

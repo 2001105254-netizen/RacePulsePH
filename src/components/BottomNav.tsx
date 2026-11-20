@@ -137,7 +137,7 @@ export default function BottomNav({
                 onClick={item.onClick}
                 aria-label={item.label}
                 aria-current={item.active ? 'page' : undefined}
-                className={`relative flex-1 min-w-0 min-h-[44px] my-1 px-1 rounded-xl flex flex-col items-center justify-center gap-0.5 transition-colors duration-150 motion-safe:active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
+                className={`relative flex-1 min-w-0 min-h-[44px] my-1 px-1 rounded-xl flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-colors duration-150 motion-safe:active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
                   item.active
                     ? 'bg-red-700 text-white'
                     : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
@@ -163,7 +163,7 @@ export default function BottomNav({
       data-workspace-nav="mobile"
       className={`${hideBreakpointClass} fixed bottom-0 inset-x-0 z-40 flex justify-center pb-[max(0.75rem,var(--rp-safe-bottom))] pl-[max(0.5rem,var(--rp-safe-left))] pr-[max(0.5rem,var(--rp-safe-right))] sm:pl-[max(1rem,var(--rp-safe-left))] sm:pr-[max(1rem,var(--rp-safe-right))] pointer-events-none`}
     >
-      <div className="glass-panel w-full max-w-6xl overflow-hidden shadow-2xl pointer-events-auto">
+      <div className="glass-panel w-full max-w-6xl overflow-hidden pointer-events-auto">
         <div
           ref={scrollRef}
           onPointerDown={handlePointerDown}
@@ -181,9 +181,9 @@ export default function BottomNav({
                   onClick={item.onClick}
                   aria-label={item.label}
                   aria-current={item.active ? 'page' : undefined}
-                  className={`relative flex min-w-fit min-h-11 shrink-0 flex-1 flex-col items-center justify-center gap-1 px-2 py-2 sm:px-4 rounded-[14px] sm:rounded-[16px] transition-colors duration-150 motion-safe:active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
+                  className={`relative flex min-w-fit min-h-11 shrink-0 flex-1 flex-col items-center justify-center gap-1 px-2 py-2 sm:px-4 rounded-xl cursor-pointer transition-colors duration-150 motion-safe:active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
                     item.active
-                      ? 'bg-red-700 text-white shadow-lg shadow-red-900/30'
+                      ? 'bg-red-700 text-white'
                       : 'text-zinc-700 dark:text-zinc-300 hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
                   }`}
                 >

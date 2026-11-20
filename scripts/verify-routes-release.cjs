@@ -14,6 +14,7 @@ const fb = JSON.parse(fs.readFileSync('firebase.json', 'utf8'));
 const headers = fb.hosting?.headers?.find((h) => h.source === '**')?.headers || [];
 const csp = headers.find((h) => h.key.toLowerCase() === 'content-security-policy')?.value || '';
 assert(csp.includes('https://tiles.openfreemap.org'), 'firebase.json CSP connect-src must include https://tiles.openfreemap.org.');
+assert(csp.includes('https://services.arcgisonline.com'), 'firebase.json CSP connect-src must include https://services.arcgisonline.com.');
 assert(!csp.includes("'unsafe-eval'"), "CSP must not include 'unsafe-eval'.");
 
 // 2. Fixtures exist and contain valid GPX tracks
@@ -45,6 +46,27 @@ const checkDir = (dir) => {
 checkDir('src/components/routes');
 checkDir('src/lib/routes');
 assert(!fs.readFileSync('src/components/RouteElevationProfile.tsx', 'utf8').includes('\u2014'), 'Forbidden em dash in RouteElevationProfile.tsx');
+
+// 3b. Confidential map stack check across route UI surfaces and server telemetry
+const forbiddenCaseInsensitive = /copernicus|sentinel|glo-?30|openstreetmap|openmaptiles|strava|google satellite|dataspace\.copernicus|s2maps\.eu/i;
+const checkConfidentialFile = (filePath) => {
+  if (!fs.existsSync(filePath)) return;
+  const content = fs.readFileSync(filePath, 'utf8');
+  assert(!forbiddenCaseInsensitive.test(content), `Forbidden third-party map brand leak found in ${filePath}`);
+  assert(!content.includes('OpenFreeMap'), `Forbidden UI label "OpenFreeMap" found in ${filePath}`);
+};
+const walkConfidentialDir = (dir) => {
+  if (!fs.existsSync(dir)) return;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) walkConfidentialDir(full);
+    else if (/\.(tsx?|js)$/.test(entry.name)) checkConfidentialFile(full);
+  }
+};
+walkConfidentialDir('src/components/routes');
+checkConfidentialFile('src/components/RouteElevationProfile.tsx');
+checkConfidentialFile('src/components/RouteMap3D.tsx');
+checkConfidentialFile('server.ts');
 
 // 4. Dist build check if dist exists
 if (fs.existsSync('dist/index.html')) {

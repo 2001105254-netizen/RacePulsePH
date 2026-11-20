@@ -3,13 +3,52 @@ import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Search, X } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
+export type SelectBadgeTone = 'neutral' | 'success' | 'warning' | 'danger' | 'info';
+
 export interface SelectOption {
   value: string;
   label: string;
   sublabel?: string;
   badge?: string;
+  badgeTone?: SelectBadgeTone;
   accentDot?: string;
   disabled?: boolean;
+}
+
+function getSelectBadgeClasses(
+  tone: SelectBadgeTone | undefined,
+  isHeaderSurface: boolean,
+  isSelected: boolean,
+  isTrigger = false,
+): string {
+  switch (tone) {
+    case 'success':
+      return isHeaderSurface
+        ? 'border-emerald-400/40 bg-emerald-500/20 text-emerald-300'
+        : 'border-emerald-600/35 bg-emerald-50 text-emerald-800 dark:border-emerald-400/40 dark:bg-emerald-950/70 dark:text-emerald-300';
+    case 'warning':
+      return isHeaderSurface
+        ? 'border-amber-400/40 bg-amber-500/20 text-amber-300'
+        : 'border-amber-600/35 bg-amber-50 text-amber-900 dark:border-amber-400/40 dark:bg-amber-950/70 dark:text-amber-300';
+    case 'info':
+      return isHeaderSurface
+        ? 'border-sky-400/40 bg-sky-500/20 text-sky-300'
+        : 'border-sky-600/35 bg-sky-50 text-sky-900 dark:border-sky-400/40 dark:bg-sky-950/70 dark:text-sky-300';
+    case 'danger':
+      return isHeaderSurface
+        ? 'border-red-400/40 bg-red-500/20 text-red-200'
+        : 'border-red-600/35 bg-red-50 text-red-800 dark:border-red-400/40 dark:bg-red-950/70 dark:text-red-300';
+    default:
+      if (!isTrigger && isSelected) {
+        return 'border-red-600/40 bg-red-700 text-white';
+      }
+      if (isHeaderSurface) {
+        return isTrigger
+          ? 'border-white/20 bg-[#141416] text-zinc-200'
+          : 'border-white/20 bg-[#1c1d21] text-zinc-200';
+      }
+      return 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-secondary)]';
+  }
 }
 
 export interface SelectProps {
@@ -584,6 +623,7 @@ export function Select({
                       )}
                     >
                       {opt.label}
+                      {(opt.sublabel || opt.badge) && <span className="sr-only">. </span>}
                     </span>
                     {opt.sublabel && (
                       <span
@@ -593,6 +633,7 @@ export function Select({
                         )}
                       >
                         {opt.sublabel}
+                        {opt.badge && <span className="sr-only">. </span>}
                       </span>
                     )}
                   </div>
@@ -603,12 +644,8 @@ export function Select({
                     {opt.badge && (
                       <span
                         className={cn(
-                          'px-2 py-0.5 rounded-md text-xs font-mono font-semibold border',
-                          isSelected
-                            ? 'border-red-600/40 bg-red-700 text-white'
-                            : isHeaderSurface
-                              ? 'border-white/20 bg-[#1c1d21] text-zinc-200'
-                              : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-secondary)]',
+                          'px-2 py-0.5 rounded-md text-xs font-mono font-semibold border whitespace-nowrap',
+                          getSelectBadgeClasses(opt.badgeTone, isHeaderSurface, isSelected),
                         )}
                       >
                         {opt.badge}
@@ -700,6 +737,7 @@ export function Select({
               )}
             >
               {selectedOption ? selectedOption.label : placeholder}
+              {selectedOption?.badge && <span className="sr-only">. </span>}
             </span>
             {showSublabelInTrigger && selectedOption?.sublabel && (
               <span
@@ -709,6 +747,7 @@ export function Select({
                 )}
               >
                 {selectedOption.sublabel}
+                {selectedOption?.badge && <span className="sr-only">. </span>}
               </span>
             )}
           </div>
@@ -718,10 +757,8 @@ export function Select({
           {selectedOption?.badge && (
             <span
               className={cn(
-                'px-2 py-0.5 rounded-md border text-xs font-mono font-semibold',
-                isHeaderSurface
-                  ? 'border-white/20 bg-[#141416] text-zinc-200'
-                  : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-secondary)]',
+                'px-2 py-0.5 rounded-md border text-xs font-mono font-semibold whitespace-nowrap',
+                getSelectBadgeClasses(selectedOption.badgeTone, isHeaderSurface, false, true),
               )}
             >
               {selectedOption.badge}

@@ -75,7 +75,7 @@ export default function CourseSatelliteView({ route }: { route: ProcessedRoute }
         setOpen(event.currentTarget.open);
         if (event.currentTarget.open) setRequested(true);
       }}>
-      <summary className="scroll-mt-20 cursor-pointer px-4 py-3 text-sm font-semibold">Google satellite view</summary>
+      <summary className="scroll-mt-20 cursor-pointer px-4 py-3 text-sm font-semibold">Aerial course view</summary>
       {open && status !== 'ready' && (
         <p role="status" className="px-4 pb-3 text-sm">
           {status === 'loading' ? 'Loading satellite imagery…' : 'Satellite imagery is unavailable. Use the course map below.'}

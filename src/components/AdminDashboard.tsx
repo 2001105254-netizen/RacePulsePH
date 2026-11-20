@@ -129,7 +129,7 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
     { key: 'access', icon: <ShieldCheck className="w-4 h-4" />, label: 'Access', shortLabel: 'Access', active: active === 'access', onClick: () => selectTab('access') },
   ].filter(item => allowed[item.key as AdminTab]);
 
-  const isLocked = active === 'engraving' || active === 'events' || active === 'hub' || active === 'timing';
+  const isLocked = active === 'engraving' || active === 'events' || active === 'hub' || active === 'timing' || active === 'routes';
 
   return (
     <WorkspaceShell
@@ -139,7 +139,7 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
       profile={profile}
       workspaceSwitch={workspaceSwitch}
       pendingApprovalNotice={pendingApprovalNotice}
-      maxWidthClass="max-w-[1800px]"
+      maxWidthClass={active === 'routes' ? 'max-w-none' : 'max-w-[1800px]'}
       desktopLocked={isLocked}
       onOpenProfile={() => setShowAccountPrivacy(true)}
     >

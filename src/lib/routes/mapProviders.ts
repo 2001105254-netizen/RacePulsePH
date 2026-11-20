@@ -3,14 +3,18 @@ import type { LayerSpecification, StyleSpecification } from 'maplibre-gl';
 import {
   buildCopernicusTileTemplate,
   buildPhilippinesArchipelagoGeoJson,
-  COPERNICUS_MAP_ATTRIBUTION,
-  COPERNICUS_TERRAIN_RELEASE,
+  buildPhilippinesWorldMaskGeoJson,
+  isTileInPhilippines,
+  PHILIPPINES_SOURCE_BOUNDS,
+  PHILIPPINES_TILE_BBOX,
+  RACEPULSE_MAP_ATTRIBUTION,
+  RACEPULSE_TERRAIN_LABEL,
 } from './philippinesMapTiles';
 
 export type MapThemeMode = 'light' | 'dark';
 export type MapProviderId = 'openfreemap' | 'local-fallback';
 
-export const COPERNICUS_ATTRIBUTION = COPERNICUS_MAP_ATTRIBUTION;
+export const COPERNICUS_ATTRIBUTION = RACEPULSE_MAP_ATTRIBUTION;
 
 export interface MapProviderConfig {
   id: MapProviderId;
@@ -48,11 +52,19 @@ export function buildLocalFallbackStyle(
   const gridColor = isDark ? '#193b5c' : '#b6cee2';
   const minorGridColor = isDark ? '#13314e' : '#c3d9eb';
 
-  // Generate lightweight geographic graticule GeoJSON inside/around the route bounds
-  const south = bounds ? Math.floor(bounds.south * 20) / 20 - 0.15 : 4.0;
-  const north = bounds ? Math.ceil(bounds.north * 20) / 20 + 0.15 : 21.5;
-  const west = bounds ? Math.floor(bounds.west * 20) / 20 - 0.15 : 116.5;
-  const east = bounds ? Math.ceil(bounds.east * 20) / 20 + 0.15 : 127.0;
+  // Generate lightweight geographic graticule GeoJSON bounded inside the Philippines
+  const south = bounds
+    ? Math.max(PHILIPPINES_TILE_BBOX.south, Math.floor(bounds.south * 20) / 20 - 0.15)
+    : PHILIPPINES_TILE_BBOX.south;
+  const north = bounds
+    ? Math.min(PHILIPPINES_TILE_BBOX.north, Math.ceil(bounds.north * 20) / 20 + 0.15)
+    : PHILIPPINES_TILE_BBOX.north;
+  const west = bounds
+    ? Math.max(PHILIPPINES_TILE_BBOX.west, Math.floor(bounds.west * 20) / 20 - 0.15)
+    : PHILIPPINES_TILE_BBOX.west;
+  const east = bounds
+    ? Math.min(PHILIPPINES_TILE_BBOX.east, Math.ceil(bounds.east * 20) / 20 + 0.15)
+    : PHILIPPINES_TILE_BBOX.east;
 
   const features: Array<{
     type: 'Feature';
@@ -160,30 +172,135 @@ export function getMapProviderConfig(
   if (providerId === 'local-fallback') {
     return {
       id: 'local-fallback',
-      label: 'Philippine archipelago reference',
-      attribution: 'RacePulsePH Philippine Archipelago (WGS84)',
+      label: 'Philippines Archipelago Grid',
+      attribution: 'RacePulsePH Philippines Reference',
       fallbackStyle,
       terrainDemTiles: demTiles,
-      terrainAttribution: COPERNICUS_TERRAIN_RELEASE,
+      terrainAttribution: RACEPULSE_TERRAIN_LABEL,
       imageryTiles,
-      imageryAttribution: COPERNICUS_MAP_ATTRIBUTION,
+      imageryAttribution: RACEPULSE_MAP_ATTRIBUTION,
     };
   }
 
   return {
     id: 'openfreemap',
-    label: 'OpenFreeMap + Copernicus',
-    attribution: 'OpenFreeMap © OpenMapTiles · OpenStreetMap',
+    label: 'RacePulsePH Terrain',
+    attribution: RACEPULSE_MAP_ATTRIBUTION,
     styleUrl:
       theme === 'dark'
         ? 'https://tiles.openfreemap.org/styles/dark'
         : 'https://tiles.openfreemap.org/styles/liberty',
     fallbackStyle,
     terrainDemTiles: demTiles,
-    terrainAttribution: COPERNICUS_TERRAIN_RELEASE,
+    terrainAttribution: RACEPULSE_TERRAIN_LABEL,
     imageryTiles,
-    imageryAttribution: COPERNICUS_MAP_ATTRIBUTION,
+    imageryAttribution: RACEPULSE_MAP_ATTRIBUTION,
   };
+}
+
+const TRANSPARENT_PNG_DATA_URL =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQI12NgAAIAAAUAAeImBZsAAAAASUVORK5CYII=';
+
+export function createPhilippinesTransformRequest(): maplibregl.RequestTransformFunction {
+  return (url, resourceType) => {
+    if (resourceType === 'Tile' && !url.startsWith('rp-geo://') && !url.startsWith('data:')) {
+      const zxy = /\/(\d+)\/(\d+)\/(\d+)(?:\.[a-zA-Z0-9]+)?(?:\?.*)?$/.exec(url);
+      if (zxy) {
+        const z = Number(zxy[1]);
+        const x = Number(zxy[2]);
+        const y = Number(zxy[3]);
+        if (!isTileInPhilippines(z, x, y)) {
+          return { url: TRANSPARENT_PNG_DATA_URL };
+        }
+      }
+    }
+    return { url };
+  };
+}
+
+const RESOLVED_PH_STYLE_CACHE = new Map<string, StyleSpecification>();
+const RESOLVED_PH_STYLE_INFLIGHT = new Map<string, Promise<StyleSpecification>>();
+
+export async function resolveAndClipPhilippinesVectorStyle(
+  styleUrl: string,
+  theme: MapThemeMode,
+  signal?: AbortSignal,
+): Promise<StyleSpecification> {
+  const cacheKey = `${theme}::${styleUrl}`;
+  const cached = RESOLVED_PH_STYLE_CACHE.get(cacheKey);
+  if (cached) {
+    return JSON.parse(JSON.stringify(cached)) as StyleSpecification;
+  }
+
+  let pending = RESOLVED_PH_STYLE_INFLIGHT.get(cacheKey);
+  if (!pending) {
+    pending = (async () => {
+      const response = await fetch(styleUrl, { signal: signal ?? AbortSignal.timeout(8000) });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const style = (await response.json()) as StyleSpecification;
+      if (!style || !Array.isArray(style.layers) || !style.sources) {
+        throw new Error('Invalid map style specification');
+      }
+
+      // Resolve TileJSON sources inline so we can enforce Philippines-only source bounds cleanly
+      const sourceEntries = Object.entries(style.sources as Record<string, Record<string, unknown>>);
+      await Promise.all(
+        sourceEntries.map(async ([_srcId, srcDef]) => {
+          if (!srcDef || (srcDef.type !== 'vector' && srcDef.type !== 'raster')) return;
+          if (typeof srcDef.url === 'string' && srcDef.url.startsWith('http')) {
+            try {
+              const tjRes = await fetch(srcDef.url, { signal: AbortSignal.timeout(6000) });
+              if (tjRes.ok) {
+                const tj = (await tjRes.json()) as {
+                  tiles?: string[];
+                  minzoom?: number;
+                  maxzoom?: number;
+                };
+                if (Array.isArray(tj.tiles) && tj.tiles.length > 0) {
+                  delete srcDef.url;
+                  srcDef.tiles = tj.tiles;
+                  if (typeof tj.minzoom === 'number') srcDef.minzoom = tj.minzoom;
+                  if (typeof tj.maxzoom === 'number') srcDef.maxzoom = tj.maxzoom;
+                }
+              }
+            } catch {
+              // Keep original source if TileJSON lookup fails transiently
+            }
+          }
+          srcDef.bounds = [...PHILIPPINES_SOURCE_BOUNDS];
+          srcDef.attribution = '';
+        }),
+      );
+
+      enhanceBasemapStyleForOceanAndHybrid(style, theme);
+
+      // Inject inverted world-minus-Philippines mask so zero foreign landmasses or labels appear
+      (style.sources as Record<string, unknown>)['rp-ph-world-mask'] = {
+        type: 'geojson',
+        data: buildPhilippinesWorldMaskGeoJson(),
+      };
+
+      const maskColor = theme === 'dark' ? '#0c2640' : '#a5cdf0';
+      style.layers.push({
+        id: 'rp-ph-world-mask-layer',
+        type: 'fill',
+        source: 'rp-ph-world-mask',
+        paint: {
+          'fill-color': maskColor,
+          'fill-opacity': 1,
+        },
+      } as LayerSpecification);
+
+      RESOLVED_PH_STYLE_CACHE.set(cacheKey, style);
+      return style;
+    })().finally(() => {
+      RESOLVED_PH_STYLE_INFLIGHT.delete(cacheKey);
+    });
+    RESOLVED_PH_STYLE_INFLIGHT.set(cacheKey, pending);
+  }
+
+  const resolved = await pending;
+  return JSON.parse(JSON.stringify(resolved)) as StyleSpecification;
 }
 
 export function supportsWebGL(): boolean {
@@ -344,7 +461,7 @@ const hybridStyleCache = new WeakMap<
 export function applySatelliteHybridRoadStyling(
   map: maplibregl.Map,
   imageryActive: boolean,
-  _theme: MapThemeMode,
+  theme: MapThemeMode,
   styleNonce = 0,
 ): void {
   const style = map.getStyle();
@@ -354,6 +471,18 @@ export function applySatelliteHybridRoadStyling(
   if (!cache || cache.styleNonce !== styleNonce) {
     cache = { styleNonce, modified: false, originals: new Map() };
     hybridStyleCache.set(map, cache);
+  }
+
+  if (map.getLayer('rp-ph-world-mask-layer')) {
+    try {
+      map.setPaintProperty(
+        'rp-ph-world-mask-layer',
+        'fill-color',
+        imageryActive ? '#0a2239' : theme === 'dark' ? '#0c2640' : '#a5cdf0',
+      );
+    } catch {
+      // Ignore transient style swap
+    }
   }
 
   if (!imageryActive) {

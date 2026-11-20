@@ -1,612 +1,65 @@
 @theme static {
   --spacing-landing-gutter: 1.5rem;
   --spacing-landing-section: 2rem;
-  --text-landing-hero: clamp(2.5rem, 1.5rem + 3.5vw, 4.5rem);
-  --text-landing-heading: clamp(1.5rem, 1.2rem + 0.8vw, 2rem);
+  --text-landing-hero: clamp(2rem, 1.4rem + 2.4vw, 3.25rem);
+  --text-landing-heading: clamp(1.375rem, 1.15rem + 0.8vw, 1.875rem);
   --text-landing-body: 1rem;
   --text-landing-caption: 0.75rem;
-  /* Existing public entry palette, expressed in OKLCH for consistent mixing. */
-  --color-entry-red: oklch(65.42% 0.2321 28.66);
-  --color-entry-coral: oklch(69.74% 0.1931 26.57);
-  --color-entry-warm-light: oklch(94.76% 0.0270 37.63);
-  --color-entry-action: oklch(48.92% 0.1817 29.05);
-  --color-entry-action-hover: oklch(54.64% 0.2025 29);
-  --color-entry-action-text: oklch(98.89% 0.0053 17.25);
+  --color-entry-action: #cc251c;
+  --color-entry-action-hover: #b91c1c;
+  --color-entry-action-text: #ffffff;
 }
 
-.public-entry-shell { --surface-page: oklch(97% 0.012 35); }
-.dark .public-entry-shell { --surface-page: oklch(17% 0.006 28); }
-
-/* Scoped to the public page so existing workspace styling stays independent.
-   Direction: athletic and welcoming; energy 3, rhythm 2, motion 3.
-   Neutral surfaces keep race information prominent; red identifies actions and live telemetry. */
-.public-landing :is(.landing-intro, .landing-lookup) {
-  --surface-card: oklch(99% 0.004 30);
-  --surface-inset: oklch(95% 0.006 30);
-  --border-default: oklch(84% 0.008 30);
-  --border-button: oklch(60% 0.008 30);
-  --text-primary: oklch(22% 0.008 30);
-  --text-secondary: oklch(43% 0.012 30);
-  --landing-accent: oklch(48% 0.18 28);
-  --landing-track-surface: oklch(92% 0.035 28);
-  --landing-track-line: oklch(80% 0.07 28);
-  color: var(--text-primary);
-  font-size: var(--text-landing-body);
+.public-entry-shell {
+  --surface-page: #faf9f7;
+}
+.dark .public-entry-shell {
+  --surface-page: #0b0b0d;
 }
 
 .public-landing {
   position: relative;
   width: 100%;
-  max-width: 1440px;
+  max-width: 1280px;
   margin-inline: auto;
-  padding: 16px max(16px, var(--rp-safe-right)) 32px max(16px, var(--rp-safe-left));
+  padding: 24px max(16px, var(--rp-safe-right)) 48px max(16px, var(--rp-safe-left));
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 32px;
 }
 
-.dark .public-landing :is(.landing-intro, .landing-lookup) {
-  --surface-card: oklch(19% 0.006 30);
-  --surface-inset: oklch(23% 0.006 30);
-  --border-default: oklch(34% 0.008 30);
-  --border-button: oklch(56% 0.008 30);
-  --text-primary: oklch(97% 0.004 30);
-  --text-secondary: oklch(77% 0.008 30);
-  --landing-accent: oklch(73% 0.16 28);
-  --landing-track-surface: oklch(26% 0.035 28);
-  --landing-track-line: oklch(40% 0.07 28);
-}
-
-.public-landing :is(.landing-intro, .landing-lookup) :is(button, input):not(.landing-distance):not(.landing-spotlight-card) {
-  border-radius: 12px;
-  box-shadow: none;
-  font-weight: 400;
-  text-transform: none;
-  letter-spacing: normal;
-  transition-property: transform, opacity;
-  transition-duration: 160ms;
-  min-height: 44px;
-}
-
-.landing-lookup input { font-size: var(--text-landing-body); border-color: var(--border-button); }
-.public-landing :is(.landing-intro, .landing-lookup) button { cursor: pointer; }
-.public-landing :is(.landing-intro, .landing-lookup) button:disabled { cursor: not-allowed; }
-.public-landing :is(.landing-intro, .landing-lookup) button:hover:not(:disabled):not(.landing-distance):not(.landing-spotlight-card):not(.landing-primary) { text-decoration: underline; text-underline-offset: 4px; }
-.public-landing :is(.landing-intro, .landing-lookup) :is(button, input, a):focus-visible {
-  outline: 2px solid var(--landing-accent);
-  outline-offset: 4px;
-}
-.public-landing :is(.landing-intro, .landing-lookup) p { font-size: var(--text-landing-body); line-height: 1.6; }
-.landing-lookup .landing-field-label { font-size: var(--text-landing-caption); }
-
-/* 1. Hero Section: Contained Box, Kinetic Typography, Odometer & 4-Layer Cutout Stage */
-.landing-intro {
-  display: grid;
-  gap: 12px;
-  align-items: center;
-  position: relative;
-  z-index: 10;
-  padding: 16px;
-  border-radius: 24px;
-  border: 1px solid var(--border-default);
-  background: linear-gradient(
-    135deg in oklch,
-    var(--surface-card) 0%,
-    var(--surface-card) 56%,
-    color-mix(in oklch, var(--surface-card) 84%, var(--landing-track-surface)) 100%
-  );
-  box-shadow:
-    inset 0 1px 0 oklch(100% 0 0 / 0.08),
-    0 16px 40px -20px oklch(18% 0.02 28 / 0.16);
-  overflow: clip;
-}
-
-.dark .landing-intro {
-  box-shadow:
-    inset 0 1px 0 oklch(100% 0 0 / 0.06),
-    0 20px 48px -20px oklch(0% 0 0 / 0.55);
-}
-
-.landing-intro::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 16px;
-  width: 96px;
-  height: 4px;
-  background: linear-gradient(90deg in oklch, var(--landing-accent), var(--color-entry-coral));
-  transform: skewX(-24deg);
-  pointer-events: none;
-}
-
-.landing-intro-copy { min-width: 0; }
-.landing-intro h1 {
-  font: 600 var(--text-landing-hero)/1.04 var(--font-display);
-  letter-spacing: -0.055em;
-  margin: 0;
-}
-
-.landing-hero-line {
-  display: block;
-}
-
-.landing-intro h1 .landing-finish-phrase {
-  position: relative;
-  display: inline-block;
-  color: var(--landing-accent);
-  font-style: italic;
-}
-
-.landing-intro h1 .landing-finish-phrase::after {
-  content: '';
-  position: absolute;
-  inset: auto 0 -8px 0;
-  height: 4px;
-  background: linear-gradient(90deg in oklch, var(--landing-accent), var(--color-entry-coral));
-  transform: skewX(-24deg);
-  transform-origin: left;
-}
-
-.landing-intro h1 .landing-finish-phrase::before {
-  content: '';
-  position: absolute;
-  inset: -4px -12px;
-  border-radius: 16px;
-  background: radial-gradient(ellipse at center, oklch(65% 0.23 28 / 0.28), transparent 72%);
-  opacity: 0;
-  pointer-events: none;
-  z-index: -1;
-}
-
-.landing-intro-copy > p { max-width: 540px; margin-top: 12px; color: var(--text-secondary); }
-.landing-intro-actions { display: flex; flex-wrap: wrap; flex-wrap: balance; gap: 12px; margin-top: 16px; }
-.landing-intro-actions button { min-height: 44px; padding-inline: 12px; font-size: var(--text-landing-body); }
-.landing-hero-spotlight {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 12px;
-  margin-top: 16px;
-}
-
-@media (max-width: 639px) {
-  .landing-spotlight-card:nth-child(n + 2) {
-    display: none;
+@media (min-width: 640px) {
+  .public-landing {
+    padding: 32px max(24px, var(--rp-safe-right)) 56px max(24px, var(--rp-safe-left));
+    gap: 40px;
   }
 }
 
-.landing-spotlight-card {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 44px;
-  padding: 12px 16px;
-  border-radius: 12px;
-  border: 1px solid var(--border-default);
-  background: var(--surface-inset);
-  text-align: left;
-  color: var(--text-primary);
-  transition-property: transform, opacity;
-  transition-duration: 160ms;
-  transition-timing-function: var(--ease-out-quart);
+@media (min-width: 1024px) {
+  .public-landing {
+    padding: 32px 32px 64px;
+    gap: 48px;
+  }
 }
 
-.landing-spotlight-card:hover {
-  border-color: var(--landing-accent);
-  text-decoration: none;
+.public-landing section[tabindex='-1']:focus {
+  outline: none;
 }
 
-.landing-spotlight-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px 8px;
-  font-family: var(--font-mono);
-  font-size: var(--text-landing-caption);
-  color: var(--text-secondary);
+/* Container-aware grids for race cards and stats */
+.landing-race-grid-scope {
+  container-type: inline-size;
 }
 
-.landing-spotlight-meta > span {
-  white-space: nowrap;
-}
-
-.landing-spotlight-status {
-  color: var(--landing-accent);
-  font-weight: 600;
-}
-
-.landing-spotlight-title {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: var(--text-landing-body);
-  line-height: 1.3;
-  color: var(--text-primary);
-}
-
-.landing-spotlight-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-family: var(--font-mono);
-  font-size: var(--text-landing-caption);
-  color: var(--text-secondary);
-}
-
-.landing-spotlight-cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--landing-accent);
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.public-landing .landing-primary:not(:disabled) {
-  background-color: var(--color-entry-action);
-  color: var(--color-entry-action-text);
-  font-weight: 600;
-  padding-inline: 16px;
-  border: 1px solid color-mix(in oklch, var(--color-entry-action) 80%, black);
-  box-shadow:
-    inset 0 1px 0 oklch(100% 0 0 / 0.22),
-    0 8px 20px -6px oklch(48% 0.18 28 / 0.42);
-}
-.public-landing .landing-primary:hover:not(:disabled) { background-color: var(--color-entry-action-hover); }
-
-.landing-race-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 20px;
-  margin: 0;
-  font-size: var(--text-landing-caption);
-  color: var(--text-secondary);
-  border-left: 4px solid var(--landing-accent);
-  padding-left: 12px;
-}
-.landing-race-summary strong {
-  color: var(--text-primary);
-  font-weight: 600;
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  display: inline-flex;
-  align-items: baseline;
-}
-.landing-live-count { color: var(--landing-accent); font-weight: 600; }
-
-/* Odometer roll-up digit styling */
-.landing-odometer {
-  display: inline-block;
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  color: var(--text-primary);
-  will-change: transform, opacity;
-}
-
-/* 4-Layer 3D Multi-Plane Cutout Parallax Stage */
-.landing-runners {
-  position: relative;
-  min-width: 0;
-  margin: 0;
-  align-self: end;
-  isolation: isolate;
-  --tilt-x: 0;
-  --tilt-y: 0;
-}
-
-.landing-runners-stage {
-  position: relative;
-  width: 100%;
-  max-width: 560px;
-  aspect-ratio: 888 / 571;
-  margin-inline: auto;
-  overflow: visible;
-  transform-style: preserve-3d;
-}
-
-.landing-parallax-layer {
-  will-change: transform;
-  backface-visibility: hidden;
-}
-
-/* Layer 1: Rounded red/orange track card + Animated GPX Pace Lines */
-.landing-track {
-  position: absolute;
-  z-index: 1;
-  inset: 0;
-  pointer-events: none;
-}
-
-.landing-track-card-img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-  pointer-events: none;
-}
-
-.landing-gpx-lines {
-  position: absolute;
-  inset: 12% 0 7.7%;
-  width: 100%;
-  height: 80.3%;
-  border-radius: 24px 96px 24px 24px;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.landing-gpx-base {
-  stroke: color-mix(in oklch, var(--color-entry-warm-light) 34%, var(--color-entry-coral));
-  stroke-width: 1.5;
-  fill: none;
-  opacity: 0.45;
-}
-
-.landing-gpx-pace {
-  stroke: oklch(96% 0.04 28);
-  stroke-width: 2.25;
-  stroke-linecap: round;
-  fill: none;
-  stroke-dasharray: 180 260;
-  stroke-dashoffset: 440;
-}
-
-.landing-gpx-pace-2 {
-  stroke: oklch(86% 0.14 28);
-  stroke-dasharray: 140 300;
-  stroke-dashoffset: 440;
-}
-
-.landing-gpx-pace-3 {
-  stroke: oklch(98% 0.02 28);
-  stroke-dasharray: 110 330;
-  stroke-dashoffset: 440;
-}
-
-/* Layers 2, 3, 4: Runner cutouts */
-.landing-runner-layer {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-  pointer-events: none;
-  user-select: none;
-}
-
-.landing-layer-back {
-  z-index: 2;
-}
-
-.landing-layer-mid {
-  z-index: 3;
-}
-
-.landing-layer-front {
-  position: relative;
-  z-index: 4;
-}
-
-.landing-intro-footer {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-wrap: wrap;
-  flex-wrap: balance;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border-default);
-  color: var(--text-secondary);
-  font-size: var(--text-landing-caption);
-}
-
-.landing-hero-distances {
-  display: flex;
-  flex-wrap: wrap;
-  flex-wrap: balance;
-  align-items: center;
-  gap: 8px;
-}
-
-.landing-hero-distances-label,
-.landing-lookup-quick-label {
-  font-family: var(--font-mono);
-  font-size: var(--text-landing-caption);
-  color: var(--text-secondary);
-}
-
-.landing-lookup-quick-label {
-  flex-basis: 100%;
-}
-
-.landing-caption-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.landing-intro-footer-end {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-}
-
-.landing-motion-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border-default);
-  background: var(--surface-inset);
-  color: var(--text-primary);
-  font-size: 0.75rem;
-  font-weight: 600;
-  transition: border-color 160ms var(--ease-out-quart), background-color 160ms var(--ease-out-quart);
-}
-
-.landing-motion-toggle:hover,
-.landing-motion-toggle:focus-visible {
-  border-color: var(--landing-accent);
-}
-
-.landing-hero-perimeter {
-  position: absolute;
-  inset: -1px;
-  width: calc(100% + 2px);
-  height: calc(100% + 2px);
-  pointer-events: none;
-  z-index: 2;
-  overflow: visible;
-}
-
-.landing-hero-pulse {
-  fill: none;
-  stroke: var(--landing-accent);
-  stroke-width: 2.25;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  vector-effect: non-scaling-stroke;
-  stroke-dasharray: 160 840;
-  stroke-dashoffset: 1000;
-  opacity: 0.9;
-}
-
-.landing-finish-mark {
-  width: 24px;
-  height: 12px;
-  border-inline: 4px solid var(--landing-accent);
-  transform: skewX(-24deg);
-}
-
-/* 2. Finisher Lookup: ECG Perimeter & Spotlight */
-/* Finisher Spotlight Focus Scrim */
-.landing-spotlight-scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 20;
-  background: rgba(12, 12, 16, 0.36);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 220ms var(--ease-out-quart);
-}
-
-.dark .landing-spotlight-scrim {
-  background: rgba(4, 4, 6, 0.68);
-}
-
-.landing-spotlight-scrim.is-active {
-  opacity: 1;
-}
-
-/* Results Bar with Animated ECG Heartbeat Perimeter */
-.landing-lookup {
-  position: relative;
-  z-index: 25;
-  display: grid;
-  gap: 16px 24px;
-  padding: 20px 24px;
-  border: 1px solid var(--border-default);
-  border-radius: 20px;
-  background: var(--surface-card);
-  overflow: visible;
-  transition: transform 200ms var(--ease-out-quart), border-color 200ms var(--ease-out-quart);
-}
-
-.landing-lookup::before {
-  content: '';
-  position: absolute;
-  inset: -20px -24px;
-  border-radius: 32px;
-  background: radial-gradient(
-    ellipse 75% 90% at 55% 50%,
-    oklch(62% 0.23 28 / 0.26),
-    oklch(68% 0.19 36 / 0.12) 48%,
-    transparent 76%
-  );
-  opacity: 0;
-  pointer-events: none;
-  z-index: -1;
-  transition: opacity 220ms var(--ease-out-quart);
-}
-
-.dark .landing-lookup::before {
-  background: radial-gradient(
-    ellipse 75% 90% at 55% 50%,
-    oklch(62% 0.24 28 / 0.42),
-    oklch(68% 0.20 34 / 0.18) 48%,
-    transparent 78%
-  );
-}
-
-.landing-lookup.is-spotlight-active {
-  border-color: var(--landing-accent);
-}
-
-.landing-lookup.is-spotlight-active::before {
-  opacity: 1;
-}
-
-.landing-ecg-perimeter {
-  position: absolute;
-  inset: -1px;
-  width: calc(100% + 2px);
-  height: calc(100% + 2px);
-  pointer-events: none;
-  z-index: 2;
-  overflow: visible;
-}
-
-.landing-ecg-track {
-  fill: none;
-  stroke: color-mix(in oklch, var(--landing-accent) 28%, transparent);
-  stroke-width: 2;
-  vector-effect: non-scaling-stroke;
-}
-
-.landing-ecg-pulse {
-  fill: none;
-  stroke: var(--landing-accent);
-  stroke-width: 2.75;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  vector-effect: non-scaling-stroke;
-  stroke-dasharray: 180 820;
-  stroke-dashoffset: 1000;
-}
-
-.landing-lookup h2 { font: 600 var(--text-landing-body)/1.5 var(--font-display); }
-.landing-lookup-copy p { margin-top: 4px; color: var(--text-secondary); }
-.landing-lookup-quick {
-  margin-top: 12px;
-  display: flex;
-  flex-wrap: wrap;
-  flex-wrap: balance;
-  align-items: center;
-  gap: 8px;
-}
-.landing-lookup-form { min-width: 0; position: relative; z-index: 3; }
-.landing-field-label { display: block; margin-bottom: 8px; color: var(--text-secondary); }
-.landing-lookup-matches { grid-column: 1 / -1; position: relative; z-index: 3; }
-.landing-lookup-matches, #hero-bib-search { scroll-margin-top: 88px; }
-.landing-lookup-matches:focus-visible { outline: 2px solid var(--landing-accent); outline-offset: 4px; }
-.landing-lookup .landing-empty { padding: 32px; border: 1px dashed var(--border-default); border-radius: 20px; }
-.landing-lookup .landing-empty p { margin-top: 8px; color: var(--text-secondary); }
-
+/* Filter Chip Pill Controls (44x44px minimum touch target) */
 .landing-distance {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
   min-height: 44px;
   min-width: 44px;
   padding: 8px 16px;
-  border-radius: 9999px;
+  border-radius: 12px;
   border: 1px solid var(--border-button, var(--border-default));
   background: var(--surface-card);
   color: var(--text-primary);
@@ -623,211 +76,61 @@
   flex-shrink: 0;
   cursor: pointer;
   user-select: none;
-  transition: transform 150ms var(--ease-out-quart), opacity 150ms var(--ease-out-quart);
+  transition: background-color 150ms var(--ease-out-quart), border-color 150ms var(--ease-out-quart), color 150ms var(--ease-out-quart);
 }
+
 .landing-distance:hover {
   border-color: var(--color-entry-action);
 }
+
 .landing-distance:focus-visible {
   outline: 2px solid var(--color-entry-action);
-  outline-offset: 4px;
+  outline-offset: 2px;
 }
+
 .dark .landing-distance:focus-visible {
-  outline-color: oklch(73% 0.16 28);
+  outline-color: #ff6259;
 }
+
 .landing-distance.is-active {
-  background-color: var(--color-entry-action);
+  background-color: transparent;
   color: var(--color-entry-action-text);
   border-color: var(--color-entry-action);
 }
 
-@media (min-width: 640px) {
-  .public-landing { padding-inline: max(24px, var(--rp-safe-left)); gap: 24px; }
-  .landing-intro { padding: 24px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
-  .landing-intro::before { left: 24px; }
-  .landing-intro-actions button { min-height: 48px; padding-inline: 20px; }
-  .public-landing .landing-primary:not(:disabled) { padding-inline: 24px; }
-}
-@media (min-width: 960px) {
-  .public-landing { padding: 24px 32px 40px; gap: 24px; }
-  .landing-intro { padding: 24px 32px; grid-template-columns: 1.08fr 1fr; gap: 20px 32px; }
-  .landing-intro::before { left: 32px; }
-  .landing-intro-copy { padding-block: 4px; }
-  .landing-lookup { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); align-items: center; gap: 24px; }
+.landing-stats-chip-group {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  padding-block: 2px;
+  min-width: 0;
 }
 
-/* Hardware-Accelerated Motion & Scroll-Driven Timelines */
-@media (prefers-reduced-motion: no-preference) {
-  /* Kinetic Typography Staggered Clip-Path Reveal (< 300ms) */
-  .landing-hero-line-1 {
-    animation: landing-clip-slide 240ms var(--ease-out-quart) both;
-  }
-  .landing-hero-line-2 {
-    animation: landing-clip-slide 260ms 35ms var(--ease-out-quart) both;
-  }
-  .landing-intro h1 .landing-finish-phrase::after {
-    animation:
-      landing-line-arrive 240ms 60ms var(--ease-out-quart) both,
-      landing-line-pulse 3.6s 350ms ease-in-out infinite;
-  }
-  .landing-intro h1 .landing-finish-phrase::before {
-    animation: landing-finish-neon 260ms var(--ease-out-quart) both;
-  }
+.landing-stats-chip-group::-webkit-scrollbar {
+  display: none;
+}
 
-  .landing-runners {
-    animation: landing-runners-arrive 240ms 40ms var(--ease-out-quart) both;
-  }
+.landing-stats-chip-group > * {
+  flex-shrink: 0;
+}
 
-  /* 3D Multi-Layer Cursor & Gyroscope Tilt (via single rAF custom properties) */
-  .landing-track {
-    transform: translate3d(
-      calc(var(--tilt-x, 0) * -5px),
-      calc(var(--tilt-y, 0) * -4px + var(--scroll-shift-1, 0px)),
-      0
-    );
-  }
-  .landing-layer-back {
-    transform: translate3d(
-      calc(var(--tilt-x, 0) * 5px),
-      calc(var(--tilt-y, 0) * 4px + var(--scroll-shift-2, 0px)),
-      0
-    );
-  }
-  .landing-layer-mid {
-    transform: translate3d(
-      calc(var(--tilt-x, 0) * 11px),
-      calc(var(--tilt-y, 0) * 8px + var(--scroll-shift-3, 0px)),
-      0
-    );
-  }
-  .landing-layer-front {
-    transform: translate3d(
-      calc(var(--tilt-x, 0) * 18px),
-      calc(var(--tilt-y, 0) * 12px + var(--scroll-shift-4, 0px)),
-      0
-    );
-  }
-
-  /* Continuous flowing stroke on Hero Track GPX Lines and Hero/Lookup Perimeter Traces */
-  .landing-gpx-pace-1 {
-    animation: landing-gpx-dash 4.2s -1.1s linear infinite;
-  }
-  .landing-gpx-pace-2 {
-    animation: landing-gpx-dash 5.0s -2.4s linear infinite;
-  }
-  .landing-gpx-pace-3 {
-    animation: landing-gpx-dash 5.8s -0.6s linear infinite;
-  }
-
-  .landing-hero-pulse {
-    animation: landing-ecg-sweep 6.4s linear infinite;
-  }
-
-  .landing-intro::before {
-    animation: landing-top-bar-glide 4.4s ease-in-out infinite;
-  }
-
-  /* Continuous ECG Heartbeat Pulse on Lookup Card (accelerates on hover or focus) */
-  .landing-ecg-pulse {
-    animation: landing-ecg-sweep 3.8s linear infinite;
-  }
-  .landing-lookup:is(:hover, :focus-within, .is-spotlight-active) .landing-ecg-pulse {
-    animation-duration: 2.1s;
-  }
-
-  .public-landing.is-lines-paused :is(
-    .landing-gpx-pace,
-    .landing-ecg-pulse,
-    .landing-hero-pulse,
-    .landing-intro::before,
-    .landing-intro h1 .landing-finish-phrase::after
-  ) {
-    animation-play-state: paused !important;
-  }
-
-  .landing-distance:active,
-  .landing-spotlight-card:active {
-    transform: scale(0.98);
-  }
-
-  .landing-primary svg { transition: transform 160ms var(--ease-out-quart); }
-  .landing-primary:is(:hover, :focus-visible) svg { transform: translateX(4px); }
-  .public-landing .landing-intro-actions button:active { transform: translateY(2px); }
-  @media (hover: hover) {
-    .public-landing .landing-intro-actions button:hover,
-    .landing-spotlight-card:hover { transform: translateY(-2px); text-decoration: none; }
+@media (min-width: 768px) {
+  .landing-stats-chip-group {
+    flex-wrap: wrap;
+    overflow-x: visible;
   }
 }
 
-/* Native CSS View-Timeline Scroll Parallax on Hero Layers (modern-web-guidance: parallax-scroll-effects) */
-@media (prefers-reduced-motion: no-preference) {
-  @supports ((animation-timeline: view()) and (animation-range: entry)) {
-    @keyframes landing-view-parallax {
-      from { translate: 0 14px; }
-      to { translate: 0 -14px; }
-    }
-
-    .landing-runners-stage {
-      view-timeline: --hero-stage-view;
-    }
-
-    .landing-parallax-layer {
-      animation: landing-view-parallax linear both;
-      animation-timeline: --hero-stage-view;
-      animation-range: entry 25% exit calc(100% / sibling-count() * sibling-index());
-    }
-  }
+/* Lightweight layout isolation for lower sections without skipping initial paint */
+.landing-below-fold {
+  contain: layout style;
 }
 
-@keyframes landing-clip-slide {
-  from {
-    opacity: 0;
-    clip-path: inset(0 -10% 100% -10%);
-    transform: translate3d(0, 18px, 0);
-  }
-  to {
-    opacity: 1;
-    clip-path: inset(-15% -15% -30% -15%);
-    transform: translate3d(0, 0, 0);
-  }
-}
-
-@keyframes landing-finish-neon {
-  0% { opacity: 0.2; transform: scale3d(0.98, 0.98, 1); }
-  100% { opacity: 0.45; transform: scale3d(1, 1, 1); }
-}
-
-@keyframes landing-gpx-dash {
-  from { stroke-dashoffset: 440; }
-  to { stroke-dashoffset: 0; }
-}
-
-@keyframes landing-ecg-sweep {
-  from { stroke-dashoffset: 1000; }
-  to { stroke-dashoffset: 0; }
-}
-
-@keyframes landing-runners-arrive {
-  from { opacity: 0; transform: translate3d(16px, 0, 0); }
-  to { opacity: 1; transform: translate3d(0, 0, 0); }
-}
-
-@keyframes landing-line-arrive {
-  from { opacity: 0; transform: skewX(-24deg) scaleX(0.3); }
-  to { opacity: 1; transform: skewX(-24deg) scaleX(1); }
-}
-
-@keyframes landing-top-bar-glide {
-  0%, 100% { transform: skewX(-24deg) translate3d(0, 0, 0); opacity: 1; }
-  50% { transform: skewX(-24deg) translate3d(16px, 0, 0); opacity: 0.72; }
-}
-
-@keyframes landing-line-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.58; }
-}
-
-/* Header Section Redirection & Adaptive Navigation (modern-web-guidance: navbar + css-layout) */
+/* Header Section Redirection & Adaptive Navigation (used by App.tsx) */
 .landing-menu-trigger {
   anchor-name: --landing-menu-trigger;
 }
@@ -855,7 +158,6 @@
   padding-inline: 8px;
 }
 
-/* Allow wrap only in compact mode as a 200% text-scale / ultra-narrow fallback */
 .brand-nav[data-nav-tier='compact'] .landing-header-row {
   flex-wrap: wrap;
 }
@@ -885,17 +187,22 @@
   scroll-target-group: auto;
 }
 
+.brand-nav[data-landing-nav='true'] {
+  border-bottom-color: transparent;
+}
+
 .brand-nav[data-nav-tier='wide'] .landing-sections-popover::backdrop {
   display: none;
 }
 
 .brand-nav[data-nav-tier='wide'] .landing-nav-link {
   position: relative;
+  isolation: isolate;
   display: inline-flex;
   align-items: center;
   min-height: 44px;
   padding: 8px 12px;
-  border-radius: 999px;
+  border-radius: 12px;
   font-size: 0.75rem;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.86);
@@ -904,33 +211,14 @@
   transition: color 160ms var(--ease-out-quart), background-color 160ms var(--ease-out-quart);
 }
 
-.brand-nav[data-nav-tier='wide'] .landing-nav-link::after {
-  content: '';
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 6px;
-  height: 2px;
-  border-radius: 999px;
-  background: #ff6259;
-  transform: scaleX(0);
-  transform-origin: center;
-  transition: transform 180ms var(--ease-out-quart);
-}
-
-.brand-nav[data-nav-tier='wide'] .landing-nav-link:hover,
-.brand-nav[data-nav-tier='wide'] .landing-nav-link:focus-visible {
+.brand-nav[data-nav-tier='wide'] .landing-nav-link:not(.target-current):hover,
+.brand-nav[data-nav-tier='wide'] .landing-nav-link:not(.target-current):focus-visible {
   color: #ffffff;
-  background: rgba(255, 255, 255, 0.1);
+  background: color-mix(in oklab, #ffffff 10%, transparent);
 }
 
 .brand-nav[data-nav-tier='wide'] .landing-nav-link.target-current {
   color: #ffffff;
-  background: rgba(255, 255, 255, 0.14);
-}
-
-.brand-nav[data-nav-tier='wide'] .landing-nav-link.target-current::after {
-  transform: scaleX(1);
 }
 
 .brand-nav[data-nav-tier='wide'] .landing-nav-check {
@@ -949,7 +237,6 @@
 .brand-nav:not([data-nav-tier='wide']) .landing-sections-popover:is(:popover-open, .\:popover-open, .is-fallback-open) {
   position: fixed;
   inset: auto;
-  /* Absolute fallback when CSS Anchor Positioning is unsupported */
   inset-block-start: calc(64px + var(--rp-safe-top));
   inset-block-start: anchor(--landing-menu-trigger bottom);
   inset-inline-end: max(12px, var(--rp-safe-right));
@@ -965,10 +252,9 @@
   flex-direction: column;
   gap: 4px;
   border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: #18181b;
-  color: #fafafa;
-  box-shadow: 0 20px 44px -12px rgba(0, 0, 0, 0.6);
+  border: 1px solid color-mix(in oklab, #ffffff 18%, transparent);
+  background: #141416;
+  color: #f5f5f7;
   z-index: 60;
 }
 
@@ -994,7 +280,7 @@
 }
 
 .brand-nav:not([data-nav-tier='wide']) .landing-sections-popover::backdrop {
-  background: oklch(0% 0 0 / 0.35);
+  background: color-mix(in oklab, #000000 35%, transparent);
 }
 
 .brand-nav:not([data-nav-tier='wide']) .landing-nav-link {
@@ -1003,7 +289,7 @@
   border-radius: 12px;
   font-size: 0.75rem;
   font-weight: 600;
-  color: #f4f4f5;
+  color: #f5f5f7;
   text-decoration: none;
   display: flex;
   align-items: center;
@@ -1014,27 +300,312 @@
 
 .brand-nav:not([data-nav-tier='wide']) .landing-nav-link:hover,
 .brand-nav:not([data-nav-tier='wide']) .landing-nav-link:focus-visible {
-  background: rgba(255, 255, 255, 0.1);
+  background: color-mix(in oklab, #ffffff 12%, transparent);
 }
 
 .brand-nav:not([data-nav-tier='wide']) .landing-nav-link.target-current {
-  background: #b01e16;
+  background: #b91c1c;
   color: #ffffff;
 }
 
-@media (forced-colors: active) {
-  .brand-nav[data-nav-tier='wide'] .landing-nav-link.target-current::after,
-  .landing-stats-tab[aria-selected='true']::after {
-    background: Highlight;
+/* ============================================================
+   Kinetic Minimalism Telemetry Graphics & Tactile Motion
+   ============================================================ */
+
+/* Drifting Topographic Contours (scroll-driven + pointer-tracked, identity base) */
+.rp-topo-layer {
+  translate: 0 0;
+  transform: translate3d(var(--rp-topo-x, 0px), var(--rp-topo-y, 0px), 0);
+  transition: transform 320ms var(--ease-out-quint);
+  will-change: transform;
+}
+
+@keyframes rp-topo-scroll {
+  from {
+    translate: 0 -10px;
   }
-  .brand-nav:not([data-nav-tier='wide']) .landing-nav-link.target-current,
-  .landing-stats-tab[aria-selected='true'] {
-    outline: 2px solid Highlight;
+  to {
+    translate: 0 10px;
   }
 }
 
-.public-landing section[tabindex='-1']:focus {
-  outline: none;
+@keyframes rp-topo-scroll-subtle {
+  from {
+    translate: 0 -6px;
+  }
+  to {
+    translate: 0 6px;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @supports ((animation-timeline: view()) and (animation-range: entry)) {
+    .rp-topo-layer {
+      animation: rp-topo-scroll linear both;
+      animation-timeline: view();
+      animation-range: entry 0% exit 100%;
+    }
+
+    .rp-topo-layer[data-variant='trail'] {
+      animation: rp-topo-scroll-subtle linear both;
+      animation-timeline: view();
+      animation-range: entry 0% exit 100%;
+    }
+  }
+}
+
+/* 1px Pulse Divider (intermittent GPU-composited crimson ECG pulse sweep) */
+.rp-pulse-static-tick {
+  display: none;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 48px;
+  height: 1px;
+  transform: translate3d(-50%, -50%, 0);
+  background: linear-gradient(90deg, transparent, rgba(255, 59, 48, 0.55), transparent);
+}
+
+@keyframes rp-ecg-sweep {
+  0% {
+    transform: translate3d(-180px, 0, 0);
+    opacity: 0;
+  }
+  5% {
+    opacity: 0.95;
+  }
+  35% {
+    opacity: 0.9;
+  }
+  42% {
+    transform: translate3d(100%, 0, 0);
+    opacity: 0;
+  }
+  100% {
+    transform: translate3d(100%, 0, 0);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .rp-pulse-traveler {
+    animation: rp-ecg-sweep 4.8s linear infinite;
+    will-change: transform, opacity;
+  }
+
+  .rp-pulse-traveler[data-paused='true'] {
+    animation-play-state: paused;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rp-pulse-traveler {
+    display: none;
+  }
+
+  .rp-pulse-static-tick {
+    display: block;
+  }
+}
+
+/* Live Timing-Chip Indicator (breathing green pulse dot) */
+@keyframes rp-chip-breathe {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  70% {
+    transform: scale(2.25);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(2.25);
+    opacity: 0;
+  }
+}
+
+.rp-chip-dot-ring {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .rp-chip-dot-ring {
+    animation: rp-chip-breathe 2.4s ease-out infinite;
+    will-change: transform, opacity;
+  }
+
+  .rp-chip-dot-ring[data-paused='true'] {
+    animation-play-state: paused;
+  }
+}
+
+/* Tactile Race Cards: 1.03x poster zoom inside overflow frame + pointer radial crimson border glow */
+.rp-race-poster-img {
+  scale: 1;
+  transition: scale 280ms var(--ease-out-quint);
+  will-change: transform;
+}
+
+.rp-race-card-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  z-index: 20;
+  opacity: 0;
+  transition: opacity 220ms ease;
+  background: radial-gradient(
+    240px circle at var(--rp-mx, 50%) var(--rp-my, 50%),
+    rgba(204, 37, 28, 0.78),
+    rgba(204, 37, 28, 0.16) 46%,
+    transparent 72%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+.dark .rp-race-card-glow {
+  background: radial-gradient(
+    240px circle at var(--rp-mx, 50%) var(--rp-my, 50%),
+    rgba(255, 59, 48, 0.82),
+    rgba(255, 98, 89, 0.2) 46%,
+    transparent 72%
+  );
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rp-race-card:hover .rp-race-card-glow {
+    opacity: 1;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .rp-race-card:hover .rp-race-poster-img,
+  .group:hover .rp-race-poster-img {
+    scale: 1.03;
+  }
+}
+
+/* Laminated Tyvek Finisher Bib: grain texture, specular sheen, tear notches & restrained 3D tilt */
+.rp-bib-card {
+  transform: perspective(900px) rotateX(0deg) rotateY(0deg) translate3d(0, 0, 0);
+  transform-style: preserve-3d;
+  transition:
+    transform 240ms var(--ease-out-quint),
+    box-shadow 240ms var(--ease-out-quint),
+    border-color 180ms ease;
+}
+
+.rp-tyvek-grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 12;
+  opacity: 0.022;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    #111113 0 1px,
+    transparent 1px 6px
+  );
+}
+
+.dark .rp-tyvek-grain {
+  opacity: 0.026;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    #ffffff 0 1px,
+    transparent 1px 6px
+  );
+}
+
+.rp-tyvek-sheen {
+  position: absolute;
+  inset: -35%;
+  pointer-events: none;
+  z-index: 15;
+  opacity: 0;
+  transform: translate3d(calc((var(--rp-sheen-x, 50%) - 50%) * 0.45), 0, 0) rotate(-22deg);
+  background: linear-gradient(
+    90deg,
+    transparent 34%,
+    rgba(255, 255, 255, 0.45) 50%,
+    transparent 66%
+  );
+  transition: opacity 240ms ease, transform 240ms var(--ease-out-quint);
+}
+
+.dark .rp-tyvek-sheen {
+  background: linear-gradient(
+    90deg,
+    transparent 34%,
+    rgba(255, 255, 255, 0.095) 50%,
+    transparent 66%
+  );
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .rp-bib-card:hover {
+    transform: perspective(900px) rotateX(var(--rp-rx, 0deg)) rotateY(var(--rp-ry, 0deg)) translate3d(0, var(--rp-lift, -3px), 0);
+    box-shadow: 0 14px 30px -12px rgba(0, 0, 0, 0.22), 0 4px 12px -4px rgba(204, 37, 28, 0.12);
+    border-color: color-mix(in oklab, var(--color-entry-action) 36%, var(--border-default));
+  }
+
+  .dark .rp-bib-card:hover {
+    box-shadow: 0 18px 36px -12px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 98, 89, 0.18);
+  }
+
+  .rp-bib-card:hover .rp-tyvek-sheen {
+    opacity: 1;
+  }
+}
+
+.rp-bib-tear-seam {
+  background: linear-gradient(to bottom, transparent 50%, var(--surface-inset) 50%);
+}
+
+.rp-bib-notch {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  background-color: var(--surface-page);
+  border: 1px solid var(--border-default);
+  transform: translateY(-50%);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.rp-bib-notch-left {
+  left: -7px;
+}
+
+.rp-bib-notch-right {
+  right: -7px;
+}
+
+@media (forced-colors: active) {
+  .brand-nav[data-nav-tier='wide'] .landing-nav-link.target-current,
+  .brand-nav:not([data-nav-tier='wide']) .landing-nav-link.target-current {
+    outline: 2px solid Highlight;
+  }
+  .landing-distance.is-active {
+    background-color: Highlight;
+    color: HighlightText;
+    border-color: Highlight;
+    outline: 2px solid Highlight;
+  }
+  .rp-filter-pill,
+  .landing-nav-pill,
+  .rp-tab-pill {
+    display: none;
+  }
+  .rp-tribal-backdrop {
+    display: none;
+  }
 }
 
 /* Balanced Podium Highlight Shelf (cards + live standings companion when highlights < minSlots) */
@@ -1066,178 +637,66 @@
   }
 }
 
-/* Landing Statistics Hub (#runner-statistics) */
-.landing-stats-filter-bar {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 12px 16px;
-  border-radius: 16px;
-  border: 1px solid var(--border-default);
-  background: var(--surface-card);
-}
-
-@media (min-width: 1024px) {
-  .landing-stats-filter-bar {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-  }
-}
-
-.landing-stats-chip-group {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 8px;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scrollbar-width: thin;
-  padding-block: 2px;
-  min-width: 0;
-}
-
-.landing-stats-chip-group > * {
-  flex-shrink: 0;
-}
-
-@media (min-width: 768px) {
-  .landing-stats-chip-group {
-    flex-wrap: wrap;
-    overflow-x: visible;
-  }
-}
-
-.landing-stat-kpi {
-  padding: 14px 16px;
-  border-radius: 16px;
-  border: 1px solid var(--border-default);
-  background: var(--surface-card);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.landing-stat-kpi-label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-secondary);
-}
-
-.landing-stat-kpi-value {
-  font-family: var(--font-mono);
-  font-size: 1.0625rem;
-  font-weight: 600;
-  line-height: 1.2;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-primary);
-}
-
-@media (min-width: 640px) {
-  .landing-stat-kpi-value {
-    font-size: 1.375rem;
-  }
-}
-
-.landing-stat-kpi-sub {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  line-height: 1.35;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-secondary);
-  overflow-wrap: anywhere;
-}
-
-.landing-stats-tablist {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: stretch;
-  gap: 4px;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scrollbar-width: none;
-  max-width: 100%;
-  min-width: 0;
-}
-
-.landing-stats-tablist::-webkit-scrollbar {
-  display: none;
-}
-
-.landing-stats-tab {
-  position: relative;
-  min-height: 44px;
-  padding: 10px 14px;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  line-height: 1.25;
-  white-space: nowrap;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-secondary);
-  background: transparent;
-  border: 0;
-  border-radius: 10px 10px 0 0;
-  cursor: pointer;
-  transition: color 140ms var(--ease-out-quart), background-color 140ms var(--ease-out-quart);
-}
-
-.landing-stats-tab:hover {
-  color: var(--text-primary);
-}
-
-.landing-stats-tab[aria-selected='true'] {
-  color: var(--text-primary);
-}
-
-.landing-stats-tab[aria-selected='true']::after {
-  content: '';
+/* Red Tribal Woven Pattern Backdrop (Public Landing & Login/Auth Stage) */
+.rp-tribal-backdrop {
   position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: 0;
-  height: 3px;
-  border-radius: 3px 3px 0 0;
-  background: var(--color-entry-action);
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  user-select: none;
+  overflow: hidden;
+  isolation: isolate;
 }
 
-.landing-stats-tab:focus-visible {
-  outline: 2px solid var(--color-entry-action);
-  outline-offset: -3px;
+.rp-tribal-pattern-svg {
+  color: #cc251c;
+  opacity: 0.1;
 }
 
-/* Below-the-fold containment & deferred rendering for complex catalog/stats/bib sections */
-#events-catalog,
-#runner-statistics,
-.landing-bib-board {
-  content-visibility: auto;
-  contain-intrinsic-size: auto none auto 640px;
+.dark .rp-tribal-pattern-svg {
+  color: #ff3b30;
+  opacity: 0.14;
 }
 
-@supports not (content-visibility: auto) {
-  #events-catalog,
-  #runner-statistics,
-  .landing-bib-board {
-    contain: layout style paint;
-  }
+.rp-tribal-backdrop[data-tribal-backdrop='landing'] .rp-tribal-pattern-svg {
+  -webkit-mask-image: radial-gradient(ellipse 72% 85% at 50% 45%, rgba(0, 0, 0, 0.45) 0%, rgba(0, 0, 0, 1) 78%);
+  mask-image: radial-gradient(ellipse 72% 85% at 50% 45%, rgba(0, 0, 0, 0.45) 0%, rgba(0, 0, 0, 1) 78%);
+}
+
+.rp-tribal-backdrop[data-tribal-backdrop='auth'] .rp-tribal-pattern-svg {
+  opacity: 0.12;
+  -webkit-mask-image: radial-gradient(ellipse 46% 52% at 50% 50%, rgba(0, 0, 0, 0.42) 0%, rgba(0, 0, 0, 1) 76%);
+  mask-image: radial-gradient(ellipse 46% 52% at 50% 50%, rgba(0, 0, 0, 0.42) 0%, rgba(0, 0, 0, 1) 76%);
+}
+
+.dark .rp-tribal-backdrop[data-tribal-backdrop='auth'] .rp-tribal-pattern-svg {
+  opacity: 0.17;
+}
+
+.rp-tribal-auth-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 75% 60% at 50% 42%, rgba(204, 37, 28, 0.06), transparent 72%);
+  background: radial-gradient(ellipse 75% 60% at 50% 42%, color-mix(in oklab, #cc251c 7%, transparent), transparent 72%);
+}
+
+.dark .rp-tribal-auth-vignette {
+  background: radial-gradient(ellipse 75% 60% at 50% 42%, rgba(255, 59, 48, 0.11), transparent 72%);
+  background: radial-gradient(ellipse 75% 60% at 50% 42%, color-mix(in oklab, #ff3b30 12%, transparent), transparent 72%);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .public-landing :is(.landing-intro, .landing-lookup) *,
-  .public-landing :is(.landing-intro, .landing-lookup) *::before,
-  .public-landing :is(.landing-intro, .landing-lookup) *::after,
+  .landing-distance,
   .landing-nav-link,
-  .landing-nav-link::after,
-  .landing-stats-tab,
-  .landing-stats-tab::after {
+  .rp-topo-layer,
+  .rp-race-poster-img,
+  .rp-bib-card,
+  .rp-tyvek-sheen {
     animation: none !important;
     transition: none !important;
+    transform: none !important;
+    scale: 1 !important;
     scroll-behavior: auto !important;
   }
 }

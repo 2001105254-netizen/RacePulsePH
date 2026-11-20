@@ -69,6 +69,16 @@ export function locateAtChainage(
   }
 
   const first = route.points[0];
+  if (!first) {
+    return {
+      chainageM: 0,
+      passNumber: preferredPass,
+      segmentIndex: 0,
+      pointIndex: 0,
+      latitude: 12.6,
+      longitude: 121.8,
+    };
+  }
   return {
     chainageM: 0,
     passNumber: preferredPass,
@@ -165,6 +175,22 @@ export function projectCoordinateToRoute(
   }
 
   rawMatches.sort((x, y) => x.offsetMeters - y.offsetMeters);
+  if (rawMatches.length === 0 && !route.points[0]) {
+    const emptyBest: RouteAnchorCandidate = {
+      chainageM: 0,
+      segmentIndex: 0,
+      pointIndex: 0,
+      passNumber: 1,
+      latitude,
+      longitude,
+      offsetMeters: 0,
+    };
+    return {
+      best: emptyBest,
+      candidates: [emptyBest],
+      hasAmbiguousPasses: false,
+    };
+  }
   const globalBest = rawMatches[0] || {
     chainageM: 0,
     segmentIndex: 0,
@@ -226,14 +252,47 @@ export function reanchorMarkersForRoute(
   route: ProcessedRoute,
   markers: RouteMarker[],
 ): RouteMarker[] {
+  const totalDistanceM = route.distanceM || 0;
+  const lastPoint = route.points[route.points.length - 1];
+
   return markers.map((marker) => {
+    // Finish and Start gates share coordinates on out-and-back and closed-loop routes;
+    // anchor Start to the earliest pass (0 km) and Finish to the latest pass (total distance).
+    const useEndpointPassPreference = marker.kind === 'start' || marker.kind === 'finish';
     const projected = projectCoordinateToRoute(
       route,
       marker.latitude,
       marker.longitude,
-      marker.passNumber || 1,
+      useEndpointPassPreference ? undefined : marker.passNumber || 1,
     );
-    const chosen = projected.best;
+
+    let chosen = projected.best;
+    if (marker.kind === 'start' && projected.candidates.length > 0) {
+      chosen = projected.candidates[0];
+    } else if (marker.kind === 'finish') {
+      if (projected.candidates.length > 1) {
+        chosen = projected.candidates[projected.candidates.length - 1];
+      }
+      if (lastPoint && totalDistanceM > 300 && chosen.chainageM < totalDistanceM * 0.5) {
+        const distToRouteEnd = geodesicDistanceM(
+          { latitude: marker.latitude, longitude: marker.longitude },
+          lastPoint,
+        );
+        if (distToRouteEnd <= 250) {
+          chosen = {
+            chainageM: Number(totalDistanceM.toFixed(1)),
+            segmentIndex: lastPoint.segmentIndex,
+            pointIndex: lastPoint.pointIndex,
+            passNumber: Math.max(1, projected.candidates.length),
+            latitude: lastPoint.latitude,
+            longitude: lastPoint.longitude,
+            elevation: lastPoint.elevation,
+            offsetMeters: Number(distToRouteEnd.toFixed(1)),
+          };
+        }
+      }
+    }
+
     const { needsReview, offCourseBlocked } = evaluateMarkerOffset(
       chosen.offsetMeters,
       marker.offCourseConfirmed,
@@ -257,6 +316,7 @@ export function deriveDefaultChapters(
 ): RouteChapter[] {
   const chapters: RouteChapter[] = [];
   const startPt = route.points[0];
+  if (!startPt) return chapters;
   chapters.push({
     id: 'ch_start',
     label: 'Start',

@@ -1,6 +1,14 @@
-import { geodesicDistanceM, processCanonicalGeometry, type ProcessedRoute } from './geometry';
+import {
+  createEmptyRouteGeometry,
+  geodesicDistanceM,
+  processCanonicalGeometry,
+  type ProcessedRoute,
+} from './geometry';
 import { projectCoordinateToRoute, reanchorMarkersForRoute } from './anchoring';
-import { samplePhilippineDemElevationM } from './philippinesMapTiles';
+import {
+  samplePhilippineDemElevationM,
+  sampleRealDemElevationBatch,
+} from './philippinesMapTiles';
 import type {
   CanonicalRouteGeometry,
   CanonicalSegmentInput,
@@ -417,9 +425,8 @@ function makeClearedStartAnchorGeometry(
   };
 }
 
-export function clearRouteCanvas(geometry: CanonicalRouteGeometry): CanonicalRouteGeometry {
-  const firstPt = geometry.segments[0]?.points[0] || { lat: 16.4119, lon: 120.5947 };
-  return makeClearedStartAnchorGeometry(firstPt.lat, firstPt.lon, { removed: true });
+export function clearRouteCanvas(_geometry: CanonicalRouteGeometry): CanonicalRouteGeometry {
+  return createEmptyRouteGeometry();
 }
 
 export function removeStartPointFromGeometry(
@@ -431,7 +438,7 @@ export function removeStartPointFromGeometry(
   };
 }
 
-function isDefaultStarterGeometry(geometry: CanonicalRouteGeometry): boolean {
+export function isDefaultStarterGeometry(geometry: CanonicalRouteGeometry): boolean {
   if (geometry.isCanvasCleared || geometry.segments.length !== 1) return false;
   const seg = geometry.segments[0];
   if (!seg || seg.id !== 'drawn_1' || seg.points.length < 3) return false;
@@ -807,7 +814,7 @@ export function applyTerrainScenarioToRange(
   };
 }
 
-// Deterministic Copernicus GLO-30 Philippine topographic elevation model for drawn/painted segments.
+// Philippine topographic elevation model for offline/drawn segment estimation.
 export function estimatePhilippineTopographicElevationM(lat: number, lon: number): number {
   return Number(samplePhilippineDemElevationM(lat, lon, { assumeInsideLand: true }).toFixed(1));
 }
@@ -867,20 +874,43 @@ export async function sampleTerrainElevationForGeometry(
   let filledCount = 0;
   let hadExistingEle = false;
 
-  const nextSegments = geometry.segments.map((seg) => ({
-    ...seg,
-    points: seg.points.map((pt) => {
+  const targets: Array<{ segIdx: number; ptIdx: number; lat: number; lon: number }> = [];
+  geometry.segments.forEach((seg, segIdx) => {
+    seg.points.forEach((pt, ptIdx) => {
       const current = pt.ele ?? pt.rawEle;
       if (current !== undefined && Number.isFinite(current) && seg.sourceKind !== 'drawn') {
         hadExistingEle = true;
+        return;
+      }
+      targets.push({ segIdx, ptIdx, lat: pt.lat, lon: pt.lon });
+    });
+  });
+
+  const decodedElevations = await sampleRealDemElevationBatch(
+    targets.map((t) => ({ lat: t.lat, lon: t.lon })),
+  );
+  const resolvedByKey = new Map<string, number>();
+  targets.forEach((t, idx) => {
+    const realEle = decodedElevations[idx];
+    const ele =
+      realEle !== null && Number.isFinite(realEle)
+        ? realEle
+        : estimatePhilippineTopographicElevationM(t.lat, t.lon);
+    resolvedByKey.set(`${t.segIdx}:${t.ptIdx}`, ele);
+  });
+
+  const nextSegments = geometry.segments.map((seg, segIdx) => ({
+    ...seg,
+    points: seg.points.map((pt, ptIdx) => {
+      const resolved = resolvedByKey.get(`${segIdx}:${ptIdx}`);
+      if (resolved === undefined) {
         return pt;
       }
       filledCount += 1;
-      const estimated = estimatePhilippineTopographicElevationM(pt.lat, pt.lon);
       return {
         ...pt,
-        ele: estimated,
-        rawEle: estimated,
+        ele: resolved,
+        rawEle: resolved,
       };
     }),
   }));

@@ -190,11 +190,11 @@ export default function DesktopSidebar({
                 aria-pressed={workspaceSwitch.current === 'operations'}
                 aria-label="Operations workspace"
                 title={collapsed ? 'Operations' : undefined}
-                className={`relative min-h-11 rounded-lg flex items-center transition-colors duration-150 motion-safe:active:scale-[0.98] ${focusRing} ${
+                className={`relative min-h-11 rounded-lg flex items-center cursor-pointer transition-colors duration-150 motion-safe:active:scale-[0.98] ${focusRing} ${
                   collapsed ? 'w-full py-2 px-1 flex-col justify-center gap-1 text-xs font-semibold' : 'w-full px-3 py-2 gap-2 text-left text-sm font-semibold'
                 } ${
                   workspaceSwitch.current === 'operations'
-                    ? 'bg-red-700 text-white shadow-sm'
+                    ? 'bg-red-700 text-white'
                     : 'text-zinc-700 dark:text-zinc-300 hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
                 }`}
               >
@@ -207,11 +207,11 @@ export default function DesktopSidebar({
                 aria-pressed={workspaceSwitch.current === 'personal'}
                 aria-label="My participation workspace"
                 title={collapsed ? 'My participation' : undefined}
-                className={`relative min-h-11 rounded-lg flex items-center transition-colors duration-150 motion-safe:active:scale-[0.98] ${focusRing} ${
+                className={`relative min-h-11 rounded-lg flex items-center cursor-pointer transition-colors duration-150 motion-safe:active:scale-[0.98] ${focusRing} ${
                   collapsed ? 'w-full py-2 px-1 flex-col justify-center gap-1 text-xs font-semibold' : 'w-full px-3 py-2 gap-2 text-left text-sm font-semibold'
                 } ${
                   workspaceSwitch.current === 'personal'
-                    ? 'bg-red-700 text-white shadow-sm'
+                    ? 'bg-red-700 text-white'
                     : 'text-zinc-700 dark:text-zinc-300 hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
                 }`}
               >
@@ -235,13 +235,13 @@ export default function DesktopSidebar({
               aria-label={item.label}
               aria-current={item.active ? 'page' : undefined}
               title={item.label}
-              className={`relative min-h-11 rounded-xl flex items-center transition-colors duration-150 motion-safe:active:scale-[0.98] ${focusRing} ${
+              className={`relative min-h-11 rounded-xl flex items-center cursor-pointer transition-colors duration-150 motion-safe:active:scale-[0.98] ${focusRing} ${
                 collapsed
                   ? 'w-full py-2 px-1 flex-col justify-center gap-1 text-xs leading-tight font-semibold'
                   : 'w-full px-3 py-2 gap-3 text-left text-sm font-semibold'
               } ${
                 item.active
-                  ? 'bg-red-700 text-white shadow-sm'
+                  ? 'bg-red-700 text-white'
                   : 'text-zinc-700 dark:text-zinc-300 hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
               }`}
             >

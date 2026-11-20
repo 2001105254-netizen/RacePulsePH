@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ExternalLink, MapPinned, RefreshCw, RotateCcw } from 'lucide-react';
-import { GpxRoute, loadGpxRoute, routeCenter } from '../lib/gpxRoute';
+import { MapPinned, RefreshCw, RotateCcw } from 'lucide-react';
+import { GpxRoute, loadGpxRoute } from '../lib/gpxRoute';
 import RouteElevationProfile from './RouteElevationProfile';
 
 interface RouteMap3DProps {
@@ -87,8 +87,6 @@ function RouteCanvas({ route, raceName, selectedPoint }: {
   const finish = projected[projected.length - 1];
   const cursor = selectedPoint === undefined ? undefined : projected.reduce((nearest, point) =>
     Math.abs(point.routeIndex - selectedPoint) < Math.abs(nearest.routeIndex - selectedPoint) ? point : nearest);
-  const center = routeCenter(route);
-  const openStreetMapUrl = `https://www.openstreetmap.org/?mlat=${center.latitude.toFixed(6)}&mlon=${center.longitude.toFixed(6)}#map=14/${center.latitude.toFixed(6)}/${center.longitude.toFixed(6)}`;
 
   return (
     <div className="overflow-hidden rounded-[16px] border border-[var(--border-default)] bg-[var(--surface-inset)]">
@@ -136,7 +134,6 @@ function RouteCanvas({ route, raceName, selectedPoint }: {
           <button type="button" onClick={() => setYaw((current) => current - 20)} className="min-h-11 rounded-lg border border-[var(--border-default)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-700/50 dark:hover:border-red-400/50 hover:text-red-700 dark:hover:text-red-400">Turn left</button>
           <button type="button" onClick={() => setYaw((current) => current + 20)} className="min-h-11 rounded-lg border border-[var(--border-default)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-700/50 dark:hover:border-red-400/50 hover:text-red-700 dark:hover:text-red-400">Turn right</button>
           <button type="button" onClick={() => { setYaw(-28); setPitch(58); }} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg p-2 text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400" aria-label="Reset route view"><RotateCcw className="h-4 w-4" aria-hidden="true" /></button>
-          <a href={openStreetMapUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-1 rounded-lg px-3 text-xs font-semibold text-red-700 hover:bg-red-700/10 dark:text-red-400"><MapPinned className="h-3.5 w-3.5" aria-hidden="true" /> Open location <ExternalLink className="h-3 w-3" aria-hidden="true" /></a>
         </div>
       </div>
     </div>

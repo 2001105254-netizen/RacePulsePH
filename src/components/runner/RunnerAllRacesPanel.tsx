@@ -21,7 +21,6 @@ import {
   RunnerBottomSheetDetent,
   RunnerFilterRail,
   RunnerFloatingStatusPill,
-  RunnerQueueRow,
   RunnerQueueSkeleton,
   RunnerTelemetryStrip,
   type QueueStatusTone,
@@ -120,14 +119,15 @@ function CatalogRaceCanvasView({
           <button
             type="button"
             onClick={onOpenPoster}
-            className="w-full h-36 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] flex items-center justify-center p-2 overflow-hidden"
+            aria-label={`View full poster for ${race.name}`}
+            className="aspect-video w-full rounded-xl border border-[var(--border-default)] bg-[#141416] overflow-hidden block cursor-pointer"
           >
             <img
               src={race.posterImage}
               alt={`${race.name} uncropped poster`}
-              width={640}
-              height={360}
-              className="max-w-full max-h-full w-auto h-auto object-contain rounded"
+              width={800}
+              height={450}
+              className="w-full h-full object-contain block"
             />
           </button>
         )}
@@ -451,34 +451,121 @@ export default function RunnerAllRacesPanel({
                     )}
                   </div>
                 ) : (
-                  <div id="runner_catalog_list" className="divide-y divide-[var(--border-subtle)] bg-[var(--surface-card)]">
-                    {filteredRaces.map((race) => {
-                      const isSelected = selectedRace?.id === race.id;
-                      const isDone = !!race.completedAt || race.date < today;
-                      const regOpen = isRaceRegistrationOpen(race);
-                      const isJoined = registeredRaceIds.has(race.id);
-                      const dists = sortedRaceDistances(race);
-                      const distSummary = dists.map((d) => d.label).join(' · ');
-                      const statusTone: QueueStatusTone = isDone ? 'done' : regOpen ? 'open' : 'upcoming';
+                  <div id="runner_catalog_list" className="@container p-3 bg-[var(--surface-page)]">
+                    <div className="grid grid-cols-1 @xl:grid-cols-2 gap-3">
+                      {filteredRaces.map((race) => {
+                        const isSelected = selectedRace?.id === race.id;
+                        const isDone = !!race.completedAt || race.date < today;
+                        const regOpen = isRaceRegistrationOpen(race);
+                        const isJoined = registeredRaceIds.has(race.id);
+                        const dists = sortedRaceDistances(race);
+                        const distSummary = dists.map((d) => d.label).join(' · ');
 
-                      return (
-                        <RunnerQueueRow
-                          key={race.id}
-                          selected={isSelected && isSplitPane}
-                          idTag={race.date.slice(5)}
-                          title={race.name}
-                          meta={`${race.date}${distSummary ? ` · ${distSummary}` : ''}${isJoined ? ' · Joined' : ''}`}
-                          metric={`${dists.length || 1} cat${dists.length === 1 ? '' : 's'}`}
-                          metricAccent={isJoined ? 'red' : 'default'}
-                          statusLabel={isDone ? 'Finished' : regOpen ? 'Open' : 'Upcoming'}
-                          statusTone={statusTone}
-                          onClick={() => {
-                            setSelectedRaceId(race.id);
-                            if (isCompact) setMobileInspecting(true);
-                          }}
-                        />
-                      );
-                    })}
+                        return (
+                          <article
+                            key={race.id}
+                            className={`rounded-2xl border bg-[var(--surface-card)] overflow-hidden transition-colors ${
+                              isSelected && isSplitPane
+                                ? 'border-red-600 ring-2 ring-red-600'
+                                : 'border-[var(--border-default)] hover:border-[var(--border-button)]'
+                            }`}
+                          >
+                            <div className="relative aspect-video w-full bg-[#141416] border-b border-[var(--border-default)] overflow-hidden">
+                              {race.posterImage ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedRaceId(race.id);
+                                      if (isCompact) setMobileInspecting(true);
+                                    }}
+                                    aria-label={`Select ${race.name}`}
+                                    aria-pressed={isSelected}
+                                    className="block w-full h-full cursor-pointer"
+                                  >
+                                    <img
+                                      src={race.posterImage}
+                                      alt={`${race.name} official event poster`}
+                                      width={800}
+                                      height={450}
+                                      loading="lazy"
+                                      className="w-full h-full object-contain block"
+                                    />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPosterLightbox(race)}
+                                    aria-label={`View full poster for ${race.name}`}
+                                    className="absolute top-2 right-2 min-h-11 lg:min-h-8 px-2.5 rounded-lg border border-white/20 bg-[#141416]/90 text-white text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />
+                                    <span className="sr-only sm:not-sr-only">Poster</span>
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedRaceId(race.id);
+                                    if (isCompact) setMobileInspecting(true);
+                                  }}
+                                  aria-label={`Select ${race.name}`}
+                                  aria-pressed={isSelected}
+                                  className="w-full h-full flex flex-col items-center justify-center p-4 text-center text-white cursor-pointer"
+                                >
+                                  <Trophy className="w-7 h-7 text-red-400 mb-1.5" aria-hidden="true" />
+                                  <span className="font-display text-sm font-semibold line-clamp-2">{race.name}</span>
+                                </button>
+                              )}
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedRaceId(race.id);
+                                if (isCompact) setMobileInspecting(true);
+                              }}
+                              aria-pressed={isSelected}
+                              className="w-full min-h-11 p-3.5 text-left space-y-1.5 cursor-pointer hover:bg-[var(--surface-hover)]/45 transition-colors block"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span
+                                    className={`inline-flex items-center px-2 py-0.5 rounded-lg border text-xs font-semibold ${
+                                      isDone
+                                        ? 'bg-[var(--surface-inset)] text-[var(--text-secondary)] border-[var(--border-default)]'
+                                        : regOpen
+                                          ? 'bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700'
+                                          : 'bg-amber-500/10 text-amber-800 dark:text-amber-300 border-amber-500/30'
+                                    }`}
+                                  >
+                                    {isDone ? 'Finished' : regOpen ? 'Open' : 'Upcoming'}
+                                  </span>
+                                  {isJoined && (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-lg border border-red-500/30 bg-red-500/10 text-xs font-semibold text-red-700 dark:text-red-300">
+                                      Joined
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="font-mono text-xs font-semibold tabular-nums text-[var(--text-secondary)]">
+                                  {race.date}
+                                </span>
+                              </div>
+
+                              <h3 className="font-display font-semibold text-sm sm:text-base text-[var(--text-primary)] leading-snug">
+                                {race.name}
+                              </h3>
+
+                              {distSummary && (
+                                <p className="font-mono text-xs text-[var(--text-secondary)] truncate">
+                                  {distSummary}
+                                </p>
+                              )}
+                            </button>
+                          </article>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
@@ -574,15 +661,20 @@ export default function RunnerAllRacesPanel({
 
                     <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain p-3 sm:p-4 space-y-4">
                       {selectedRace.posterImage && (
-                        <div className="h-36 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] flex items-center justify-center p-2 overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => setPosterLightbox(selectedRace)}
+                          aria-label={`View full poster for ${selectedRace.name}`}
+                          className="aspect-video w-full rounded-xl border border-[var(--border-default)] bg-[#141416] overflow-hidden block cursor-pointer"
+                        >
                           <img
                             src={selectedRace.posterImage}
                             alt={`${selectedRace.name} uncropped poster`}
-                            width={640}
-                            height={360}
-                            className="max-w-full max-h-full w-auto h-auto object-contain rounded"
+                            width={800}
+                            height={450}
+                            className="w-full h-full object-contain block"
                           />
-                        </div>
+                        </button>
                       )}
 
                       <PublicRaceResults
