@@ -82,6 +82,7 @@ Every installed workspace skill is mapped to exactly one lifecycle phase with a 
   - `antislop-copywriting`: Trigger when writing or revising microcopy, headlines, form labels, or error text.
 - **RacePulse Domain UI & Native**:
   - `racepulse-runner-mobile-ui`: Trigger when building or refactoring runner screens, bottom sheets, live queues, or foldable split views.
+  - `racepulse-gps-precision`: Trigger when calibrating GNSS accuracy, Kalman filter parameters, Capacitor geolocation, or course corridor map-matching.
   - `racepulse-responsive-ui`: Trigger when building operational or administrative screens for race day across desktop, tablet, and phone.
   - `android-layout-specialist`: Trigger when implementing Jetpack Compose, XML ConstraintLayout, or Capacitor Android WindowInsets (edge-to-edge).
   - `capacitor-android-architect`: Trigger when packaging web routes into Capacitor Android wrappers, native bridge plugins, or AAB builds.

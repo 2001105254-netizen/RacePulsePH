@@ -1694,3 +1694,36 @@ test('23. MAX_GPX_BYTES is 50 MB and parseGpxCourse rejects files exceeding the 
   const oversizedGpx = ' '.repeat(50 * 1024 * 1024 + 1);
   assert.throws(() => parseGpxRoute(oversizedGpx), /The GPX route file exceeds the 50 MB limit\./);
 });
+
+test('24. Route Studio and mobile GPS precision distinguishes manual map anchor from GNSS lock', () => {
+  let state = createGpsTrailState({ maxAccuracyM: 25 });
+  const centerLat = 13.00395;
+  const centerLon = 121.70000;
+
+  // Manual pin (accuracy = 0, explicit user anchor)
+  const manualAnchor = {
+    latitude: centerLat,
+    longitude: centerLon,
+    accuracyM: 0,
+    timestamp: Date.now(),
+  };
+
+  state = processGpsBreadcrumbFix(state, manualAnchor, 'dirt', 'normal');
+  assert.ok(state.lastFix);
+  assert.equal(state.lastFix.accuracyM, 0);
+  assert.equal(state.lastFix.latitude, centerLat);
+  assert.equal(state.lastFix.longitude, centerLon);
+
+  // Coarse network fix (>100m, e.g. PLDT desktop IP routing at 250m) is rejected from trail
+  const coarseFix = {
+    latitude: centerLat + 0.005,
+    longitude: centerLon + 0.005,
+    accuracyM: 250,
+    timestamp: Date.now() + 5000,
+  };
+
+  const coarseState = processGpsBreadcrumbFix(state, coarseFix, 'dirt', 'normal');
+  assert.equal(coarseState.acceptedPoints.length, 1); // Only the manual anchor was accepted
+  assert.equal(coarseState.rejectedCount, 1);
+  assert.match(coarseState.lastRejectReason || '', /exceeds 25m gate/);
+});

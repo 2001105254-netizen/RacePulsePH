@@ -49,7 +49,6 @@ service cloud.firestore {
 
     function canBootstrapSuperAdmin(data) {
       return isSuperAdminEmail()
-        && !superAdminAlreadyClaimed()
         && data.role == 'superadmin'
         && data.approved == true;
     }
@@ -343,9 +342,8 @@ service cloud.firestore {
 
     match /system/meta {
       allow read: if true;
-      // Only the configured owner email can mark the one-time claim complete.
+      // Only the configured owner email can mark the superadmin claim complete.
       allow create, update: if isSuperAdminEmail()
-        && !superAdminAlreadyClaimed()
         && request.resource.data.superAdminClaimed == true;
     }
 

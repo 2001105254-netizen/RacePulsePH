@@ -171,10 +171,21 @@ export function ingestGpsFix(state: GpsFilterState, fix: GpsRawFix): GpsFilterSt
   }
 
   const prev = state.current;
+  const dtSec = Math.max(0.4, (timestampMs - prev.updatedAtMs) / 1000);
+  const rawJumpM = geodesicDistanceM(
+    { latitude: prev.lat, longitude: prev.lon },
+    { latitude: fix.lat, longitude: fix.lon },
+  );
+  const impliedSpeedMps = rawJumpM / dtSec;
+
   const improvingFromCoarse =
     prev.quality === 'coarse' && accuracyM <= Math.max(state.maxAccuracyM, prev.accuracyM * 0.8);
 
-  if (accuracyM > state.maxAccuracyM && !improvingFromCoarse) {
+  // Allow coarse mountain/trail canopy fixes (up to 65m) if movement is realistic
+  const canAcceptCoarseCanopy =
+    accuracyM <= 65 && impliedSpeedMps > 0.3 && impliedSpeedMps <= state.maxSpeedMps;
+
+  if (accuracyM > state.maxAccuracyM && !improvingFromCoarse && !canAcceptCoarseCanopy) {
     const reason = `GPS accuracy ±${accuracyM}m exceeds ±${state.maxAccuracyM}m gate.`;
     return {
       ...state,
@@ -187,13 +198,6 @@ export function ingestGpsFix(state: GpsFilterState, fix: GpsRawFix): GpsFilterSt
       },
     };
   }
-
-  const dtSec = Math.max(0.4, (timestampMs - prev.updatedAtMs) / 1000);
-  const rawJumpM = geodesicDistanceM(
-    { latitude: prev.lat, longitude: prev.lon },
-    { latitude: fix.lat, longitude: fix.lon },
-  );
-  const impliedSpeedMps = rawJumpM / dtSec;
 
   // Reject isolated multipath spikes unless a second consecutive fix confirms the new neighborhood.
   if (impliedSpeedMps > state.maxSpeedMps && rawJumpM > Math.max(40, accuracyM * 2)) {
@@ -220,7 +224,7 @@ export function ingestGpsFix(state: GpsFilterState, fix: GpsRawFix): GpsFilterSt
   }
 
   // Stationary jitter clamp preserves steady heartbeat without drifting marker around.
-  const jitterFloorM = Math.min(4, accuracyM * 0.25);
+  const jitterFloorM = Math.min(3, accuracyM * 0.25);
   if (rawJumpM < jitterFloorM && accuracyM >= prev.accuracyM * 0.7) {
     return {
       ...state,
@@ -240,13 +244,19 @@ export function ingestGpsFix(state: GpsFilterState, fix: GpsRawFix): GpsFilterSt
     };
   }
 
-  // 1D-decoupled 2D scalar Kalman blend using process noise (athlete movement sigma ~2.5 m/s)
-  const processNoiseM2 = dtSec * 6.25;
+  // 1D-decoupled 2D scalar Kalman blend with velocity-adaptive process noise
+  const estimatedSpeed = Math.max(
+    fix.speedMps && fix.speedMps > 0 ? fix.speedMps : 0,
+    prev.speedMps && prev.speedMps > 0 ? prev.speedMps : 0,
+    impliedSpeedMps,
+  );
+  const speedScale = Math.max(1, estimatedSpeed / 2.5);
+  const processNoiseM2 = dtSec * 6.25 * (speedScale * speedScale);
   const predictedVarM2 = Math.max(9, state.varianceLatLonM2 + processNoiseM2);
   const measurementVarM2 = Math.max(9, accuracyM * accuracyM);
-  const gain = improvingFromCoarse
-    ? 0.9
-    : predictedVarM2 / (predictedVarM2 + measurementVarM2);
+  const baseGain = predictedVarM2 / (predictedVarM2 + measurementVarM2);
+  const minMovingGain = estimatedSpeed >= 1.2 ? Math.min(0.65, 0.18 + (estimatedSpeed / 15) * 0.32) : 0.05;
+  const gain = improvingFromCoarse ? 0.9 : Math.max(minMovingGain, baseGain);
 
   const nextLat = prev.lat + gain * (fix.lat - prev.lat);
   const nextLon = prev.lon + gain * (fix.lon - prev.lon);

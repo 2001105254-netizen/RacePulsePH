@@ -3,7 +3,7 @@ import { doc, getDoc, runTransaction } from 'firebase/firestore';
 import { AnimatePresence, m } from 'motion/react';
 import { directionalTabVariants, type NavDirection } from './ui/MotionPrimitives';
 import { RedTribalPatternBackdrop } from './ui/KineticTelemetry';
-import { db, signUpWithEmail, signInWithEmail, signInWithGoogle, signOutUser } from '../firebase';
+import { db, auth, signUpWithEmail, signInWithEmail, signInWithGoogle, signOutUser } from '../firebase';
 import { clearSignupDraft, getSignupDraft, saveSignupDraft } from '../lib/accountSecurity';
 import { createActionCooldownStore } from '../lib/resilientFetch';
 import { PasswordResetFlow } from './AccountSecurity';
@@ -120,17 +120,26 @@ async function createUserProfileForRole(
   usernameInput: string,
   consentMeta: { over13Confirmed: boolean; termsAcceptedAt: string; marketingOptIn: boolean }
 ): Promise<void> {
-  if (!user.emailVerified) {
+  const currentUser = auth.currentUser || user;
+  try {
+    await currentUser.reload();
+    await currentUser.getIdToken(true);
+  } catch (err) {
+    console.warn('Could not refresh auth token before profile creation:', err);
+  }
+
+  if (!currentUser.emailVerified) {
     throw new Error('Verify your email with the six-digit code before completing your account.');
   }
   const username = normalizeUsername(usernameInput);
   const invalidUsername = usernameError(username);
   if (invalidUsername) throw new Error(invalidUsername);
-  const assignedRole: SignupRole = isSuperAdminEmail(user.email) ? 'superadmin' : role;
+  const normalizedEmail = (currentUser.email || user.email || '').trim().toLowerCase();
+  const assignedRole: SignupRole = isSuperAdminEmail(normalizedEmail) ? 'superadmin' : role;
   const profile: UserProfile = {
-    uid: user.uid,
-    email: user.email || '',
-    displayName: displayNameOverride?.trim() || user.displayName || 'Runner',
+    uid: currentUser.uid,
+    email: normalizedEmail,
+    displayName: displayNameOverride?.trim() || currentUser.displayName || user.displayName || 'Runner',
     username,
     role: assignedRole,
     approved: assignedRole !== 'organizer',
@@ -145,25 +154,25 @@ async function createUserProfileForRole(
     const existingUsername = await transaction.get(usernameRef);
     if (existingUsername.exists()) throw new Error('That username is already taken. Please choose another one.');
 
-    transaction.set(doc(db, 'users', user.uid), profile);
+    transaction.set(doc(db, 'users', currentUser.uid), profile);
     transaction.set(doc(db, 'friendDirectory', username), {
-      uid: user.uid,
+      uid: currentUser.uid,
       username,
       displayName: profile.displayName,
-      ...(user.photoURL ? { photoURL: user.photoURL } : {}),
+      ...(currentUser.photoURL || user.photoURL ? { photoURL: currentUser.photoURL || user.photoURL } : {}),
       updatedAt: profile.createdAt,
     });
-    transaction.set(doc(db, 'friendProfiles', user.uid), {
-      uid: user.uid,
+    transaction.set(doc(db, 'friendProfiles', currentUser.uid), {
+      uid: currentUser.uid,
       username,
       displayName: profile.displayName,
-      ...(user.photoURL ? { photoURL: user.photoURL } : {}),
+      ...(currentUser.photoURL || user.photoURL ? { photoURL: currentUser.photoURL || user.photoURL } : {}),
       updatedAt: profile.createdAt,
     });
     transaction.set(usernameRef, {
       username,
-      uid: user.uid,
-      email: user.email || '',
+      uid: currentUser.uid,
+      email: normalizedEmail,
       createdAt: profile.createdAt,
     });
     if (assignedRole === 'superadmin') {
@@ -364,10 +373,11 @@ export default function AuthGate({
     }
 
     const termsAcceptedAt = new Date().toISOString();
+    const normalizedEmail = email.trim().toLowerCase();
     submitLockRef.current = true;
     setSubmitting(true);
     try {
-      saveSignupDraft(email, {
+      saveSignupDraft(normalizedEmail, {
         displayName: displayName.trim(),
         username: normalizeUsername(username),
         role: signupRoleLocked ? 'runner' : signupRole,
@@ -375,7 +385,7 @@ export default function AuthGate({
         termsAcceptedAt,
         marketingOptIn,
       });
-      await signUpWithEmail(email, password, displayName);
+      await signUpWithEmail(normalizedEmail, password, displayName);
       authCooldown.clear('auth');
       setCooldownSeconds(0);
       setPassword('');
@@ -1017,7 +1027,8 @@ function CompleteProfileForm({
   signupRoleLocked?: boolean;
   onOpenLegal?: (doc: LegalDocKey) => void;
 }) {
-  const [draft] = useState(() => getSignupDraft(user.email || ''));
+  const userEmail = (user.email || '').trim().toLowerCase();
+  const [draft] = useState(() => getSignupDraft(userEmail));
   const [role, setRole] = useState<SignupRole>(signupRoleLocked ? 'runner' : draft?.role || 'runner');
   const [displayName, setDisplayName] = useState(draft?.displayName || user.displayName || '');
   const [username, setUsername] = useState(draft?.username || '');
@@ -1068,7 +1079,7 @@ function CompleteProfileForm({
           marketingOptIn,
         }
       );
-      clearSignupDraft(user.email || '');
+      clearSignupDraft(userEmail);
     } catch (err: any) {
       setError(err.message?.replace('Firebase: ', '') || 'Failed to finish setting up your account.');
     } finally {

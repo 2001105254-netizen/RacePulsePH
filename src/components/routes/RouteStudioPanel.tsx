@@ -115,6 +115,11 @@ import { useWorkspaceHeader } from '../../lib/workspaceHeader';
 import type { Race, UserProfile } from '../../types';
 import RouteElevationProfile from '../RouteElevationProfile';
 import RouteMapCanvas, { type MapColorMode, type MapDrawMode } from './RouteMapCanvas';
+import {
+  isGeolocationAvailable,
+  requestDeviceLocationPermission,
+  watchDeviceLocation,
+} from '../../lib/routes/deviceGeolocation';
 import { Select } from '../ui/Select';
 import { useFeedback } from '../ui/FeedbackProvider';
 
@@ -218,7 +223,7 @@ export default function RouteStudioPanel({
   } | null>(null);
   const initialGpsCenteredRef = useRef(false);
   const currentMapCenterRef = useRef<{ lat: number; lon: number }>({ lat: 16.4121, lon: 120.595 });
-  const gpsWatchIdRef = useRef<number | null>(null);
+  const gpsCleanupWatchRef = useRef<(() => void) | null>(null);
   const gpsFixReceivedRef = useRef(false);
   const activeSurfaceTypeRef = useRef(activeSurfaceType);
   activeSurfaceTypeRef.current = activeSurfaceType;
@@ -293,8 +298,9 @@ export default function RouteStudioPanel({
 
   useEffect(() => {
     return () => {
-      if (gpsWatchIdRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
-        navigator.geolocation.clearWatch(gpsWatchIdRef.current);
+      if (gpsCleanupWatchRef.current) {
+        gpsCleanupWatchRef.current();
+        gpsCleanupWatchRef.current = null;
       }
     };
   }, []);
@@ -730,26 +736,13 @@ export default function RouteStudioPanel({
   };
 
   const clearGpsWatch = () => {
-    if (gpsWatchIdRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
-      navigator.geolocation.clearWatch(gpsWatchIdRef.current);
-      gpsWatchIdRef.current = null;
+    if (gpsCleanupWatchRef.current) {
+      gpsCleanupWatchRef.current();
+      gpsCleanupWatchRef.current = null;
     }
   };
 
-  const formatGeolocationError = (err: GeolocationPositionError): string => {
-    if (err.code === 1) {
-      return 'Location permission denied. Allow location access in your browser or Android app settings, then tap Start GPS tracking again.';
-    }
-    if (err.code === 2) {
-      return 'Device location is unavailable. Turn on Location / GPS services on your device and try again.';
-    }
-    if (err.code === 3) {
-      return 'GNSS fix timed out. Step outdoors for a clearer sky view or widen the accuracy gate, then try again.';
-    }
-    return err.message || 'Location permission denied or GNSS signal lost.';
-  };
-
-  const handleSetGpsLocation = (lat: number, lon: number, accuracyM = 10) => {
+  const handleSetGpsLocation = (lat: number, lon: number, accuracyM = 0, isManual = true) => {
     const manualFix: GpsBreadcrumbFix = {
       latitude: Number(lat.toFixed(6)),
       longitude: Number(lon.toFixed(6)),
@@ -772,14 +765,20 @@ export default function RouteStudioPanel({
       zoom: 16,
       nonce: Date.now(),
     });
-    setStatusNotice(
-      `GPS pinpoint set to ${manualFix.latitude.toFixed(5)}, ${manualFix.longitude.toFixed(5)} (±${accuracyM}m).`,
-    );
+    if (isManual) {
+      setStatusNotice(
+        `Manual map anchor set to ${manualFix.latitude.toFixed(5)}, ${manualFix.longitude.toFixed(5)} (Manual pin).`,
+      );
+    } else {
+      setStatusNotice(
+        `GPS pinpoint set to ${manualFix.latitude.toFixed(5)}, ${manualFix.longitude.toFixed(5)} (±${accuracyM}m).`,
+      );
+    }
   };
 
   const handlePinpointMapCenter = () => {
     const center = currentMapCenterRef.current || { lat: 16.4121, lon: 120.595 };
-    handleSetGpsLocation(center.lat, center.lon, 12);
+    handleSetGpsLocation(center.lat, center.lon, 0, true);
   };
 
   const startGpsWatch = (highAccuracy: boolean) => {
@@ -787,29 +786,16 @@ export default function RouteStudioPanel({
     initialGpsCenteredRef.current = false;
     gpsFixReceivedRef.current = false;
 
-    if (typeof navigator !== 'undefined' && 'permissions' in navigator && navigator.permissions?.query) {
-      navigator.permissions
-        .query({ name: 'geolocation' })
-        .then((perm) => {
-          if (perm.state === 'prompt') {
-            setStatusNotice('Awaiting location approval: please click "Allow" in your browser address bar.');
-          } else if (perm.state === 'denied') {
-            setGpsError(
-              'Location permission is blocked. Click the tune/lock icon in your browser address bar and enable Location access for RacePulsePH.',
-            );
-            setGpsState((prev) => ({ ...prev, status: 'paused' }));
-          }
-          perm.onchange = () => {
-            if (perm.state === 'granted') {
-              startGpsWatch(true);
-            } else if (perm.state === 'denied') {
-              setGpsError('Location permission denied.');
-              setGpsState((prev) => ({ ...prev, status: 'paused' }));
-            }
-          };
-        })
-        .catch(() => {});
-    }
+    void requestDeviceLocationPermission().then((permState) => {
+      if (permState === 'prompt') {
+        setStatusNotice('Awaiting location approval: please click "Allow" when prompted.');
+      } else if (permState === 'denied') {
+        setGpsError(
+          'Location permission is blocked. Enable location access in your browser or device settings for RacePulsePH.',
+        );
+        setGpsState((prev) => ({ ...prev, status: 'paused' }));
+      }
+    });
 
     const recordFixAndCenter = (fix: {
       latitude: number;
@@ -839,6 +825,10 @@ export default function RouteStudioPanel({
         });
         if (fix.accuracyM <= gpsState.maxAccuracyM) {
           setStatusNotice(`Live GNSS locked (±${Math.round(fix.accuracyM)}m). Recording trail breadcrumbs.`);
+        } else if (fix.accuracyM > 100) {
+          setStatusNotice(
+            `Coarse location locked (±${Math.round(fix.accuracyM)}m, likely Wi-Fi/IP). For sub-3m GNSS precision, run outdoors or on mobile.`,
+          );
         } else {
           setStatusNotice(
             `Initial location locked (±${Math.round(fix.accuracyM)}m). Acquiring high-accuracy GNSS satellites...`,
@@ -847,103 +837,53 @@ export default function RouteStudioPanel({
       }
     };
 
-    // Fast-path immediate coarse / cached lock so the map centers within milliseconds
-    if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (coarsePos) => {
-          const fix = {
-            latitude: coarsePos.coords.latitude,
-            longitude: coarsePos.coords.longitude,
-            altitude: coarsePos.coords.altitude ?? undefined,
-            accuracyM: coarsePos.coords.accuracy ?? 999,
-            timestamp: coarsePos.timestamp || Date.now(),
-            headingDeg: coarsePos.coords.heading ?? undefined,
-          };
-          recordFixAndCenter(fix);
-        },
-        () => {
-          // Fast coarse lock unavailable or permission prompt still open; watchPosition will catch it
-        },
-        { enableHighAccuracy: false, maximumAge: 120000, timeout: 4000 },
-      );
-    }
-
-    if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
-      gpsWatchIdRef.current = navigator.geolocation.watchPosition(
-        (pos) => {
-          const fix = {
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-            altitude: pos.coords.altitude ?? undefined,
-            accuracyM: pos.coords.accuracy ?? 999,
-            timestamp: pos.timestamp || Date.now(),
-            headingDeg: pos.coords.heading ?? undefined,
-          };
-          recordFixAndCenter(fix);
-        },
-        (err) => {
-          if (err.code === 1) {
-            clearGpsWatch();
-            setGpsError(formatGeolocationError(err));
-            setGpsState((prev) => ({ ...prev, status: 'paused' }));
-            return;
-          }
-          if (gpsFixReceivedRef.current) {
-            setGpsError(
-              err.code === 3
-                ? 'Waiting for next GNSS fix (signal momentarily weak)...'
-                : 'GNSS signal momentarily unavailable; waiting for next fix...',
-            );
-            return;
-          }
-          if (highAccuracy && (err.code === 2 || err.code === 3)) {
-            setStatusNotice('High-accuracy GNSS unavailable. Checking network / Wi-Fi position...');
-            navigator.geolocation.getCurrentPosition(
-              (coarsePos) => {
-                const fix = {
-                  latitude: coarsePos.coords.latitude,
-                  longitude: coarsePos.coords.longitude,
-                  altitude: coarsePos.coords.altitude ?? undefined,
-                  accuracyM: coarsePos.coords.accuracy ?? 999,
-                  timestamp: coarsePos.timestamp || Date.now(),
-                  headingDeg: coarsePos.coords.heading ?? undefined,
-                };
-                recordFixAndCenter(fix);
-              },
-              (fallbackErr) => {
-                clearGpsWatch();
-                setGpsError(
-                  fallbackErr.code === 1
-                    ? 'Location permission denied. Please allow location in your browser.'
-                    : 'Device GPS fix unavailable (Windows location may be off or no GPS/Wi-Fi positioning hardware present). Click "Pinpoint Map Center" or click on the map to set your location.',
-                );
-                setGpsState((prev) => ({ ...prev, status: 'paused' }));
-              },
-              { enableHighAccuracy: false, maximumAge: 30000, timeout: 6000 },
-            );
-            return;
-          }
+    gpsCleanupWatchRef.current = watchDeviceLocation({
+      enableHighAccuracy: highAccuracy,
+      onFix: (raw) => {
+        recordFixAndCenter({
+          latitude: raw.latitude,
+          longitude: raw.longitude,
+          altitude: raw.altitudeM,
+          accuracyM: raw.accuracyM,
+          timestamp: raw.timestamp,
+          headingDeg: raw.headingDeg,
+        });
+      },
+      onError: (err) => {
+        if (err.code === 1) {
           clearGpsWatch();
-          setGpsError(formatGeolocationError(err));
+          setGpsError(err.message || 'Location permission denied. Please allow location access.');
           setGpsState((prev) => ({ ...prev, status: 'paused' }));
-        },
-        highAccuracy
-          ? { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 }
-          : { enableHighAccuracy: false, maximumAge: 5000, timeout: 10000 },
-      );
-    }
+          return;
+        }
+        if (gpsFixReceivedRef.current) {
+          setGpsError('GNSS signal momentarily weak; waiting for next satellite fix...');
+          return;
+        }
+        clearGpsWatch();
+        setGpsError(
+          err.message ||
+            'Device GPS fix unavailable. Click "Pinpoint Map Center" or click on the map to set your location.',
+        );
+        setGpsState((prev) => ({ ...prev, status: 'paused' }));
+      },
+      onStatusNotice: (msg) => {
+        setStatusNotice(msg);
+      },
+    });
   };
 
   const handleStartGpsTracking = () => {
     setGpsError('');
     setErrorNotice('');
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      setGpsError('Browser geolocation is unavailable on this device. Use Simulate GPS walk to test field capture.');
+    if (!isGeolocationAvailable()) {
+      setGpsError('Geolocation is unavailable on this device. Use Simulate GPS walk to test field capture.');
       return;
     }
     if (typeof window !== 'undefined' && window.isSecureContext === false) {
       const isLocalhost = window.location?.hostname === 'localhost' || window.location?.hostname === '127.0.0.1';
-      if (!isLocalhost) {
+      const isNative = window.location?.protocol === 'capacitor:' || window.location?.protocol === 'file:';
+      if (!isLocalhost && !isNative) {
         setGpsError('Live GPS requires HTTPS, localhost, or the RacePulsePH Android app. Use Simulate GPS walk on local HTTP.');
         return;
       }
@@ -974,7 +914,12 @@ export default function RouteStudioPanel({
         `Centered on GPS fix (${latestGpsFix.latitude.toFixed(5)}, ${latestGpsFix.longitude.toFixed(5)} · ±${Math.round(latestGpsFix.accuracyM)}m).`,
       );
     } else {
-      handlePinpointMapCenter();
+      if (gpsState.status !== 'tracking') {
+        handleStartGpsTracking();
+        setStatusNotice('Acquiring live GNSS satellite lock... Please allow location access if prompted.');
+      } else {
+        setStatusNotice('Acquiring live GNSS fix... Ensure clear line of sight to the sky or enable device location.');
+      }
     }
   };
 
@@ -2137,13 +2082,13 @@ export default function RouteStudioPanel({
         ) : (
           <button
             type="button"
-            onClick={handlePinpointMapCenter}
-            aria-label="Pinpoint GPS marker at map center"
-            title="Set your GPS pinpoint to the center of the current map view"
+            onClick={handleCenterOnGps}
+            aria-label="Acquire and center on live GPS position"
+            title="Acquire live GPS lock and center map"
             className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2 font-semibold text-[var(--text-primary)] hover:border-red-600/50"
           >
-            <MapPin className="h-3 w-3 text-red-600 dark:text-red-400" aria-hidden="true" />
-            <span className="hidden xl:inline">Pinpoint Center</span>
+            <LocateFixed className="h-3 w-3" aria-hidden="true" />
+            <span className="hidden xl:inline">Center GPS</span>
           </button>
         )}
       </div>
@@ -2952,7 +2897,7 @@ export default function RouteStudioPanel({
                           type="button"
                           onClick={handlePinpointMapCenter}
                           className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
-                          title="Pinpoint your live spot at the current center of the map"
+                          title="Anchor manual pin at the current center of the map"
                         >
                           <MapPin className="h-3.5 w-3.5 text-red-600 dark:text-red-400" aria-hidden="true" />
                           Pinpoint Map Center

@@ -9,6 +9,11 @@ import {
   type GpsFilterState,
   type GpsSignalQuality,
 } from './gpsFilter';
+import {
+  isGeolocationAvailable,
+  watchDeviceLocation,
+  type DeviceRawFix,
+} from './deviceGeolocation';
 import type { RouteMarker } from './types';
 
 export type RunnerGeolocationStatus =
@@ -213,24 +218,15 @@ export function useRunnerGeolocation() {
   const [position, setPosition] = useState<RunnerLivePosition | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [autoFollow, setAutoFollow] = useState(true);
-  const watchIdRef = useRef<number | null>(null);
-  const retryTimerRef = useRef<number | null>(null);
+  const cleanupWatchRef = useRef<(() => void) | null>(null);
   const staleIntervalRef = useRef<number | null>(null);
   const filterRef = useRef<GpsFilterState>(createGpsFilterState({ maxAccuracyM: 35, initialCoarseLimitM: 100 }));
   const lastRawFixMsRef = useRef<number>(0);
 
   const clearTimersAndWatch = useCallback(() => {
-    if (
-      watchIdRef.current !== null &&
-      typeof navigator !== 'undefined' &&
-      'geolocation' in navigator
-    ) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
-      watchIdRef.current = null;
-    }
-    if (retryTimerRef.current !== null) {
-      window.clearTimeout(retryTimerRef.current);
-      retryTimerRef.current = null;
+    if (cleanupWatchRef.current) {
+      cleanupWatchRef.current();
+      cleanupWatchRef.current = null;
     }
     if (staleIntervalRef.current !== null) {
       window.clearInterval(staleIntervalRef.current);
@@ -247,21 +243,21 @@ export function useRunnerGeolocation() {
     setError(null);
   }, [clearTimersAndWatch]);
 
-  const applyRawFix = useCallback((pos: GeolocationPosition) => {
+  const applyRawFix = useCallback((fix: DeviceRawFix) => {
     const nowMs = Date.now();
     lastRawFixMsRef.current = nowMs;
     const rawAcc =
-      typeof pos.coords.accuracy === 'number' && Number.isFinite(pos.coords.accuracy) && pos.coords.accuracy > 0
-        ? pos.coords.accuracy
+      typeof fix.accuracyM === 'number' && Number.isFinite(fix.accuracyM) && fix.accuracyM > 0
+        ? fix.accuracyM
         : 999;
     const nextFilter = ingestGpsFix(filterRef.current, {
-      lat: pos.coords.latitude,
-      lon: pos.coords.longitude,
+      lat: fix.latitude,
+      lon: fix.longitude,
       accuracyM: rawAcc,
-      altitudeM: pos.coords.altitude,
-      headingDeg: pos.coords.heading,
-      speedMps: pos.coords.speed,
-      timestampMs: pos.timestamp || nowMs,
+      altitudeM: fix.altitudeM,
+      headingDeg: fix.headingDeg,
+      speedMps: fix.speedMps,
+      timestampMs: fix.timestamp || nowMs,
     });
     filterRef.current = nextFilter;
 
@@ -290,26 +286,24 @@ export function useRunnerGeolocation() {
   }, []);
 
   const startWatch = useCallback(() => {
-    if (
-      typeof window === 'undefined' ||
-      typeof navigator === 'undefined' ||
-      !('geolocation' in navigator)
-    ) {
+    if (!isGeolocationAvailable()) {
       setStatus('unavailable');
-      setError('Device location is not supported in this browser.');
+      setError('Device location is not supported in this environment.');
       return;
     }
 
-    const hostname = window.location?.hostname || '';
+    const hostname = typeof window !== 'undefined' ? window.location?.hostname || '' : '';
     const isSecure =
-      window.isSecureContext ||
-      hostname === 'localhost' ||
-      hostname === '127.0.0.1' ||
-      window.location?.protocol === 'file:';
+      typeof window !== 'undefined' &&
+      (window.isSecureContext ||
+        hostname === 'localhost' ||
+        hostname === '127.0.0.1' ||
+        window.location?.protocol === 'file:' ||
+        window.location?.protocol === 'capacitor:');
 
     if (!isSecure) {
       setStatus('unavailable');
-      setError('Live GPS requires a secure HTTPS connection.');
+      setError('Live GPS requires a secure HTTPS connection or native Android.');
       return;
     }
 
@@ -317,50 +311,23 @@ export function useRunnerGeolocation() {
     setError(null);
     setStatus('locating');
 
-    // Start primary high-accuracy GNSS watch immediately with zero stale cache age.
-    watchIdRef.current = navigator.geolocation.watchPosition(
-      applyRawFix,
-      (err) => {
+    cleanupWatchRef.current = watchDeviceLocation({
+      enableHighAccuracy: true,
+      onFix: applyRawFix,
+      onError: (err) => {
         if (err.code === 1) {
           clearTimersAndWatch();
           setStatus('denied');
           setPosition(null);
           setError('Location access was denied. Enable location permission to see your spot on the map.');
-          return;
-        }
-        // If no lock yet, obtain a one-shot fused position while keeping the high-accuracy watch running
-        // or re-arming it after 15s so the device automatically upgrades once outdoors.
-        if (!filterRef.current.current) {
-          navigator.geolocation.getCurrentPosition(
-            applyRawFix,
-            () => {
-              if (!filterRef.current.current) {
-                setStatus(err.code === 2 ? 'unavailable' : 'error');
-                setError(
-                  err.code === 2
-                    ? 'Device location is currently unavailable. Check GPS settings and retry.'
-                    : 'Waiting for clear GPS satellite lock. Keep moving or step outdoors.',
-                );
-              }
-            },
-            { enableHighAccuracy: false, timeout: 8000, maximumAge: 10000 },
-          );
-          if (retryTimerRef.current === null) {
-            retryTimerRef.current = window.setTimeout(() => {
-              retryTimerRef.current = null;
-              if (watchIdRef.current !== null && !filterRef.current.current) {
-                startWatch();
-              }
-            }, 15000);
+        } else {
+          if (!filterRef.current.current) {
+            setStatus(err.code === 2 ? 'unavailable' : 'error');
+            setError(err.message || 'Waiting for clear GPS satellite lock. Keep moving or step outdoors.');
           }
         }
       },
-      {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 0,
-      },
-    );
+    });
 
     staleIntervalRef.current = window.setInterval(() => {
       if (filterRef.current.current && lastRawFixMsRef.current > 0) {

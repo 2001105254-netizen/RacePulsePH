@@ -1,7 +1,7 @@
 {
   "name": "racepulseph",
   "private": true,
-  "version": "1.0.30",
+  "version": "1.0.31",
   "type": "module",
   "scripts": {
     "prepare": "node scripts/setup-git-hooks.cjs",
@@ -28,6 +28,7 @@
     "@capacitor/android": "^8.5.2",
     "@capacitor/app": "^8.1.2",
     "@capacitor/core": "^8.5.2",
+    "@capacitor/geolocation": "^8.2.5",
     "@capgo/capacitor-social-login": "^8.7.7",
     "@google/genai": "^2.4.0",
     "@googlemaps/js-api-loader": "^2.1.3",

@@ -1101,6 +1101,43 @@
       "references": [],
       "scripts": [],
       "mirror": null
+    },
+    {
+      "name": "racepulse-gps-precision",
+      "path": ".agents/skills/racepulse-gps-precision",
+      "origin": "repo",
+      "status": "active",
+      "category": "runtime",
+      "description": "Calibrate and harden GPS and GNSS tracking across browser geolocation, Capacitor Android FusedLocationProviderClient, Kalman smoothing, and course map-matching. Use when GPS is inaccurate, drifting, lagging, jumping, or failing field capture.",
+      "dependsOn": [
+        "antislop",
+        "antislop-human"
+      ],
+      "loadWith": [
+        "capacitor-android-architect",
+        "racepulse-runner-mobile-ui",
+        "modern-web-guidance"
+      ],
+      "rules": [
+        "C-1",
+        "C-2",
+        "C-4",
+        "C-5",
+        "R-02",
+        "R-03",
+        "R-25",
+        "R-26",
+        "R-33",
+        "R-35",
+        "R-36",
+        "R-37"
+      ],
+      "references": [
+        "gnss-calibration.md",
+        "filter-tuning.md"
+      ],
+      "scripts": [],
+      "mirror": "skills/racepulse-gps-precision"
     }
   ],
   "backlog": [],

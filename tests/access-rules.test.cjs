@@ -169,3 +169,32 @@ test('routePresets, immutable versions, and publishedRaceRoutes enforce owner sc
  await assertSucceeds(setDoc(doc(db('organizer'), 'publishedRaceRoutes', 'pub_1'), { id: 'pub_1', status: 'published', raceId: 'race_a' }));
  await assertSucceeds(getDoc(doc(env.unauthenticatedContext().firestore(), 'publishedRaceRoutes', 'pub_1')));
 });
+
+test('superadmin bootstrap and system/meta claims allow owner repeatedly and reject non-owners', async () => {
+  const ownerUid = 'kiahzeh_uid';
+  const ownerEmail = 'kiahzeh@gmail.com';
+  const ownerDb = env.authenticatedContext(ownerUid, { email: ownerEmail, email_verified: true }).firestore();
+  const runnerDb = db('runner');
+
+  await assertFails(setDoc(doc(runnerDb, 'system', 'meta'), { superAdminClaimed: true }));
+  await assertFails(setDoc(doc(runnerDb, 'users', 'fake_admin'), {
+    uid: 'fake_admin',
+    email: 'fake@example.com',
+    displayName: 'Fake Admin',
+    role: 'superadmin',
+    approved: true,
+    createdAt: '2026-01-01',
+  }));
+
+  await assertSucceeds(setDoc(doc(ownerDb, 'system', 'meta'), { superAdminClaimed: true }, { merge: true }));
+  await assertSucceeds(setDoc(doc(ownerDb, 'system', 'meta'), { superAdminClaimed: true }, { merge: true }));
+
+  await assertSucceeds(setDoc(doc(ownerDb, 'users', ownerUid), {
+    uid: ownerUid,
+    email: ownerEmail,
+    displayName: 'Platform Owner',
+    role: 'superadmin',
+    approved: true,
+    createdAt: '2026-01-01',
+  }));
+});
