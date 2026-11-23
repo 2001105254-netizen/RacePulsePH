@@ -19,35 +19,42 @@ const ROUTE_MUTATION_PATHS = new Set([
   '/archive-preset',
 ]);
 
-exports.routeApi = onRequest(
-  {
-    region: 'asia-southeast1',
-    maxInstances: 20,
-    concurrency: 80,
-    timeoutSeconds: 60,
-    cors: [
-      'http://localhost:3000',
-      'http://127.0.0.1:3000',
-      'http://localhost:3100',
-      'http://127.0.0.1:3100',
-      'http://localhost:5173',
-      'https://racepulseph.web.app',
-      'https://racepulseph.firebaseapp.com',
-      'https://racepulseph.com',
-      'https://www.racepulseph.com',
-      'capacitor://localhost',
-    ],
-  },
-  async (req, res) => {
+const PROD_ROUTE_ORIGINS = [
+  'https://racepulseph.web.app',
+  'https://racepulseph.firebaseapp.com',
+  'https://racepulseph.com',
+  'https://www.racepulseph.com',
+  'capacitor://localhost',
+];
+
+const LOCALHOST_ROUTE_ORIGINS = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:3100',
+  'http://127.0.0.1:3100',
+  'http://localhost:5173',
+];
+
+function getRouteCorsOrigins() {
+  const allowLocalhost =
+    process.env.FUNCTIONS_EMULATOR === 'true' ||
+    process.env.RACEPULSE_ALLOW_LOCALHOST_CORS === 'true';
+  return allowLocalhost
+    ? [...PROD_ROUTE_ORIGINS, ...LOCALHOST_ROUTE_ORIGINS]
+    : PROD_ROUTE_ORIGINS;
+}
+
+function createRouteApp({ admin: adminClient, db, storage = null, appCheckMode } = {}) {
+  return async (req, res) => {
     applyApiSecurityHeaders(res);
     res.set('Access-Control-Expose-Headers', 'Retry-After');
     let releaseSlot = null;
+    const routePath = (req.path || '/').replace(/\/+$/, '') || '/';
     try {
       if (req.method !== 'POST') return res.status(405).json({ error: 'Use POST.' });
       if (!req.is('application/json') || (req.rawBody?.length || 0) > 4 * 1024 * 1024 || !req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
         return res.status(400).json({ error: 'Invalid request payload.' });
       }
-      const db = admin.firestore();
       const clientIp = extractClientIp(req);
       await enforceRateLimit({
         db,
@@ -58,18 +65,17 @@ exports.routeApi = onRequest(
         message: 'Too many route requests from this network. Please wait a moment.',
         memoryOnly: true,
       });
-      await verifyAppCheckRequest(req, { admin });
+      await verifyAppCheckRequest(req, { admin: adminClient, mode: appCheckMode });
 
       const bearer = req.get('Authorization')?.match(/^Bearer (.+)$/)?.[1];
       if (!bearer) return res.status(401).json({ error: 'Sign in to continue.' });
       let identity;
       try {
-        identity = await admin.auth().verifyIdToken(bearer, true);
+        identity = await adminClient.auth().verifyIdToken(bearer, true);
       } catch {
         return res.status(401).json({ error: 'Your session has expired.' });
       }
 
-      const routePath = (req.path || '/').replace(/\/+$/, '') || '/';
       if (ROUTE_MUTATION_PATHS.has(routePath)) {
         await enforceRateLimit({
           db,
@@ -86,12 +92,15 @@ exports.routeApi = onRequest(
         'Too many concurrent route operations. Wait for the active save to finish.',
       );
 
-      const storage = typeof admin.storage === 'function' ? admin.storage() : null;
-      return res.json(await createRouteService(db, storage).execute(identity.uid, routePath, req.body));
+      const resolvedStorage = storage ?? (typeof adminClient.storage === 'function' ? adminClient.storage() : null);
+      return res.json(await createRouteService(db, resolvedStorage).execute(identity.uid, routePath, req.body));
     } catch (error) {
-      const status = error && typeof error.status === 'number' && error.status >= 400 && error.status < 600 ? error.status : 400;
+      const status = error && typeof error.status === 'number' && error.status >= 400 && error.status < 600 ? error.status : 500;
       const retryAfter = Number(error?.retryAfter) || 0;
       if (retryAfter > 0) res.set('Retry-After', String(retryAfter));
+      if (status >= 500) {
+        console.error('Route API error', { route: routePath, status, code: error?.code || 'internal' });
+      }
       const safeMessage = status < 500 && error?.message ? error.message : 'Route command failed.';
       return res.status(status).json({
         error: safeMessage,
@@ -100,5 +109,17 @@ exports.routeApi = onRequest(
     } finally {
       if (releaseSlot) releaseSlot();
     }
+  };
+}
+
+exports.createRouteApp = createRouteApp;
+exports.routeApi = onRequest(
+  {
+    region: 'asia-southeast1',
+    maxInstances: 20,
+    concurrency: 80,
+    timeoutSeconds: 60,
+    cors: getRouteCorsOrigins(),
   },
+  (req, res) => createRouteApp({ admin, db: admin.firestore() })(req, res),
 );

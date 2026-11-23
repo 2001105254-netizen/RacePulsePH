@@ -1,6 +1,6 @@
 import { useAccess, useScopedRaces, authenticatedFetch } from '../lib/access';
 import React, { useEffect, useRef, useState } from 'react';
-import { collection, doc, onSnapshot, setDoc, updateDoc, deleteField, deleteDoc, getDocs, query, runTransaction, where, writeBatch } from 'firebase/firestore';
+import { collection, doc, onSnapshot, setDoc, updateDoc, deleteField, deleteDoc, getDocs, query, runTransaction, where, writeBatch, type UpdateData } from 'firebase/firestore';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { auth, db, storage } from '../firebase';
 import { resizeImageToDataUrl, resizeImageToDataUrlContain } from '../lib/image';
@@ -14,6 +14,7 @@ import { hasRaceBibTemplate } from '../lib/raceBib';
 import { ensureRaceBibCustomFont, raceBibFontFamily } from '../lib/raceBibFont';
 import { useAndroidBackHandler } from '../lib/capacitorAndroid';
 import DialogSurface from './ui/DialogSurface';
+import { useFeedback } from './ui/FeedbackProvider';
 import { Select } from './ui/Select';
 import { QRCodeSVG } from 'qrcode.react';
 import { Flag, Trash2, Plus, Save, Pencil, RefreshCw, Users2, FileDown, ImagePlus, X, QrCode, Copy, Download, MapPinned, Upload } from 'lucide-react';
@@ -124,6 +125,7 @@ interface RaceSetupPanelProps {
 // need to be able to stand up a race day-of without waiting on an Admin.
 export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, launchRequest }: RaceSetupPanelProps) {
   const { can, authority, version } = useAccess();
+  const { confirm, notify } = useFeedback();
   // `profile.uid` comes from Firestore and can be stale on older accounts.
   // Storage rules always compare against Firebase Auth's real UID, so never
   // build an upload path from a profile field alone.
@@ -738,11 +740,15 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
       if (existing) {
         // Patch only changed settings; never overwrite a concurrent start, finish or publication.
         const operational = ['gunStartTime','waveStartTimes','completedAt','liveBroadcastEnabled','livestreamUrl','routeMapUrl','id','createdBy','createdAt'];
+        const existingMap = existing as unknown as Record<string, unknown>;
+        const recordMap = record as unknown as Record<string, unknown>;
         const patch: Record<string, unknown> = {};
-        for (const key of new Set([...Object.keys(existing), ...Object.keys(record)])) {
-          if (!operational.includes(key) && JSON.stringify(existing[key]) !== JSON.stringify(record[key])) patch[key] = record[key] === undefined ? deleteField() : record[key];
+        for (const key of new Set([...Object.keys(existingMap), ...Object.keys(recordMap)])) {
+          if (!operational.includes(key) && JSON.stringify(existingMap[key]) !== JSON.stringify(recordMap[key])) {
+            patch[key] = recordMap[key] === undefined ? deleteField() : recordMap[key];
+          }
         }
-        if (Object.keys(patch).length) await updateDoc(doc(db, 'races', raceId), patch);
+        if (Object.keys(patch).length) await updateDoc(doc(db, 'races', raceId), patch as UpdateData<Race>);
       } else await setDoc(doc(db, 'races', raceId), record);
       resetForm();
     } catch (err: any) {
@@ -753,12 +759,25 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
   };
 
   const handleDelete = async (raceId: string) => {
-    if (!window.confirm('Delete this race? Already-recorded chip reads are kept but will be orphaned.')) return;
+    const confirmed = await confirm({
+      title: 'Delete this race?',
+      message: 'Already-recorded chip reads are kept, but this race setup will be removed permanently.',
+      confirmLabel: 'Delete race',
+      cancelLabel: 'Keep race',
+      destructive: true,
+    });
+    if (!confirmed) return;
     try {
       await deleteDoc(doc(db, 'races', raceId));
       if (editingId === raceId) resetForm();
+      notify({ title: 'Race deleted', tone: 'success' });
     } catch (err) {
       console.warn('Failed to delete race:', err);
+      notify({
+        title: 'Failed to delete race',
+        message: err instanceof Error ? err.message : 'Please try again.',
+        tone: 'error',
+      });
     }
   };
 
@@ -770,11 +789,15 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
       snapshot.forEach((docSnap) => runners.push(docSnap.data() as RunnerProfile));
 
       if (!(await generateRunnerRosterPdf(race, runners))) {
-        alert('No registered runners for this race yet.');
+        notify({ title: 'No registered runners for this race yet.', tone: 'info' });
       }
     } catch (err) {
       console.warn('Failed to generate runner report:', err);
-      alert('Failed to generate the runner report. Please try again.');
+      notify({
+        title: 'Failed to generate runner report',
+        message: 'Please try again.',
+        tone: 'error',
+      });
     } finally {
       setReportBusyRaceId(null);
     }
@@ -782,7 +805,11 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
 
   const handleGenerateRaceBibs = async (race: Race, distanceLabel?: string) => {
     if (!hasRaceBibTemplate(race)) {
-      alert('Upload and save at least one blank race bib layout first. You can set a different layout for every distance.');
+      notify({
+        title: 'Upload a blank race bib layout first',
+        message: 'Upload and save at least one blank race bib layout before exporting PDFs.',
+        tone: 'info',
+      });
       return;
     }
     setRaceBibPdfBusyRaceId(race.id);
@@ -792,11 +819,20 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
       snapshot.forEach((docSnap) => runners.push(docSnap.data() as RunnerProfile));
       const selectedRunners = distanceLabel ? runners.filter((runner) => runner.distance === distanceLabel) : runners;
       const count = await generateRaceBibsPdf(race, selectedRunners, distanceLabel);
-      if (!count) alert(distanceLabel ? `No registered runners for ${distanceLabel} yet.` : 'No registered runners for this race yet.');
+      if (!count) {
+        notify({
+          title: distanceLabel ? `No registered runners for ${distanceLabel} yet.` : 'No registered runners for this race yet.',
+          tone: 'info',
+        });
+      }
     } catch (err) {
       console.warn('Failed to generate race bib PDF:', err);
       const detail = err instanceof Error ? err.message : 'Please try again.';
-      alert(`Failed to prepare the ${distanceLabel || 'all-race-bibs'} PDF. ${detail}`);
+      notify({
+        title: `Failed to prepare the ${distanceLabel || 'all-race-bibs'} PDF`,
+        message: detail,
+        tone: 'error',
+      });
     } finally {
       setRaceBibPdfBusyRaceId(null);
     }
@@ -806,10 +842,12 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
 
   const copyRegistrationUrl = async () => {
     if (!qrRace) return;
+    const url = registrationUrl(qrRace.id);
     try {
-      await navigator.clipboard.writeText(registrationUrl(qrRace.id));
+      await navigator.clipboard.writeText(url);
+      notify({ title: 'Registration link copied', tone: 'success' });
     } catch {
-      window.prompt('Copy this event registration link:', registrationUrl(qrRace.id));
+      notify({ title: 'Copy link manually', message: url, tone: 'info' });
     }
   };
 
@@ -838,14 +876,33 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
 
         <form hidden={!editingId && !can('race.create')} onSubmit={handleSave} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Race Name</label>
-            <input disabled={(!!editingId && !can('race.edit'))} type="text" required value={name} onChange={(e) => setName(e.target.value)}
-              className="w-full min-h-11 glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" placeholder="EX: ANNUAL MARATHON CHAMPIONSHIP" />
+            <label htmlFor="race-setup-name" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Race Name</label>
+            <input
+              id="race-setup-name"
+              disabled={(!!editingId && !can('race.edit'))}
+              type="text"
+              required
+              aria-invalid={error && !name.trim() ? 'true' : 'false'}
+              aria-describedby={error ? 'race-setup-form-error' : undefined}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full min-h-11 glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+              placeholder="EX: ANNUAL MARATHON CHAMPIONSHIP"
+            />
           </div>
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Race Date</label>
-            <input disabled={(!!editingId && !can('race.edit'))} type="date" required value={date} onChange={(e) => setDate(e.target.value)}
-              className="w-full min-h-11 glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50" />
+            <label htmlFor="race-setup-date" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Race Date</label>
+            <input
+              id="race-setup-date"
+              disabled={(!!editingId && !can('race.edit'))}
+              type="date"
+              required
+              aria-invalid={error && !date.trim() ? 'true' : 'false'}
+              aria-describedby={error ? 'race-setup-form-error' : undefined}
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full min-h-11 glass-inset px-4 py-3 text-sm font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-500/50"
+            />
           </div>
 
           <div className="glass-inset p-3 space-y-3">
@@ -862,8 +919,9 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
               />
             </label>
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Registration closes on <span className="normal-case font-normal text-[var(--text-secondary)]">(optional)</span></label>
+              <label htmlFor="race-setup-close-date" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Registration closes on <span className="normal-case font-normal text-[var(--text-secondary)]">(optional)</span></label>
               <input
+                id="race-setup-close-date"
                 type="date"
                 value={registrationCloseDate}
                 onChange={(e) => setRegistrationCloseDate(e.target.value)}
@@ -970,8 +1028,10 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
               </label>
               {manualPaymentEnabled && (
                 <div className="mt-3 space-y-3">
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Instructions shown to runners</label>
-                  <textarea disabled={(!!editingId && !can('payment.configure'))}
+                  <label htmlFor="race-setup-manual-instructions" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Instructions shown to runners</label>
+                  <textarea
+                    id="race-setup-manual-instructions"
+                    disabled={(!!editingId && !can('payment.configure'))}
                     value={manualPaymentInstructions}
                     onChange={(e) => setManualPaymentInstructions(e.target.value)}
                     maxLength={500}
@@ -1385,6 +1445,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                   <input disabled={(!!editingId && !can('race.categories'))}
                     type="text"
                     required
+                    aria-label={`Checkpoint ${idx + 1} label`}
                     value={cp.label}
                     onChange={(e) => updateCheckpoint(idx, { label: e.target.value })}
                     placeholder={cp.type === 'checkin' ? 'Check-In' : cp.type === 'start' ? 'Start' : cp.type === 'finish' ? 'Finish' : `Checkpoint ${idx}`}
@@ -1395,6 +1456,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                       Cutoff
                       <input disabled={(!!editingId && !can('race.categories'))}
                         type="number"
+                        aria-label={`Checkpoint ${idx + 1} cutoff minutes`}
                         min={1}
                         step={1}
                         value={cp.cutoffMinutes}
@@ -1419,13 +1481,14 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Distances (KM) &amp; Price</label>
+            <p className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Distances (KM) &amp; Price</p>
             <div className="space-y-2">
               {distances.map((d, idx) => (
                 <div key={d.id} className="flex items-center gap-2">
                   <input disabled={(!!editingId && !can('race.categories'))}
                     type="number"
                     required
+                    aria-label={`Distance ${idx + 1} kilometers`}
                     min={1}
                     step="0.1"
                     value={d.km}
@@ -1439,6 +1502,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                     <input disabled={(!!editingId && !can('race.categories'))}
                       type="number"
                       required
+                      aria-label={`Distance ${idx + 1} price in pesos`}
                       min={0}
                       step="0.01"
                       value={d.price === 0 ? '' : d.price}
@@ -1484,13 +1548,14 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Inclusions</label>
+            <p className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Inclusions</p>
             <div className="space-y-2">
               {inclusions.map((incl, idx) => (
                 <div key={incl.id} className="flex items-center gap-2">
                   <input disabled={(!!editingId && !can('race.edit'))}
                     type="text"
                     required
+                    aria-label={`Inclusion ${idx + 1} text`}
                     value={incl.text}
                     onChange={(e) => updateInclusionText(idx, e.target.value)}
                     placeholder="EX: Finisher Medal"
@@ -1548,7 +1613,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Age Categories (Male / Female)</label>
+            <p className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Age Categories (Male / Female)</p>
             <div className="space-y-2">
               {ageCategories.map((cat, idx) => (
                 <div key={cat.id} className="flex items-center gap-2">
@@ -1569,6 +1634,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                   <input disabled={(!!editingId && !can('race.categories'))}
                     type="number"
                     required
+                    aria-label={`Age category ${idx + 1} minimum age`}
                     min={1}
                     max={120}
                     value={cat.minAge}
@@ -1579,6 +1645,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
                   <input disabled={(!!editingId && !can('race.categories'))}
                     type="number"
                     required
+                    aria-label={`Age category ${idx + 1} maximum age`}
                     min={1}
                     max={120}
                     value={cat.maxAge}
@@ -1629,7 +1696,7 @@ export default function RaceSetupPanel({ uid, canSeeAllRaces, canDeleteRaces, la
             </div>
           </div>
 
-          {error && <p role="alert" className="text-xs text-red-700 dark:text-red-400 font-semibold">{error}</p>}
+          {error && <p id="race-setup-form-error" role="alert" className="text-xs text-red-700 dark:text-red-400 font-semibold">{error}</p>}
 
           <div className="flex gap-2">
             <button type="submit" disabled={saving}

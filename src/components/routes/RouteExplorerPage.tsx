@@ -589,7 +589,7 @@ export default function RouteExplorerPage({
   };
 
   // =========================================================================
-  // CATALOG VIEW (/routes): ISO 100vh Desktop 34/66 Split + 100dvh Mobile Dock
+  // CATALOG VIEW (/routes): ISO 100dvh Desktop 34/66 Split + 100dvh Mobile Dock
   // =========================================================================
   if (match.kind === 'routes-catalog') {
     const existingRaceIds = new Set(allRaces.map((r) => r.id));
@@ -751,10 +751,10 @@ export default function RouteExplorerPage({
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="rounded-md bg-red-700 px-2 py-0.5 text-[11px] font-semibold text-white">
+                        <span className="rounded-md bg-red-700 px-2 py-0.5 text-xs font-semibold text-white">
                           {entry.distanceLabel}
                         </span>
-                        <span className="text-[11px] font-mono text-[var(--text-secondary)]">
+                        <span className="text-xs font-mono text-[var(--text-secondary)]">
                           v{entry.versionNumber}
                         </span>
                       </div>
@@ -769,13 +769,13 @@ export default function RouteExplorerPage({
 
                   <dl className="mt-2.5 grid grid-cols-3 gap-2 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 py-2 text-xs font-mono tabular-nums">
                     <div>
-                      <dt className="font-sans text-[11px] text-[var(--text-secondary)]">Distance</dt>
+                      <dt className="font-sans text-xs text-[var(--text-secondary)]">Distance</dt>
                       <dd className="font-semibold text-[var(--text-primary)]">
                         {formatKm(entry.measuredDistanceM)}
                       </dd>
                     </div>
                     <div>
-                      <dt className="font-sans text-[11px] text-[var(--text-secondary)]">Gain</dt>
+                      <dt className="font-sans text-xs text-[var(--text-secondary)]">Gain</dt>
                       <dd className="font-semibold text-[var(--text-primary)]">
                         {entry.elevationStatus === 'unavailable'
                           ? 'N/A'
@@ -783,7 +783,7 @@ export default function RouteExplorerPage({
                       </dd>
                     </div>
                     <div>
-                      <dt className="font-sans text-[11px] text-[var(--text-secondary)]">CP / Pics</dt>
+                      <dt className="font-sans text-xs text-[var(--text-secondary)]">CP / Pics</dt>
                       <dd className="font-semibold text-[var(--text-primary)]">
                         {entry.checkpointCount} / {entry.landmarkCount}
                       </dd>
@@ -837,7 +837,7 @@ export default function RouteExplorerPage({
                       <p className="truncate text-xs font-semibold text-[var(--text-primary)]">
                         {r.name}
                       </p>
-                      <p className="text-[11px] text-[var(--text-secondary)]">{r.date}</p>
+                      <p className="text-xs text-[var(--text-secondary)]">{r.date}</p>
                     </div>
                     <a
                       href={legacyUrl}
@@ -872,7 +872,7 @@ export default function RouteExplorerPage({
               <h1 className="truncate text-sm sm:text-base font-semibold tracking-tight text-white">
                 Route Explorer
               </h1>
-              <span className="hidden sm:inline-flex shrink-0 rounded-md bg-white/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-zinc-200">
+              <span className="hidden sm:inline-flex shrink-0 rounded-md bg-white/10 px-2 py-0.5 font-mono text-xs font-semibold text-zinc-200">
                 {filteredCatalog.length}
               </span>
             </div>,
@@ -889,7 +889,7 @@ export default function RouteExplorerPage({
                     type="button"
                     aria-pressed={activeIslandGroup === group}
                     onClick={() => setActiveIslandGroup(group)}
-                    className={`min-h-9 rounded-lg border px-2.5 text-xs font-semibold transition ${
+                    className={`min-h-11 rounded-lg border px-2.5 text-xs font-semibold transition ${
                       activeIslandGroup === group
                         ? 'border-red-500 bg-red-700 text-white'
                         : 'border-white/15 bg-white/10 text-zinc-100 hover:border-red-400/60'
@@ -903,7 +903,7 @@ export default function RouteExplorerPage({
                 type="button"
                 aria-pressed={satelliteEnabled}
                 onClick={() => setSatelliteEnabled((v) => !v)}
-                className={`inline-flex min-h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition ${
+                className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition ${
                   satelliteEnabled
                     ? 'border-red-500 bg-red-700 text-white'
                     : 'border-white/15 bg-white/10 text-zinc-100 hover:border-red-400/60'
@@ -916,7 +916,7 @@ export default function RouteExplorerPage({
                 type="button"
                 aria-pressed={terrain3DEnabled}
                 onClick={() => setTerrain3DEnabled((v) => !v)}
-                className={`inline-flex min-h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition ${
+                className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition ${
                   terrain3DEnabled
                     ? 'border-red-500 bg-red-700 text-white'
                     : 'border-white/15 bg-white/10 text-zinc-100 hover:border-red-400/60'
@@ -932,7 +932,7 @@ export default function RouteExplorerPage({
                     e.preventDefault();
                     onNavigateUrl('/route-studio');
                   }}
-                  className="inline-flex min-h-9 items-center rounded-lg bg-red-700 px-3 text-xs font-semibold text-white hover:bg-red-600"
+                  className="inline-flex min-h-11 items-center rounded-lg bg-red-700 px-3 text-xs font-semibold text-white hover:bg-red-600"
                 >
                   Route Studio
                 </a>
@@ -943,12 +943,12 @@ export default function RouteExplorerPage({
 
         {/* Inline compact header fallback when rendered outside WorkspaceHeaderProvider */}
         {!headerCtx?.leftSlotEl && (
-          <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-[var(--border-default)] bg-[var(--surface-card)] px-3">
+          <div className="flex min-h-14 shrink-0 items-center justify-between gap-2 border-b border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-1">
             <div className="flex items-center gap-2 min-w-0">
               <button
                 type="button"
                 onClick={onBackHome}
-                className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-[var(--border-default)] px-2.5 text-xs font-semibold text-[var(--text-primary)]"
+                className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--border-control)] px-2.5 text-xs font-semibold text-[var(--text-primary)]"
               >
                 <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
                 Back
@@ -964,7 +964,7 @@ export default function RouteExplorerPage({
                   e.preventDefault();
                   onNavigateUrl('/route-studio');
                 }}
-                className="inline-flex min-h-9 items-center rounded-lg bg-red-700 px-3 text-xs font-semibold text-white"
+                className="inline-flex min-h-11 items-center rounded-lg bg-red-700 px-3 text-xs font-semibold text-white"
               >
                 Route Studio
               </a>
@@ -1101,7 +1101,7 @@ export default function RouteExplorerPage({
   }
 
   // =========================================================================
-  // COURSE DETAIL VIEW: ISO 100vh Desktop 64/36 Split + 100dvh Mobile Dock
+  // COURSE DETAIL VIEW: ISO 100dvh Desktop 64/36 Split + 100dvh Mobile Dock
   // =========================================================================
   const raceTitle = publication?.raceName || legacyRace?.name || 'Race Course';
   const distanceLabel = publication?.distanceLabel || '';
@@ -1212,7 +1212,7 @@ export default function RouteExplorerPage({
                 <Activity className="h-4 w-4 text-red-700 dark:text-red-400" aria-hidden="true" />
                 Course Strategy & Pace Simulator
               </h2>
-              <span className="font-mono text-[11px] font-semibold text-[var(--text-secondary)]">
+              <span className="font-mono text-xs font-semibold text-[var(--text-secondary)]">
                 Difficulty {analyticsBundle.difficultyIndex}/100
               </span>
             </div>
@@ -1264,12 +1264,12 @@ export default function RouteExplorerPage({
                   >
                     <div className="min-w-0">
                       <p className="font-semibold text-[var(--text-primary)]">
-                        <span className="mr-1.5 inline-block rounded bg-red-700 px-1.5 py-0.5 text-[11px] text-white">
+                        <span className="mr-1.5 inline-block rounded bg-red-700 px-1.5 py-0.5 text-xs text-white">
                           {climb.category}
                         </span>
                         {climb.title}
                       </p>
-                      <p className="mt-0.5 font-mono text-[11px] text-[var(--text-secondary)]">
+                      <p className="mt-0.5 font-mono text-xs text-[var(--text-secondary)]">
                         {(climb.lengthM / 1000).toFixed(2)} km · +{Math.round(climb.gainM)} m ·{' '}
                         {climb.avgGradePct.toFixed(1)}% avg
                       </p>
@@ -1354,7 +1354,12 @@ export default function RouteExplorerPage({
                   Avg {analyticsBundle.averageGapPaceMinPerKm.toFixed(2)} min/km
                 </span>
               </div>
-              <div className="overflow-x-auto">
+              <div
+                tabIndex={0}
+                role="region"
+                aria-label="Grade-Adjusted Pace splits table"
+                className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 rounded-lg"
+              >
                 <table className="min-w-full text-left text-xs">
                   <thead>
                     <tr className="border-b border-[var(--border-default)] text-[var(--text-secondary)]">
@@ -1380,7 +1385,7 @@ export default function RouteExplorerPage({
                         <td className="py-1.5">
                           {split.cutoffStatus ? (
                             <span
-                              className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-semibold ${
+                              className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-semibold ${
                                 split.cutoffStatus === 'risk'
                                   ? 'bg-red-700/15 text-red-700 dark:text-red-300'
                                   : split.cutoffStatus === 'caution'
@@ -1575,7 +1580,7 @@ export default function RouteExplorerPage({
                 e.preventDefault();
                 onNavigateUrl('/routes');
               }}
-              className="hidden sm:inline-flex min-h-9 shrink-0 items-center gap-1 rounded-lg border border-white/15 bg-white/10 px-2.5 text-xs font-semibold text-white hover:border-red-400/60"
+              className="hidden sm:inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-white/15 bg-white/10 px-2.5 text-xs font-semibold text-white hover:border-red-400/60"
             >
               <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
               All courses
@@ -1602,7 +1607,7 @@ export default function RouteExplorerPage({
                         onNavigateUrl(url);
                       }}
                       aria-current={isCurrent ? 'page' : undefined}
-                      className={`inline-flex min-h-8 items-center rounded-md border px-2 text-xs font-semibold transition ${
+                      className={`inline-flex min-h-11 items-center rounded-md border px-2.5 text-xs font-semibold transition ${
                         isCurrent
                           ? 'border-red-500 bg-red-700 text-white'
                           : 'border-white/15 bg-white/10 text-zinc-200 hover:border-red-400/60'
@@ -1626,7 +1631,7 @@ export default function RouteExplorerPage({
               type="button"
               aria-pressed={geo.status === 'active'}
               onClick={geo.status === 'active' ? handleCenterOnUser : handleLocateMe}
-              className={`hidden lg:inline-flex min-h-9 items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold transition ${
+              className={`hidden lg:inline-flex min-h-11 items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold transition ${
                 geo.status === 'active'
                   ? 'border-sky-500 bg-sky-600 text-white'
                   : 'border-white/15 bg-white/10 text-white hover:border-sky-400/60'
@@ -1643,7 +1648,7 @@ export default function RouteExplorerPage({
               type="button"
               aria-pressed={satelliteEnabled}
               onClick={() => setSatelliteEnabled((v) => !v)}
-              className={`hidden lg:inline-flex min-h-9 items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold transition ${
+              className={`hidden lg:inline-flex min-h-11 items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold transition ${
                 satelliteEnabled
                   ? 'border-red-500 bg-red-700 text-white'
                   : 'border-white/15 bg-white/10 text-white hover:border-red-400/60'
@@ -1656,7 +1661,7 @@ export default function RouteExplorerPage({
               type="button"
               aria-pressed={terrain3DEnabled}
               onClick={() => setTerrain3DEnabled((v) => !v)}
-              className={`hidden lg:inline-flex min-h-9 items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold transition ${
+              className={`hidden lg:inline-flex min-h-11 items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold transition ${
                 terrain3DEnabled
                   ? 'border-red-500 bg-red-700 text-white'
                   : 'border-white/15 bg-white/10 text-white hover:border-red-400/60'
@@ -1671,7 +1676,7 @@ export default function RouteExplorerPage({
                 disabled={offlineBusy}
                 onClick={handleToggleOfflinePack}
                 title={offlinePack && !staleOfflinePack ? 'Saved offline' : 'Save offline'}
-                className="hidden sm:inline-flex min-h-9 items-center gap-1 rounded-lg border border-white/15 bg-white/10 px-2.5 text-xs font-semibold text-white hover:border-red-400/60 disabled:opacity-50"
+                className="hidden sm:inline-flex min-h-11 items-center gap-1 rounded-lg border border-white/15 bg-white/10 px-2.5 text-xs font-semibold text-white hover:border-red-400/60 disabled:opacity-50"
               >
                 {offlinePack && !staleOfflinePack ? (
                   <>
@@ -1691,7 +1696,7 @@ export default function RouteExplorerPage({
               onClick={handleDownloadSanitizedGpx}
               aria-label="Export GPX"
               title="Export GPX"
-              className="inline-flex min-h-11 min-w-11 lg:min-h-9 lg:min-w-0 lg:px-2.5 items-center justify-center gap-1 rounded-xl lg:rounded-lg border border-white/15 bg-white/10 text-xs font-semibold text-white hover:border-red-400/60"
+              className="inline-flex min-h-11 min-w-11 lg:px-2.5 items-center justify-center gap-1 rounded-xl lg:rounded-lg border border-white/15 bg-white/10 text-xs font-semibold text-white hover:border-red-400/60"
             >
               <Download className="h-4 w-4 lg:h-3.5 lg:w-3.5" aria-hidden="true" />
               <span className="hidden lg:inline">GPX</span>
@@ -1702,7 +1707,7 @@ export default function RouteExplorerPage({
               onClick={() => setShareOpen(true)}
               aria-label="Share and QR"
               title="Share & QR"
-              className="inline-flex min-h-11 min-w-11 lg:min-h-9 lg:min-w-0 lg:px-2.5 items-center justify-center gap-1 rounded-xl lg:rounded-lg border border-white/15 bg-white/10 text-xs font-semibold text-white hover:border-red-400/60"
+              className="inline-flex min-h-11 min-w-11 lg:px-2.5 items-center justify-center gap-1 rounded-xl lg:rounded-lg border border-white/15 bg-white/10 text-xs font-semibold text-white hover:border-red-400/60"
             >
               <Share2 className="h-4 w-4 lg:h-3.5 lg:w-3.5" aria-hidden="true" />
               <span className="hidden lg:inline">Share</span>
@@ -1713,7 +1718,7 @@ export default function RouteExplorerPage({
 
       {/* Fallback top bar when WorkspaceHeaderProvider is absent */}
       {!headerCtx?.leftSlotEl && (
-        <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-[var(--border-default)] bg-[var(--surface-card)] px-3">
+        <div className="flex min-h-14 shrink-0 items-center justify-between gap-2 border-b border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-1">
           <div className="flex items-center gap-2 min-w-0">
             <a
               href="/routes"
@@ -1721,7 +1726,7 @@ export default function RouteExplorerPage({
                 e.preventDefault();
                 onNavigateUrl('/routes');
               }}
-              className="inline-flex min-h-9 shrink-0 items-center gap-1 rounded-lg border border-[var(--border-default)] px-2.5 text-xs font-semibold text-[var(--text-primary)]"
+              className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-[var(--border-control)] px-2.5 text-xs font-semibold text-[var(--text-primary)]"
             >
               <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
               All courses
@@ -1735,14 +1740,14 @@ export default function RouteExplorerPage({
               <button
                 type="button"
                 onClick={handleDownloadSanitizedGpx}
-                className="min-h-9 rounded-lg border border-[var(--border-default)] px-2.5 text-xs font-semibold text-[var(--text-primary)]"
+                className="min-h-11 rounded-lg border border-[var(--border-control)] px-2.5 text-xs font-semibold text-[var(--text-primary)]"
               >
                 GPX
               </button>
               <button
                 type="button"
                 onClick={() => setShareOpen(true)}
-                className="min-h-9 rounded-lg border border-[var(--border-default)] px-2.5 text-xs font-semibold text-[var(--text-primary)]"
+                className="min-h-11 rounded-lg border border-[var(--border-control)] px-2.5 text-xs font-semibold text-[var(--text-primary)]"
               >
                 Share
               </button>
@@ -1751,9 +1756,9 @@ export default function RouteExplorerPage({
         </div>
       )}
 
-      {/* Slim Telemetry, Visualization & Chapters Sub-Ribbon (<= 40px) */}
+      {/* Slim Telemetry, Visualization & Chapters Sub-Ribbon */}
       {!loading && courseStatus === 'ready' && activeRoute && selection && (
-        <div className="shrink-0 border-b border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-1 flex items-center justify-between gap-2 overflow-x-auto text-xs">
+        <div className="shrink-0 border-b border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-1.5 flex items-center justify-between gap-2 overflow-x-auto text-xs">
           <div className="flex shrink-0 items-center gap-3 font-mono tabular-nums">
             <span className="font-semibold text-[var(--text-primary)]">
               {formatKm(activeRoute.distanceM)}
@@ -1792,7 +1797,7 @@ export default function RouteExplorerPage({
                   type="button"
                   aria-pressed={colorMode === mode}
                   onClick={() => setColorMode(mode)}
-                  className={`min-h-8 rounded-lg border px-2.5 text-xs font-semibold transition ${
+                  className={`min-h-11 lg:min-h-9 rounded-lg border px-2.5 text-xs font-semibold transition ${
                     colorMode === mode
                       ? 'border-red-600 bg-red-700 text-white'
                       : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600/50'
@@ -1816,7 +1821,7 @@ export default function RouteExplorerPage({
                   surface="inset"
                   size="sm"
                   className="w-auto min-w-[120px]"
-                  triggerClassName="min-h-8 text-xs"
+                  triggerClassName="min-h-11 lg:min-h-9 text-xs"
                   options={[
                     { value: '', label: 'Compare...' },
                     ...siblingDistances
@@ -1837,7 +1842,7 @@ export default function RouteExplorerPage({
                     key={chapter.id}
                     type="button"
                     onClick={() => handleJumpChapter(chapter)}
-                    className="min-h-8 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2 text-[11px] font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+                    className="min-h-11 lg:min-h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
                   >
                     {chapter.label}
                   </button>
@@ -1936,7 +1941,7 @@ export default function RouteExplorerPage({
                     <button
                       type="button"
                       onClick={handleToggleOfflinePack}
-                      className="min-h-8 rounded-lg bg-red-700 px-2.5 font-semibold text-white hover:bg-red-600"
+                      className="min-h-11 lg:min-h-9 rounded-lg bg-red-700 px-2.5 font-semibold text-white hover:bg-red-600"
                     >
                       Update offline pack
                     </button>
@@ -1971,14 +1976,14 @@ export default function RouteExplorerPage({
                       <button
                         type="button"
                         onClick={handleLocateMe}
-                        className="min-h-10 lg:min-h-8 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 font-semibold"
+                        className="min-h-11 lg:min-h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 font-semibold"
                       >
                         Retry GPS
                       </button>
                       <button
                         type="button"
                         onClick={geo.stopTracking}
-                        className="min-h-10 lg:min-h-8 rounded-lg px-2 font-semibold text-[var(--text-secondary)]"
+                        className="min-h-11 lg:min-h-9 rounded-lg px-2 font-semibold text-[var(--text-secondary)]"
                       >
                         Dismiss
                       </button>
@@ -1990,7 +1995,7 @@ export default function RouteExplorerPage({
                     <button
                       type="button"
                       onClick={geo.stopTracking}
-                      className="min-h-10 lg:min-h-8 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 font-semibold"
+                      className="min-h-11 lg:min-h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 font-semibold"
                     >
                       Cancel
                     </button>
@@ -1999,7 +2004,7 @@ export default function RouteExplorerPage({
                   <>
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                       <span className="rounded bg-sky-600/20 px-1.5 py-0.5 font-semibold text-sky-800 dark:text-sky-200">
-                        {gpsQualityLabel(geo.position.quality, geo.position.isStale)}
+                        {gpsQualityLabel(geo.position.quality || 'coarse', Boolean(geo.position.isStale))}
                       </span>
                       <span className="inline-flex items-center gap-1 font-semibold text-sky-700 dark:text-sky-300">
                         <span className="h-2 w-2 rounded-full bg-sky-600" aria-hidden="true" />
@@ -2027,7 +2032,7 @@ export default function RouteExplorerPage({
                         type="button"
                         aria-pressed={geo.autoFollow}
                         onClick={() => geo.setAutoFollow(!geo.autoFollow)}
-                        className={`min-h-10 lg:min-h-8 rounded-lg border px-2.5 font-semibold ${
+                        className={`min-h-11 lg:min-h-9 rounded-lg border px-2.5 font-semibold ${
                           geo.autoFollow
                             ? 'border-sky-600 bg-sky-600 text-white'
                             : 'border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)]'
@@ -2043,14 +2048,14 @@ export default function RouteExplorerPage({
                             locationProjection.passNumber,
                           )
                         }
-                        className="min-h-10 lg:min-h-8 rounded-lg border border-sky-600/40 bg-[var(--surface-card)] px-2.5 font-semibold text-sky-700 dark:text-sky-300"
+                        className="min-h-11 lg:min-h-9 rounded-lg border border-sky-600/40 bg-[var(--surface-card)] px-2.5 font-semibold text-sky-700 dark:text-sky-300"
                       >
                         Jump cursor
                       </button>
                       <button
                         type="button"
                         onClick={geo.stopTracking}
-                        className="min-h-10 lg:min-h-8 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 font-semibold text-[var(--text-secondary)]"
+                        className="min-h-11 lg:min-h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 font-semibold text-[var(--text-secondary)]"
                       >
                         Stop
                       </button>
@@ -2184,7 +2189,7 @@ export default function RouteExplorerPage({
               type="button"
               aria-pressed={geo.status === 'active'}
               onClick={geo.status === 'active' ? handleCenterOnUser : handleLocateMe}
-              className={`flex min-h-11 flex-col items-center justify-center rounded-xl border px-1 text-[11px] font-semibold ${
+              className={`flex min-h-11 flex-col items-center justify-center rounded-xl border px-1 text-xs font-semibold ${
                 geo.status === 'active'
                   ? 'border-sky-600 bg-sky-600 text-white'
                   : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)]'
@@ -2197,7 +2202,7 @@ export default function RouteExplorerPage({
               type="button"
               aria-pressed={satelliteEnabled}
               onClick={() => setSatelliteEnabled((v) => !v)}
-              className={`flex min-h-11 flex-col items-center justify-center rounded-xl border px-1 text-[11px] font-semibold ${
+              className={`flex min-h-11 flex-col items-center justify-center rounded-xl border px-1 text-xs font-semibold ${
                 satelliteEnabled
                   ? 'border-red-600 bg-red-700 text-white'
                   : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)]'
@@ -2210,7 +2215,7 @@ export default function RouteExplorerPage({
               type="button"
               aria-pressed={terrain3DEnabled}
               onClick={() => setTerrain3DEnabled((v) => !v)}
-              className={`flex min-h-11 flex-col items-center justify-center rounded-xl border px-1 text-[11px] font-semibold ${
+              className={`flex min-h-11 flex-col items-center justify-center rounded-xl border px-1 text-xs font-semibold ${
                 terrain3DEnabled
                   ? 'border-red-600 bg-red-700 text-white'
                   : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)]'
@@ -2223,7 +2228,7 @@ export default function RouteExplorerPage({
               type="button"
               aria-pressed={mobileElevationOpen}
               onClick={() => setMobileElevationOpen((v) => !v)}
-              className={`flex min-h-11 flex-col items-center justify-center rounded-xl border px-1 text-[11px] font-semibold ${
+              className={`flex min-h-11 flex-col items-center justify-center rounded-xl border px-1 text-xs font-semibold ${
                 mobileElevationOpen
                   ? 'border-red-600 bg-red-700 text-white'
                   : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)]'
@@ -2235,7 +2240,7 @@ export default function RouteExplorerPage({
             <button
               type="button"
               onClick={() => setMobileDetailSheetOpen(true)}
-              className="flex min-h-11 flex-col items-center justify-center rounded-xl bg-red-700 px-1 text-[11px] font-semibold text-white hover:bg-red-600"
+              className="flex min-h-11 flex-col items-center justify-center rounded-xl bg-red-700 px-1 text-xs font-semibold text-white hover:bg-red-600"
             >
               <MapPin className="h-4 w-4" aria-hidden="true" />
               <span>Details</span>

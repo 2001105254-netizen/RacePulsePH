@@ -9,6 +9,7 @@ interface DualSyncOptions<T> {
   lanResponseKey: string; // e.g. 'orders' - the array field in the LAN server's JSON response
   getId: (item: T) => string;
   getUpdatedAt: (item: T) => string; // timestamp field used for merge conflict resolution
+  queryKey?: string; // optional explicit key to reset & resubscribe when query parameters change
   pollIntervalMs?: number;
   enabled?: boolean;
 }
@@ -29,6 +30,7 @@ export function useDualSync<T>({
   lanResponseKey,
   getId,
   getUpdatedAt,
+  queryKey = '',
   pollIntervalMs = 2000,
   enabled = true,
 }: DualSyncOptions<T>): DualSyncResult<T> {
@@ -39,18 +41,22 @@ export function useDualSync<T>({
 
   const firestoreItemsRef = useRef<T[]>([]);
   const lanItemsRef = useRef<T[]>([]);
+  const getIdRef = useRef(getId);
+  const getUpdatedAtRef = useRef(getUpdatedAt);
+  getIdRef.current = getId;
+  getUpdatedAtRef.current = getUpdatedAt;
 
   const mergeAndPublish = () => {
     const combinedMap = new Map<string, T>();
 
     const insertOrResolve = (item: T) => {
-      const id = getId(item);
+      const id = getIdRef.current(item);
       const existing = combinedMap.get(id);
       if (!existing) {
         combinedMap.set(id, item);
       } else {
-        const timeExisting = new Date(getUpdatedAt(existing)).getTime() || 0;
-        const timeNew = new Date(getUpdatedAt(item)).getTime() || 0;
+        const timeExisting = new Date(getUpdatedAtRef.current(existing)).getTime() || 0;
+        const timeNew = new Date(getUpdatedAtRef.current(item)).getTime() || 0;
         if (timeNew >= timeExisting) {
           combinedMap.set(id, item);
         }
@@ -67,7 +73,7 @@ export function useDualSync<T>({
   // 1. Firestore Cloud Database Listener
   useEffect(() => {
     if (!enabled) { setItems([]); setLoading(false); return; }
-    firestoreItemsRef.current = []; lanItemsRef.current = []; setItems([]);
+    firestoreItemsRef.current = []; lanItemsRef.current = []; setItems([]); setLoading(true);
     const unsubscribe = onSnapshot(firestoreQuery, (snapshot) => {
       const list: T[] = [];
       snapshot.forEach((docSnap) => list.push(docSnap.data() as T));
@@ -75,10 +81,11 @@ export function useDualSync<T>({
       mergeAndPublish();
     }, (error) => {
       console.warn(`Cloud Firestore stream offline or restricted (${lanEndpoint}):`, error.message);
+      setLoading(false);
     });
     return () => unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [version, lanEndpoint, enabled]);
+  }, [version, lanEndpoint, queryKey, enabled]);
 
   // 2. Onsite LAN Local Express Server Poller
   useEffect(() => {
@@ -96,7 +103,7 @@ export function useDualSync<T>({
       onDisconnected: () => setLanConnected(false),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [version, lanEndpoint, enabled]);
+  }, [version, lanEndpoint, queryKey, pollIntervalMs, enabled]);
 
   return { items, loading, lanConnected };
 }

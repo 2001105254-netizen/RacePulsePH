@@ -92,6 +92,20 @@ export const completePasswordReset = async (resetToken: string, password: string
   return result;
 };
 
+export const resolveUsernameForLogin = async (username: string, signals?: HumanFormSignals) => {
+  const cleaned = username.trim().replace(/^@+/, '').toLowerCase();
+  const result = await request<{ email: string }>(
+    '/auth/resolve-username',
+    { username: cleaned, ...(signals || {}) },
+    false,
+    emailUnavailableMessage,
+  );
+  if (typeof result.email !== 'string' || !result.email.includes('@')) {
+    throw new AccountRequestError('No account found for that username. Try your email address instead.', 0, 404);
+  }
+  return { email: result.email };
+};
+
 export interface DeleteAccountResult {
   deleted: boolean;
   purgedDocs: number;

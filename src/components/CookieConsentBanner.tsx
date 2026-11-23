@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Cookie, X } from 'lucide-react';
 import DialogSurface from './ui/DialogSurface';
+import { isClientNavigationClick } from '../lib/appRouting';
 import {
   readConsentState,
   saveConsentPreferences,
@@ -80,7 +81,7 @@ export default function CookieConsentBanner({
         <div
           className={
             floating
-              ? 'fixed bottom-16 lg:bottom-3 left-3 right-3 lg:left-auto lg:right-3 z-30 w-auto lg:max-w-xl shadow-2xl'
+              ? 'fixed bottom-[4.5rem] lg:bottom-3 left-3 right-[4.25rem] sm:right-auto lg:left-auto lg:right-3 z-50 w-auto sm:max-w-md lg:max-w-xl max-h-[min(52dvh,320px)] overflow-y-auto overscroll-contain rounded-2xl shadow-2xl'
               : 'shrink-0 w-full max-w-[1600px] mx-auto pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))] pt-3 pb-2'
           }
         >
@@ -93,21 +94,23 @@ export default function CookieConsentBanner({
           >
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
               <div className="space-y-1 min-w-0">
-                <div className="flex items-center gap-2 text-red-700 dark:text-red-400">
-                  <Cookie className="w-4 h-4 shrink-0" aria-hidden="true" />
-                  <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+                <div className="flex items-start gap-2 min-w-0 text-red-700 dark:text-red-400">
+                  <Cookie className="w-4 h-4 shrink-0 mt-1" aria-hidden="true" />
+                  <h2 className="min-w-0 flex-1 break-words text-sm font-semibold text-[var(--text-primary)]">
                     Cookie and local storage preferences
                   </h2>
                 </div>
-                <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                <p className="max-w-[65ch] text-xs text-[var(--text-secondary)] leading-relaxed">
                   RacePulsePH uses strictly necessary browser storage for sign-in sessions, theme settings, and race-day offline timing queues. Optional analytics and marketing scripts remain blocked unless you opt in.{' '}
                   <a
                     href="/cookie-policy"
                     onClick={(event) => {
+                      event.stopPropagation();
+                      if (!isClientNavigationClick(event)) return;
                       event.preventDefault();
                       onOpenCookiePolicy();
                     }}
-                    className="inline-flex items-center min-h-6 font-semibold text-red-700 dark:text-red-400 underline underline-offset-4 hover:opacity-80"
+                    className="inline-flex items-center min-h-8 py-1 rounded font-semibold text-red-700 dark:text-red-400 underline underline-offset-4 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
                   >
                     Read Cookie Policy
                   </a>
@@ -174,7 +177,7 @@ export default function CookieConsentBanner({
             <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-4 flex items-start justify-between gap-4">
               <div className="space-y-1">
                 <p className="text-sm font-semibold text-[var(--text-primary)]">Strictly Necessary</p>
-                <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                <p className="max-w-[65ch] text-xs text-[var(--text-secondary)] leading-relaxed">
                   Required for authentication sessions, consent records, light/dark display mode, and offline checkpoint sync queues.
                 </p>
               </div>
@@ -226,11 +229,13 @@ export default function CookieConsentBanner({
             <a
               href="/cookie-policy"
               onClick={(event) => {
+                event.stopPropagation();
+                if (!isClientNavigationClick(event)) return;
                 event.preventDefault();
                 setShowPreferences(false);
                 onOpenCookiePolicy();
               }}
-              className="min-h-11 inline-flex items-center text-xs font-semibold text-red-700 dark:text-red-400 underline underline-offset-4"
+              className="min-h-11 inline-flex items-center rounded text-xs font-semibold text-red-700 dark:text-red-400 underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
             >
               View full Cookie Policy
             </a>

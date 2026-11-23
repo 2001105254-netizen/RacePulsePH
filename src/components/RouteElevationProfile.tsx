@@ -523,7 +523,7 @@ export default function RouteElevationProfile({
             <button
               type="button"
               onClick={() => onOpenMarkerPhotos(selectedMarker)}
-              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-amber-500/50 bg-amber-500/10 px-2.5 font-semibold text-amber-800 hover:bg-amber-500/20 dark:text-amber-300"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 font-semibold text-amber-800 hover:bg-amber-500/20 dark:text-amber-300"
             >
               <Camera className="h-3.5 w-3.5" aria-hidden="true" />
               View {selectedMarkerPhotoCount} {selectedMarkerPhotoCount === 1 ? 'snapshot' : 'snapshots'}

@@ -2057,7 +2057,7 @@ export default function RouteMapCanvas({
                 <p className="text-xs font-semibold text-[var(--text-primary)]">
                   Starting point
                 </p>
-                <p className="truncate font-mono text-[11px] text-[var(--text-secondary)]">
+                <p className="truncate font-mono text-xs text-[var(--text-secondary)]">
                   {selection.latitude.toFixed(5)}, {selection.longitude.toFixed(5)}
                 </p>
               </div>
@@ -2065,7 +2065,7 @@ export default function RouteMapCanvas({
                 type="button"
                 aria-label="Close starting point menu"
                 onClick={() => setStartMenuOpen(false)}
-                className="flex min-h-8 min-w-8 items-center justify-center rounded-lg border border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-[var(--border-control)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
               >
                 <X className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
@@ -2120,7 +2120,7 @@ export default function RouteMapCanvas({
                 drawMode === 'erase' ? 'bg-red-500' : 'bg-orange-500'
               }`}
             />
-            <span className="absolute -bottom-5 whitespace-nowrap rounded bg-zinc-900/85 px-1.5 py-0.5 text-[10px] font-mono font-semibold text-white shadow">
+            <span className="absolute -bottom-5 whitespace-nowrap rounded bg-zinc-900/85 px-1.5 py-0.5 text-xs font-mono font-semibold text-white shadow">
               {drawMode === 'erase' ? `${eraseRadiusM}m eraser` : `Paint · ${paintSpacingM}m`}
             </span>
           </div>
@@ -2153,7 +2153,7 @@ export default function RouteMapCanvas({
             onClick={() => mapRef.current?.zoomIn({ duration: reducedMotion ? 0 : 180 })}
             aria-label="Zoom in map"
             title="Zoom in"
-            className="flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] shadow-sm hover:border-red-600/60 hover:text-red-700 dark:hover:text-red-400"
+            className="flex min-h-11 min-w-11 lg:min-h-9 lg:min-w-9 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] shadow-sm hover:border-red-600/60 hover:text-red-700 dark:hover:text-red-400"
           >
             <Plus className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -2162,7 +2162,7 @@ export default function RouteMapCanvas({
             onClick={() => mapRef.current?.zoomOut({ duration: reducedMotion ? 0 : 180 })}
             aria-label="Zoom out map"
             title="Zoom out"
-            className="flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] shadow-sm hover:border-red-600/60 hover:text-red-700 dark:hover:text-red-400"
+            className="flex min-h-11 min-w-11 lg:min-h-9 lg:min-w-9 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] shadow-sm hover:border-red-600/60 hover:text-red-700 dark:hover:text-red-400"
           >
             <Minus className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -2171,7 +2171,7 @@ export default function RouteMapCanvas({
             onClick={() => fitRouteBounds(false)}
             aria-label="Fit entire course on map"
             title="Fit course"
-            className="flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] shadow-sm hover:border-red-600/60 hover:text-red-700 dark:hover:text-red-400"
+            className="flex min-h-11 min-w-11 lg:min-h-9 lg:min-w-9 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] shadow-sm hover:border-red-600/60 hover:text-red-700 dark:hover:text-red-400"
           >
             <Focus className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -2200,7 +2200,7 @@ export default function RouteMapCanvas({
                     ? 'Center on my spot'
                     : 'Show my location'
               }
-              className={`flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border text-xs font-semibold shadow-sm ${
+              className={`flex min-h-11 min-w-11 lg:min-h-9 lg:min-w-9 items-center justify-center rounded-xl border text-xs font-semibold shadow-sm ${
                 locateStatus === 'active'
                   ? 'border-red-600 bg-red-700 text-white hover:bg-red-600'
                   : 'border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] hover:border-red-600/60 hover:text-red-700 dark:hover:text-red-400'
@@ -2215,7 +2215,7 @@ export default function RouteMapCanvas({
             aria-pressed={fullscreenActive}
             aria-label={fullscreenActive ? 'Exit fullscreen map' : 'Toggle fullscreen map'}
             title={fullscreenActive ? 'Exit fullscreen (Esc)' : 'Fullscreen map'}
-            className={`flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border text-xs font-semibold shadow-sm ${
+            className={`flex min-h-11 min-w-11 lg:min-h-9 lg:min-w-9 items-center justify-center rounded-xl border text-xs font-semibold shadow-sm ${
               fullscreenActive
                 ? 'border-red-600 bg-red-700 text-white'
                 : 'border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] hover:border-red-600/60'
@@ -2235,7 +2235,7 @@ export default function RouteMapCanvas({
                 aria-pressed={activeImagery}
                 aria-label={activeImagery ? 'Hide satellite imagery' : 'Show satellite imagery'}
                 title={activeImagery ? 'Hide Satellite' : 'Satellite imagery'}
-                className={`flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border text-xs font-semibold shadow-sm ${
+                className={`flex min-h-11 min-w-11 lg:min-h-9 lg:min-w-9 items-center justify-center rounded-xl border text-xs font-semibold shadow-sm ${
                   activeImagery
                     ? 'border-red-600 bg-red-700 text-white'
                     : 'border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] hover:border-red-600/60'
@@ -2249,7 +2249,7 @@ export default function RouteMapCanvas({
                 aria-pressed={active3D}
                 aria-label={active3D ? 'Switch to 2D map view' : 'Switch to 3D terrain relief view'}
                 title={active3D ? 'Switch to 2D' : '3D Terrain'}
-                className={`flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border text-xs font-semibold shadow-sm ${
+                className={`flex min-h-11 min-w-11 lg:min-h-9 lg:min-w-9 items-center justify-center rounded-xl border text-xs font-semibold shadow-sm ${
                   active3D
                     ? 'border-red-600 bg-red-700 text-white'
                     : 'border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] hover:border-red-600/60'
@@ -2266,7 +2266,7 @@ export default function RouteMapCanvas({
               aria-pressed={isPlayingPreview}
               aria-label={isPlayingPreview ? 'Pause course preview' : 'Play course preview'}
               title={isPlayingPreview ? 'Pause preview' : 'Preview course'}
-              className={`flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border text-xs font-semibold shadow-sm ${
+              className={`flex min-h-11 min-w-11 lg:min-h-9 lg:min-w-9 items-center justify-center rounded-xl border text-xs font-semibold shadow-sm ${
                 isPlayingPreview
                   ? 'border-red-600 bg-red-700 text-white'
                   : 'border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] hover:border-red-600/60'

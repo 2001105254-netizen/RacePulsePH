@@ -121,14 +121,6 @@ export const THIRD_PARTY_SDK_MANIFEST: ThirdPartySdkEntry[] = [
     purpose: 'Renders legibility-focused race timer and UI web fonts.',
     sourceFiles: 'index.html',
   },
-  {
-    name: 'Generative AI Package (@google/genai 2.4.0)',
-    category: 'Unused Dependency',
-    consentRequired: false,
-    dataCollected: 'None. Audited across src/, functions/, and server.ts: zero imports, zero client keys, and zero outbound requests.',
-    purpose: 'Residual scaffold dependency documented transparently for supply-chain auditing; inactive at runtime.',
-    sourceFiles: 'package.json',
-  },
 ];
 
 export const BROWSER_STORAGE_MANIFEST: BrowserStorageKeyEntry[] = [

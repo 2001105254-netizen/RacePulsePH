@@ -501,7 +501,7 @@ export default function PublicAgeStatsSection({
                     <div className="text-xs font-semibold text-[var(--text-primary)] truncate">
                       {awd.displayName}
                     </div>
-                    <div className="text-xs text-red-700 dark:text-red-400 font-medium truncate">
+                    <div className="text-xs text-red-700 dark:text-red-400 font-semibold truncate">
                       {awd.awards.join(', ')}
                     </div>
                     <div className="flex items-center justify-between gap-2 pt-0.5 text-xs font-mono tabular-nums text-[var(--text-secondary)]">

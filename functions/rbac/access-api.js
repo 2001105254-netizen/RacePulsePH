@@ -8,63 +8,93 @@ const {
   verifyAppCheckRequest,
 } = require('./request-guard');
 
+const PROD_ACCESS_ORIGINS = [
+  'https://racepulseph.web.app',
+  'https://racepulseph.firebaseapp.com',
+  'https://racepulseph.com',
+  'https://www.racepulseph.com',
+  'capacitor://localhost',
+];
+
+const LOCALHOST_ACCESS_ORIGINS = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+];
+
+function getAccessCorsOrigins() {
+  const allowLocalhost =
+    process.env.FUNCTIONS_EMULATOR === 'true' ||
+    process.env.RACEPULSE_ALLOW_LOCALHOST_CORS === 'true';
+  return allowLocalhost
+    ? [...PROD_ACCESS_ORIGINS, ...LOCALHOST_ACCESS_ORIGINS]
+    : PROD_ACCESS_ORIGINS;
+}
+
+function createAccessApp({ admin: adminClient, db, appCheckMode } = {}) {
+  return async (req, res) => {
+    applyApiSecurityHeaders(res);
+    res.set('Access-Control-Expose-Headers', 'Retry-After');
+    const path = (req.path || '/').replace(/\/+$/, '') || '/';
+    try {
+      if (req.method !== 'POST') return res.status(405).json({ error: 'Use POST.' });
+      if (!req.is('application/json') || (req.rawBody?.length || 0) > 65536 || !req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+        return res.status(400).json({ error: 'Invalid request.' });
+      }
+      const clientIp = extractClientIp(req);
+      await enforceRateLimit({
+        db,
+        namespace: 'access_ip',
+        identifier: clientIp,
+        limit: 120,
+        windowMs: 60 * 1000,
+        message: 'Too many access checks from this network. Please wait a moment.',
+        memoryOnly: true,
+      });
+      // Server-to-server LAN hub calls /session without a browser App Check token,
+      // so /session checks any supplied token without requiring one from Node hubs.
+      await verifyAppCheckRequest(req, {
+        admin: adminClient,
+        mode: appCheckMode ?? (path === '/session' ? 'monitor' : undefined),
+      });
+
+      const bearer = req.get('Authorization')?.match(/^Bearer (.+)$/)?.[1];
+      if (!bearer) return res.status(401).json({ error: 'Sign in to continue.' });
+      let identity;
+      try { identity = await adminClient.auth().verifyIdToken(bearer, true); } catch { return res.status(401).json({ error: 'Your session has expired.' }); }
+
+      const isMutation = ['/save', '/restore', '/remove'].includes(path);
+      await enforceRateLimit({
+        db,
+        namespace: isMutation ? 'access_mut_u' : 'access_uid',
+        identifier: identity.uid,
+        limit: isMutation ? 20 : 60,
+        windowMs: 60 * 1000,
+        message: 'Too many access requests. Please wait a moment.',
+        memoryOnly: !isMutation,
+      });
+
+      return res.json(await createAccessService(db).execute(identity.uid, path, req.body));
+    } catch (error) {
+      const status = error && typeof error.status === 'number' && error.status >= 400 && error.status < 600 ? error.status : 500;
+      const retryAfter = Number(error?.retryAfter) || 0;
+      if (retryAfter > 0) res.set('Retry-After', String(retryAfter));
+      if (status >= 500) {
+        console.error('Access API error', { route: path, status, code: error?.code || 'internal' });
+      }
+      const safeMessage = status < 500 && error?.message ? error.message : 'Access command failed.';
+      return res.status(status).json({
+        error: safeMessage,
+        ...(retryAfter > 0 ? { retryAfter } : {}),
+      });
+    }
+  };
+}
+
+exports.createAccessApp = createAccessApp;
 exports.accessApi = onRequest({
   region: 'asia-southeast1',
   maxInstances: 20,
   concurrency: 80,
   timeoutSeconds: 30,
-  cors: ['http://localhost:3000', 'http://localhost:5173', 'https://racepulseph.web.app', 'https://racepulseph.firebaseapp.com', 'https://racepulseph.com', 'https://www.racepulseph.com', 'capacitor://localhost'],
-}, async (req, res) => {
-  applyApiSecurityHeaders(res);
-  res.set('Access-Control-Expose-Headers', 'Retry-After');
-  try {
-    if (req.method !== 'POST') return res.status(405).json({ error: 'Use POST.' });
-    if (!req.is('application/json') || (req.rawBody?.length || 0) > 65536 || !req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
-      return res.status(400).json({ error: 'Invalid request.' });
-    }
-    const db = admin.firestore();
-    const clientIp = extractClientIp(req);
-    await enforceRateLimit({
-      db,
-      namespace: 'access_ip',
-      identifier: clientIp,
-      limit: 120,
-      windowMs: 60 * 1000,
-      message: 'Too many access checks from this network. Please wait a moment.',
-      memoryOnly: true,
-    });
-    // Server-to-server LAN hub calls /session without a browser App Check token,
-    // so /session checks any supplied token without requiring one from Node hubs.
-    await verifyAppCheckRequest(req, {
-      admin,
-      mode: req.path === '/session' ? 'monitor' : undefined,
-    });
-
-    const bearer = req.get('Authorization')?.match(/^Bearer (.+)$/)?.[1];
-    if (!bearer) return res.status(401).json({ error: 'Sign in to continue.' });
-    let identity;
-    try { identity = await admin.auth().verifyIdToken(bearer, true); } catch { return res.status(401).json({ error: 'Your session has expired.' }); }
-
-    const isMutation = ['/save', '/restore', '/remove'].includes(req.path);
-    await enforceRateLimit({
-      db,
-      namespace: isMutation ? 'access_mut_u' : 'access_uid',
-      identifier: identity.uid,
-      limit: isMutation ? 20 : 60,
-      windowMs: 60 * 1000,
-      message: 'Too many access requests. Please wait a moment.',
-      memoryOnly: !isMutation,
-    });
-
-    return res.json(await createAccessService(db).execute(identity.uid, req.path, req.body));
-  } catch (error) {
-    const status = error && typeof error.status === 'number' && error.status >= 400 && error.status < 600 ? error.status : 400;
-    const retryAfter = Number(error?.retryAfter) || 0;
-    if (retryAfter > 0) res.set('Retry-After', String(retryAfter));
-    const safeMessage = status < 500 && error?.message ? error.message : 'Access command failed.';
-    return res.status(status).json({
-      error: safeMessage,
-      ...(retryAfter > 0 ? { retryAfter } : {}),
-    });
-  }
-});
+  cors: getAccessCorsOrigins(),
+}, (req, res) => createAccessApp({ admin, db: admin.firestore() })(req, res));

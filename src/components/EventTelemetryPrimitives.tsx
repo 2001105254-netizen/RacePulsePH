@@ -158,7 +158,7 @@ export const EventTelemetryCard: React.FC<EventTelemetryCardProps> = ({
               <div
                 key={dist.id}
                 style={{ width: `${pct}%`, backgroundColor: dist.color }}
-                className="h-full first:rounded-l-full last:rounded-r-full transition-all duration-200"
+                className="h-full first:rounded-l-full last:rounded-r-full transition-[width] duration-200"
                 title={`${dist.label}: ${formatCount(dist.runners)} runners (${pct.toFixed(1)}%)`}
               />
             );
@@ -188,11 +188,11 @@ export const EventTelemetryCard: React.FC<EventTelemetryCardProps> = ({
                       style={{ backgroundColor: dist.color }}
                       aria-hidden="true"
                     />
-                    <span className="text-[11px] font-semibold text-[var(--text-primary)] truncate">
+                    <span className="text-xs font-semibold text-[var(--text-primary)] truncate">
                       {dist.label}
                     </span>
                   </div>
-                  <span className="font-mono text-[10px] tabular-nums text-[var(--text-secondary)] shrink-0">
+                  <span className="font-mono text-xs tabular-nums text-[var(--text-secondary)] shrink-0">
                     {canViewRoster ? `${sharePct}%` : '--'}
                   </span>
                 </div>
@@ -201,7 +201,7 @@ export const EventTelemetryCard: React.FC<EventTelemetryCardProps> = ({
                     {canViewRoster ? formatCount(dist.runners) : '--'}
                   </span>
                   {canViewRoster && canViewRevenue && (
-                    <span className="text-[10px] text-emerald-700 dark:text-emerald-400 truncate">
+                    <span className="text-xs text-emerald-700 dark:text-emerald-400 truncate">
                       {formatCompactPhp(dist.estRevenue)}
                     </span>
                   )}
@@ -214,7 +214,7 @@ export const EventTelemetryCard: React.FC<EventTelemetryCardProps> = ({
 
       {/* High-FPS Pure SVG Area Sparkline */}
       <div>
-        <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-[var(--text-secondary)]">
+        <div className="mb-1.5 flex items-center justify-between gap-2 text-xs text-[var(--text-secondary)]">
           <span className="truncate">
             {usingFinishScanSeries
               ? 'Finish Chute Density (interval buckets)'
@@ -222,7 +222,7 @@ export const EventTelemetryCard: React.FC<EventTelemetryCardProps> = ({
               ? 'Cumulative Registration Curve (0 finish scans)'
               : 'Cumulative Registration Velocity'}
           </span>
-          <span className="font-mono text-[11px] font-semibold tabular-nums text-emerald-700 dark:text-emerald-400 shrink-0">
+          <span className="font-mono text-xs font-semibold tabular-nums text-emerald-700 dark:text-emerald-400 shrink-0">
             {canViewRoster ? sparkSummaryText : 'Restricted'}
           </span>
         </div>
@@ -257,7 +257,7 @@ export const EventTelemetryCard: React.FC<EventTelemetryCardProps> = ({
           )}
         </svg>
 
-        <div className="mt-1 flex items-center justify-between text-[10px] font-mono tabular-nums text-[var(--text-secondary)]">
+        <div className="mt-1 flex items-center justify-between text-xs font-mono tabular-nums text-[var(--text-secondary)]">
           <span>{velocityLabels[0] || 'Start'}</span>
           <span>
             {usingFinishScanSeries ? `Median ${medianFinishLabel}` : velocityLabels[1] || 'Mid'}
@@ -270,14 +270,14 @@ export const EventTelemetryCard: React.FC<EventTelemetryCardProps> = ({
       {canViewRoster && ageSummary && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-[var(--border-default)]">
           <div className="rounded-lg bg-[var(--surface-card)] px-2 py-1.5 border border-[var(--border-default)]/70">
-            <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">Median Age</div>
+            <div className="text-xs uppercase tracking-wider text-[var(--text-secondary)]">Median Age</div>
             <div className="mt-0.5 font-mono text-xs font-semibold tabular-nums text-[var(--text-primary)]">
               {ageSummary.medianAge !== null ? `${ageSummary.medianAge} yrs` : '--'}
             </div>
           </div>
 
           <div className="rounded-lg bg-[var(--surface-card)] px-2 py-1.5 border border-[var(--border-default)]/70">
-            <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">Gender M/F</div>
+            <div className="text-xs uppercase tracking-wider text-[var(--text-secondary)]">Gender M/F</div>
             <div className="mt-0.5 font-mono text-xs font-semibold tabular-nums text-[var(--text-primary)]">
               {(() => {
                 const male = genderBreakdown.find((g) => g.id === 'male')?.pct ?? 0;
@@ -288,14 +288,14 @@ export const EventTelemetryCard: React.FC<EventTelemetryCardProps> = ({
           </div>
 
           <div className="rounded-lg bg-[var(--surface-card)] px-2 py-1.5 border border-[var(--border-default)]/70 min-w-0">
-            <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] truncate">Peak Age Cut</div>
+            <div className="text-xs uppercase tracking-wider text-[var(--text-secondary)] truncate">Peak Age Cut</div>
             <div className="mt-0.5 font-mono text-xs font-semibold tabular-nums text-emerald-700 dark:text-emerald-400 truncate">
               {topAgeCutLabel || '--'}
             </div>
           </div>
 
           <div className="rounded-lg bg-[var(--surface-card)] px-2 py-1.5 border border-[var(--border-default)]/70">
-            <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">
+            <div className="text-xs uppercase tracking-wider text-[var(--text-secondary)]">
               {canViewRevenue ? 'Paid Share' : 'Age Span'}
             </div>
             <div className="mt-0.5 font-mono text-xs font-semibold tabular-nums text-[var(--text-primary)]">
@@ -339,14 +339,14 @@ export const TableRunnerMicroBar: React.FC<TableRunnerMicroBarProps> = ({
         title={`${formatCount(assignedBibCount)}/${formatCount(runnerCount)} bibs assigned`}
       >
         <div
-          className="h-full rounded-full transition-all duration-200"
+          className="h-full rounded-full transition-[width,background-color] duration-200"
           style={{
             width: `${fillPct}%`,
             backgroundColor: completed ? '#a1a1aa' : fillPct >= 90 ? '#ef4444' : '#10b981',
           }}
         />
       </div>
-      <span className="font-mono text-[10px] leading-none tabular-nums text-[var(--text-secondary)]">
+      <span className="font-mono text-xs leading-none tabular-nums text-[var(--text-secondary)]">
         {runnerCount > 0 ? `${bibPct}% bib` : '0 bib'}
       </span>
     </div>
@@ -398,7 +398,7 @@ export const TableRevenueMicroPill: React.FC<TableRevenueMicroPillProps> = ({
         </svg>
       )}
       <span
-        className={`font-mono text-[10px] leading-none tabular-nums ${
+        className={`font-mono text-xs leading-none tabular-nums ${
           has7dSurge
             ? 'text-emerald-700 dark:text-emerald-400 font-semibold'
             : 'text-[var(--text-secondary)]'
@@ -623,7 +623,7 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
               <p className="text-xs text-[var(--text-secondary)]">Roster view permission required for age-cut statistics.</p>
             ) : (
               <>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <div className="rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2 py-1.5">
                     <div className="text-xs text-[var(--text-secondary)]">Median</div>
                     <div className="font-mono text-xs font-semibold tabular-nums text-[var(--text-primary)]">
@@ -685,7 +685,7 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
                         </div>
                         <div className="h-1.5 w-full rounded-full bg-[var(--surface-card)] overflow-hidden">
                           <div
-                            className="h-full rounded-full transition-all duration-200"
+                            className="h-full rounded-full transition-[width] duration-200"
                             style={{
                               width: `${Math.max(cut.count > 0 ? 4 : 0, Math.min(100, cut.pct))}%`,
                               backgroundColor: cut.color,
@@ -870,7 +870,7 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
                     </div>
                     <div className="h-2 w-full rounded-full bg-[var(--surface-card)] overflow-hidden">
                       <div
-                        className="h-full rounded-full transition-all duration-200"
+                        className="h-full rounded-full transition-[width] duration-200"
                         style={{
                           width: `${Math.max(stage.count > 0 ? 4 : 0, Math.min(100, stage.pct))}%`,
                           backgroundColor: stage.color,
@@ -1010,11 +1010,11 @@ export const BottomTelemetryDock: React.FC<BottomTelemetryDockProps> = ({
                       </div>
                       <div className="relative h-2 w-full rounded-full bg-[var(--surface-card)] overflow-hidden">
                         <div
-                          className="h-full rounded-full opacity-35 transition-all duration-200"
+                          className="h-full rounded-full opacity-35 transition-[width] duration-200"
                           style={{ width: `${canViewRoster ? regPct : 0}%`, backgroundColor: dist.color }}
                         />
                         <div
-                          className="absolute inset-y-0 left-0 rounded-full transition-all duration-200"
+                          className="absolute inset-y-0 left-0 rounded-full transition-[width] duration-200"
                           style={{
                             width: `${canViewRoster ? Math.round((regPct * bibPct) / 100) : 0}%`,
                             backgroundColor: dist.color,

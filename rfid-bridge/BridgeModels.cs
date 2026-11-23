@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Text.RegularExpressions;
 
 namespace RacePulseRfidBridge
 {
@@ -17,6 +18,8 @@ namespace RacePulseRfidBridge
         public string RacePulseEndpoint { get; set; } = "http://localhost:3000/api/rfid-events";
         public int DedupeMilliseconds { get; set; } = 4000;
         public string BridgeKey { get; set; } = "";
+        public string RaceId { get; set; } = "";
+        public string SpoolDirectory { get; set; } = "";
 
         public static void Validate(BridgeConfig config)
         {
@@ -28,6 +31,8 @@ namespace RacePulseRfidBridge
                 throw new InvalidOperationException("RacePulse endpoint must be a valid http:// or https:// URL.");
             if (!string.IsNullOrWhiteSpace(config.BridgeKey) && config.BridgeKey.Trim().Length < 32)
                 throw new InvalidOperationException("Bridge key must be at least 32 characters when configured.");
+            if (!string.IsNullOrWhiteSpace(config.RaceId) && !Regex.IsMatch(config.RaceId.Trim(), "^[a-zA-Z0-9_-]{1,128}$"))
+                throw new InvalidOperationException("Race ID may contain only letters, digits, underscores, and hyphens (max 128 chars).");
             if (config.ReaderPort < 1 || config.ReaderPort > 65535)
                 throw new InvalidOperationException("Reader port must be between 1 and 65535.");
             if (config.Antennas == null || config.Antennas.Length == 0 || config.Antennas.Any(antenna => antenna < 1 || antenna > 8))

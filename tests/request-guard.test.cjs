@@ -255,3 +255,25 @@ test('searchRunnerDirectory caches directory reads to prevent traffic amplificat
   await searchRunnerDirectory({ db, secret: 's', callerUid: 'caller', rawQuery: 'maria', now: () => clock });
   assert.equal(directoryReads, 2);
 });
+
+
+test('getDefaultAllowedOrigins excludes localhost unless emulator or RACEPULSE_ALLOW_LOCALHOST_CORS is enabled', () => {
+  const prevEmul = process.env.FUNCTIONS_EMULATOR;
+  const prevLocal = process.env.RACEPULSE_ALLOW_LOCALHOST_CORS;
+  delete process.env.FUNCTIONS_EMULATOR;
+  delete process.env.RACEPULSE_ALLOW_LOCALHOST_CORS;
+  try {
+    const prodOrigins = guard.getDefaultAllowedOrigins();
+    assert.equal(prodOrigins.includes('http://localhost:5173'), false);
+    assert.equal(prodOrigins.includes('https://racepulseph.com'), true);
+
+    process.env.RACEPULSE_ALLOW_LOCALHOST_CORS = 'true';
+    const devOrigins = guard.getDefaultAllowedOrigins();
+    assert.equal(devOrigins.includes('http://localhost:5173'), true);
+  } finally {
+    if (prevEmul === undefined) delete process.env.FUNCTIONS_EMULATOR;
+    else process.env.FUNCTIONS_EMULATOR = prevEmul;
+    if (prevLocal === undefined) delete process.env.RACEPULSE_ALLOW_LOCALHOST_CORS;
+    else process.env.RACEPULSE_ALLOW_LOCALHOST_CORS = prevLocal;
+  }
+});

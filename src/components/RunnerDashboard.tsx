@@ -729,7 +729,7 @@ export default function RunnerDashboard({
       <button
         type="button"
         onClick={openQrScanner}
-        className="h-9 px-3 rounded-lg bg-red-700 hover:bg-red-600 text-white border border-red-500/30 text-xs font-semibold inline-flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
+        className="min-h-11 px-3 rounded-lg bg-red-700 hover:bg-red-600 text-white border border-red-500/30 text-xs font-semibold inline-flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
       >
         <Camera className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
         <span>Scan Race / Bib QR</span>

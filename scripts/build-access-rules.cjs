@@ -80,6 +80,12 @@ const helpers = `${markerStart}
     }
     function racePermission(action, raceId) { return permission(action) && raceScope(raceId); }
     function changed(fields) { return request.resource.data.diff(resource.data).affectedKeys().hasAny(fields); }
+    function raceTimingLocked(raceId) {
+      let raceData = get(/databases/$(database)/documents/races/$(raceId)).data;
+      return (raceData.get('completedAt', null) != null && raceData.get('completedAt', '') != '')
+        || (raceData.get('gunStartTime', null) != null && raceData.get('gunStartTime', '') != '')
+        || (raceData.get('waveStartTimes', {}) is map && raceData.get('waveStartTimes', {}).size() > 0);
+    }
 ${markerEnd}`;
 source=source.replace('    function isValidId(id)',helpers+'\n\n    function isValidId(id)');
 block('function isSuperAdmin()',`function isSuperAdmin() { return request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && callerDoc().data.role == 'superadmin' && access().status == 'active'; }`);
@@ -144,22 +150,27 @@ block('match /races/{raceId}',`match /races/{raceId} {
         && (!changed(['gunStartTime','waveStartTimes']) || permission('timing.reset') || (permission('timing.start') && !resource.data.get('waveStartTimes', {}).diff(request.resource.data.get('waveStartTimes', {})).affectedKeys().hasAny(resource.data.get('waveStartTimes', {}).keys()) && resource.data.get('gunStartTime', null) == null));
       allow delete: if isSuperAdmin() && raceScope(raceId);
     }`);
-source=source.replace("return managesRace(resource.data.raceId)\n        && resource.data.paymentStatus", "return racePermission('payment.confirm', resource.data.raceId)\n        && resource.data.paymentStatus");
+source=source.replace("return organizerConfirmsManualPaymentWithPerm(managesRace(resource.data.raceId));", "return organizerConfirmsManualPaymentWithPerm(racePermission('payment.confirm', resource.data.raceId));");
 block('match /runners/{regId}',`match /runners/{regId} {
       allow read: if racePermission('roster.view', resource.data.raceId) || (isSignedIn() && resource.data.uid == request.auth.uid && (permission('personal.register') || permission('personal.results') || permission('personal.bibs') || permission('personal.certificates')));
       allow create: if isValidRunnerProfile(request.resource.data) && hasValidRegistrationId(regId, request.resource.data)
-        && (hasNoPaymentMetadata(request.resource.data) || createsManualPaymentReservation(request.resource.data))
         && !request.resource.data.keys().hasAny(['kitClaimedAt','chipId','startsAfterBib'])
-        && (racePermission('roster.add', request.resource.data.raceId) || racePermission('roster.import', request.resource.data.raceId) || (request.resource.data.get('isFreeSlot', false) && racePermission('roster.slots', request.resource.data.raceId)) || (permission('personal.register') && request.resource.data.uid == request.auth.uid && !request.resource.data.get('isFreeSlot', false) && selfRegistrationAllowed(request.resource.data)));
+        && ((permission('personal.register') && request.resource.data.uid == request.auth.uid && !request.resource.data.get('isFreeSlot', false) && selfRegistrationAllowed(request.resource.data))
+          || ((racePermission('roster.add', request.resource.data.raceId) || racePermission('roster.import', request.resource.data.raceId) || (request.resource.data.get('isFreeSlot', false) && racePermission('roster.slots', request.resource.data.raceId))) && (hasNoPaymentMetadata(request.resource.data) || createsManualPaymentReservation(request.resource.data))));
       allow update: if isValidRunnerProfile(request.resource.data) && hasValidRegistrationId(regId, request.resource.data)
         && request.resource.data.uid == resource.data.uid && request.resource.data.raceId == resource.data.raceId && request.resource.data.createdAt == resource.data.createdAt
-        && (organizerConfirmsManualPayment() || (paymentMetadataUnchanged()
+        && (organizerConfirmsManualPaymentWithPerm(racePermission('payment.confirm', resource.data.raceId)) || (paymentMetadataUnchanged()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fullName','gender','age','ageNotProvided','shirtSize','emergencyContactName','emergencyContactPhone','entryCategory','teamName','teamMembers','distance','bibNumber','chipId','startsAfterBib','kitClaimedAt'])
           && (!changed(['chipId']) || racePermission('roster.chips', resource.data.raceId))
           && (!changed(['bibNumber']) || racePermission('roster.bibs', resource.data.raceId))
           && (!changed(['startsAfterBib']) || racePermission('roster.edit', resource.data.raceId))
           && (!changed(['kitClaimedAt']) || racePermission('roster.kits', resource.data.raceId))
-          && (!changed(['fullName','gender','age','ageNotProvided','shirtSize','emergencyContactName','emergencyContactPhone','entryCategory','teamName','teamMembers','distance']) || racePermission('roster.edit', resource.data.raceId) || (permission('personal.register') && resource.data.uid == request.auth.uid && (!changed(['distance','entryCategory']) || resource.data.get('paymentStatus', '') == '')))));
+          && (!changed(['fullName','gender','age','ageNotProvided','shirtSize','emergencyContactName','emergencyContactPhone','entryCategory','teamName','teamMembers','distance'])
+            || racePermission('roster.edit', resource.data.raceId)
+            || (permission('personal.register') && resource.data.uid == request.auth.uid
+              && (!changed(['distance','entryCategory']) || resource.data.get('paymentStatus', '') == '')
+              && (!changed(['fullName','gender','age','ageNotProvided','distance','entryCategory','teamName','teamMembers'])
+                || (!resource.data.keys().hasAny(['kitClaimedAt', 'chipId']) && !raceTimingLocked(resource.data.raceId)))))));
       allow delete: if (isSuperAdmin() && raceScope(resource.data.raceId)) || racePermission('roster.remove', resource.data.raceId) || (permission('personal.register') && resource.data.uid == request.auth.uid && resource.data.get('paymentStatus', '') != 'paid' && !resource.data.keys().hasAny(['chipId','kitClaimedAt']));
     }`);
 source=source.replace('    match /bibCounters/{counterId} {',`    // A server-side QR claim lets a Google Form/imported runner attach their
@@ -171,12 +182,46 @@ source=source.replace('    match /bibCounters/{counterId} {',`    // A server-si
       allow write: if false;
     }
 
+    function bibCounterWriteAllowed(counterId, minCount, prevCount) {
+      let data = request.resource.data;
+      return data.keys().hasOnly(['count','raceId'])
+        && data.raceId is string
+        && isValidId(data.raceId)
+        && counterId.matches(data.raceId + '_.*')
+        && data.count is int
+        && data.count >= minCount
+        && request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && exists(/databases/$(database)/documents/races/$(data.raceId))
+        && bibCounterWriteAllowedWithCaller(data.raceId, data.count, prevCount, callerDoc().data);
+    }
+
+    function bibCounterWriteAllowedWithCaller(raceId, nextCount, prevCount, caller) {
+      let acc = accessForCaller(caller);
+      let isBulkStaff = (permissionForCaller('roster.add', caller, acc) || permissionForCaller('roster.slots', caller, acc))
+        && raceScopeForCaller(raceId, caller, acc);
+      let runnerRegPath = /databases/$(database)/documents/runners/$(request.auth.uid + '_' + raceId);
+      return acc.status == 'active'
+        && (
+          (isBulkStaff && nextCount <= prevCount + 5000)
+          || (!isBulkStaff
+            && permissionForCaller('personal.register', caller, acc)
+            && nextCount == prevCount + 1
+            && !exists(runnerRegPath)
+            && existsAfter(runnerRegPath))
+        );
+    }
+
     match /bibCounters/{counterId} {`);
 block('match /bibCounters/{counterId}',`match /bibCounters/{counterId} {
       allow read: if permission('personal.register') || permission('roster.add') || permission('roster.slots');
-      // Counters contain no private data. Only bounded monotonic increments are permitted.
-      allow create: if request.resource.data.keys().hasOnly(['count','raceId']) && request.resource.data.raceId is string && counterId.matches(request.resource.data.raceId + '_.*') && request.resource.data.count is int && request.resource.data.count > 0 && exists(/databases/$(database)/documents/races/$(request.resource.data.raceId)) && ((permission('personal.register') && request.resource.data.count <= 20) || ((racePermission('roster.add', request.resource.data.raceId) || racePermission('roster.slots', request.resource.data.raceId)) && request.resource.data.count <= 5000));
-      allow update: if request.resource.data.keys().hasOnly(['count','raceId']) && request.resource.data.raceId is string && (!('raceId' in resource.data) || request.resource.data.raceId == resource.data.raceId) && counterId.matches(request.resource.data.raceId + '_.*') && request.resource.data.count is int && request.resource.data.count >= resource.data.count && ((permission('personal.register') && request.resource.data.count <= resource.data.count + 20) || ((racePermission('roster.add', request.resource.data.raceId) || racePermission('roster.slots', request.resource.data.raceId)) && request.resource.data.count <= resource.data.count + 5000));
+      // Counters contain no private data. Staff bulk operations remain bounded;
+      // runner self-registrations may advance a counter by exactly 1 only inside
+      // the same transaction that creates their registration document.
+      allow create: if bibCounterWriteAllowed(counterId, 1, 0);
+      allow update: if (!('raceId' in resource.data) || request.resource.data.raceId == resource.data.raceId)
+        && resource.data.count is int
+        && bibCounterWriteAllowed(counterId, resource.data.count, resource.data.count);
     }`);
 block('match /chipReads/{readId}',`match /chipReads/{readId} {
       allow read: if racePermission('timing.view', resource.data.raceId) || (permission('personal.results') && ownsRecordedSplit(resource.data.raceId, resource.data.bibNumber));
@@ -191,7 +236,6 @@ block('match /liveResults/{raceId}',`match /liveResults/{raceId} {
           || (permission('timing.finish') && !get(/databases/$(database)/documents/races/$(raceId)).data.keys().hasAny(['completedAt']) && request.resource.data.updatedAt == getAfter(/databases/$(database)/documents/races/$(raceId)).data.completedAt));
       allow delete: if isSuperAdmin() && raceScope(raceId);
     }`);
-source=source.replace('data.keys().size() <= 10', 'data.keys().size() <= 11');
 block('match /orders/{orderId}',`match /orders/{orderId} {
       allow read: if permission('engraving.view') || (permission('personal.engraving') && resource.data.get('ownerUid', null) == request.auth.uid);
       allow create: if isValidId(orderId) && isValidOrder(request.resource.data) && request.resource.data.status == 'queued' && (permission('engraving.create') || (permission('personal.engraving') && request.resource.data.ownerUid == request.auth.uid));
@@ -212,6 +256,13 @@ block('match /system/highlightsConfig',`match /system/highlightsConfig {
       allow delete: if isSuperAdmin();
     }
 
+    function canAccessPresetDataWithCaller(presetData, caller, acc) {
+      return (caller.role == 'superadmin' && acc.status == 'active')
+        || (acc.scope == 'all' && permissionForCaller('routes.view', caller, acc))
+        || presetData.ownerUid == request.auth.uid
+        || request.auth.uid in presetData.get('editorIds', []);
+    }
+
     function canAccessPresetData(presetData) {
       return isSuperAdmin()
         || (access().scope == 'all' && permission('routes.view'))
@@ -222,6 +273,56 @@ block('match /system/highlightsConfig',`match /system/highlightsConfig {
     function canAccessPreset(presetId) {
       return exists(/databases/$(database)/documents/routePresets/$(presetId))
         && canAccessPresetData(get(/databases/$(database)/documents/routePresets/$(presetId)).data);
+    }
+
+    function canReadPrivateRoutePublication(data) {
+      let raceId = data.get('raceId', '');
+      return request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && canReadPrivateRoutePublicationWithCaller(raceId, callerDoc().data);
+    }
+
+    function canReadPrivateRoutePublicationWithCaller(raceId, caller) {
+      let acc = accessForCaller(caller);
+      return acc.status == 'active'
+        && (caller.role == 'superadmin'
+          || (permissionForCaller('routes.view', caller, acc)
+            && isValidId(raceId)
+            && exists(/databases/$(database)/documents/races/$(raceId))
+            && raceScopeForCaller(raceId, caller, acc)));
+    }
+
+    function canPublishOrAssignRoute(raceId) {
+      return request.auth != null
+        && isValidId(raceId)
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && exists(/databases/$(database)/documents/races/$(raceId))
+        && canPublishOrAssignRouteWithCaller(raceId, callerDoc().data);
+    }
+
+    function canPublishOrAssignRouteWithCaller(raceId, caller) {
+      let acc = accessForCaller(caller);
+      return (permissionForCaller('routes.publish', caller, acc) || permissionForCaller('routes.assign', caller, acc))
+        && raceScopeForCaller(raceId, caller, acc);
+    }
+
+    function canReadRouteActivity(data) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && canReadRouteActivityWithCaller(data, callerDoc().data);
+    }
+
+    function canReadRouteActivityWithCaller(data, caller) {
+      let acc = accessForCaller(caller);
+      let raceId = data.get('raceId', '');
+      let presetId = data.get('presetId', '');
+      return acc.status == 'active'
+        && (caller.role == 'superadmin'
+          || (permissionForCaller('routes.view', caller, acc)
+            && (data.get('ownerUid', '') == request.auth.uid
+              || data.get('actorUid', '') == request.auth.uid
+              || (isValidId(raceId) && exists(/databases/$(database)/documents/races/$(raceId)) && raceScopeForCaller(raceId, caller, acc))
+              || (isValidId(presetId) && exists(/databases/$(database)/documents/routePresets/$(presetId)) && canAccessPresetDataWithCaller(get(/databases/$(database)/documents/routePresets/$(presetId)).data, caller, acc)))));
     }
 
     match /routePresets/{presetId} {
@@ -258,27 +359,37 @@ block('match /system/highlightsConfig',`match /system/highlightsConfig {
     }
 
     match /publishedRaceRoutes/{publicationId} {
-      allow get, list: if resource.data.get('status', '') == 'published' || permission('routes.view');
-      allow create, update: if isValidId(publicationId) && (permission('routes.publish') || permission('routes.assign'));
+      allow get, list: if resource.data.get('status', '') == 'published' || canReadPrivateRoutePublication(resource.data);
+      allow create: if isValidId(publicationId)
+        && request.resource.data.raceId is string
+        && canPublishOrAssignRoute(request.resource.data.raceId);
+      allow update: if isValidId(publicationId)
+        && request.resource.data.raceId is string
+        && resource.data.raceId == request.resource.data.raceId
+        && canPublishOrAssignRoute(request.resource.data.raceId);
       allow delete: if isSuperAdmin();
     }
 
     match /raceRouteCatalog/{entryId} {
       allow read: if true;
-      allow create, update: if isValidId(entryId) && (permission('routes.publish') || permission('routes.assign'));
+      allow create: if isValidId(entryId)
+        && request.resource.data.raceId is string
+        && canPublishOrAssignRoute(request.resource.data.raceId);
+      allow update: if isValidId(entryId)
+        && request.resource.data.raceId is string
+        && resource.data.raceId == request.resource.data.raceId
+        && canPublishOrAssignRoute(request.resource.data.raceId);
       allow delete: if isSuperAdmin();
     }
 
     match /routeJobs/{jobId} {
-      allow read: if permission('routes.view');
-      allow create, update: if isValidId(jobId) && permission('routes.edit');
-      allow delete: if isSuperAdmin();
+      allow read: if canReadRouteActivity(resource.data);
+      allow create, update, delete: if false;
     }
 
     match /routeAudit/{eventId} {
-      allow read: if permission('routes.view');
-      allow create: if isValidId(eventId) && (permission('routes.edit') || permission('routes.publish') || permission('routes.assign') || permission('routes.archive'));
-      allow update, delete: if false;
+      allow read: if canReadRouteActivity(resource.data);
+      allow create, update, delete: if false;
     }`);
 // Social mutations retain their existing ownership/consent restrictions.
 const socialStart=source.indexOf('match /friendRequests/'),socialEnd=source.indexOf('// ========== SYSTEM');
@@ -317,13 +428,14 @@ for (const [path,name] of [['races','raceUpdateAllowed'],['runners','runnerUpdat
 {
  const begin=source.indexOf('match /runners/{regId}'),allow=source.indexOf('allow create: if ',begin),end=source.indexOf(';',allow);
  const original=source.slice(allow+'allow create: if '.length,end);
- const trimmedOriginal=original.replace('isValidRunnerProfile(request.resource.data) && hasValidRegistrationId(regId, request.resource.data)\n        && ','');
+ const trimmedOriginal=original.replace("isValidRunnerProfile(request.resource.data) && hasValidRegistrationId(regId, request.resource.data)\n        && !request.resource.data.keys().hasAny(['kitClaimedAt','chipId','startsAfterBib'])\n        && ",'');
  const expression=trimmedOriginal
-   .replace(/racePermission\('([^']+)', ([^)]+)\)/g,"(permBase('$1', role, approved, p, o) && scoped)")
+   .replace(/racePermission\('([^']+)', ([^)]+)\)/g,"(permBase('$1', role, approved, p, o) && raceScopeForCaller($2, caller, acc))")
    .replace(/permission\('([^']+)'\)/g,"permBase('$1', role, approved, p, o)");
  const helper=`function runnerCreateAllowed(regId) {
       return request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && isValidRunnerProfile(request.resource.data) && hasValidRegistrationId(regId, request.resource.data)
+        && !request.resource.data.keys().hasAny(['kitClaimedAt','chipId','startsAfterBib'])
         && runnerCreateAllowedWithCaller(callerDoc().data);
     }
     function runnerCreateAllowedWithCaller(caller) {
@@ -332,7 +444,6 @@ for (const [path,name] of [['races','raceUpdateAllowed'],['runners','runnerUpdat
       let approved = caller.get('approved', false) == true;
       let p = acc.get('permissions', {});
       let o = acc.get('overrides', {});
-      let scoped = raceScopeForCaller(request.resource.data.raceId, caller, acc);
       return acc.status == 'active' && ${expression};
     }
     `;

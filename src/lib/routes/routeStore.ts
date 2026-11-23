@@ -1395,7 +1395,7 @@ export function getPublishedCoursesForRace(raceId: string): PublishedRaceRoute[]
     }
   }
   for (const binding of Object.values(store.bindings)) {
-    if (binding.raceId !== raceId) continue;
+    if (binding.raceId !== raceId || !binding.currentPublicationId) continue;
     const pub = store.publications[binding.currentPublicationId];
     if (pub && pub.status === 'published' && !seen.has(pub.id)) {
       seen.add(pub.id);
@@ -1481,7 +1481,7 @@ export function subscribeRacePublishedCourses(
       }
     }
     for (const binding of Object.values(store.bindings)) {
-      if (binding.raceId !== raceId) continue;
+      if (binding.raceId !== raceId || !binding.currentPublicationId) continue;
       const pub = store.publications[binding.currentPublicationId];
       if (pub && pub.status === 'published' && !seen.has(pub.id)) {
         seen.add(pub.id);
@@ -1514,7 +1514,7 @@ export function subscribeRacePublishedCourses(
     (snap) => {
       remoteBindings = snap.docs.map((d) => ({ ...(d.data() as RaceRouteBinding), distanceId: (d.data() as RaceRouteBinding).distanceId || d.id }));
       for (const binding of remoteBindings) {
-        queueFetchPublication(binding.currentPublicationId);
+        if (binding.currentPublicationId) queueFetchPublication(binding.currentPublicationId);
       }
       emit();
     },
@@ -1913,11 +1913,11 @@ export function createPresetDraftCommand(input: {
   });
   saveToStorage(store);
   void tryRemoteCommand('/create-preset', {
+    ...preset,
+    ...draft,
     requestId: crypto.randomUUID(),
     presetId,
     draftId,
-    ...preset,
-    ...draft,
   }).catch(() => {});
   return { preset, draft };
 }

@@ -1,18 +1,33 @@
 import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
 import { onIdTokenChanged, User } from 'firebase/auth';
-import { doc, onSnapshot, writeBatch } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { AnimatePresence, LazyMotion, LayoutGroup, MotionConfig, domMax, m } from 'motion/react';
 import { auth, db, signOutUser } from './firebase';
+import ErrorBoundary from './components/ui/ErrorBoundary';
 import PublicRaceLanding from './components/PublicRaceLanding';
 import { PublicLegalPage, PublicNotFoundView } from './components/PublicInfoPages';
 import CookieConsentBanner from './components/CookieConsentBanner';
 import UnsubscribePage from './components/UnsubscribePage';
 import { LEGAL_CONFIG, LEGAL_DOCUMENTS, type LegalDocKey } from './lib/legalConfig';
+import {
+  guestScreenFromLocation,
+  isClientNavigationClick,
+  isImmediateGuestRoute,
+  isPublicUtilityScreen,
+  normalizedPathname,
+  pathForGuestScreen,
+  registrationRaceIdFromUrl,
+  resolveSignedInViewPriority,
+  utilityViewFromPath,
+  type GuestScreen,
+  type SignedInUtilityView,
+  type Theme,
+} from './lib/appRouting';
 import { exitAndroidApp, subscribeAndroidBackButton, syncAndroidSystemBars } from './lib/capacitorAndroid';
 import { matchRouteLocation } from './lib/routes/routing';
 import { WorkspaceHeaderProvider, useWorkspaceHeader } from './lib/workspaceHeader';
 import { UserProfile } from './types';
-import { Sun, Moon, RefreshCw, Clock3, LogOut, LogIn, UserPlus, ArrowLeft, ShieldCheck, ChevronUp, Compass, Menu, Check } from 'lucide-react';
+import { Sun, Moon, LogIn, UserPlus, ArrowLeft, ChevronUp, Compass, Menu, Check } from 'lucide-react';
 import { EMIL_EASE, KINETIC_SPRING, ViewLoadingSkeleton, type NavDirection } from './components/ui/MotionPrimitives';
 import { PulseDivider, RedTribalPatternBackdrop } from './components/ui/KineticTelemetry';
 
@@ -156,66 +171,6 @@ const RouteStudioWrapper = lazy(async () => {
   };
 });
 
-type Theme = 'light' | 'dark';
-type GuestScreen = 'landing' | 'login' | 'signup' | LegalDocKey | 'unsubscribe' | 'not-found';
-type SignedInUtilityView = LegalDocKey | 'unsubscribe' | null;
-
-function normalizedPathname(): string {
-  const raw = window.location.pathname.toLowerCase();
-  if (raw.length > 1 && raw.endsWith('/')) return raw.slice(0, -1);
-  return raw || '/';
-}
-
-// Event registration QR codes use ?register={raceId}. Keep this intentionally
-// small and local: race IDs are public identifiers, and the actual race is
-// still loaded/validated from Firestore before a runner can submit.
-function registrationRaceIdFromUrl(): string | null {
-  const raceId = new URLSearchParams(window.location.search).get('register')?.trim();
-  return raceId || null;
-}
-
-function utilityViewFromPath(path: string): SignedInUtilityView {
-  if (path === '/privacy' || path === '/privacy-policy') return 'privacy';
-  if (path === '/terms' || path === '/terms-of-service' || path === '/terms-of-use') return 'terms';
-  if (path === '/refund-policy' || path === '/refund') return 'refund';
-  if (path === '/cookie-policy' || path === '/cookies') return 'cookies';
-  if (path === '/unsubscribe') return 'unsubscribe';
-  return null;
-}
-
-function guestScreenFromLocation(): GuestScreen {
-  if (registrationRaceIdFromUrl()) return 'signup';
-  if (matchRouteLocation(window.location.pathname, window.location.search)) return 'landing';
-  const path = normalizedPathname();
-  if (path === '/' || path === '/index.html') return 'landing';
-  if (path === '/login' || path === '/signin') return 'login';
-  if (path === '/register' || path === '/signup') return 'signup';
-  const utility = utilityViewFromPath(path);
-  if (utility) return utility;
-  return 'not-found';
-}
-
-function pathForGuestScreen(screen: GuestScreen): string {
-  switch (screen) {
-    case 'login':
-      return '/login';
-    case 'signup':
-      return '/register';
-    case 'privacy':
-      return '/privacy-policy';
-    case 'terms':
-      return '/terms-of-service';
-    case 'refund':
-      return '/refund-policy';
-    case 'cookies':
-      return '/cookie-policy';
-    case 'unsubscribe':
-      return '/unsubscribe';
-    default:
-      return '/';
-  }
-}
-
 function useTheme() {
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem('racepulse_theme');
@@ -240,7 +195,7 @@ const LANDING_NAV_SECTIONS = [
 ] as const;
 
 function getE2eProfile(): UserProfile | null {
-  if (typeof window === 'undefined') return null;
+  if (!import.meta.env.DEV || typeof window === 'undefined') return null;
   try {
     const raw =
       window.sessionStorage.getItem('racepulse_e2e_profile') ||
@@ -293,7 +248,7 @@ function AppContent() {
   });
   const [profileError, setProfileError] = useState(false);
   const [authError, setAuthError] = useState(false);
-  const [emailVerified, setEmailVerified] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(() => Boolean(getE2eProfile()));
   const [guestScreen, setGuestScreen] = useState<GuestScreen>(() => guestScreenFromLocation());
   const [signedInUtilityView, setSignedInUtilityView] = useState<SignedInUtilityView>(() =>
     utilityViewFromPath(normalizedPathname())
@@ -309,6 +264,18 @@ function AppContent() {
   const [activeRaceTitle, setActiveRaceTitle] = useState<string | null>(null);
   const [pendingRaceId, setPendingRaceId] = useState<string | null>(() => registrationRaceIdFromUrl());
   const [runnerSignupIntent, setRunnerSignupIntent] = useState(() => !!registrationRaceIdFromUrl());
+  const guestScreenRef = React.useRef<GuestScreen>(guestScreen);
+  guestScreenRef.current = guestScreen;
+  const pendingRaceIdRef = React.useRef<string | null>(pendingRaceId);
+  pendingRaceIdRef.current = pendingRaceId;
+  const runnerSignupIntentRef = React.useRef<boolean>(runnerSignupIntent);
+  runnerSignupIntentRef.current = runnerSignupIntent;
+  const legalReturnRef = React.useRef<{
+    screen: 'landing' | 'login' | 'signup';
+    raceId: string | null;
+    lockRunner: boolean;
+  } | null>(null);
+  const [legalReturnOrigin, setLegalReturnOrigin] = useState<'landing' | 'login' | 'signup' | null>(null);
   const [activeLandingSection, setActiveLandingSection] = useState<string>('podium-highlights');
   const [landingNavTier, setLandingNavTier] = useState<'compact' | 'medium' | 'wide'>('compact');
   const [landingMenuOpen, setLandingMenuOpen] = useState(false);
@@ -545,6 +512,21 @@ function AppContent() {
       next: Exclude<GuestScreen, 'not-found'>,
       options?: { raceId?: string | null; lockRunner?: boolean; preserveScroll?: boolean; direction?: NavDirection }
     ) => {
+      if (isPublicUtilityScreen(next)) {
+        const currentScreen = guestScreenRef.current;
+        if (currentScreen === 'landing' || currentScreen === 'login' || currentScreen === 'signup') {
+          legalReturnRef.current = {
+            screen: currentScreen,
+            raceId: pendingRaceIdRef.current,
+            lockRunner: runnerSignupIntentRef.current,
+          };
+          setLegalReturnOrigin(currentScreen);
+        }
+      } else {
+        legalReturnRef.current = null;
+        setLegalReturnOrigin(null);
+      }
+
       const targetPath = pathForGuestScreen(next);
       const url = new URL(window.location.href);
       url.pathname = targetPath;
@@ -569,6 +551,19 @@ function AppContent() {
     []
   );
 
+  const closeGuestUtility = useCallback(() => {
+    const target = legalReturnRef.current;
+    if (target) {
+      navigateGuest(target.screen, {
+        raceId: target.raceId,
+        lockRunner: target.lockRunner,
+        direction: 'back',
+      });
+      return;
+    }
+    navigateGuest('landing', { direction: 'back' });
+  }, [navigateGuest]);
+
   const navigateUrl = useCallback((targetUrl: string) => {
     const resolved = new URL(targetUrl, window.location.origin);
     if (resolved.origin !== window.location.origin) return;
@@ -589,17 +584,19 @@ function AppContent() {
     setSignedInUtilityView(null);
     const url = new URL(window.location.href);
     url.pathname = '/';
-    url.search = '';
-    window.history.pushState({}, '', url.pathname);
-    setCurrentPathname('/');
-    setCurrentSearch('');
+    const raceId = pendingRaceIdRef.current;
+    url.search = raceId ? `?register=${encodeURIComponent(raceId)}` : '';
+    const nextUrl = `${url.pathname}${url.search}`;
+    window.history.pushState({}, '', nextUrl);
+    setCurrentPathname(url.pathname);
+    setCurrentSearch(url.search);
     setNavDirection('back');
     window.scrollTo({ top: 0, behavior: 'auto' });
   }, []);
 
   const openUtilityView = useCallback(
     (next: Exclude<SignedInUtilityView, null>) => {
-      if (!authUser || !profile) {
+      if (!authUser) {
         navigateGuest(next);
         return;
       }
@@ -612,10 +609,11 @@ function AppContent() {
       }
       setNavDirection('forward');
       setCurrentPathname(url.pathname);
+      setCurrentSearch(url.search);
       setSignedInUtilityView(next);
       window.scrollTo({ top: 0, behavior: 'auto' });
     },
-    [authUser, navigateGuest, profile]
+    [authUser, navigateGuest]
   );
 
   useEffect(() => {
@@ -656,6 +654,10 @@ function AppContent() {
   // then inner console tabs or guest history before exiting cleanly.
   useEffect(() => {
     return subscribeAndroidBackButton((canGoBack) => {
+      if (authUser && signedInUtilityView) {
+        closeSignedInUtility();
+        return;
+      }
       if (routeMatch) {
         setNavDirection('back');
         if (canGoBack && window.history.length > 1) {
@@ -666,6 +668,11 @@ function AppContent() {
         return;
       }
       if (!authUser) {
+        if (isPublicUtilityScreen(guestScreen)) {
+          setNavDirection('back');
+          closeGuestUtility();
+          return;
+        }
         if (guestScreen !== 'landing') {
           setNavDirection('back');
           if (canGoBack && window.history.length > 1) {
@@ -679,11 +686,6 @@ function AppContent() {
         return;
       }
 
-      if (signedInUtilityView) {
-        closeSignedInUtility();
-        return;
-      }
-
       const backEvent = new CustomEvent('racepulse:back', {
         cancelable: true,
         detail: { hardware: true },
@@ -693,32 +695,42 @@ function AppContent() {
         exitAndroidApp();
       }
     });
-  }, [authUser, closeSignedInUtility, guestScreen, navigateGuest, navigateUrl, routeMatch, signedInUtilityView]);
+  }, [authUser, closeGuestUtility, closeSignedInUtility, guestScreen, navigateGuest, navigateUrl, routeMatch, signedInUtilityView]);
 
   // Dashboard navigation lives in React state, so browser history is not a
   // safe back action. Each signed-in console listens for this event and goes
   // to its own home screen instead.
   const handleBack = () => {
     setNavDirection('back');
+    if (authUser && signedInUtilityView) {
+      closeSignedInUtility();
+      return;
+    }
     if (routeMatch) {
       navigateUrl('/');
       return;
     }
     if (!authUser) {
+      if (isPublicUtilityScreen(guestScreen)) {
+        closeGuestUtility();
+        return;
+      }
       navigateGuest('landing', { direction: 'back' });
-      return;
-    }
-    if (signedInUtilityView) {
-      closeSignedInUtility();
       return;
     }
     window.dispatchEvent(new Event('racepulse:back'));
   };
 
   useEffect(() => {
+    // Watchdog: if onIdTokenChanged fails to settle within 12s, surface retry UI instead of trapping or dropping session.
+    const initialAuthTimer = window.setTimeout(() => {
+      setAuthError((prev) => (authUser === undefined ? true : prev));
+    }, 12000);
+
     const unsubscribe = onIdTokenChanged(
       auth,
       (user) => {
+        window.clearTimeout(initialAuthTimer);
         const wasSignedIn = wasSignedInRef.current;
         wasSignedInRef.current = Boolean(user);
         if (wasSignedIn === false && user) setNavDirection('forward');
@@ -735,10 +747,13 @@ function AppContent() {
             url.pathname = '/';
             window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
             setCurrentPathname('/');
+          } else {
+            const util = utilityViewFromPath(p);
+            if (util) setSignedInUtilityView(util);
           }
         }
         if (!user) {
-          const e2e = getE2eProfile();
+          const e2e = import.meta.env.DEV ? getE2eProfile() : null;
           if (e2e) {
             setAuthUser({
               uid: e2e.uid,
@@ -746,6 +761,7 @@ function AppContent() {
               displayName: e2e.displayName || 'Patrick Josh Añedez',
               emailVerified: true,
             } as unknown as User);
+            setEmailVerified(true);
             setProfile(e2e);
             return;
           }
@@ -757,15 +773,19 @@ function AppContent() {
         }
       },
       (err) => {
+        window.clearTimeout(initialAuthTimer);
         console.warn('Session failed to load:', err.message);
         setAuthError(true);
       }
     );
-    return () => unsubscribe();
+    return () => {
+      window.clearTimeout(initialAuthTimer);
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (!import.meta.env.DEV || typeof window === 'undefined') return;
     try {
       const raw =
         window.sessionStorage.getItem('racepulse_e2e_profile') ||
@@ -779,6 +799,7 @@ function AppContent() {
             displayName: parsed.displayName || 'Patrick Josh Añedez',
             emailVerified: true,
           } as unknown as User);
+          setEmailVerified(true);
           setProfile(parsed as UserProfile);
         }
       }
@@ -792,23 +813,48 @@ function AppContent() {
       setProfile(null);
       return;
     }
-    if (authUser.uid.startsWith('e2e-')) {
+    if (import.meta.env.DEV && authUser.uid.startsWith('e2e-')) {
       return;
     }
-    setProfile(undefined);
+    // Unverified accounts cannot have a Firestore profile yet.
+    if (!emailVerified) {
+      setProfile(null);
+      setProfileError(false);
+      return;
+    }
+
+    setProfile((current) => (current?.uid === authUser.uid ? current : undefined));
     setProfileError(false);
+
+    let resolved = false;
+    // Non-destructive watchdog: surface a retry screen on network stalls instead of mutating profile to null.
+    const fallbackTimer = window.setTimeout(() => {
+      if (!resolved) {
+        setProfileError(true);
+      }
+    }, 12000);
+
     const unsubscribe = onSnapshot(
       doc(db, 'users', authUser.uid),
       (docSnap) => {
+        resolved = true;
+        window.clearTimeout(fallbackTimer);
+        setProfileError(false);
         setProfile(docSnap.exists() ? (docSnap.data() as UserProfile) : null);
       },
       (err) => {
+        resolved = true;
+        window.clearTimeout(fallbackTimer);
         console.warn('User profile listener failed:', err.message);
         setProfileError(true);
       }
     );
-    return () => unsubscribe();
-  }, [authUser, emailVerified]);
+    return () => {
+      resolved = true;
+      window.clearTimeout(fallbackTimer);
+      unsubscribe();
+    };
+  }, [authUser?.uid, emailVerified]);
 
   const [cookiePreferencesNonce, setCookiePreferencesNonce] = useState(0);
 
@@ -857,9 +903,17 @@ function AppContent() {
     if (metaDesc) metaDesc.setAttribute('content', description);
   }, [authUser, profile, guestScreen, activeRaceTitle, signedInUtilityView]);
 
-  const stillLoading = authUser === undefined || (!!authUser && profile === undefined);
+  const isImmediateGuest = isImmediateGuestRoute(guestScreen);
+  const stillLoading =
+    (!isImmediateGuest && authUser === undefined) || (!!authUser && emailVerified && profile === undefined);
 
   const suspenseFallback = <ViewLoadingSkeleton label="Loading RacePulsePH view" />;
+  const signedInPriority = resolveSignedInViewPriority({
+    hasAuthUser: Boolean(authUser),
+    emailVerified,
+    hasProfile: Boolean(profile),
+    signedInUtilityView,
+  });
 
   let content: React.ReactNode;
   if (authError || (profileError && authUser)) {
@@ -876,25 +930,55 @@ function AppContent() {
         )}
       </main>
     );
+  } else if (signedInPriority === 'utility' && signedInUtilityView) {
+    content = (
+      <main id="main-content" tabIndex={-1} className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 py-4 sm:py-6 flex-grow focus:outline-none">
+        {signedInUtilityView === 'unsubscribe' ? (
+          <UnsubscribePage onBack={closeSignedInUtility} />
+        ) : (
+          <PublicLegalPage
+            doc={signedInUtilityView}
+            onBack={closeSignedInUtility}
+            onSwitchDoc={(nextDoc) => openUtilityView(nextDoc)}
+            onOpenAuth={closeSignedInUtility}
+            authActionLabel={profile ? 'Return to workspace' : 'Return to registration'}
+            onOpenCookiePreferences={() => setCookiePreferencesNonce((n) => n + 1)}
+            onOpenUnsubscribe={() => openUtilityView('unsubscribe')}
+          />
+        )}
+      </main>
+    );
+  } else if (authUser && !emailVerified) {
+    content = (
+      <main id="main-content" tabIndex={-1} className="flex-grow flex flex-col focus:outline-none">
+        <Suspense fallback={suspenseFallback}>
+          <EmailVerificationScreen key={authUser.uid} user={authUser} onVerified={() => setEmailVerified(true)} />
+        </Suspense>
+      </main>
+    );
   } else if (routeMatch && routeMatch.kind !== 'route-studio') {
     content = (
       <Suspense fallback={suspenseFallback}>
         {authUser && profile ? (
-          <RouteExplorerAuthWrapper
-            profile={profile}
-            match={routeMatch}
-            theme={theme}
-            onNavigateUrl={navigateUrl}
-            onBackHome={() => navigateUrl('/')}
-          />
+          <ErrorBoundary title="Route Explorer encountered an error">
+            <RouteExplorerAuthWrapper
+              profile={profile}
+              match={routeMatch}
+              theme={theme}
+              onNavigateUrl={navigateUrl}
+              onBackHome={() => navigateUrl('/')}
+            />
+          </ErrorBoundary>
         ) : (
-          <RouteExplorerPage
-            match={routeMatch}
-            theme={theme}
-            canEditRoutes={false}
-            onNavigateUrl={navigateUrl}
-            onBackHome={() => navigateUrl('/')}
-          />
+          <ErrorBoundary title="Route Explorer encountered an error">
+            <RouteExplorerPage
+              match={routeMatch}
+              theme={theme}
+              canEditRoutes={false}
+              onNavigateUrl={navigateUrl}
+              onBackHome={() => navigateUrl('/')}
+            />
+          </ErrorBoundary>
         )}
       </Suspense>
     );
@@ -907,15 +991,17 @@ function AppContent() {
   } else if (routeMatch && routeMatch.kind === 'route-studio') {
     if (authUser && profile) {
       content = (
-        <Suspense fallback={suspenseFallback}>
-          <RouteStudioWrapper
-            profile={profile}
-            theme={theme}
-            presetId={routeMatch.presetId}
-            onNavigateUrl={navigateUrl}
-            onBackHome={() => navigateUrl('/')}
-          />
-        </Suspense>
+        <ErrorBoundary title="Route Studio encountered an error">
+          <Suspense fallback={suspenseFallback}>
+            <RouteStudioWrapper
+              profile={profile}
+              theme={theme}
+              presetId={routeMatch.presetId}
+              onNavigateUrl={navigateUrl}
+              onBackHome={() => navigateUrl('/')}
+            />
+          </Suspense>
+        </ErrorBoundary>
       );
     } else {
       content = (
@@ -945,14 +1031,6 @@ function AppContent() {
         </main>
       );
     }
-  } else if (authUser && !emailVerified && !profile) {
-    content = (
-      <main id="main-content" tabIndex={-1} className="flex-grow flex flex-col focus:outline-none">
-        <Suspense fallback={suspenseFallback}>
-          <EmailVerificationScreen key={authUser.uid} user={authUser} onVerified={() => setEmailVerified(true)} />
-        </Suspense>
-      </main>
-    );
   } else if (!authUser || !profile) {
     if (authUser) {
       content = (
@@ -960,7 +1038,7 @@ function AppContent() {
           <Suspense fallback={suspenseFallback}>
             <AuthGate
               authUser={authUser}
-              onOpenLegal={(docView) => navigateGuest(docView)}
+              onOpenLegal={(docView) => openUtilityView(docView)}
               signupRoleLocked={runnerSignupIntent}
             />
           </Suspense>
@@ -986,9 +1064,10 @@ function AppContent() {
         <main id="main-content" tabIndex={-1} className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 py-4 sm:py-6 flex-grow focus:outline-none">
           <PublicLegalPage
             doc={guestScreen}
-            onBack={() => navigateGuest('landing')}
+            onBack={closeGuestUtility}
             onSwitchDoc={(nextDoc) => navigateGuest(nextDoc)}
-            onOpenAuth={() => navigateGuest('login')}
+            onOpenAuth={() => (legalReturnOrigin === 'signup' ? closeGuestUtility() : navigateGuest('login'))}
+            authActionLabel={legalReturnOrigin === 'signup' ? 'Return to create account' : undefined}
             onOpenCookiePreferences={() => setCookiePreferencesNonce((n) => n + 1)}
             onOpenUnsubscribe={() => navigateGuest('unsubscribe')}
           />
@@ -997,7 +1076,7 @@ function AppContent() {
     } else if (guestScreen === 'unsubscribe') {
       content = (
         <main id="main-content" tabIndex={-1} className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 py-4 sm:py-6 flex-grow focus:outline-none">
-          <UnsubscribePage onBack={() => navigateGuest('landing')} />
+          <UnsubscribePage onBack={closeGuestUtility} />
         </main>
       );
     } else if (guestScreen === 'not-found') {
@@ -1025,37 +1104,22 @@ function AppContent() {
         </main>
       );
     }
-  } else if (signedInUtilityView) {
-    content = (
-      <main id="main-content" tabIndex={-1} className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 py-4 sm:py-6 flex-grow focus:outline-none">
-        {signedInUtilityView === 'unsubscribe' ? (
-          <UnsubscribePage onBack={closeSignedInUtility} />
-        ) : (
-          <PublicLegalPage
-            doc={signedInUtilityView}
-            onBack={closeSignedInUtility}
-            onSwitchDoc={(nextDoc) => openUtilityView(nextDoc)}
-            onOpenAuth={closeSignedInUtility}
-            onOpenCookiePreferences={() => setCookiePreferencesNonce((n) => n + 1)}
-            onOpenUnsubscribe={() => openUtilityView('unsubscribe')}
-          />
-        )}
-      </main>
-    );
   } else {
     content = (
-      <Suspense fallback={<main id="main-content" tabIndex={-1} className="flex-grow focus:outline-none">{suspenseFallback}</main>}>
-        <AuthorizedSession
-          profile={profile}
-          raceId={pendingRaceId}
-          onRaceHandled={() => {
-            setPendingRaceId(null);
-            const url = new URL(window.location.href);
-            url.searchParams.delete('register');
-            window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
-          }}
-        />
-      </Suspense>
+      <ErrorBoundary title="Workspace encountered an unexpected error">
+        <Suspense fallback={<main id="main-content" tabIndex={-1} className="flex-grow focus:outline-none">{suspenseFallback}</main>}>
+          <AuthorizedSession
+            profile={profile}
+            raceId={pendingRaceId}
+            onRaceHandled={() => {
+              setPendingRaceId(null);
+              const url = new URL(window.location.href);
+              url.searchParams.delete('register');
+              window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+            }}
+          />
+        </Suspense>
+      </ErrorBoundary>
     );
   }
 
@@ -1068,27 +1132,30 @@ function AppContent() {
     !(profileError && authUser) &&
     !signedInUtilityView;
   const usesWorkspaceHeaderSlots = isWorkspaceShell || isRouteWorkspace;
-  const viewKey = routeMatch
-    ? `route-${routeMatch.kind}`
-    : signedInUtilityView
+  const viewKey =
+    authUser && signedInUtilityView
       ? `utility-${signedInUtilityView}`
-      : authUser
-        ? profile
-          ? 'workspace'
-          : 'auth-setup'
-        : guestScreen === 'login' || guestScreen === 'signup'
-          ? 'auth-portal'
-          : guestScreen;
+      : routeMatch
+        ? `route-${routeMatch.kind}`
+        : authUser
+          ? !emailVerified
+            ? 'verify-email'
+            : profile
+              ? 'workspace'
+              : 'auth-setup'
+          : guestScreen === 'login' || guestScreen === 'signup'
+            ? 'auth-portal'
+            : guestScreen;
 
   return (
     <LazyMotion features={domMax}>
       <MotionConfig reducedMotion="user">
         <div
           id="app_root"
-          className={`min-h-screen min-h-dvh bg-[var(--surface-page)] text-[var(--text-primary)] flex flex-col ${!authUser && guestScreen === 'landing' ? 'public-entry-shell' : ''} ${
-            desktopLocked && !signedInUtilityView ? 'lg:h-screen lg:h-dvh lg:overflow-hidden' : ''
+          className={`min-h-svh min-h-dvh bg-[var(--surface-page)] text-[var(--text-primary)] flex flex-col ${!authUser && guestScreen === 'landing' ? 'public-entry-shell' : ''} ${
+            desktopLocked && !signedInUtilityView ? 'lg:h-svh lg:h-dvh lg:overflow-hidden' : ''
           } ${
-            splitViewportLocked && !signedInUtilityView ? 'h-screen h-dvh overflow-hidden' : ''
+            splitViewportLocked && !signedInUtilityView ? 'h-svh h-dvh overflow-hidden' : ''
           }`}
         >
           <a href="#main-content" className="skip-link">
@@ -1364,7 +1431,7 @@ function AppContent() {
           </div>
 
           {/* Global Footer: verifiable business identity, 4 required legal routes, consent controls, and email unsubscribe */}
-          <footer className={`border-t border-[var(--border-default)] bg-[var(--surface-card)] mt-auto text-xs text-[var(--text-secondary)] ${isWorkspaceShell ? 'pb-[calc(4.5rem+var(--rp-safe-bottom))] min-[600px]:pb-20 lg:pb-0' : 'pb-[calc(1rem+var(--rp-safe-bottom))] md:pb-[var(--rp-safe-bottom)]'} ${desktopLocked && !signedInUtilityView ? 'lg:hidden' : ''} ${splitViewportLocked && !signedInUtilityView ? 'hidden' : ''}`}>
+          <footer className={`border-t border-[var(--border-default)] bg-[var(--surface-card)] mt-auto text-xs text-[var(--text-secondary)] ${isWorkspaceShell ? 'pb-[calc(7.5rem+var(--rp-safe-bottom))] min-[600px]:pb-6 lg:pb-0' : 'pb-[calc(1rem+var(--rp-safe-bottom))] md:pb-[var(--rp-safe-bottom)]'} ${desktopLocked && !signedInUtilityView ? 'lg:hidden' : ''} ${splitViewportLocked && !signedInUtilityView ? 'hidden' : ''}`}>
             <div className={`${isWorkspaceShell ? 'w-full pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))]' : 'w-full max-w-[1600px] mx-auto pl-[max(1rem,var(--rp-safe-left))] pr-[max(1rem,var(--rp-safe-right))] sm:pl-[max(1.5rem,var(--rp-safe-left))] sm:pr-[max(1.5rem,var(--rp-safe-right))]'} py-4 space-y-3`}>
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div className="space-y-1 text-center lg:text-left">
@@ -1380,6 +1447,7 @@ function AppContent() {
                   <a
                     href="/privacy-policy"
                     onClick={(e) => {
+                      if (!isClientNavigationClick(e)) return;
                       e.preventDefault();
                       openUtilityView('privacy');
                     }}
@@ -1390,6 +1458,7 @@ function AppContent() {
                   <a
                     href="/terms-of-service"
                     onClick={(e) => {
+                      if (!isClientNavigationClick(e)) return;
                       e.preventDefault();
                       openUtilityView('terms');
                     }}
@@ -1400,6 +1469,7 @@ function AppContent() {
                   <a
                     href="/refund-policy"
                     onClick={(e) => {
+                      if (!isClientNavigationClick(e)) return;
                       e.preventDefault();
                       openUtilityView('refund');
                     }}
@@ -1410,6 +1480,7 @@ function AppContent() {
                   <a
                     href="/cookie-policy"
                     onClick={(e) => {
+                      if (!isClientNavigationClick(e)) return;
                       e.preventDefault();
                       openUtilityView('cookies');
                     }}
@@ -1427,6 +1498,7 @@ function AppContent() {
                   <a
                     href="/unsubscribe"
                     onClick={(e) => {
+                      if (!isClientNavigationClick(e)) return;
                       e.preventDefault();
                       openUtilityView('unsubscribe');
                     }}
@@ -1455,76 +1527,5 @@ function AppContent() {
         </div>
       </MotionConfig>
     </LazyMotion>
-  );
-}
-
-function PendingApprovalScreen({ displayName }: { displayName: string }) {
-  return (
-    <div className="hero-glow flex-grow flex items-center justify-center py-12 px-4 animate-fadeIn">
-      <div className="max-w-md w-full glass-panel p-8 text-center space-y-4">
-        <Clock3 className="w-10 h-10 text-amber-500 mx-auto" aria-hidden="true" />
-        <h2 className="heading-float text-lg font-semibold font-display uppercase tracking-tight text-[var(--text-primary)]">
-          Awaiting Admin Approval
-        </h2>
-        <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-          Hi {displayName}, your Organizer account is registered but still needs to be approved by the Super Admin before
-          you can record timing splits. Check back shortly.
-        </p>
-        <button
-          type="button"
-          onClick={() => signOutUser()}
-          className="min-h-11 text-xs text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--surface-inset)] hover:text-[var(--text-primary)] font-semibold px-4 py-3 rounded-[20px] transition-colors flex items-center justify-center gap-2 uppercase tracking-wider mx-auto"
-        >
-          <LogOut className="w-4 h-4" aria-hidden="true" /> Sign Out
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function SuperAdminClaimScreen({ profile }: { profile: UserProfile }) {
-  const [claiming, setClaiming] = useState(false);
-  const [error, setError] = useState('');
-
-  const claim = async () => {
-    setClaiming(true);
-    setError('');
-    try {
-      const batch = writeBatch(db);
-      batch.update(doc(db, 'users', profile.uid), { role: 'superadmin', approved: true });
-      batch.set(doc(db, 'system', 'meta'), { superAdminClaimed: true }, { merge: true });
-      await batch.commit();
-    } catch (err: any) {
-      setError(err.message || 'Could not claim the Super Admin role.');
-    } finally {
-      setClaiming(false);
-    }
-  };
-
-  return (
-    <div className="hero-glow flex-grow flex items-center justify-center py-12 px-4 animate-fadeIn">
-      <div className="max-w-md w-full glass-panel p-8 text-center space-y-4">
-        <ShieldCheck className="w-10 h-10 text-amber-500 mx-auto" aria-hidden="true" />
-        <h2 className="heading-float text-lg font-semibold font-display uppercase tracking-tight text-[var(--text-primary)]">
-          Claim Super Admin
-        </h2>
-        <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-          This account is configured as the one-time RacePulsePH Super Admin.
-        </p>
-        {error && <p role="alert" className="text-xs text-red-700 dark:text-red-400 font-semibold">{error}</p>}
-        <button
-          type="button"
-          onClick={claim}
-          disabled={claiming}
-          className="min-h-11 w-full py-3 px-6 rounded-[var(--radius-control)] font-display font-semibold uppercase text-xs tracking-widest text-white bg-gradient-to-r from-amber-700 to-amber-800 hover:from-amber-600 hover:to-amber-700 shadow-xl shadow-amber-900/30 disabled:opacity-60 flex items-center justify-center gap-2"
-        >
-          {claiming ? <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <ShieldCheck className="w-4 h-4" aria-hidden="true" />} Claim Super
-          Admin Access
-        </button>
-        <button type="button" onClick={() => signOutUser()} className="min-h-11 px-4 text-xs text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 font-semibold">
-          Sign out
-        </button>
-      </div>
-    </div>
   );
 }

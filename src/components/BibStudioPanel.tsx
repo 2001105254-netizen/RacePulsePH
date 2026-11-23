@@ -4,7 +4,9 @@ import { Race, RaceBibCustomFont, RaceBibFont, RaceBibLayout, RaceBibTemplate, R
 import { generateRaceBibsPdf } from '../lib/raceBibPdf';
 import { resizeImageToDataUrl } from '../lib/image';
 import { ensureRaceBibCustomFont, raceBibFontFamily } from '../lib/raceBibFont';
-import { MAX_ROSTER_ROWS, MAX_XLSX_BYTES, assertSafeImportFile, stripUnsafeKeys } from '../lib/security';
+import { MAX_ROSTER_ROWS, MAX_XLSX_BYTES, assertSafeImportFile } from '../lib/security';
+import { readSpreadsheetSheets, sheetRowsToObjects } from '../lib/spreadsheet';
+import { useFeedback } from './ui/FeedbackProvider';
 
 type StudioRow = { id: string; fullName: string; bibNumber: string; distance: string };
 
@@ -62,6 +64,7 @@ function parseRoster(rows: Record<string, unknown>[], namesAreOptional: boolean)
 }
 
 export default function BibStudioPanel() {
+  const { confirm } = useFeedback();
   const [jobName, setJobName] = useState('');
   const [rows, setRows] = useState<StudioRow[]>([]);
   const [templateImage, setTemplateImage] = useState('');
@@ -93,14 +96,11 @@ export default function BibStudioPanel() {
   const readRoster = async (file: File) => {
     setMessage('');
     try {
-      assertSafeImportFile(file, MAX_XLSX_BYTES, /\.(xlsx|xls|csv)$/i, 'Choose an Excel (.xlsx/.xls) or CSV file.');
-      const XLSX = await import('xlsx');
-      const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      if (!worksheet) throw new Error('No worksheet was found in that file.');
-      const parsed = stripUnsafeKeys(
-        XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '' }).slice(0, MAX_ROSTER_ROWS),
-      );
+      assertSafeImportFile(file, MAX_XLSX_BYTES, /\.(xlsx|csv|tsv)$/i, 'Choose an Excel (.xlsx), CSV, or TSV file.');
+      const sheets = await readSpreadsheetSheets(file, file.name, { maxSheets: 1, maxRows: MAX_ROSTER_ROWS + 1 });
+      const firstSheet = sheets[0];
+      if (!firstSheet) throw new Error('No worksheet was found in that file.');
+      const parsed = sheetRowsToObjects(firstSheet.rows, { maxRows: MAX_ROSTER_ROWS });
       const { entries, rejected } = parseRoster(parsed, hideRunnerNames);
       if (entries.length === 0) throw new Error(`No valid rows found. Use ${hideRunnerNames ? 'Race Bib Number and Distance' : 'Full Name, Race Bib Number, and Distance'} columns.`);
       setRows(entries);
@@ -171,8 +171,17 @@ export default function BibStudioPanel() {
   };
 
   const updateLayout = (patch: Partial<RaceBibLayout>) => {
-    setLayout((current) => ({ ...current, ...patch }));
-    setDistanceTemplates((current) => Object.fromEntries(Object.entries(current).map(([distance, template]) => [distance, { ...template, layout: { ...template.layout, ...patch } }])));
+    const cleanPatch = Object.fromEntries(
+      Object.entries(patch).filter(([, value]) => value !== undefined),
+    ) as Partial<RaceBibLayout>;
+    setLayout((current) => ({ ...current, ...cleanPatch }));
+    setDistanceTemplates((current) => {
+      const next: Record<string, RaceBibTemplate> = {};
+      for (const [distance, template] of Object.entries(current)) {
+        next[distance] = { ...template, layout: { ...(template.layout ?? defaultLayout), ...cleanPatch } };
+      }
+      return next;
+    });
   };
 
   const removeCustomFont = () => {
@@ -185,7 +194,7 @@ export default function BibStudioPanel() {
     setCustomFontMessage('Custom font removed. Built-in font choices remain available.');
   };
 
-  const createBlankBibs = () => {
+  const createBlankBibs = async () => {
     const count = Math.floor(Number(quickCount));
     const firstNumber = Math.floor(Number(quickStart));
     const digits = Math.floor(Number(quickDigits));
@@ -194,7 +203,16 @@ export default function BibStudioPanel() {
     if (!Number.isFinite(count) || count < 1 || count > 2000) return setMessage('Enter a quantity from 1 to 2,000 bibs.');
     if (!Number.isFinite(firstNumber) || firstNumber < 0) return setMessage('Enter a valid first bib number.');
     if (!Number.isFinite(digits) || digits < 1 || digits > 8) return setMessage('Use 1 to 8 digits for the bib sequence.');
-    if (rows.length > 0 && !window.confirm('Replace the current roster with these blank bibs?')) return;
+    if (rows.length > 0) {
+      const confirmed = await confirm({
+        title: 'Replace current roster?',
+        message: 'Current bib rows in the studio will be replaced with the new blank bib sequence.',
+        confirmLabel: 'Replace roster',
+        cancelLabel: 'Keep roster',
+        destructive: true,
+      });
+      if (!confirmed) return;
+    }
 
     const entries = Array.from({ length: count }, (_, index) => ({
       id: `blank-${prefix}-${firstNumber + index}`,
@@ -293,7 +311,7 @@ export default function BibStudioPanel() {
           <div className="rounded-2xl border border-dashed border-violet-500/35 bg-violet-500/[0.03] p-4">
             <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-primary)]">1. Import roster</p><p className="mt-1 text-xs text-[var(--text-secondary)]">Excel, CSV, or TSV. Required columns: <strong>{hideRunnerNames ? 'Race Bib Number and Distance' : 'Full Name, Race Bib Number, and Distance'}</strong>.</p></div><FileSpreadsheet className="w-5 h-5 text-violet-700 dark:text-violet-400 shrink-0" aria-hidden="true" /></div>
             <label className="mt-4 min-h-11 flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 py-2 text-xs font-semibold text-[var(--text-primary)]"><input type="checkbox" checked={hideRunnerNames} onChange={(event) => setHideRunnerNames(event.target.checked)} className="rp-checkbox shrink-0" /> Do not print runner names <span className="text-xs font-normal text-[var(--text-secondary)]">(bib number only)</span></label>
-            <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv,.tsv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" className="hidden" onChange={onRosterSelected} />
+            <input ref={fileInputRef} type="file" accept=".xlsx,.csv,.tsv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={onRosterSelected} />
             <button type="button" onClick={() => fileInputRef.current?.click()} disabled={busy} className="mt-4 min-h-11 w-full rounded-xl bg-violet-700 px-4 py-3 text-xs font-semibold uppercase tracking-widest text-white hover:bg-violet-800 disabled:opacity-60 flex items-center justify-center gap-2"><Upload className="w-4 h-4" aria-hidden="true" /> Upload roster</button>
             {rows.length > 0 && <div className="mt-3 rounded-xl bg-[var(--surface-inset)] px-3 py-2 text-xs text-[var(--text-secondary)]"><strong className="text-emerald-700 dark:text-emerald-400">{rows.length} bibs ready</strong> · {distances.join(', ')}</div>}
           </div>
@@ -301,14 +319,14 @@ export default function BibStudioPanel() {
           <div className="rounded-2xl border border-dashed border-amber-500/40 bg-amber-500/[0.04] p-4">
             <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-primary)]">Or create blank bibs</p><p className="mt-1 text-xs text-[var(--text-secondary)]">No roster needed. Choose the number range and we will generate bib-number-only PDFs.</p></div><WandSparkles className="w-5 h-5 text-amber-800 dark:text-amber-300 shrink-0" aria-hidden="true" /></div>
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4"><Field label="Prefix" value={quickPrefix} placeholder="Example: 5-" onChange={setQuickPrefix} /><Field label="First no." value={quickStart} inputMode="numeric" onChange={setQuickStart} /><Field label="Quantity" value={quickCount} inputMode="numeric" onChange={setQuickCount} /><Field label="Digits" value={quickDigits} inputMode="numeric" onChange={setQuickDigits} /></div>
-            <div className="mt-3 grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3"><Field label="Distance / label" value={quickDistance} placeholder="Example: 5K" onChange={setQuickDistance} /><button type="button" onClick={createBlankBibs} disabled={busy} className="min-h-11 self-end rounded-xl bg-amber-500 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-black hover:bg-amber-400 disabled:opacity-60">Create blank bibs</button></div>
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3"><Field label="Distance / label" value={quickDistance} placeholder="Example: 5K" onChange={setQuickDistance} /><button type="button" onClick={() => void createBlankBibs()} disabled={busy} className="min-h-11 self-end rounded-xl bg-amber-500 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-black hover:bg-amber-400 disabled:opacity-60">Create blank bibs</button></div>
             <p className="mt-2 text-xs text-[var(--text-secondary)]">Example: Prefix <strong>18-</strong>, First no. <strong>1</strong>, Digits <strong>3</strong> creates 18-001, 18-002, 18-003…</p>
           </div>
 
           <div>
             <div className="flex items-center justify-between gap-3 mb-2"><div><p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">2. Default bib design</p><p className="mt-1 text-xs text-[var(--text-secondary)]">Recommended artwork: 1200 × 800 px, landscape 3:2.</p></div>{templateImage && <button type="button" onClick={() => setTemplateImage('')} className="min-h-11 px-2 text-xs font-semibold uppercase tracking-wide text-red-700 dark:text-red-400 hover:underline">Remove</button>}</div>
             <input ref={templateInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => onTemplateSelected(event)} />
-            {templateImage ? <button type="button" onClick={() => templateInputRef.current?.click()} className="group relative block w-full overflow-hidden rounded-2xl border border-[var(--border-default)]"><img src={templateImage} alt="Default bib design" className="aspect-[3/2] w-full object-cover" /><span className="absolute inset-x-0 bottom-0 bg-black/75 px-3 py-2 text-left text-xs font-semibold uppercase tracking-widest text-white opacity-0 transition group-hover:opacity-100">Replace default design</span></button> : <button type="button" onClick={() => templateInputRef.current?.click()} disabled={busy} className="min-h-11 w-full aspect-[3/2] rounded-2xl border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-2 text-[var(--text-secondary)] hover:text-violet-700 dark:hover:text-violet-400 hover:border-violet-500/50 transition disabled:opacity-60"><ImagePlus className="w-7 h-7" aria-hidden="true" /><span className="text-xs font-semibold uppercase tracking-wide">Upload default design</span></button>}
+            {templateImage ? <button type="button" onClick={() => templateInputRef.current?.click()} className="group relative block w-full overflow-hidden rounded-2xl border border-[var(--border-default)]"><img src={templateImage} alt="Default bib design" className="aspect-[3/2] w-full object-cover" /><span className="absolute inset-x-0 bottom-0 bg-black/75 px-3 py-2 text-left text-xs font-semibold uppercase tracking-widest text-white opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">Replace default design</span></button> : <button type="button" onClick={() => templateInputRef.current?.click()} disabled={busy} className="min-h-11 w-full aspect-[3/2] rounded-2xl border-2 border-dashed border-[var(--border-default)] flex flex-col items-center justify-center gap-2 text-[var(--text-secondary)] hover:text-violet-700 dark:hover:text-violet-400 hover:border-violet-500/50 transition disabled:opacity-60"><ImagePlus className="w-7 h-7" aria-hidden="true" /><span className="text-xs font-semibold uppercase tracking-wide">Upload default design</span></button>}
           </div>
 
           {distances.length > 0 && <div className="space-y-3"><div><p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Optional distance designs</p><p className="mt-1 text-xs text-[var(--text-secondary)]">Use a different artwork for each distance; otherwise the default design is used.</p></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{distances.map((distance) => <div key={distance} className="glass-inset p-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-[var(--text-primary)]">{distance}</span>{distanceTemplates[distance] && <button type="button" onClick={() => setDistanceTemplates((current) => { const next = { ...current }; delete next[distance]; return next; })} className="min-h-11 px-2 text-xs font-semibold uppercase text-red-700 dark:text-red-400">Remove</button>}</div><input ref={(node) => { distanceInputRefs.current[distance] = node; }} type="file" accept="image/*" className="hidden" onChange={(event) => onTemplateSelected(event, distance)} />{distanceTemplates[distance] ? <button type="button" onClick={() => distanceInputRefs.current[distance]?.click()} className="mt-2 w-full overflow-hidden rounded-lg border border-[var(--border-default)]"><img src={distanceTemplates[distance].image} alt={`${distance} bib design`} className="aspect-[3/2] w-full object-cover" /></button> : <button type="button" onClick={() => distanceInputRefs.current[distance]?.click()} className="mt-2 min-h-11 w-full rounded-lg border border-dashed border-[var(--border-default)] px-2 py-4 text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-400 hover:bg-violet-500/5">Add {distance} design</button>}</div>)}</div></div>}

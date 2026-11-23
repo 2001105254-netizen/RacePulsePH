@@ -10,14 +10,17 @@ class GuardError extends Error {
   }
 }
 
-const DEFAULT_ALLOWED_ORIGINS = [
+const PROD_ALLOWED_ORIGINS = [
   'https://racepulseph.com',
   'https://www.racepulseph.com',
   'https://racepulseph.web.app',
   'https://racepulseph.firebaseapp.com',
   'capacitor://localhost',
-  'http://localhost',
   'https://localhost',
+];
+
+const LOCALHOST_ALLOWED_ORIGINS = [
+  'http://localhost',
   'http://localhost:3000',
   'http://localhost:3100',
   'http://localhost:5173',
@@ -25,6 +28,17 @@ const DEFAULT_ALLOWED_ORIGINS = [
   'http://127.0.0.1:3100',
   'http://127.0.0.1:5173',
 ];
+
+function getDefaultAllowedOrigins() {
+  const allowLocalhost =
+    process.env.FUNCTIONS_EMULATOR === 'true'
+    || process.env.RACEPULSE_ALLOW_LOCALHOST_CORS === 'true';
+  return allowLocalhost
+    ? [...PROD_ALLOWED_ORIGINS, ...LOCALHOST_ALLOWED_ORIGINS]
+    : [...PROD_ALLOWED_ORIGINS];
+}
+
+const DEFAULT_ALLOWED_ORIGINS = PROD_ALLOWED_ORIGINS;
 
 const DEFAULT_ALLOWED_HOSTNAMES = new Set([
   'racepulseph.com',
@@ -93,12 +107,19 @@ function extractClientIp(request) {
   return 'unknown';
 }
 
+let warnedFallbackRateLimitSalt = false;
+
 function hashIdentifier(secret, namespace, value) {
   const payload = `${namespace}:${String(value ?? '')}`;
   if (secret) {
     return crypto.createHmac('sha256', secret).update(payload).digest('hex');
   }
-  const salt = process.env.RATE_LIMIT_SALT || 'racepulseph-rate-v1';
+  const envSalt = process.env.RATE_LIMIT_SALT;
+  if (!envSalt && !warnedFallbackRateLimitSalt && process.env.NODE_ENV !== 'test' && process.env.FUNCTIONS_EMULATOR !== 'true') {
+    warnedFallbackRateLimitSalt = true;
+    console.warn('RATE_LIMIT_SALT or request secret is unset; using fallback rate-limit hash salt.');
+  }
+  const salt = envSalt || 'racepulseph-rate-v1';
   return crypto.createHash('sha256').update(`${salt}:${payload}`).digest('hex');
 }
 
@@ -416,7 +437,7 @@ function applyApiSecurityHeaders(response) {
   response.set('Referrer-Policy', 'strict-origin-when-cross-origin');
 }
 
-function setScopedCors(request, response, { allowedOrigins = DEFAULT_ALLOWED_ORIGINS, methods = 'GET, POST, OPTIONS' } = {}) {
+function setScopedCors(request, response, { allowedOrigins = getDefaultAllowedOrigins(), methods = 'GET, POST, OPTIONS' } = {}) {
   const origin = typeof request?.get === 'function' ? request.get('origin') : undefined;
   const allowSet = allowedOrigins instanceof Set ? allowedOrigins : new Set(allowedOrigins);
   if (origin && allowSet.has(origin)) {
@@ -446,12 +467,15 @@ function sendGuardError(response, error, fallbackMessage = 'Request rejected.') 
 module.exports = {
   DEFAULT_ALLOWED_HOSTNAMES,
   DEFAULT_ALLOWED_ORIGINS,
+  LOCALHOST_ALLOWED_ORIGINS,
+  PROD_ALLOWED_ORIGINS,
   GuardError,
   applyApiSecurityHeaders,
   assertHumanFormSignals,
   createMemoryLimiter,
   enforceRateLimit,
   extractClientIp,
+  getDefaultAllowedOrigins,
   getLimiterForDb,
   hashIdentifier,
   normalizeIpBucket,

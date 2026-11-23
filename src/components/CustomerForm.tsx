@@ -228,9 +228,9 @@ export default function CustomerForm({
     });
   }, []);
 
-  // Helper generator of 4-character uppercase code (unique)
+  // Helper generator of 8-character uppercase cryptographic code
   const generateShortCode = (): string => {
-    return randomShortCode(4);
+    return randomShortCode(8);
   };
 
   // Submit form data
@@ -263,13 +263,11 @@ export default function CustomerForm({
       // Determine a unique document ID
       let orderCode = generateShortCode();
 
-      // Perform a fail-fast collision check only when authorized to query collection/orders
+      // Perform a direct collision check when authorized to query collection/orders
       if (canViewAllOrders && typeof navigator !== 'undefined' && navigator.onLine) {
         try {
           const checkQuery = query(collection(db, 'orders'), where('__name__', '==', orderCode));
-          const snapshotPromise = getDocs(checkQuery);
-          const timeoutPromise = new Promise<any>((_, reject) => setTimeout(() => reject(new Error('uniqueness check timeout')), 450));
-          const snapshot = await Promise.race([snapshotPromise, timeoutPromise]);
+          const snapshot = await getDocs(checkQuery);
 
           if (!snapshot.empty) {
             // Regeneration fallback in case of collision
@@ -306,13 +304,11 @@ export default function CustomerForm({
       if (!can('personal.engraving') && !can('engraving.create')) throw new Error('Engraving requests are disabled.');
       await setDoc(doc(db, 'orders', orderCode), newOrder);
 
-      // Simultaneously sync to local LAN backup server in background (fully non-blocking)
-      authenticatedFetch('/api/orders', {
+      // Simultaneously sync to local LAN backup server in background
+      void authenticatedFetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newOrder)
-      }).then((res) => {
-        if (res.ok) console.log("LAN Server sync: Registered new order offline successfully.");
       }).catch((laneErr) => {
         console.warn("LAN Server sync skipped (standalone browser or offline hotspot):", laneErr);
       });
@@ -332,24 +328,26 @@ export default function CustomerForm({
     setShowCancelConfirm(true);
   };
 
-  const handleExecuteCancelOrder = () => {
+  const handleExecuteCancelOrder = async () => {
     if (!createdOrder) return;
+    const orderIdToDelete = createdOrder.id;
 
-    // Trigger background offline-safe deletions
-    deleteDoc(doc(db, 'orders', createdOrder.id)).catch((e) => {
-      console.warn("Cloud Firestore delete offline or deferred:", e);
-    });
-
-    authenticatedFetch(`/api/orders/${createdOrder.id}`, {
-      method: 'DELETE'
-    }).catch((laneErr) => {
-      console.warn("LAN Server sync delete skipped:", laneErr);
-    });
-
-    // Reset UI state instantly (0 milliseconds latency)
-    setViewState('form');
-    setCreatedOrder(null);
-    setShowCancelConfirm(false);
+    try {
+      await Promise.allSettled([
+        deleteDoc(doc(db, 'orders', orderIdToDelete)).catch((e) => {
+          console.warn("Cloud Firestore delete offline or deferred:", e);
+        }),
+        authenticatedFetch(`/api/orders/${orderIdToDelete}`, {
+          method: 'DELETE',
+        }).catch((laneErr) => {
+          console.warn("LAN Server sync delete skipped:", laneErr);
+        }),
+      ]);
+    } finally {
+      setViewState('form');
+      setCreatedOrder(null);
+      setShowCancelConfirm(false);
+    }
   };
 
   // Status Stepper Helper
@@ -782,13 +780,13 @@ export default function CustomerForm({
               </h3>
               <dl className="grid grid-cols-2 divide-x divide-[var(--border-subtle)] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)]">
                 <div className="px-2.5 py-2">
-                  <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">In Queue</dt>
+                  <dt className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">In Queue</dt>
                   <dd className="text-sm font-mono font-semibold tabular-nums text-red-700 dark:text-red-400 mt-0.5">
                     {activeQueueCount}
                   </dd>
                 </div>
                 <div className="px-2.5 py-2">
-                  <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Est. Wait</dt>
+                  <dt className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Est. Wait</dt>
                   <dd className="text-sm font-mono font-semibold tabular-nums text-[var(--text-primary)] mt-0.5">
                     ~{activeQueueCount * 2} min
                   </dd>
@@ -850,9 +848,9 @@ export default function CustomerForm({
                 type="button"
                 onClick={() => setIsQrMaximized(true)}
                 aria-label="Open full-screen sync QR code"
-                className="bg-white p-3 sm:p-4 rounded-2xl inline-block shadow-2xl border border-[var(--border-default)] cursor-pointer hover:scale-105 active:scale-95 transition-all duration-200 relative group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
+                className="bg-white p-3 sm:p-4 rounded-2xl inline-block shadow-2xl border border-[var(--border-default)] cursor-pointer hover:scale-105 active:scale-95 transition-[transform,opacity] duration-200 relative group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
               >
-                <span className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition duration-150 rounded-2xl flex items-center justify-center">
+                <span className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition duration-150 rounded-2xl flex items-center justify-center">
                   <span className="bg-black/90 text-white font-mono text-xs py-1 px-2 rounded-lg tracking-wider">TAP TO ZOOM</span>
                 </span>
                 <QRCodeSVG
@@ -954,7 +952,7 @@ export default function CustomerForm({
             </h3>
 
             {/* Steps bar */}
-            <div className="grid grid-cols-4 gap-2 relative">
+            <div className="grid grid-cols-4 gap-1 sm:gap-2 relative">
               {/* Progress Line bar Background */}
               <div className="absolute top-5 left-8 right-8 h-0.5 bg-[var(--surface-hover)] -z-0 rounded"></div>
 
@@ -964,7 +962,7 @@ export default function CustomerForm({
                 return (
                   <div key={step} className="flex flex-col items-center relative z-10">
                     {/* Circle Indicator */}
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center border transition-all duration-200 ${
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center border transition-colors duration-200 ${
                       status === 'complete'
                         ? 'bg-emerald-700 border-emerald-700 text-white'
                         : status === 'current'
@@ -978,7 +976,7 @@ export default function CustomerForm({
                       )}
                     </div>
                     {/* Step label */}
-                    <span className={`text-xs font-semibold tracking-wider uppercase mt-2 text-center leading-tight ${
+                    <span className={`text-xs font-semibold tracking-normal sm:tracking-wider break-words uppercase mt-2 text-center leading-tight ${
                       status === 'current' ? 'text-red-700 dark:text-red-400' : 'text-[var(--text-secondary)]'
                     }`}>
                       {step === 'queued' ? 'Queued' : step === 'inprogress' ? 'Engraving' : step === 'ready' ? 'Ready' : 'Completed'}

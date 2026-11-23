@@ -32,7 +32,7 @@ export function RunnerOfflineBanner({
           {!online ? 'Offline: cached race passes and splits ready' : 'Syncing live race updates...'}
         </span>
       </span>
-      <span className="font-mono text-[11px] uppercase tracking-wider shrink-0 tabular-nums">
+      <span className="font-mono text-xs uppercase tracking-wider shrink-0 tabular-nums">
         {!online ? 'Cached' : 'Sync'}
       </span>
     </div>
@@ -332,7 +332,7 @@ export function RunnerQueueRow({
         <span className={`font-mono text-xs sm:text-sm font-semibold tabular-nums whitespace-nowrap ${metricColor}`}>
           {metric}
         </span>
-        <span className={`px-2 py-0.5 rounded-md border text-[11px] font-semibold leading-tight whitespace-nowrap ${STATUS_TONE_CLASSES[statusTone]}`}>
+        <span className={`px-2 py-0.5 rounded-md border text-xs font-semibold leading-tight whitespace-nowrap ${STATUS_TONE_CLASSES[statusTone]}`}>
           {statusLabel}
         </span>
       </div>
@@ -420,7 +420,7 @@ export function RunnerFloatingStatusPill({
 
         <div className="flex items-center gap-1.5 shrink-0">
           {rightSlot}
-          <span className={`px-2 py-0.5 rounded-full border text-[11px] font-semibold tabular-nums whitespace-nowrap ${STATUS_TONE_CLASSES[statusTone]}`}>
+          <span className={`px-2 py-0.5 rounded-full border text-xs font-semibold tabular-nums whitespace-nowrap ${STATUS_TONE_CLASSES[statusTone]}`}>
             {statusLabel}
           </span>
         </div>

@@ -222,7 +222,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
 
   const queueSearchRef = useRef<HTMLInputElement>(null);
   const doubleCheckInputRef = useRef<HTMLInputElement>(null);
-  const configPopoverRef = useRef<HTMLDivElement>(null);
+  const pricingInputRef = useRef<HTMLInputElement>(null);
 
   // Coordinate desktop viewport lock with App shell & WorkspaceShell
   const setDesktopLocked = headerCtx?.setDesktopLocked;
@@ -243,25 +243,6 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
       window.removeEventListener('offline', onOffline);
     };
   }, []);
-
-  // Close pricing/station config popover on Escape or outside click
-  useEffect(() => {
-    if (!showConfigPopover) return;
-    const onPointerDown = (event: PointerEvent) => {
-      if (configPopoverRef.current && !configPopoverRef.current.contains(event.target as Node)) {
-        setShowConfigPopover(false);
-      }
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setShowConfigPopover(false);
-    };
-    document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [showConfigPopover]);
 
   const triggerBeepSound = () => {
     try {
@@ -1058,7 +1039,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
         type="button"
         onClick={openQrModal}
         title="Scan runner QR ticket (Shortcut: Q)"
-        className="h-9 px-3 rounded-lg bg-red-700 hover:bg-red-600 text-white border border-red-500/30 text-xs font-semibold flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
+        className="min-h-11 px-3 rounded-lg bg-red-700 hover:bg-red-600 text-white border border-red-500/30 text-xs font-semibold flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
       >
         <QrCode className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
         <span>Scan QR</span>
@@ -1072,7 +1053,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
         hidden={!can('engraving.export')}
         onClick={handleDownloadCSV}
         title="Export LightBurn Variable-Text CSV (Shortcut: E)"
-        className="h-9 px-3 rounded-lg border border-white/15 bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
+        className="min-h-11 px-3 rounded-lg border border-white/15 bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
       >
         <FileDown className="w-3.5 h-3.5 text-zinc-200 shrink-0" aria-hidden="true" />
         <span>CSV</span>
@@ -1086,7 +1067,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
         hidden={!can('engraving.export')}
         onClick={openPdfModal}
         title="Generate PDF report (Shortcut: P)"
-        className="h-9 px-3 rounded-lg border border-white/15 bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
+        className="min-h-11 px-3 rounded-lg border border-white/15 bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
       >
         <FileText className="w-3.5 h-3.5 text-red-400 shrink-0" aria-hidden="true" />
         <span>PDF</span>
@@ -1100,7 +1081,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
         onClick={toggleBuzzer}
         aria-pressed={soundEnabled}
         title="Toggle new-order buzzer sound (Shortcut: B)"
-        className={`h-9 px-3 rounded-lg border text-xs font-semibold flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap ${
+        className={`min-h-11 px-3 rounded-lg border text-xs font-semibold flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap ${
           soundEnabled
             ? 'bg-emerald-700/80 border-emerald-500/40 text-white'
             : 'bg-white/10 border-white/15 text-zinc-200 hover:bg-white/15 hover:text-white'
@@ -1122,7 +1103,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
         hidden={!can('engraving.backup')}
         onClick={openBackupModal}
         title="Offline JSON backup & dual-laptop sync (Shortcut: O)"
-        className="h-9 px-3 rounded-lg border border-white/15 bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
+        className="min-h-11 px-3 rounded-lg border border-white/15 bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
       >
         <DownloadCloud className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />
         <span className="hidden xl:inline">Offline</span>
@@ -1131,40 +1112,45 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
         </kbd>
       </button>
 
-      {/* Setup Pricing & Station Settings Config Popover (ISO 11064-5: separates editable config from read-only telemetry) */}
-      <div ref={configPopoverRef} className="relative">
-        <button
-          type="button"
-          onClick={() => setShowConfigPopover((prev) => !prev)}
-          aria-expanded={showConfigPopover}
-          aria-haspopup="dialog"
-          title="Station configuration and medal pricing"
-          className={`h-9 px-3 rounded-lg border text-xs font-semibold font-mono flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap ${
-            showConfigPopover
-              ? 'bg-white/20 border-white/30 text-white'
-              : 'bg-white/10 border-white/15 text-zinc-100 hover:bg-white/15'
-          }`}
-        >
-          <Coins className="w-3.5 h-3.5 text-red-400 shrink-0" aria-hidden="true" />
-          <span>₱{pricePerMedal}</span>
-          <SlidersHorizontal className="w-3 h-3 text-zinc-300 shrink-0" aria-hidden="true" />
-        </button>
+      {/* Setup Pricing & Station Settings Config Modal Trigger */}
+      <button
+        type="button"
+        onClick={() => setShowConfigPopover((prev) => !prev)}
+        aria-expanded={showConfigPopover}
+        aria-haspopup="dialog"
+        title="Station configuration and medal pricing"
+        className={`min-h-11 px-3 rounded-lg border text-xs font-semibold font-mono flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap ${
+          showConfigPopover
+            ? 'bg-white/20 border-white/30 text-white'
+            : 'bg-white/10 border-white/15 text-zinc-100 hover:bg-white/15'
+        }`}
+      >
+        <Coins className="w-3.5 h-3.5 text-red-400 shrink-0" aria-hidden="true" />
+        <span>₱{pricePerMedal}</span>
+        <SlidersHorizontal className="w-3 h-3 text-zinc-300 shrink-0" aria-hidden="true" />
+      </button>
 
-        {showConfigPopover && (
-          <div
-            role="dialog"
-            aria-label="Engraving station configuration"
-            className="absolute right-0 top-full mt-2 z-50 w-72 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] p-4 shadow-2xl space-y-4"
-          >
+      {showConfigPopover && (
+        <DialogSurface
+          titleId="engraving-station-config-title"
+          onRequestClose={() => setShowConfigPopover(false)}
+          dismissOnBackdropClick
+          initialFocusRef={pricingInputRef}
+          className="w-full max-w-sm rounded-2xl p-5"
+        >
+          <div className="space-y-4">
             <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-                Station Config
-              </span>
+              <h2
+                id="engraving-station-config-title"
+                className="text-base font-semibold text-[var(--text-primary)]"
+              >
+                Station configuration
+              </h2>
               <button
                 type="button"
                 onClick={() => setShowConfigPopover(false)}
                 aria-label="Close station config"
-                className="w-11 h-11 lg:w-8 lg:h-8 rounded-lg flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
+                className="w-11 h-11 rounded-lg flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
               >
                 <X className="w-4 h-4" aria-hidden="true" />
               </button>
@@ -1177,9 +1163,10 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
               >
                 Setup Pricing (PHP per medal)
               </label>
-              <div className="flex items-center gap-2 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 min-h-11 lg:min-h-10 focus-within:ring-2 focus-within:ring-red-600 dark:focus-within:ring-red-400">
+              <div className="flex items-center gap-2 rounded-lg border border-[var(--border-control)] bg-[var(--surface-inset)] px-3 min-h-11 focus-within:ring-2 focus-within:ring-red-600 dark:focus-within:ring-red-400">
                 <span className="text-sm font-mono font-semibold text-red-700 dark:text-red-400">₱</span>
                 <input
+                  ref={pricingInputRef}
                   id="pricing_per_medal_input"
                   type="number"
                   min="0"
@@ -1224,7 +1211,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                   setShowConfigPopover(false);
                   setShowLightBurnModal(true);
                 }}
-                className="w-full min-h-11 lg:min-h-10 px-3 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] flex items-center justify-between"
+                className="w-full min-h-11 px-3 rounded-lg border border-[var(--border-control)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] flex items-center justify-between"
               >
                 <span className="flex items-center gap-2">
                   <HelpCircle className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" />
@@ -1237,15 +1224,15 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                 type="button"
                 hidden={!authority}
                 onClick={handlePurgeDatabase}
-                className="w-full min-h-11 lg:min-h-10 px-3 rounded-lg border border-red-600/30 bg-red-600/10 hover:bg-red-700 hover:text-white text-xs font-semibold text-red-700 dark:text-red-400 flex items-center gap-2 transition-colors"
+                className="w-full min-h-11 px-3 rounded-lg border border-red-600/30 bg-red-600/10 hover:bg-red-700 hover:text-white text-xs font-semibold text-red-700 dark:text-red-400 flex items-center gap-2 transition-colors"
               >
                 <Trash2 className="w-4 h-4 shrink-0" aria-hidden="true" />
                 <span>Purge Queue Database...</span>
               </button>
             </div>
           </div>
-        )}
-      </div>
+        </DialogSurface>
+      )}
 
       <button
         type="button"
@@ -1894,9 +1881,8 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                   const isTsvCopied = copiedStates[`${order.id}_tsv_all`];
 
                   return (
-                    <div
+                    <article
                       key={order.id}
-                      onClick={() => setDoubleCheckCode(order.id)}
                       className={`rounded-2xl border border-[var(--border-default)] border-l-4 ${meta.rowAccent} bg-[var(--surface-card)] p-4 space-y-3 transition-colors ${
                         isSelected ? 'ring-2 ring-red-600' : ''
                       }`}
@@ -1904,10 +1890,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                       <div className="flex items-center justify-between gap-2">
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDoubleCheckCode(order.id);
-                          }}
+                          onClick={() => setDoubleCheckCode(order.id)}
                           className="min-h-11 font-mono text-sm font-semibold px-3 py-2 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] text-red-700 dark:text-red-400"
                         >
                           {order.id}
@@ -1921,9 +1904,13 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                       </div>
 
                       <div>
-                        <p className="text-base font-display font-semibold text-[var(--text-primary)]">
+                        <button
+                          type="button"
+                          onClick={() => setDoubleCheckCode(order.id)}
+                          className="w-full text-left min-h-11 py-1 rounded-lg text-base font-display font-semibold text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-700 dark:focus-visible:ring-red-400"
+                        >
                           {order.runnerName}
-                        </p>
+                        </button>
                         <p className="text-xs text-[var(--text-secondary)] mt-1 font-mono">
                           Bib #{order.bibNumber} · {order.distance} · {formatRaceTime(order.finishingTime)}
                         </p>
@@ -1961,7 +1948,7 @@ export default function OperatorDashboard({ launchRequest }: OperatorDashboardPr
                           </button>
                         )}
                       </div>
-                    </div>
+                    </article>
                   );
                 })}
               </div>

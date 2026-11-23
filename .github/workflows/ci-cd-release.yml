@@ -61,6 +61,7 @@ jobs:
         run: |
           npm ci
           npm --prefix functions ci
+          npm --prefix functions/rbac ci
 
       - name: Audit production dependencies
         run: npm run security:audit
@@ -150,24 +151,12 @@ jobs:
 
       - name: Run unit and security tests
         run: |
-          node --test \
-            tests/access-policy.test.cjs \
-            tests/lan-access.test.cjs \
-            tests/account-client.test.cjs \
-            tests/account-security.test.cjs \
-            tests/friend-search.test.cjs \
-            tests/request-guard.test.cjs \
-            tests/resilient-fetch.test.cjs \
-            tests/timing-sequence.test.cjs \
-            tests/lan-http.test.cjs \
-            tests/security-client.test.cjs \
-            tests/security-audit.test.cjs \
-            tests/release-version.test.cjs
-          npx tsx --test tests/highlights.test.ts tests/access-draft.test.ts
+          npm run test
+          node --test tests/lan-http.test.cjs
 
       - name: Verify Cloud Functions JavaScript syntax
         run: |
-          for file in functions/*.js; do
+          for file in functions/*.js functions/rbac/*.js; do
             node --check "$file"
           done
 

@@ -1,6 +1,7 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
+import ErrorBoundary from './components/ui/ErrorBoundary';
 import FeedbackProvider from './components/ui/FeedbackProvider';
 import './index.css';
 
@@ -31,6 +32,8 @@ if ('serviceWorker' in navigator && !isLocalDevelopment) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <FeedbackProvider><App /></FeedbackProvider>
+    <ErrorBoundary title="RacePulsePH encountered an unexpected view error">
+      <FeedbackProvider><App /></FeedbackProvider>
+    </ErrorBoundary>
   </StrictMode>,
 );

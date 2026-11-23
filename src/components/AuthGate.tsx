@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { doc, getDoc, runTransaction } from 'firebase/firestore';
+import { doc, runTransaction } from 'firebase/firestore';
 import { AnimatePresence, m } from 'motion/react';
 import { directionalTabVariants, type NavDirection } from './ui/MotionPrimitives';
 import { RedTribalPatternBackdrop } from './ui/KineticTelemetry';
 import { db, auth, signUpWithEmail, signInWithEmail, signInWithGoogle, signOutUser } from '../firebase';
-import { clearSignupDraft, getSignupDraft, saveSignupDraft } from '../lib/accountSecurity';
+import { clearSignupDraft, getSignupDraft, resolveUsernameForLogin, saveSignupDraft } from '../lib/accountSecurity';
+import { isClientNavigationClick } from '../lib/appRouting';
 import { createActionCooldownStore } from '../lib/resilientFetch';
 import { PasswordResetFlow } from './AccountSecurity';
 import { isSuperAdminEmail } from '../lib/superAdmin';
@@ -28,6 +29,30 @@ type Mode = 'login' | 'signup';
 type SignupRole = 'runner' | 'organizer' | 'superadmin';
 type FieldKey = 'loginEmail' | 'loginPassword' | 'signupName' | 'signupUsername' | 'signupEmail' | 'signupPassword';
 
+interface PendingSignupFormDraft {
+  displayName: string;
+  username: string;
+  email: string;
+  signupRole: SignupRole;
+  ageStatus: '' | '13_plus' | 'under_13';
+  acceptedTerms: boolean;
+  marketingOptIn: boolean;
+}
+
+interface PendingCompleteProfileDraft {
+  uid: string;
+  displayName: string;
+  username: string;
+  role: SignupRole;
+  ageStatus: '' | '13_plus' | 'under_13';
+  acceptedTerms: boolean;
+  marketingOptIn: boolean;
+}
+
+// Keep non-sensitive signup form inputs only in memory across SPA policy navigation (never store passwords).
+let pendingFormDraft: PendingSignupFormDraft | null = null;
+let pendingCompleteProfileDraft: PendingCompleteProfileDraft | null = null;
+
 const USERNAME_PATTERN = /^[a-z0-9][a-z0-9_.-]{2,23}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const authCooldown = createActionCooldownStore('racepulse_auth_cd');
@@ -41,7 +66,7 @@ const inputBaseClass =
 const iconClass = 'w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] pointer-events-none';
 const focusRing =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-700 dark:focus-visible:ring-red-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-page)]';
-const buttonBase = `w-full h-11 px-5 rounded-[var(--radius-control)] text-sm sm:text-base font-semibold flex items-center justify-center gap-2 transition-all duration-150 motion-safe:active:scale-[0.99] ${focusRing}`;
+const buttonBase = `w-full h-11 px-5 rounded-[var(--radius-control)] text-sm sm:text-base font-semibold flex items-center justify-center gap-2 transition-[background-color,border-color,color,transform,box-shadow] duration-150 motion-safe:active:scale-[0.99] ${focusRing}`;
 const primaryButton = (busy: boolean) =>
   `${buttonBase} ${
     busy
@@ -67,10 +92,8 @@ async function resolveLoginEmail(identifier: string): Promise<string> {
 
   const invalid = usernameError(value);
   if (invalid) throw new Error(invalid);
-  const usernameDoc = await getDoc(doc(db, 'usernameIndex', normalizeUsername(value)));
-  const accountEmail = usernameDoc.exists() ? String(usernameDoc.data().email || '').trim() : '';
-  if (!accountEmail) throw new Error('No account found for that username. Try your email address instead.');
-  return accountEmail;
+  const { email } = await resolveUsernameForLogin(normalizeUsername(value));
+  return email;
 }
 
 function GoogleIcon({ className }: { className?: string }) {
@@ -151,7 +174,15 @@ async function createUserProfileForRole(
 
   await runTransaction(db, async (transaction) => {
     const usernameRef = doc(db, 'usernameIndex', username);
-    const existingUsername = await transaction.get(usernameRef);
+    let existingUsername;
+    try {
+      existingUsername = await transaction.get(usernameRef);
+    } catch (err: any) {
+      if (err?.code === 'permission-denied') {
+        throw new Error('That username is already taken. Please choose another one.');
+      }
+      throw err;
+    }
     if (existingUsername.exists()) throw new Error('That username is already taken. Please choose another one.');
 
     transaction.set(doc(db, 'users', currentUser.uid), profile);
@@ -198,14 +229,15 @@ export default function AuthGate({
   signupRoleLocked = false,
 }: AuthGateProps) {
   const [mode, setMode] = useState<Mode>(initialMode);
-  const [email, setEmail] = useState('');
+  const initialDraft = initialMode === 'signup' ? pendingFormDraft : null;
+  const [email, setEmail] = useState(() => initialDraft?.email ?? '');
   const [password, setPassword] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [username, setUsername] = useState('');
-  const [signupRole, setSignupRole] = useState<SignupRole>('runner');
-  const [ageStatus, setAgeStatus] = useState<'' | '13_plus' | 'under_13'>('');
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
-  const [marketingOptIn, setMarketingOptIn] = useState(false);
+  const [displayName, setDisplayName] = useState(() => initialDraft?.displayName ?? '');
+  const [username, setUsername] = useState(() => initialDraft?.username ?? '');
+  const [signupRole, setSignupRole] = useState<SignupRole>(() => initialDraft?.signupRole ?? 'runner');
+  const [ageStatus, setAgeStatus] = useState<'' | '13_plus' | 'under_13'>(() => initialDraft?.ageStatus ?? '');
+  const [acceptedTerms, setAcceptedTerms] = useState(() => initialDraft?.acceptedTerms ?? false);
+  const [marketingOptIn, setMarketingOptIn] = useState(() => initialDraft?.marketingOptIn ?? false);
   const [touched, setTouched] = useState<Partial<Record<FieldKey, boolean>>>({});
   const [error, setError] = useState('');
   const [errorNonce, setErrorNonce] = useState(0);
@@ -217,6 +249,19 @@ export default function AuthGate({
   const [cooldownSeconds, setCooldownSeconds] = useState(() => authCooldown.getRemainingSeconds('auth'));
   const submitLockRef = useRef(false);
   const mountedAtRef = useRef(Date.now());
+
+  useEffect(() => {
+    if (mode !== 'signup') return;
+    pendingFormDraft = {
+      displayName,
+      username,
+      email,
+      signupRole,
+      ageStatus,
+      acceptedTerms,
+      marketingOptIn,
+    };
+  }, [mode, displayName, username, email, signupRole, ageStatus, acceptedTerms, marketingOptIn]);
 
   useEffect(() => {
     if (cooldownSeconds <= 0) return;
@@ -240,11 +285,29 @@ export default function AuthGate({
 
   const switchMode = (next: Mode) => {
     if (next === mode) return;
+    if (next === 'login') {
+      pendingFormDraft = null;
+    }
     setMode(next);
     setError('');
     setNotice('');
     setTouched({});
     onModeChange?.(next);
+  };
+
+  const handleOpenLegalDoc = (docKey: LegalDocKey) => {
+    if (mode === 'signup') {
+      pendingFormDraft = {
+        displayName,
+        username,
+        email,
+        signupRole,
+        ageStatus,
+        acceptedTerms,
+        marketingOptIn,
+      };
+    }
+    onOpenLegal?.(docKey);
   };
 
   const triggerFormError = (msg: string) => {
@@ -267,7 +330,7 @@ export default function AuthGate({
       ? 'Enter a valid email address.'
       : null;
   const signupPasswordErr =
-    touched.signupPassword && password.length < 6 ? 'Password must be at least 6 characters.' : null;
+    touched.signupPassword && password.length < 8 ? 'Password must be at least 8 characters.' : null;
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -353,8 +416,8 @@ export default function AuthGate({
       triggerFormError('Please enter a valid email address.');
       return;
     }
-    if (password.length < 6) {
-      triggerFormError('Password must be at least 6 characters.');
+    if (password.length < 8) {
+      triggerFormError('Password must be at least 8 characters.');
       return;
     }
     if (ageStatus === 'under_13') {
@@ -368,7 +431,7 @@ export default function AuthGate({
       return;
     }
     if (!acceptedTerms) {
-      triggerFormError('Please accept the Terms of Service, Privacy Policy, and Refund Policy to continue.');
+      triggerFormError('Please accept the Terms of Service, Privacy Policy, Refund Policy, and Cookie Policy to continue.');
       return;
     }
 
@@ -386,6 +449,7 @@ export default function AuthGate({
         marketingOptIn,
       });
       await signUpWithEmail(normalizedEmail, password, displayName);
+      pendingFormDraft = null;
       authCooldown.clear('auth');
       setCooldownSeconds(0);
       setPassword('');
@@ -770,7 +834,7 @@ export default function AuthGate({
                       type={showPassword ? 'text' : 'password'}
                       autoComplete="new-password"
                       required
-                      minLength={6}
+                      minLength={8}
                       aria-invalid={!!signupPasswordErr}
                       aria-describedby={
                         signupPasswordErr ? 'signup-password-err signup-password-help' : 'signup-password-help'
@@ -790,7 +854,7 @@ export default function AuthGate({
                     </p>
                   ) : (
                     <p id="signup-password-help" className={hintClass}>
-                      At least 6 characters.
+                      At least 8 characters.
                     </p>
                   )}
                 </div>
@@ -811,7 +875,7 @@ export default function AuthGate({
                   onAcceptedTermsChange={setAcceptedTerms}
                   marketingOptIn={marketingOptIn}
                   onMarketingOptInChange={setMarketingOptIn}
-                  onOpenLegal={onOpenLegal}
+                  onOpenLegal={onOpenLegal ? handleOpenLegalDoc : undefined}
                 />
 
                 {errorMessage}
@@ -875,7 +939,7 @@ function SignupConsentFields({
             type="button"
             aria-pressed={ageStatus === '13_plus'}
             onClick={() => onAgeStatusChange('13_plus')}
-            className={`min-h-11 px-3 rounded-[var(--radius-control)] border text-xs font-semibold transition-all duration-150 ${focusRing} ${
+            className={`min-h-11 px-3 rounded-[var(--radius-control)] border text-xs font-semibold transition-colors duration-150 ${focusRing} ${
               ageStatus === '13_plus'
                 ? `border-red-700 dark:border-red-400 bg-red-50 dark:bg-red-950/35 ${accentText}`
                 : 'glass-inset text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
@@ -887,7 +951,7 @@ function SignupConsentFields({
             type="button"
             aria-pressed={ageStatus === 'under_13'}
             onClick={() => onAgeStatusChange('under_13')}
-            className={`min-h-11 px-3 rounded-[var(--radius-control)] border text-xs font-semibold transition-all duration-150 ${focusRing} ${
+            className={`min-h-11 px-3 rounded-[var(--radius-control)] border text-xs font-semibold transition-colors duration-150 ${focusRing} ${
               ageStatus === 'under_13'
                 ? `border-red-700 dark:border-red-400 bg-red-50 dark:bg-red-950/35 ${accentText}`
                 : 'glass-inset text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
@@ -915,48 +979,35 @@ function SignupConsentFields({
             onChange={(e) => onAcceptedTermsChange(e.target.checked)}
             className="rp-checkbox shrink-0"
           />
-          <div className="pt-2 text-xs text-[var(--text-primary)] leading-relaxed space-y-1">
+          <div className="pt-2 text-xs text-[var(--text-primary)] leading-relaxed flex-1 min-w-0">
             <label htmlFor={`${idPrefix}-terms`} className="cursor-pointer block">
-              I agree to the Terms of Service, Privacy Policy, and Refund Policy.
+              I agree to the Terms of Service, Privacy Policy, Refund Policy, and Cookie Policy.
             </label>
-            {onOpenLegal && (
-              <p className="text-[var(--text-secondary)]">
-                Read:{' '}
+            <div className="flex flex-wrap items-center gap-2 pt-2" role="group" aria-label="Legal and cookie policy documents">
+              {(
+                [
+                  { docKey: 'terms', href: '/terms-of-service', label: 'Terms of Service' },
+                  { docKey: 'privacy', href: '/privacy-policy', label: 'Privacy Policy' },
+                  { docKey: 'refund', href: '/refund-policy', label: 'Refund Policy' },
+                  { docKey: 'cookies', href: '/cookie-policy', label: 'Cookie Policy' },
+                ] as const
+              ).map((item) => (
                 <a
-                  href="/terms-of-service"
+                  key={item.docKey}
+                  href={item.href}
                   onClick={(e) => {
-                    e.preventDefault();
-                    onOpenLegal('terms');
+                    e.stopPropagation();
+                    if (onOpenLegal && isClientNavigationClick(e)) {
+                      e.preventDefault();
+                      onOpenLegal(item.docKey);
+                    }
                   }}
-                  className="font-semibold underline underline-offset-2 text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400"
+                  className={`inline-flex items-center whitespace-nowrap min-h-8 px-2 py-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] text-xs font-semibold text-red-700 dark:text-red-400 underline underline-offset-2 hover:border-red-600/50 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors ${focusRing}`}
                 >
-                  Terms of Service
+                  {item.label}
                 </a>
-                {', '}
-                <a
-                  href="/privacy-policy"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    onOpenLegal('privacy');
-                  }}
-                  className="font-semibold underline underline-offset-2 text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400"
-                >
-                  Privacy Policy
-                </a>
-                {', and '}
-                <a
-                  href="/refund-policy"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    onOpenLegal('refund');
-                  }}
-                  className="font-semibold underline underline-offset-2 text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400"
-                >
-                  Refund Policy
-                </a>
-                .
-              </p>
-            )}
+              ))}
+            </div>
           </div>
         </div>
 
@@ -983,7 +1034,7 @@ function RoleSelector({ role, onChange }: { role: SignupRole; onChange: (r: Sign
       type="button"
       aria-pressed={role === value}
       onClick={() => onChange(value)}
-      className={`h-11 rounded-[var(--radius-control)] border text-sm font-semibold transition-all duration-150 motion-safe:active:scale-[0.98] ${focusRing} ${
+      className={`h-11 rounded-[var(--radius-control)] border text-sm font-semibold transition-[background-color,border-color,color,transform,box-shadow] duration-150 motion-safe:active:scale-[0.98] ${focusRing} ${
         role === value
           ? `border-red-700 dark:border-red-400 bg-red-50 dark:bg-red-950/35 ${accentText} shadow-sm`
           : 'glass-inset text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
@@ -1029,16 +1080,42 @@ function CompleteProfileForm({
 }) {
   const userEmail = (user.email || '').trim().toLowerCase();
   const [draft] = useState(() => getSignupDraft(userEmail));
-  const [role, setRole] = useState<SignupRole>(signupRoleLocked ? 'runner' : draft?.role || 'runner');
-  const [displayName, setDisplayName] = useState(draft?.displayName || user.displayName || '');
-  const [username, setUsername] = useState(draft?.username || '');
+  const restored = pendingCompleteProfileDraft?.uid === user.uid ? pendingCompleteProfileDraft : null;
+  const [role, setRole] = useState<SignupRole>(signupRoleLocked ? 'runner' : restored?.role || draft?.role || 'runner');
+  const [displayName, setDisplayName] = useState(restored?.displayName ?? draft?.displayName ?? user.displayName ?? '');
+  const [username, setUsername] = useState(restored?.username ?? draft?.username ?? '');
   const [ageStatus, setAgeStatus] = useState<'' | '13_plus' | 'under_13'>(
-    draft?.over13Confirmed ? '13_plus' : ''
+    restored?.ageStatus ?? (draft?.over13Confirmed ? '13_plus' : '')
   );
-  const [acceptedTerms, setAcceptedTerms] = useState(Boolean(draft?.termsAcceptedAt));
-  const [marketingOptIn, setMarketingOptIn] = useState(Boolean(draft?.marketingOptIn));
+  const [acceptedTerms, setAcceptedTerms] = useState(restored?.acceptedTerms ?? Boolean(draft?.termsAcceptedAt));
+  const [marketingOptIn, setMarketingOptIn] = useState(restored?.marketingOptIn ?? Boolean(draft?.marketingOptIn));
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    pendingCompleteProfileDraft = {
+      uid: user.uid,
+      displayName,
+      username,
+      role,
+      ageStatus,
+      acceptedTerms,
+      marketingOptIn,
+    };
+  }, [user.uid, displayName, username, role, ageStatus, acceptedTerms, marketingOptIn]);
+
+  const handleOpenLegalDoc = (docKey: LegalDocKey) => {
+    pendingCompleteProfileDraft = {
+      uid: user.uid,
+      displayName,
+      username,
+      role,
+      ageStatus,
+      acceptedTerms,
+      marketingOptIn,
+    };
+    onOpenLegal?.(docKey);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1063,7 +1140,7 @@ function CompleteProfileForm({
       return;
     }
     if (!acceptedTerms) {
-      setError('Please accept the Terms of Service, Privacy Policy, and Refund Policy.');
+      setError('Please accept the Terms of Service, Privacy Policy, Refund Policy, and Cookie Policy.');
       return;
     }
     setSubmitting(true);
@@ -1080,6 +1157,7 @@ function CompleteProfileForm({
         }
       );
       clearSignupDraft(userEmail);
+      pendingCompleteProfileDraft = null;
     } catch (err: any) {
       setError(err.message?.replace('Firebase: ', '') || 'Failed to finish setting up your account.');
     } finally {
@@ -1172,7 +1250,7 @@ function CompleteProfileForm({
             onAcceptedTermsChange={setAcceptedTerms}
             marketingOptIn={marketingOptIn}
             onMarketingOptInChange={setMarketingOptIn}
-            onOpenLegal={onOpenLegal}
+            onOpenLegal={onOpenLegal ? handleOpenLegalDoc : undefined}
           />
 
           {error && (
@@ -1197,7 +1275,10 @@ function CompleteProfileForm({
 
           <button
             type="button"
-            onClick={() => signOutUser()}
+            onClick={() => {
+              pendingCompleteProfileDraft = null;
+              void signOutUser();
+            }}
             className={`w-full h-11 rounded-[var(--radius-control)] text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] flex items-center justify-center gap-2 transition-colors ${focusRing}`}
           >
             <LogOut className="w-4 h-4" aria-hidden="true" /> Sign out

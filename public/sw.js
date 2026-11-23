@@ -1,6 +1,7 @@
-const CACHE_NAME = 'racepulseph-shell-v3';
+const CACHE_NAME = 'racepulseph-shell-v4';
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/assets/racepulse-startup.webp', '/startup.js'];
 const MAX_RUNTIME_CACHE_ENTRIES = 120;
+const HASHED_ASSET_RE = /^\/assets\/.+-[a-zA-Z0-9_-]{6,}\.[a-z0-9]+$/i;
 // A service worker is useful for the deployed PWA, but it can serve stale Vite
 // modules on localhost after a source edit. Clear and remove it automatically
 // in local development so the operator always sees the current app.
@@ -59,8 +60,7 @@ self.addEventListener('fetch', (event) => {
         .then((response) => {
           const contentType = response.headers.get('content-type') || '';
           if (response.ok && contentType.includes('text/html')) {
-            const copy = response.clone();
-            void putBoundedCache('/index.html', copy);
+            event.waitUntil(putBoundedCache('/index.html', response.clone()));
           }
           return response;
         })
@@ -69,12 +69,26 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Immutable content-hashed bundles use cache-first; unhashed runtime files use network-first.
+  if (HASHED_ASSET_RE.test(url.pathname)) {
+    event.respondWith(
+      caches.match(request).then((cached) => cached || fetch(request).then((response) => {
+        if (!response.ok) return response;
+        event.waitUntil(putBoundedCache(request, response.clone()));
+        return response;
+      }))
+    );
+    return;
+  }
+
   event.respondWith(
-    caches.match(request).then((cached) => cached || fetch(request).then((response) => {
-      if (!response.ok) return response;
-      const copy = response.clone();
-      void putBoundedCache(request, copy);
-      return response;
-    }))
+    fetch(request)
+      .then((response) => {
+        if (response.ok) {
+          event.waitUntil(putBoundedCache(request, response.clone()));
+        }
+        return response;
+      })
+      .catch(() => caches.match(request))
   );
 });

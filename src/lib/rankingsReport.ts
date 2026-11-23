@@ -24,7 +24,7 @@ function appendFooter(pdf: JsPDFInstance): void {
 // the live leaderboard.
 export async function generateRankingsReportPdf(race: Race, results: RunnerResult[], distanceFilter?: string): Promise<boolean> {
   const finishers = results.filter((result) => (result.overallRank !== undefined || result.rank !== undefined)
-    && (!distanceFilter || result.runnerProfile.distance === distanceFilter));
+    && (!distanceFilter || result.runnerProfile?.distance === distanceFilter));
   if (finishers.length === 0) return false;
 
   const [{ jsPDF }, { default: autoTable }] = await Promise.all([

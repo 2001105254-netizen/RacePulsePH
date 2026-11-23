@@ -124,7 +124,7 @@ export default function BottomNav({
         data-nav-variant="docked"
         className={`${hideBreakpointClass} fixed bottom-0 inset-x-0 z-40 border-t border-[var(--border-default)] bg-[var(--surface-card)] pb-[var(--rp-safe-bottom)] pl-[var(--rp-safe-left)] pr-[var(--rp-safe-right)]`}
       >
-        <div className="h-[56px] w-full flex items-stretch justify-around px-1 gap-0.5">
+        <div className="min-h-[56px] w-full flex items-stretch justify-around px-1 gap-0.5">
           {items.map((item) => {
             const compactText = item.shortLabel || item.label;
             return (
@@ -146,7 +146,7 @@ export default function BottomNav({
                 <span aria-hidden="true" className="flex items-center justify-center shrink-0">
                   {item.icon}
                 </span>
-                <span className="w-full truncate text-center text-[11px] leading-tight font-semibold">
+                <span className="w-full truncate text-center text-xs leading-tight font-semibold">
                   {compactText}
                 </span>
               </button>

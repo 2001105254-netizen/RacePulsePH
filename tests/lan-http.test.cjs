@@ -75,3 +75,97 @@ test('local HTTP enforces security headers, CORS allowlist, plain JSON bodies, a
  }
  assert.equal(saw429,true);
 });
+
+test('local HTTP provides /api/readyz, X-Request-Id tracing, ?raceId=&limit= filtering, and gzip compression', async () => {
+ const readyRes = await fetch(`http://127.0.0.1:${port}/api/readyz`, {
+  headers: { 'X-Request-Id': 'req-trace-123' },
+ });
+ assert.equal(readyRes.status, 200);
+ assert.equal(readyRes.headers.get('x-request-id'), 'req-trace-123');
+ const readyBody = await readyRes.json();
+ assert.equal(readyBody.ready, true);
+
+ const autoTraceRes = await request('health');
+ assert.ok((autoTraceRes.headers.get('x-request-id') || '').length >= 8);
+
+ // Seed two reads in race_a so we can test limit=1 and >1KiB gzip response.
+ for (let i = 0; i < 6; i += 1) {
+  const res = await request('chip-reads', 'POST', 'operator', {
+   id: `filter_read_${i}`,
+   raceId: 'race_a',
+   recordedBy: 'operator',
+   bibNumber: `5-${String(i).padStart(3, '0')}`,
+   checkpointId: 'finish',
+   timestamp: '2026-10-28T00:30:00.1234567Z',
+  });
+  assert.equal(res.status, 200);
+ }
+
+ const limitedRes = await fetch(`http://127.0.0.1:${port}/api/chip-reads?raceId=race_a&limit=2`, {
+  headers: { Authorization: 'Bearer operator', 'Accept-Encoding': 'gzip' },
+ });
+ assert.equal(limitedRes.status, 200);
+ const limitedJson = await limitedRes.json();
+ assert.equal(limitedJson.chipReads.length, 2);
+ assert.ok(limitedJson.chipReads.every((r) => r.raceId === 'race_a'));
+
+ const uncompressedAll = await fetch(`http://127.0.0.1:${port}/api/chip-reads?raceId=race_a`, {
+  headers: { Authorization: 'Bearer operator', 'Accept-Encoding': 'gzip' },
+ });
+ assert.equal(uncompressedAll.status, 200);
+ const allJson = await uncompressedAll.json();
+ assert.ok(allJson.chipReads.length >= 6);
+});
+
+test('local HTTP returns 503 without partial memory corruption when persistence fails', async () => {
+ const failDir = fs.mkdtempSync(path.join(os.tmpdir(), 'racepulse-lan-fail-'));
+ fs.mkdirSync(path.join(failDir, 'local_chip_reads.json'));
+ const failPort = 31744;
+ const failChild = spawn(process.execPath, ['dist/server.cjs'], {
+  env: {
+   ...process.env,
+   NODE_ENV: 'production',
+   PORT: String(failPort),
+   RACEPULSE_BRIDGE_KEY: 'test-pairing-key-012345678901234567890',
+   RACEPULSE_BRIDGE_RACE_ID: 'race_a',
+   RACEPULSE_DATA_DIR: failDir,
+   RACEPULSE_ACCESS_API_URL: `http://127.0.0.1:${fixture.address().port}`,
+  },
+  stdio: ['ignore', 'pipe', 'pipe'],
+ });
+ try {
+  const deadline = Date.now() + 20000;
+  let started = false;
+  while (Date.now() < deadline) {
+   try {
+    const r = await fetch(`http://127.0.0.1:${failPort}/api/health`);
+    if (r.status === 200) { started = true; break; }
+   } catch {}
+   await new Promise((r) => setTimeout(r, 100));
+  }
+  assert.equal(started, true);
+
+  const persistFailRes = await fetch(`http://127.0.0.1:${failPort}/api/chip-reads`, {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json', Authorization: 'Bearer operator' },
+   body: JSON.stringify({
+    id: 'scan_should_fail',
+    raceId: 'race_a',
+    recordedBy: 'operator',
+    bibNumber: '5-999',
+    checkpointId: 'finish',
+    timestamp: '2026-10-28T00:30:00Z',
+   }),
+  });
+  assert.equal(persistFailRes.status, 503);
+
+  const listAfterFail = await fetch(`http://127.0.0.1:${failPort}/api/chip-reads?raceId=race_a`, {
+   headers: { Authorization: 'Bearer operator' },
+  });
+  const afterData = await listAfterFail.json();
+  assert.equal(afterData.chipReads.some((r) => r.id === 'scan_should_fail'), false);
+ } finally {
+  failChild.kill();
+  fs.rmSync(failDir, { recursive: true, force: true });
+ }
+});

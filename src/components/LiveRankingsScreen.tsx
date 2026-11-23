@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, Clock, Flag, Keyboard, Radio, Trophy, Users } from 'lucide-react';
+import DialogSurface from './ui/DialogSurface';
 import { useAndroidBackHandler } from '../lib/capacitorAndroid';
 import {
   ApproachingCourseEntry,
@@ -209,7 +210,7 @@ export default function LiveRankingsScreen({
   const [podiumAlert, setPodiumAlert] = useState<PodiumArrivalAlert | null>(null);
 
   const stageRef = useRef<HTMLDivElement>(null);
-  const helpDialogRef = useRef<HTMLDivElement>(null);
+  const helpCloseBtnRef = useRef<HTMLButtonElement>(null);
   const seenPodiumRef = useRef<{ scopeKey: string; bibs: Set<string> }>({
     scopeKey: '',
     bibs: new Set<string>(),
@@ -389,11 +390,9 @@ export default function LiveRankingsScreen({
     return () => window.clearTimeout(timeout);
   }, [race.id, selectedDistance, activeDivisionView, activeDistanceDecks, singleViewRunners]);
 
-  // Manage keyboard focus cleanly between stage and Shortcut Guide dialog.
+  // Return keyboard focus to broadcast stage after closing Shortcut Guide dialog.
   useEffect(() => {
-    if (helpOpen) {
-      helpDialogRef.current?.focus();
-    } else {
+    if (!helpOpen) {
       stageRef.current?.focus();
     }
   }, [helpOpen]);
@@ -1226,72 +1225,75 @@ export default function LiveRankingsScreen({
         </div>
       </footer>
 
-      {/* ON-DEMAND KEYBOARD SHORTCUT GUIDE OVERLAY (Opened via H or ?) */}
+      {/* ON-DEMAND KEYBOARD SHORTCUT GUIDE MODAL (Opened via H or ?) */}
       {helpOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-          <div
-            ref={helpDialogRef}
-            tabIndex={-1}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="broadcast-guide-title"
-            className="w-full max-w-2xl rounded-2xl border border-white/15 bg-[#111216] p-6 text-[#f4f4f5] outline-none"
-          >
-            <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-3">
-              <div>
-                <h2 id="broadcast-guide-title" className="text-xl font-semibold text-[#f4f4f5]">
-                  Live Rankings Keyboard Guide
-                </h2>
-                <p className="mt-1 text-xs font-normal text-[#a1a1aa]">
-                  On-screen controls are hidden during broadcast. Use keyboard keys to switch views or press Esc to close.
-                </p>
-              </div>
-              <span className="shrink-0 whitespace-nowrap rounded border border-white/15 bg-[#09090b] px-2.5 py-1 font-mono text-xs font-semibold text-[#d4d4d8]">
-                Esc to close
-              </span>
+        <DialogSurface
+          titleId="broadcast-guide-title"
+          onRequestClose={() => setHelpOpen(false)}
+          dismissOnBackdropClick
+          initialFocusRef={helpCloseBtnRef}
+          className="w-full max-w-2xl rounded-2xl border border-white/15 bg-[#111216] p-6 text-[#f4f4f5]"
+        >
+          <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-3">
+            <div>
+              <h2 id="broadcast-guide-title" className="text-xl font-semibold text-[#f4f4f5]">
+                Live Rankings Keyboard Guide
+              </h2>
+              <p className="mt-1 text-xs font-normal text-[#a1a1aa]">
+                On-screen controls are hidden during broadcast. Use keyboard keys to switch views or press Esc to close.
+              </p>
+            </div>
+            <button
+              ref={helpCloseBtnRef}
+              type="button"
+              onClick={() => setHelpOpen(false)}
+              aria-label="Close keyboard guide"
+              className="min-h-11 shrink-0 whitespace-nowrap rounded-lg border border-white/20 bg-[#09090b] hover:bg-white/10 px-3 font-mono text-xs font-semibold text-[#f4f4f5] transition-colors"
+            >
+              Close (Esc)
+            </button>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-[#d4d4d8]">
+                Distance Hotkeys
+              </h3>
+              <dl className="mt-2 space-y-2">
+                {shortcutGuide.distanceKeys.map((item) => (
+                  <div
+                    key={item.keys}
+                    className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-[#09090b] px-3 py-1.5 text-xs"
+                  >
+                    <dt className="shrink-0 whitespace-nowrap">
+                      <kbd className="font-mono font-semibold text-[#fbbf24]">{item.keys}</kbd>
+                    </dt>
+                    <dd className="font-normal text-[#e4e4e7] text-right">{item.label}</dd>
+                  </div>
+                ))}
+              </dl>
             </div>
 
-            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-[#d4d4d8]">
-                  Distance Hotkeys
-                </h3>
-                <dl className="mt-2 space-y-2">
-                  {shortcutGuide.distanceKeys.map((item) => (
-                    <div
-                      key={item.keys}
-                      className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-[#09090b] px-3 py-1.5 text-xs"
-                    >
-                      <dt className="shrink-0 whitespace-nowrap">
-                        <kbd className="font-mono font-semibold text-[#fbbf24]">{item.keys}</kbd>
-                      </dt>
-                      <dd className="font-normal text-[#e4e4e7] text-right">{item.label}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
-
-              <div>
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-[#d4d4d8]">
-                  Navigation & Display
-                </h3>
-                <dl className="mt-2 space-y-2">
-                  {shortcutGuide.navigationKeys.map((item) => (
-                    <div
-                      key={item.keys}
-                      className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-[#09090b] px-3 py-1.5 text-xs"
-                    >
-                      <dt className="shrink-0 whitespace-nowrap">
-                        <kbd className="font-mono font-semibold text-[#6ee7b7]">{item.keys}</kbd>
-                      </dt>
-                      <dd className="font-normal text-[#e4e4e7] text-right">{item.label}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-[#d4d4d8]">
+                Navigation &amp; Display
+              </h3>
+              <dl className="mt-2 space-y-2">
+                {shortcutGuide.navigationKeys.map((item) => (
+                  <div
+                    key={item.keys}
+                    className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-[#09090b] px-3 py-1.5 text-xs"
+                  >
+                    <dt className="shrink-0 whitespace-nowrap">
+                      <kbd className="font-mono font-semibold text-[#6ee7b7]">{item.keys}</kbd>
+                    </dt>
+                    <dd className="font-normal text-[#e4e4e7] text-right">{item.label}</dd>
+                  </div>
+                ))}
+              </dl>
             </div>
           </div>
-        </div>
+        </DialogSurface>
       )}
       </div>
     </div>

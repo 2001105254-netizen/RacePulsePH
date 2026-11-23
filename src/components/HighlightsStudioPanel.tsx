@@ -1440,7 +1440,7 @@ export default function HighlightsStudioPanel({
                   <h2 className="font-display text-base font-semibold text-[var(--text-primary)]">
                     Race Source &amp; Ranked Finisher
                   </h2>
-                  <span className="text-[11px] font-mono text-[var(--text-secondary)]">
+                  <span className="text-xs font-mono text-[var(--text-secondary)]">
                     {rankedRaceEntries.length} finishers in view
                   </span>
                 </div>
@@ -1450,7 +1450,7 @@ export default function HighlightsStudioPanel({
                   <HighlightCustomSelect
                     id="hl-race-link"
                     label={races.length > 0 ? 'Source Race Event (Required)' : 'Source Race Event'}
-                    value={draft.raceId}
+                    value={draft.raceId || ''}
                     disabled={!canManage || races.length === 0}
                     searchable
                     searchPlaceholder="Filter race events by name or date..."
@@ -1471,7 +1471,7 @@ export default function HighlightsStudioPanel({
 
                   {raceFilterDistances.length > 0 && (
                     <div className="space-y-1.5">
-                      <span className="block text-[11px] font-mono text-[var(--text-secondary)]">
+                      <span className="block text-xs font-mono text-[var(--text-secondary)]">
                         Distance Filter
                       </span>
                       <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter race runners by distance">
@@ -1516,7 +1516,7 @@ export default function HighlightsStudioPanel({
 
                   {/* Sort Mode + Top Ranked Quick-Picks */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-[var(--border-default)]">
-                    <label htmlFor="hl-runner-sort" className="text-[11px] font-mono text-[var(--text-secondary)]">
+                    <label htmlFor="hl-runner-sort" className="text-xs font-mono text-[var(--text-secondary)]">
                       Order Directory By
                     </label>
                     <div className="w-full sm:w-56">
@@ -1539,7 +1539,7 @@ export default function HighlightsStudioPanel({
 
               {podiumQuickPicks.length > 0 && (
                 <div className="space-y-1.5">
-                  <span className="block text-[11px] font-mono text-[var(--text-secondary)]">
+                  <span className="block text-xs font-mono text-[var(--text-secondary)]">
                     Podium Quick-Picks
                   </span>
                   <div className="flex flex-wrap gap-1.5">
@@ -1555,13 +1555,13 @@ export default function HighlightsStudioPanel({
                           disabled={!canManage}
                           onClick={() => handleSelectRankedEntry(item)}
                           title={`${item.runner.fullName} | ${item.entry.distance} | ${item.entry.chipTime || 'No time'}`}
-                          className={`min-h-9 px-2.5 py-1 rounded-lg border text-[11px] font-mono transition inline-flex items-center gap-1.5 ${
+                          className={`min-h-11 px-2.5 py-1 rounded-lg border text-xs font-mono transition inline-flex items-center gap-1.5 ${
                             isActive
                               ? 'bg-red-700 text-white border-red-800 shadow-sm'
                               : 'bg-[var(--surface-card)] text-[var(--text-primary)] border-[var(--border-default)] hover:bg-[var(--surface-hover)]'
                           }`}
                         >
-                          <span className="font-bold">#{rankNum}</span>
+                          <span className="font-semibold">#{rankNum}</span>
                           <span className="truncate max-w-[116px]">{item.runner.fullName}</span>
                           <span className="opacity-80">{item.entry.distance}</span>
                         </button>
@@ -1585,7 +1585,7 @@ export default function HighlightsStudioPanel({
                           : 'Runner Portrait'}
                     </span>
                     {matchedPrimaryAccount.photoUrl && (
-                      <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400">
+                      <span className="text-xs font-mono text-emerald-700 dark:text-emerald-400">
                         Account photo found
                       </span>
                     )}
@@ -1676,7 +1676,7 @@ export default function HighlightsStudioPanel({
                         Runner 2 Photo
                       </span>
                       {matchedPartnerAccount.photoUrl && (
-                        <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400">
+                        <span className="text-xs font-mono text-emerald-700 dark:text-emerald-400">
                           Account photo found
                         </span>
                       )}
@@ -1993,7 +1993,7 @@ export default function HighlightsStudioPanel({
                         : 'Runner Name'}
                   </label>
                   {activeRunner ? (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-mono text-emerald-700 dark:text-emerald-400">
+                    <span className="inline-flex items-center gap-1 text-xs font-mono text-emerald-700 dark:text-emerald-400">
                       <Database className="w-3 h-3" aria-hidden="true" />
                       <span>
                         {matchedActiveEntry?.rank != null ? `#${matchedActiveEntry.rank} · ` : ''}
@@ -2001,7 +2001,7 @@ export default function HighlightsStudioPanel({
                       </span>
                     </span>
                   ) : rankedRaceEntries.length > 0 ? (
-                    <span className="text-[11px] font-mono text-[var(--text-secondary)]">
+                    <span className="text-xs font-mono text-[var(--text-secondary)]">
                       {rankedRaceEntries.length} in race
                     </span>
                   ) : null}
@@ -2117,7 +2117,7 @@ export default function HighlightsStudioPanel({
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex items-center gap-2 min-w-0">
                                 <span
-                                  className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold ${
+                                  className={`shrink-0 px-1.5 py-0.5 rounded text-xs font-mono font-semibold ${
                                     entry.rank != null && entry.rank <= 3
                                       ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                                       : 'bg-[var(--surface-inset)] text-[var(--text-secondary)] border border-[var(--border-default)]'
@@ -2136,11 +2136,11 @@ export default function HighlightsStudioPanel({
                                   {runner.fullName}
                                 </span>
                               </div>
-                              <span className="shrink-0 px-2 py-0.5 rounded bg-[var(--surface-inset)] border border-[var(--border-default)] text-[10px] font-mono text-[var(--text-secondary)]">
+                              <span className="shrink-0 px-2 py-0.5 rounded bg-[var(--surface-inset)] border border-[var(--border-default)] text-xs font-mono text-[var(--text-secondary)]">
                                 {entry.distance} · #{entry.bibNumber}
                               </span>
                             </div>
-                            <span className="text-[11px] font-mono text-[var(--text-secondary)] truncate">
+                            <span className="text-xs font-mono text-[var(--text-secondary)] truncate">
                               {entry.chipTime ? `${entry.chipTime} finish` : 'Registered (no finish scan)'}
                               {entry.pace ? ` · ${entry.pace}` : ''}
                               {entry.gunTime ? ` · Gun ${entry.gunTime}` : ''}
@@ -2285,13 +2285,13 @@ export default function HighlightsStudioPanel({
                                 </span>
                               </div>
                               {raceEntry && (
-                                <span className="shrink-0 text-[10px] font-mono text-[var(--text-secondary)]">
+                                <span className="shrink-0 text-xs font-mono text-[var(--text-secondary)]">
                                   #{raceEntry.bibNumber} · {raceEntry.distance}
                                 </span>
                               )}
                             </div>
                             {raceEntry && (
-                              <span className="text-[11px] font-mono text-[var(--text-secondary)] truncate">
+                              <span className="text-xs font-mono text-[var(--text-secondary)] truncate">
                                 {raceEntry.raceName}
                               </span>
                             )}
@@ -2520,7 +2520,7 @@ export default function HighlightsStudioPanel({
             <div className="space-y-3 pt-2 border-t border-[var(--border-default)]">
               {activeRunner && activeRunner.entries.length > 1 && (
                 <div className="space-y-1.5">
-                  <span className="block text-[11px] font-mono text-[var(--text-secondary)]">
+                  <span className="block text-xs font-mono text-[var(--text-secondary)]">
                     {activeRunner.fullName} Participated Entries
                   </span>
                   <div className="flex flex-wrap gap-2" aria-label={`${activeRunner.fullName} participated races`}>
@@ -2549,7 +2549,7 @@ export default function HighlightsStudioPanel({
               )}
 
               {matchedActiveEntry && !matchedActiveEntry.chipTime && !matchedActiveEntry.splitPace && (
-                <p className="text-[11px] font-mono text-[var(--text-secondary)]">
+                <p className="text-xs font-mono text-[var(--text-secondary)]">
                   Registered bib #{matchedActiveEntry.bibNumber} ({matchedActiveEntry.distance}) loaded; no finish scan recorded for this event yet.
                 </p>
               )}
@@ -2623,7 +2623,7 @@ export default function HighlightsStudioPanel({
                   <h2 className="font-display text-base font-semibold text-[var(--text-primary)]">
                     Frame, FX &amp; Card Customizer
                   </h2>
-                  <span className="text-[11px] font-mono text-[var(--text-secondary)]">
+                  <span className="text-xs font-mono text-[var(--text-secondary)]">
                     {HIGHLIGHT_BORDER_PRESETS.length} borders &bull; {HIGHLIGHT_CARD_EFFECTS.length} FX
                   </span>
                 </div>
@@ -2646,7 +2646,7 @@ export default function HighlightsStudioPanel({
                   </button>
                 ))}
               </div>
-              <p className="text-[11px] text-[var(--text-secondary)]">
+              <p className="text-xs text-[var(--text-secondary)]">
                 {HIGHLIGHT_HEADER_STYLES.find((s) => s.id === (draft.headerStyle || 'crown-bezel'))?.detail}
               </p>
             </div>
@@ -2657,7 +2657,7 @@ export default function HighlightsStudioPanel({
                 <span className="text-xs font-mono font-semibold text-[var(--text-secondary)]">
                   Border &amp; Frame FX Preset
                 </span>
-                <span className="text-[11px] font-mono text-[var(--text-primary)]">
+                <span className="text-xs font-mono text-[var(--text-primary)]">
                   {HIGHLIGHT_BORDER_PRESETS.find((p) => p.id === draft.borderPreset)?.label}
                 </span>
               </div>
@@ -2693,7 +2693,7 @@ export default function HighlightsStudioPanel({
                   );
                 })}
               </div>
-              <p className="text-[11px] text-[var(--text-secondary)] bg-[var(--surface-inset)] border border-[var(--border-default)] rounded-lg px-2.5 py-1.5">
+              <p className="text-xs text-[var(--text-secondary)] bg-[var(--surface-inset)] border border-[var(--border-default)] rounded-lg px-2.5 py-1.5">
                 {HIGHLIGHT_BORDER_PRESETS.find((p) => p.id === draft.borderPreset)?.summary}
               </p>
             </div>
@@ -2716,7 +2716,7 @@ export default function HighlightsStudioPanel({
                   </button>
                 ))}
               </div>
-              <p className="text-[11px] text-[var(--text-secondary)]">
+              <p className="text-xs text-[var(--text-secondary)]">
                 {HIGHLIGHT_CARD_EFFECTS.find((fx) => fx.id === (draft.cardEffect || 'sheen-sweep'))?.detail}
               </p>
             </div>
@@ -2739,7 +2739,7 @@ export default function HighlightsStudioPanel({
                   </button>
                 ))}
               </div>
-              <p className="text-[11px] text-[var(--text-secondary)]">
+              <p className="text-xs text-[var(--text-secondary)]">
                 {HIGHLIGHT_CORNER_GEOMETRIES.find((g) => g.id === draft.cornerGeometry)?.detail}
               </p>
             </div>
@@ -2906,7 +2906,7 @@ export default function HighlightsStudioPanel({
                     type="button"
                     disabled={!canManage}
                     onClick={() => setDraft((p) => ({ ...p, badgeStamp: stamp }))}
-                    className="min-h-8 px-2.5 py-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-[11px] font-mono text-[var(--text-primary)]"
+                    className="min-h-11 px-2.5 py-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-mono text-[var(--text-primary)]"
                   >
                     {stamp}
                   </button>
@@ -2916,7 +2916,7 @@ export default function HighlightsStudioPanel({
                     type="button"
                     disabled={!canManage}
                     onClick={() => setDraft((p) => ({ ...p, badgeStamp: '' }))}
-                    className="min-h-8 px-2.5 py-1 rounded-lg border border-[var(--border-default)] text-[11px] font-mono text-red-700 dark:text-red-400"
+                    className="min-h-11 px-2.5 py-1 rounded-lg border border-[var(--border-default)] text-xs font-mono text-red-700 dark:text-red-400"
                   >
                     Clear
                   </button>
@@ -2928,7 +2928,7 @@ export default function HighlightsStudioPanel({
 
             {/* Stepped Composer Footer Bar */}
             <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-[var(--border-default)]">
-              <div className="text-[11px] font-mono text-[var(--text-secondary)]">
+              <div className="text-xs font-mono text-[var(--text-secondary)]">
                 {composerSection === 'athlete' && 'Step 1 of 3: Select event, finisher, and timing'}
                 {composerSection === 'career' && 'Step 2 of 3: Attach achievements & participated races'}
                 {composerSection === 'style' && 'Step 3 of 3: Customize border preset, accents & finish'}
@@ -3013,7 +3013,7 @@ export default function HighlightsStudioPanel({
 
             {/* Single-Card Career & Placement Summary */}
             <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-3 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono">
+              <div className="flex flex-wrap items-center gap-1.5 text-xs font-mono">
                 <span className="px-2 py-0.5 rounded bg-red-700/15 text-red-700 dark:text-red-300 font-semibold">
                   {livePreviewItem.placement || 'Finisher'}
                 </span>
@@ -3261,7 +3261,7 @@ export default function HighlightsStudioPanel({
         >
           <div className="p-4 sm:p-5 border-b border-[var(--border-default)] flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[11px] font-mono uppercase tracking-wider text-red-700 dark:text-red-400 font-semibold">
+              <p className="text-xs font-mono uppercase tracking-wider text-red-700 dark:text-red-400 font-semibold">
                 Runner Profile Picture
               </p>
               <h3 id="hl-account-picker-title" className="font-display text-lg font-semibold text-[var(--text-primary)] mt-0.5">
@@ -3341,11 +3341,11 @@ export default function HighlightsStudioPanel({
                     <p className="text-sm font-semibold text-[var(--text-primary)] truncate">
                       {acc.displayName}
                     </p>
-                    <p className="text-[11px] font-mono text-[var(--text-secondary)] truncate">
+                    <p className="text-xs font-mono text-[var(--text-secondary)] truncate">
                       {acc.username ? `@${acc.username}` : acc.nickname || acc.uid}
                     </p>
                   </div>
-                  <span className="shrink-0 px-2.5 py-1 rounded-lg bg-red-700 text-white text-[11px] font-mono font-semibold">
+                  <span className="shrink-0 px-2.5 py-1 rounded-lg bg-red-700 text-white text-xs font-mono font-semibold">
                     Attach
                   </span>
                 </button>

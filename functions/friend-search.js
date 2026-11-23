@@ -132,8 +132,8 @@ async function loadRunnerDirectorySnapshot(db, now = Date.now) {
 
   const loadPromise = (async () => {
     const [directorySnap, usersSnap] = await Promise.all([
-      readSafeCollection(db, 'friendDirectory', ['uid', 'username', 'displayName', 'nickname', 'photoURL', 'updatedAt']),
-      readSafeCollection(db, 'users', ['uid', 'username', 'displayName', 'nickname', 'photoURL', 'accessRemoved', 'createdAt']),
+      readSafeCollection(db, 'friendDirectory', ['uid', 'username', 'displayName', 'nickname', 'updatedAt']),
+      readSafeCollection(db, 'users', ['uid', 'username', 'displayName', 'nickname', 'accessRemoved', 'createdAt']),
     ]);
 
     const removedUids = new Set();
@@ -146,13 +146,13 @@ async function loadRunnerDirectorySnapshot(db, now = Date.now) {
         removedUids.add(uid);
         return;
       }
-      const candidate = safeCandidate(data, uid);
+      const candidate = safeCandidate({ ...data, photoURL: undefined }, uid);
       if (candidate) byUid.set(candidate.uid, candidate);
     });
 
     directorySnap.forEach((docSnap) => {
       const data = docSnap.data() || {};
-      const candidate = safeCandidate({ ...data, username: data.username || docSnap.id });
+      const candidate = safeCandidate({ ...data, photoURL: undefined, username: data.username || docSnap.id });
       if (!candidate || removedUids.has(candidate.uid)) return;
       const prev = byUid.get(candidate.uid);
       byUid.set(candidate.uid, {
@@ -161,7 +161,6 @@ async function loadRunnerDirectorySnapshot(db, now = Date.now) {
         username: candidate.username || prev?.username || '',
         displayName: candidate.displayName || prev?.displayName || 'Runner',
         ...(candidate.nickname || prev?.nickname ? { nickname: candidate.nickname || prev?.nickname } : {}),
-        ...(candidate.photoURL || prev?.photoURL ? { photoURL: candidate.photoURL || prev?.photoURL } : {}),
       });
     });
 
@@ -206,11 +205,40 @@ async function searchRunnerDirectory({ db, secret, callerUid, rawQuery, now = Da
   const { candidates, removedUids } = await loadRunnerDirectorySnapshot(db, now);
 
   const ranked = [];
+  let hasExactHandleInRanked = false;
   for (const candidate of candidates) {
     if (candidate.uid === callerUid || removedUids.has(candidate.uid)) continue;
     const score = scoreFriendMatch(candidate, query, tokens);
     if (score > 0) {
+      if (candidate.username && candidate.username.toLowerCase() === query) {
+        hasExactHandleInRanked = true;
+      }
       ranked.push({ candidate, score });
+    }
+  }
+
+  // Fallback exact handle lookup so accounts outside the bounded scan still resolve cleanly.
+  if (tokens.length === 1 && !hasExactHandleInRanked && /^[a-z0-9][a-z0-9_.-]{1,63}$/.test(query)) {
+    const callerUsername = String(callerUserSnap.data()?.username || '').trim().toLowerCase();
+    if (query !== callerUsername) {
+      const exactSnap = await db.doc(`friendDirectory/${query}`).get();
+      if (exactSnap.exists) {
+        const exactData = exactSnap.data() || {};
+        const exactCandidate = safeCandidate({ ...exactData, username: exactData.username || query });
+        if (exactCandidate && exactCandidate.uid !== callerUid && !removedUids.has(exactCandidate.uid)) {
+          const [exactUserSnap, exactRemovedSnap] = await Promise.all([
+            db.doc(`users/${exactCandidate.uid}`).get(),
+            db.doc(`removedAccounts/${exactCandidate.uid}`).get(),
+          ]);
+          const isRemoved = exactRemovedSnap.exists || Boolean(exactUserSnap.data()?.accessRemoved);
+          if (!isRemoved) {
+            const score = scoreFriendMatch(exactCandidate, query, tokens);
+            if (score > 0) {
+              ranked.push({ candidate: exactCandidate, score });
+            }
+          }
+        }
+      }
     }
   }
 
@@ -221,8 +249,35 @@ async function searchRunnerDirectory({ db, secret, callerUid, rawQuery, now = Da
     return a.candidate.username.localeCompare(b.candidate.username, undefined, { sensitivity: 'base' });
   });
 
+  const topCandidates = ranked.slice(0, MAX_RESULTS).map((entry) => entry.candidate);
+  const hydratedResults = await Promise.all(
+    topCandidates.map(async (candidate) => {
+      if (candidate.photoURL) return candidate;
+      let resolvedPhotoUrl;
+      const profileSnap = await db.doc(`friendProfiles/${candidate.uid}`).get();
+      const profilePhoto = profileSnap.exists ? profileSnap.data()?.photoURL : undefined;
+      if (typeof profilePhoto === 'string' && profilePhoto.length <= 100000 && profilePhoto.trim()) {
+        resolvedPhotoUrl = profilePhoto;
+      } else if (candidate.username) {
+        const dirSnap = await db.doc(`friendDirectory/${candidate.username}`).get();
+        const dirPhoto = dirSnap.exists ? dirSnap.data()?.photoURL : undefined;
+        if (typeof dirPhoto === 'string' && dirPhoto.length <= 100000 && dirPhoto.trim()) {
+          resolvedPhotoUrl = dirPhoto;
+        }
+      }
+      if (!resolvedPhotoUrl) {
+        const userSnap = await db.doc(`users/${candidate.uid}`).get();
+        const userPhoto = userSnap.exists ? userSnap.data()?.photoURL : undefined;
+        if (typeof userPhoto === 'string' && userPhoto.length <= 100000 && userPhoto.trim()) {
+          resolvedPhotoUrl = userPhoto;
+        }
+      }
+      return resolvedPhotoUrl ? { ...candidate, photoURL: resolvedPhotoUrl } : candidate;
+    }),
+  );
+
   return {
-    results: ranked.slice(0, MAX_RESULTS).map((entry) => entry.candidate),
+    results: hydratedResults,
   };
 }
 

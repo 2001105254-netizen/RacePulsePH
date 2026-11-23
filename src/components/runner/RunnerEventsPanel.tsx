@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAccess } from '../../lib/access';
+import { isClientNavigationClick } from '../../lib/appRouting';
 import type { LegalDocKey } from '../../lib/legalConfig';
 import {
   createPayMongoCheckout,
@@ -167,24 +168,23 @@ function ShirtSizePicker({
   );
 }
 
-async function generateBibNumber(
-  raceId: string,
-  distanceLabel: string,
+function formatGeneratedBib(
   km: number | null,
   entryCategory: RaceEntryCategory,
-): Promise<string> {
-  const counterId = `${raceId}_${distanceLabel}_${entryCategory}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
-  const counterRef = doc(db, 'bibCounters', counterId);
-  const sequence = await runTransaction(db, async (tx) => {
-    const snap = await tx.get(counterRef);
-    const next = (snap.exists() ? (snap.data().count as number) : 0) + 1;
-    tx.set(counterRef, { count: next, raceId });
-    return next;
-  });
+  sequence: number,
+): string {
   const basePrefix = km !== null ? String(km) : 'CUSTOM';
   const suffix = entryCategory === 'duo' ? 'D' : entryCategory === 'trio' ? 'T' : entryCategory === 'group' ? 'G' : '';
   const prefix = suffix ? `${basePrefix}-${suffix}` : basePrefix;
   return `${prefix}-${String(sequence).padStart(3, '0')}`;
+}
+
+function bibCounterDocId(
+  raceId: string,
+  distanceLabel: string,
+  entryCategory: RaceEntryCategory,
+): string {
+  return `${raceId}_${distanceLabel}_${entryCategory}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
 }
 
 function RegistrationProgress({ currentStep, raceName }: { currentStep: 1 | 2 | 3; raceName?: string }) {
@@ -1211,7 +1211,7 @@ export default function RunnerEventsPanel({
       return failValidation('Please enter a valid emergency contact number.', emergencyPhoneInputRef);
     }
     if (!acceptedRegistrationTerms) {
-      return failValidation('Please accept the Terms of Service, Privacy Policy, and Refund Policy before submitting.');
+      return failValidation('Please accept the Terms of Service, Privacy Policy, Refund Policy, and Cookie Policy before submitting.');
     }
 
     const termsAcceptedAt = existingForRace?.termsAcceptedAt || new Date().toISOString();
@@ -1269,10 +1269,7 @@ export default function RunnerEventsPanel({
       }
 
       const selectedDistanceKm = selectedDistance?.km ?? null;
-      const bibNumber = existingForRace
-        ? existingForRace.bibNumber
-        : await generateBibNumber(selectedRace.id, finalDistance, selectedDistanceKm, entryCategory);
-      const record: RunnerProfile = {
+      const buildRecord = (bibNumber: string): RunnerProfile => ({
         uid,
         raceId: selectedRace.id,
         fullName: entryCategory === 'solo' ? fullName.trim().toUpperCase() : teamName.trim().toUpperCase(),
@@ -1310,11 +1307,33 @@ export default function RunnerEventsPanel({
               paymentReference: paymentReference.trim().toUpperCase(),
             }
           : {}),
-      };
+      });
+
+      const runnerRef = doc(db, 'runners', `${uid}_${selectedRace.id}`);
+      let record: RunnerProfile;
       if (existingForRace) {
-        await setDoc(doc(db, 'runners', `${uid}_${selectedRace.id}`), record, { merge: true });
+        record = buildRecord(existingForRace.bibNumber);
+        await setDoc(runnerRef, record, { merge: true });
       } else {
-        await setDoc(doc(db, 'runners', `${uid}_${selectedRace.id}`), record);
+        const counterRef = doc(db, 'bibCounters', bibCounterDocId(selectedRace.id, finalDistance, entryCategory));
+        record = await runTransaction(db, async (tx) => {
+          const [existingSnap, counterSnap] = await Promise.all([
+            tx.get(runnerRef),
+            tx.get(counterRef),
+          ]);
+          if (existingSnap.exists()) {
+            const existingBib = String(existingSnap.data().bibNumber || '');
+            const merged = buildRecord(existingBib || formatGeneratedBib(selectedDistanceKm, entryCategory, 1));
+            tx.set(runnerRef, merged, { merge: true });
+            return merged;
+          }
+          const next = (counterSnap.exists() ? Number(counterSnap.data().count || 0) : 0) + 1;
+          const nextBib = formatGeneratedBib(selectedDistanceKm, entryCategory, next);
+          const created = buildRecord(nextBib);
+          tx.set(counterRef, { count: next, raceId: selectedRace.id });
+          tx.set(runnerRef, created);
+          return created;
+        });
       }
       setConfirmation({ registration: record, wasUpdate: !!existingForRace });
     } catch (err: any) {
@@ -1381,7 +1400,7 @@ export default function RunnerEventsPanel({
     const passedOnFee = selectedRace.onlinePaymentEnabled && selectedRace.paymentFeeMode === 'passed_on';
 
     return (
-      <div className="max-w-6xl mx-auto px-3 sm:px-4 py-3 pb-24 min-[600px]:pb-6 space-y-4">
+      <div className="max-w-6xl mx-auto px-3 sm:px-4 py-3 pb-32 min-[600px]:pb-6 space-y-4">
         <RegistrationProgress currentStep={2} raceName={selectedRace.name} />
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
@@ -1670,7 +1689,7 @@ export default function RunnerEventsPanel({
                         />
                       </div>
                     </div>
-                    <label htmlFor="reg-parental-consent" className="min-h-11 flex items-start gap-2 cursor-pointer pt-1">
+                    <div className="flex items-start gap-2 pt-1">
                       <input
                         id="reg-parental-consent"
                         type="checkbox"
@@ -1678,12 +1697,28 @@ export default function RunnerEventsPanel({
                         onChange={(e) => setParentalConsentConfirmed(e.target.checked)}
                         className="rp-checkbox shrink-0"
                       />
-                      <span className="text-xs text-[var(--text-primary)] leading-relaxed">
-                        I certify that I am the parent or legal guardian (aged 18+) of this minor participant and grant
-                        verifiable parental consent for race participation, emergency contact use, and event timing under the
-                        Privacy Policy.
-                      </span>
-                    </label>
+                      <div className="pt-2 text-xs text-[var(--text-primary)] leading-relaxed flex-1 min-w-0 space-y-2">
+                        <label htmlFor="reg-parental-consent" className="cursor-pointer block">
+                          I certify that I am the parent or legal guardian (aged 18+) of this minor participant and grant
+                          verifiable parental consent for race participation, emergency contact use, and event timing under the
+                          Privacy Policy.
+                        </label>
+                        <div>
+                          <a
+                            href="/privacy-policy"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!isClientNavigationClick(e)) return;
+                              e.preventDefault();
+                              openLegalDoc('privacy');
+                            }}
+                            className="inline-flex items-center whitespace-nowrap min-h-8 px-2 py-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] text-xs font-semibold text-red-700 dark:text-red-400 underline underline-offset-2 hover:border-red-600/50 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+                          >
+                            Read Privacy Policy
+                          </a>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -1879,47 +1914,35 @@ export default function RunnerEventsPanel({
                       onChange={(e) => setAcceptedRegistrationTerms(e.target.checked)}
                       className="rp-checkbox shrink-0"
                     />
-                    <div className="pt-2 text-xs text-[var(--text-primary)] leading-relaxed space-y-1">
+                    <div className="pt-2 text-xs text-[var(--text-primary)] leading-relaxed flex-1 min-w-0">
                       <label htmlFor="reg-terms-consent" className="cursor-pointer block">
-                        I accept the Terms of Service, Privacy Policy, and Refund Policy for this event registration, including
-                        official timing and public leaderboard publication.
+                        I accept the Terms of Service, Privacy Policy, Refund Policy, and Cookie Policy for this event
+                        registration, including official timing and public leaderboard publication.
                       </label>
-                      <p className="text-[var(--text-secondary)]">
-                        Review:{' '}
-                        <a
-                          href="#legal-terms"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            openLegalDoc('terms');
-                          }}
-                          className="font-semibold underline underline-offset-2 text-red-700 dark:text-red-400"
-                        >
-                          Terms of Service
-                        </a>
-                        {', '}
-                        <a
-                          href="#legal-privacy"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            openLegalDoc('privacy');
-                          }}
-                          className="font-semibold underline underline-offset-2 text-red-700 dark:text-red-400"
-                        >
-                          Privacy Policy
-                        </a>
-                        {', and '}
-                        <a
-                          href="#legal-refund"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            openLegalDoc('refund');
-                          }}
-                          className="font-semibold underline underline-offset-2 text-red-700 dark:text-red-400"
-                        >
-                          Refund Policy
-                        </a>
-                        .
-                      </p>
+                      <div className="flex flex-wrap items-center gap-2 pt-2" role="group" aria-label="Event legal and cookie policies">
+                        {(
+                          [
+                            { docKey: 'terms', href: '/terms-of-service', label: 'Terms of Service' },
+                            { docKey: 'privacy', href: '/privacy-policy', label: 'Privacy Policy' },
+                            { docKey: 'refund', href: '/refund-policy', label: 'Refund Policy' },
+                            { docKey: 'cookies', href: '/cookie-policy', label: 'Cookie Policy' },
+                          ] as const
+                        ).map((item) => (
+                          <a
+                            key={item.docKey}
+                            href={item.href}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!isClientNavigationClick(e)) return;
+                              e.preventDefault();
+                              openLegalDoc(item.docKey);
+                            }}
+                            className="inline-flex items-center whitespace-nowrap min-h-8 px-2 py-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] text-xs font-semibold text-red-700 dark:text-red-400 underline underline-offset-2 hover:border-red-600/50 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+                          >
+                            {item.label}
+                          </a>
+                        ))}
+                      </div>
                     </div>
                   </div>
                   <label htmlFor="reg-marketing-optin" className="min-h-11 flex items-start gap-2 cursor-pointer">
@@ -2035,12 +2058,14 @@ export default function RunnerEventsPanel({
                 <p className="text-xs text-[var(--text-secondary)] leading-relaxed pt-1">
                   Cancellation &amp; refunds: Full refund if organizer cancels. Runner cancellations follow our{' '}
                   <a
-                    href="#legal-refund"
+                    href="/refund-policy"
                     onClick={(event) => {
+                      event.stopPropagation();
+                      if (!isClientNavigationClick(event)) return;
                       event.preventDefault();
                       openLegalDoc('refund');
                     }}
-                    className="font-semibold text-red-700 dark:text-red-400 underline underline-offset-2"
+                    className="inline-flex items-center min-h-7 py-0.5 font-semibold text-red-700 dark:text-red-400 underline underline-offset-2 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
                   >
                     Refund Policy
                   </a>{' '}

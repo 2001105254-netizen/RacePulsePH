@@ -10,7 +10,7 @@ interface DialogSurfaceProps {
   titleId: string;
   descriptionId?: string;
   onRequestClose: () => void;
-  initialFocusRef?: RefObject<HTMLElement>;
+  initialFocusRef?: RefObject<HTMLElement | null>;
   alert?: boolean;
   variant?: 'modal' | 'sheet';
   dismissOnBackdropClick?: boolean;

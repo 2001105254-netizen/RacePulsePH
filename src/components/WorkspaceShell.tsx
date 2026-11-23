@@ -113,7 +113,7 @@ export default function WorkspaceShell({
                 onClick={() => workspaceSwitch.onSelect('operations')}
                 aria-pressed={workspaceSwitch.current === 'operations'}
                 aria-label="Operations workspace"
-                className={`min-h-[44px] w-full rounded-lg flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition-colors ${
+                className={`min-h-[44px] w-full rounded-lg flex flex-col items-center justify-center gap-0.5 text-xs font-semibold transition-colors ${
                   workspaceSwitch.current === 'operations'
                     ? 'bg-red-700 text-white'
                     : 'text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]'
@@ -127,7 +127,7 @@ export default function WorkspaceShell({
                 onClick={() => workspaceSwitch.onSelect('personal')}
                 aria-pressed={workspaceSwitch.current === 'personal'}
                 aria-label="My participation workspace"
-                className={`min-h-[44px] w-full rounded-lg flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition-colors ${
+                className={`min-h-[44px] w-full rounded-lg flex flex-col items-center justify-center gap-0.5 text-xs font-semibold transition-colors ${
                   workspaceSwitch.current === 'personal'
                     ? 'bg-red-700 text-white'
                     : 'text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]'
@@ -160,7 +160,7 @@ export default function WorkspaceShell({
                 <span aria-hidden="true" className="flex items-center justify-center">
                   {item.icon}
                 </span>
-                <span className="w-full truncate text-center text-[10px] leading-tight font-semibold">
+                <span className="w-full truncate text-center text-xs leading-tight font-semibold">
                   {item.shortLabel || item.label}
                 </span>
               </button>
@@ -213,7 +213,7 @@ export default function WorkspaceShell({
                 onClick={() => workspaceSwitch.onSelect('operations')}
                 aria-pressed={workspaceSwitch.current === 'operations'}
                 className={`relative ${
-                  compactGutters ? 'min-h-[40px] px-2 py-1 rounded-lg text-xs' : 'min-h-11 px-3 py-2 rounded-xl text-sm'
+                  compactGutters ? 'min-h-11 px-2 py-1 rounded-lg text-xs' : 'min-h-11 px-3 py-2 rounded-xl text-sm'
                 } font-semibold transition-colors duration-150 motion-safe:active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
                   workspaceSwitch.current === 'operations'
                     ? 'bg-red-700 text-white'
@@ -227,7 +227,7 @@ export default function WorkspaceShell({
                 onClick={() => workspaceSwitch.onSelect('personal')}
                 aria-pressed={workspaceSwitch.current === 'personal'}
                 className={`relative ${
-                  compactGutters ? 'min-h-[40px] px-2 py-1 rounded-lg text-xs' : 'min-h-11 px-3 py-2 rounded-xl text-sm'
+                  compactGutters ? 'min-h-11 px-2 py-1 rounded-lg text-xs' : 'min-h-11 px-3 py-2 rounded-xl text-sm'
                 } font-semibold transition-colors duration-150 motion-safe:active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
                   workspaceSwitch.current === 'personal'
                     ? 'bg-red-700 text-white'

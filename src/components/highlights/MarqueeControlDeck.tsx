@@ -68,7 +68,7 @@ export default function MarqueeControlDeck({
             onChange={(e) => onChangeConfig((c) => ({ ...c, speedPxPerSec: Number(e.target.value) }))}
             className="w-full accent-red-600 cursor-pointer"
           />
-          <div className="flex justify-between text-[11px] font-mono text-[var(--text-secondary)]">
+          <div className="flex justify-between text-xs font-mono text-[var(--text-secondary)]">
             <span>10 px/s (Calm gallery)</span>
             <span>60 px/s (Broadcast)</span>
             <span>120 px/s (Sprint)</span>

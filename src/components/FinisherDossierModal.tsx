@@ -149,7 +149,7 @@ export default function FinisherDossierModal({
 
           <div className="absolute bottom-3 left-3 right-3 z-10 space-y-1 text-white">
             {highlight.badgeStamp && (
-              <span className="inline-block px-2 py-0.5 rounded bg-amber-300 text-zinc-950 text-[11px] font-mono font-semibold uppercase">
+              <span className="inline-block px-2 py-0.5 rounded bg-amber-300 text-zinc-950 text-xs font-mono font-semibold uppercase">
                 {highlight.badgeStamp}
               </span>
             )}
@@ -262,7 +262,7 @@ export default function FinisherDossierModal({
                   {combinedAchievements.map((ach, idx) => (
                     <span
                       key={`${ach}-${idx}`}
-                      className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-mono font-semibold uppercase border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)]"
+                      className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-mono font-semibold uppercase border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)]"
                     >
                       {ach}
                     </span>
@@ -291,7 +291,7 @@ export default function FinisherDossierModal({
                           <p className="text-xs font-semibold text-[var(--text-primary)] truncate">
                             {ev.raceName}
                           </p>
-                          <p className="text-[11px] font-mono text-[var(--text-secondary)] truncate">
+                          <p className="text-xs font-mono text-[var(--text-secondary)] truncate">
                             {ev.distance}
                             {ev.raceDate ? ` · ${formatReadableDate(ev.raceDate)}` : ''}
                             {ev.chipTime ? ` · ${ev.chipTime}` : ''}
@@ -300,7 +300,7 @@ export default function FinisherDossierModal({
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
                           <span
-                            className={`px-2 py-0.5 rounded-md text-[11px] font-mono font-semibold border ${
+                            className={`px-2 py-0.5 rounded-md text-xs font-mono font-semibold border ${
                               isGold
                                 ? 'border-amber-500/50 bg-amber-500/15 text-amber-800 dark:text-amber-300'
                                 : isPodium
@@ -318,7 +318,7 @@ export default function FinisherDossierModal({
                                 onViewLeaderboard(ev.raceId);
                               }}
                               aria-label={`View leaderboard for ${ev.raceName}`}
-                              className="p-1.5 rounded-md border border-[var(--border-default)] hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition"
+                              className="min-h-11 min-w-11 rounded-md border border-[var(--border-default)] hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition inline-flex items-center justify-center"
                             >
                               <ExternalLink className="w-3 h-3" aria-hidden="true" />
                             </button>
@@ -350,14 +350,14 @@ export default function FinisherDossierModal({
                           className="w-7 h-7 rounded-full object-cover shrink-0 border border-[var(--border-default)]"
                         />
                       ) : (
-                        <span className="w-7 h-7 rounded-full bg-zinc-700 text-white text-[11px] font-mono font-semibold flex items-center justify-center shrink-0">
+                        <span className="w-7 h-7 rounded-full bg-zinc-700 text-white text-xs font-mono font-semibold flex items-center justify-center shrink-0">
                           {member.name.slice(0, 1).toUpperCase()}
                         </span>
                       )}
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-semibold text-[var(--text-primary)] truncate">{member.name}</p>
                         {member.bibNumber && (
-                          <p className="text-[11px] font-mono text-[var(--text-secondary)]">#{member.bibNumber}</p>
+                          <p className="text-xs font-mono text-[var(--text-secondary)]">#{member.bibNumber}</p>
                         )}
                       </div>
                     </div>
@@ -367,7 +367,7 @@ export default function FinisherDossierModal({
             )}
 
             {downloadError && (
-              <p role="alert" className="text-xs text-red-700 dark:text-red-400 font-medium">
+              <p role="alert" className="text-xs text-red-700 dark:text-red-400 font-semibold">
                 {downloadError}
               </p>
             )}

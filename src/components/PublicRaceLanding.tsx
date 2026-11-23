@@ -650,7 +650,7 @@ export default function PublicRaceLanding({
                       </span>
                       <span>{displayName}</span>
                     </div>
-                    <div className="text-[11px] font-mono text-[var(--text-secondary)] truncate">
+                    <div className="text-xs font-mono text-[var(--text-secondary)] truncate">
                       {race.name} · {distLabel}
                       {entrySuffix}
                     </div>
@@ -759,7 +759,7 @@ export default function PublicRaceLanding({
               : 'border-emerald-600/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
           }`}
         >
-          <span className="flex items-center gap-2 font-medium">
+          <span className="flex items-center gap-2 font-semibold">
             <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" />
             <span>{certificateNotice.text}</span>
           </span>
@@ -1043,11 +1043,11 @@ export default function PublicRaceLanding({
                           onClick={() => goToSlide(idx)}
                           aria-label={`Go to slide ${idx + 1}: ${race.name}`}
                           aria-current={isCurrent ? 'true' : undefined}
-                          className="min-h-11 min-w-8 px-1.5 flex items-center justify-center cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 rounded-lg"
+                          className="min-h-11 min-w-11 px-1.5 flex items-center justify-center cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 rounded-lg"
                         >
                           <span
                             aria-hidden="true"
-                            className={`block h-2.5 rounded-full transition-all duration-150 ${
+                            className={`block h-2.5 rounded-full transition-[width,background-color] duration-150 ${
                               isCurrent
                                 ? 'w-7 bg-red-700 dark:bg-red-400'
                                 : 'w-2.5 bg-[var(--border-button)]'

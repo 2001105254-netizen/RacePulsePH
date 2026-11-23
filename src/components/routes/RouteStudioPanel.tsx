@@ -1957,7 +1957,7 @@ export default function RouteStudioPanel({
                 key={r}
                 type="button"
                 onClick={() => setEraseRadiusM(r)}
-                className={`min-h-8 rounded-lg border px-2 font-mono font-semibold ${
+                className={`min-h-11 lg:min-h-9 rounded-lg border px-2 font-mono font-semibold ${
                   eraseRadiusM === r
                     ? 'border-red-600 bg-red-700 text-white'
                     : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)]'
@@ -1976,7 +1976,7 @@ export default function RouteStudioPanel({
                 key={s}
                 type="button"
                 onClick={() => setPaintSpacingM(s)}
-                className={`min-h-8 rounded-lg border px-2 font-mono font-semibold ${
+                className={`min-h-11 lg:min-h-9 rounded-lg border px-2 font-mono font-semibold ${
                   paintSpacingM === s
                     ? 'border-red-600 bg-red-700 text-white'
                     : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)]'
@@ -1995,7 +1995,7 @@ export default function RouteStudioPanel({
           <button
             type="button"
             onClick={handleRemoveStartPoint}
-            className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-red-500/40 bg-red-500/10 px-2 font-semibold text-red-700 hover:bg-red-500/20 dark:text-red-300"
+            className="inline-flex min-h-11 lg:min-h-9 items-center gap-1 rounded-lg border border-red-500/40 bg-red-500/10 px-2 font-semibold text-red-700 hover:bg-red-500/20 dark:text-red-300"
           >
             <Trash2 className="h-3 w-3" aria-hidden="true" />
             Remove start dot
@@ -2014,7 +2014,7 @@ export default function RouteStudioPanel({
             surface="inset"
             size="sm"
             className="w-auto min-w-[126px]"
-            triggerClassName="min-h-8 rounded-lg text-xs"
+            triggerClassName="min-h-11 lg:min-h-9 rounded-lg text-xs"
             options={[
               { value: 'default', label: 'Standard Route' },
               { value: 'gradient', label: 'Slope Heatmap' },
@@ -2029,7 +2029,7 @@ export default function RouteStudioPanel({
           disabled={undoStack.length === 0}
           aria-label="Undo course edit"
           title="Undo (Ctrl+Z)"
-          className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[var(--border-default)] px-2 font-semibold disabled:opacity-40"
+          className="inline-flex min-h-11 lg:min-h-9 items-center gap-1 rounded-lg border border-[var(--border-default)] px-2 font-semibold disabled:opacity-40"
         >
           <Undo2 className="h-3.5 w-3.5" aria-hidden="true" />
           <span className="hidden xl:inline">Undo</span>
@@ -2040,7 +2040,7 @@ export default function RouteStudioPanel({
           disabled={redoStack.length === 0}
           aria-label="Redo course edit"
           title="Redo (Ctrl+Y)"
-          className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[var(--border-default)] px-2 font-semibold disabled:opacity-40"
+          className="inline-flex min-h-11 lg:min-h-9 items-center gap-1 rounded-lg border border-[var(--border-default)] px-2 font-semibold disabled:opacity-40"
         >
           <Redo2 className="h-3.5 w-3.5" aria-hidden="true" />
           <span className="hidden xl:inline">Redo</span>
@@ -2050,7 +2050,7 @@ export default function RouteStudioPanel({
           disabled={!hasRoutePath}
           onClick={handleReverseCourse}
           title="Reverse direction"
-          className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[var(--border-default)] px-2 font-semibold hover:border-red-600/50 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="inline-flex min-h-11 lg:min-h-9 items-center gap-1 rounded-lg border border-[var(--border-default)] px-2 font-semibold hover:border-red-600/50 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden="true" />
           <span className="hidden xl:inline">Reverse</span>
@@ -2059,7 +2059,7 @@ export default function RouteStudioPanel({
           type="button"
           aria-pressed={isPanCurrentlyLocked}
           onClick={() => setMapPanLocked((v) => !v)}
-          className="hidden sm:inline-flex min-h-8 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2 font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+          className="hidden sm:inline-flex min-h-11 lg:min-h-9 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2 font-semibold text-[var(--text-primary)] hover:border-red-600/50"
         >
           {isPanCurrentlyLocked ? (
             <Lock className="h-3 w-3 text-amber-600 dark:text-amber-400" aria-hidden="true" />
@@ -2074,7 +2074,7 @@ export default function RouteStudioPanel({
             onClick={handleCenterOnGps}
             aria-label="Center map on live GPS position"
             title={`Center on GPS (${latestGpsFix.latitude.toFixed(5)}, ${latestGpsFix.longitude.toFixed(5)} · ±${Math.round(latestGpsFix.accuracyM)}m)`}
-            className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-red-500/50 bg-red-500/10 px-2 font-semibold text-red-700 hover:bg-red-500/20 dark:text-red-300"
+            className="inline-flex min-h-11 lg:min-h-9 items-center gap-1 rounded-lg border border-red-500/50 bg-red-500/10 px-2 font-semibold text-red-700 hover:bg-red-500/20 dark:text-red-300"
           >
             <LocateFixed className="h-3 w-3" aria-hidden="true" />
             <span className="hidden xl:inline">Center GPS</span>
@@ -2085,7 +2085,7 @@ export default function RouteStudioPanel({
             onClick={handleCenterOnGps}
             aria-label="Acquire and center on live GPS position"
             title="Acquire live GPS lock and center map"
-            className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2 font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+            className="inline-flex min-h-11 lg:min-h-9 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2 font-semibold text-[var(--text-primary)] hover:border-red-600/50"
           >
             <LocateFixed className="h-3 w-3" aria-hidden="true" />
             <span className="hidden xl:inline">Center GPS</span>
@@ -2115,7 +2115,7 @@ export default function RouteStudioPanel({
           type="button"
           onClick={() => setSelectedPresetId(currentBinding.presetId)}
           title="Switch editor to the active published configuration"
-          className="inline-flex min-h-8 max-w-full items-center gap-1.5 rounded-lg border border-emerald-600/40 bg-emerald-50 px-2.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-400/40 dark:bg-emerald-950/60 dark:text-emerald-300 dark:hover:bg-emerald-950/80"
+          className="inline-flex min-h-11 lg:min-h-9 max-w-full items-center gap-1.5 rounded-lg border border-emerald-600/40 bg-emerald-50 px-2.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-400/40 dark:bg-emerald-950/60 dark:text-emerald-300 dark:hover:bg-emerald-950/80"
         >
           <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
           <span className="truncate">
@@ -2129,7 +2129,7 @@ export default function RouteStudioPanel({
       <button
         type="button"
         onClick={() => setActiveTab('publish')}
-        className="inline-flex min-h-8 max-w-full items-center gap-1.5 rounded-lg border border-amber-600/35 bg-amber-50 px-2.5 text-xs font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-400/40 dark:bg-amber-950/60 dark:text-amber-300 dark:hover:bg-amber-950/80"
+        className="inline-flex min-h-11 lg:min-h-9 max-w-full items-center gap-1.5 rounded-lg border border-amber-600/35 bg-amber-50 px-2.5 text-xs font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-400/40 dark:bg-amber-950/60 dark:text-amber-300 dark:hover:bg-amber-950/80"
       >
         <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
         <span className="truncate">
@@ -2140,7 +2140,7 @@ export default function RouteStudioPanel({
       <button
         type="button"
         onClick={() => setActiveTab('publish')}
-        className="inline-flex min-h-8 max-w-full items-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 text-xs font-semibold text-[var(--text-secondary)] hover:border-red-600/50 hover:text-[var(--text-primary)]"
+        className="inline-flex min-h-11 lg:min-h-9 max-w-full items-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 text-xs font-semibold text-[var(--text-secondary)] hover:border-red-600/50 hover:text-[var(--text-primary)]"
       >
         <span className="h-2 w-2 rounded-full bg-zinc-400 dark:bg-zinc-500 shrink-0" aria-hidden="true" />
         <span className="truncate">
@@ -2176,7 +2176,7 @@ export default function RouteStudioPanel({
               e.preventDefault();
               onNavigateUrl('/routes');
             }}
-            className="inline-flex min-h-9 items-center rounded-lg border border-white/15 bg-white/10 px-2.5 text-xs font-semibold text-white hover:border-red-400/60"
+            className="inline-flex min-h-11 items-center rounded-lg border border-white/15 bg-white/10 px-2.5 text-xs font-semibold text-white hover:border-red-400/60"
           >
             Public Explorer
           </a>,
@@ -2206,7 +2206,7 @@ export default function RouteStudioPanel({
                 surface="inset"
                 size="sm"
                 className="w-auto min-w-[150px] sm:min-w-[180px]"
-                triggerClassName="min-h-9 text-xs"
+                triggerClassName="min-h-11 lg:min-h-9 text-xs"
                 options={allRaces.map((r) => ({
                   value: r.id,
                   label: `${r.name} (${r.date})`,
@@ -2226,7 +2226,7 @@ export default function RouteStudioPanel({
                 size="sm"
                 className="w-auto min-w-[115px]"
                 minMenuWidth={240}
-                triggerClassName="min-h-9 text-xs"
+                triggerClassName="min-h-11 lg:min-h-9 text-xs"
                 options={buildDistanceOptions(false)}
               />
             </div>
@@ -2251,7 +2251,7 @@ export default function RouteStudioPanel({
                 size="sm"
                 className="w-auto min-w-[190px] max-w-[300px]"
                 minMenuWidth={320}
-                triggerClassName="min-h-9 text-xs"
+                triggerClassName="min-h-11 lg:min-h-9 text-xs"
                 options={[
                   ...(!selectedPresetId || presetList.length === 0
                     ? [
@@ -2286,7 +2286,7 @@ export default function RouteStudioPanel({
               hidden={!canCreateRoute}
               onClick={handleNewPreset}
               title="New variant"
-              className="hidden md:inline-flex min-h-9 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+              className="hidden md:inline-flex min-h-11 lg:min-h-9 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
             >
               <Plus className="h-3.5 w-3.5" aria-hidden="true" />
               New
@@ -2297,7 +2297,7 @@ export default function RouteStudioPanel({
               disabled={!activePreset}
               onClick={handleDuplicatePreset}
               title="Duplicate"
-              className="hidden md:inline-flex min-h-9 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50 disabled:opacity-45 disabled:cursor-not-allowed"
+              className="hidden md:inline-flex min-h-11 lg:min-h-9 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50 disabled:opacity-45 disabled:cursor-not-allowed"
             >
               <Copy className="h-3.5 w-3.5" aria-hidden="true" />
               Dup
@@ -2315,7 +2315,7 @@ export default function RouteStudioPanel({
                   })
                 }
                 title={activePreset.archived ? 'Restore' : 'Archive'}
-                className="hidden xl:inline-flex min-h-9 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+                className="hidden xl:inline-flex min-h-11 lg:min-h-9 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
               >
                 <Archive className="h-3.5 w-3.5" aria-hidden="true" />
                 {activePreset.archived ? 'Restore' : 'Archive'}
@@ -2325,7 +2325,7 @@ export default function RouteStudioPanel({
               type="button"
               disabled={!canEditRoute}
               onClick={handleSaveDraft}
-              className="hidden sm:inline-flex min-h-9 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50 disabled:opacity-45 disabled:cursor-not-allowed"
+              className="hidden sm:inline-flex min-h-11 lg:min-h-9 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50 disabled:opacity-45 disabled:cursor-not-allowed"
             >
               <Save className="h-3.5 w-3.5" aria-hidden="true" />
               Save {dirty ? '*' : ''}
@@ -2334,7 +2334,7 @@ export default function RouteStudioPanel({
               type="button"
               disabled={!canPublishRoute || !canAssignRoute}
               onClick={handleQuickAttachAndPublish}
-              className="inline-flex min-h-9 items-center gap-1 rounded-lg bg-red-700 px-3 text-xs font-semibold text-white hover:bg-red-600 disabled:opacity-45 disabled:cursor-not-allowed"
+              className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-red-700 px-3 text-xs font-semibold text-white hover:bg-red-600 disabled:opacity-45 disabled:cursor-not-allowed"
             >
               <Flag className="h-3.5 w-3.5" aria-hidden="true" />
               Attach &amp; Publish
@@ -2365,7 +2365,7 @@ export default function RouteStudioPanel({
                 role="tab"
                 aria-selected={activeTab === id}
                 onClick={() => setActiveTab(id)}
-                className={`inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition ${
+                className={`inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition ${
                   activeTab === id
                     ? 'border-red-600 bg-red-700 text-white'
                     : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600/50'
@@ -2407,7 +2407,7 @@ export default function RouteStudioPanel({
           <button
             type="button"
             onClick={handleReloadLatestDraft}
-            className="min-h-8 rounded-lg border border-red-500/40 px-2.5 font-semibold hover:bg-red-500/10"
+            className="min-h-11 rounded-lg border border-red-500/40 px-2.5 font-semibold hover:bg-red-500/10"
           >
             Reload latest draft
           </button>
@@ -2869,7 +2869,7 @@ export default function RouteStudioPanel({
                           <button
                             type="button"
                             onClick={handleStartGpsTracking}
-                            className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-red-700 px-3 text-xs font-semibold text-white hover:bg-red-600"
+                            className="inline-flex min-h-11 lg:min-h-10 items-center gap-1.5 rounded-xl bg-red-700 px-3 text-xs font-semibold text-white hover:bg-red-600"
                           >
                             <Play className="h-3.5 w-3.5" aria-hidden="true" />
                             Start GPS tracking
@@ -2878,7 +2878,7 @@ export default function RouteStudioPanel({
                           <button
                             type="button"
                             onClick={handleStopGpsTracking}
-                            className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-amber-500/60 bg-amber-500/15 px-3 text-xs font-semibold text-amber-800 dark:text-amber-300"
+                            className="inline-flex min-h-11 lg:min-h-10 items-center gap-1.5 rounded-xl border border-amber-500/60 bg-amber-500/15 px-3 text-xs font-semibold text-amber-800 dark:text-amber-300"
                           >
                             <Square className="h-3.5 w-3.5" aria-hidden="true" />
                             Pause GPS
@@ -2887,7 +2887,7 @@ export default function RouteStudioPanel({
                         <button
                           type="button"
                           onClick={handleCenterOnGps}
-                          className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+                          className="inline-flex min-h-11 lg:min-h-10 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
                           title={latestGpsFix ? `Center map on your GPS coordinates (${latestGpsFix.latitude.toFixed(5)}, ${latestGpsFix.longitude.toFixed(5)})` : 'Center map on GPS location'}
                         >
                           <LocateFixed className="h-3.5 w-3.5 text-red-600 dark:text-red-400" aria-hidden="true" />
@@ -2896,7 +2896,7 @@ export default function RouteStudioPanel({
                         <button
                           type="button"
                           onClick={handlePinpointMapCenter}
-                          className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+                          className="inline-flex min-h-11 lg:min-h-10 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
                           title="Anchor manual pin at the current center of the map"
                         >
                           <MapPin className="h-3.5 w-3.5 text-red-600 dark:text-red-400" aria-hidden="true" />
@@ -2905,7 +2905,7 @@ export default function RouteStudioPanel({
                         <button
                           type="button"
                           onClick={handleSimulateGpsWalk}
-                          className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+                          className="inline-flex min-h-11 lg:min-h-10 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
                         >
                           <Compass className="h-3.5 w-3.5" aria-hidden="true" />
                           Simulate GPS walk
@@ -2914,7 +2914,7 @@ export default function RouteStudioPanel({
                           type="button"
                           onClick={handleDropMarkerAtGps}
                           disabled={gpsState.acceptedPoints.length === 0}
-                          className="min-h-10 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-[var(--text-primary)] disabled:opacity-45"
+                          className="min-h-11 lg:min-h-10 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-[var(--text-primary)] disabled:opacity-45"
                         >
                           Drop marker at GPS
                         </button>
@@ -2922,7 +2922,7 @@ export default function RouteStudioPanel({
                           type="button"
                           onClick={() => handleCommitGpsTrack(false)}
                           disabled={gpsState.acceptedPoints.length < 2}
-                          className="min-h-10 rounded-xl border border-emerald-600/50 bg-emerald-600/10 px-3 text-xs font-semibold text-emerald-800 dark:text-emerald-300 disabled:opacity-45"
+                          className="min-h-11 lg:min-h-10 rounded-xl border border-emerald-600/50 bg-emerald-600/10 px-3 text-xs font-semibold text-emerald-800 dark:text-emerald-300 disabled:opacity-45"
                         >
                           Commit GPS track
                         </button>
@@ -3064,7 +3064,7 @@ export default function RouteStudioPanel({
                         <button
                           type="button"
                           onClick={handleApplyTerrainRange}
-                          className="min-h-9 rounded-lg bg-red-700 px-2.5 text-xs font-semibold text-white hover:bg-red-600"
+                          className="min-h-11 lg:min-h-9 rounded-lg bg-red-700 px-2.5 text-xs font-semibold text-white hover:bg-red-600"
                         >
                           Tag range
                         </button>
@@ -3075,7 +3075,7 @@ export default function RouteStudioPanel({
                         <button
                           type="button"
                           onClick={() => void handleSampleElevation()}
-                          className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+                          className="inline-flex min-h-11 lg:min-h-9 items-center gap-1 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
                         >
                           <Mountain className="h-3.5 w-3.5" aria-hidden="true" />
                           Fill Elevation (DEM)
@@ -3083,28 +3083,28 @@ export default function RouteStudioPanel({
                         <button
                           type="button"
                           onClick={handleSmoothTrail}
-                          className="min-h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+                          className="min-h-11 lg:min-h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
                         >
                           Smooth Trail
                         </button>
                         <button
                           type="button"
                           onClick={handleMirrorOutAndBack}
-                          className="min-h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+                          className="min-h-11 lg:min-h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
                         >
                           Out-and-Back Return
                         </button>
                         <button
                           type="button"
                           onClick={handleCloseLoop}
-                          className="min-h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+                          className="min-h-11 lg:min-h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
                         >
                           Close Loop
                         </button>
                         <button
                           type="button"
                           onClick={handleGenerateSplitMarkers}
-                          className="min-h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+                          className="min-h-11 lg:min-h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
                         >
                           Auto 1K Markers
                         </button>
@@ -3118,7 +3118,7 @@ export default function RouteStudioPanel({
                   <p className="text-xs font-semibold text-[var(--text-primary)]">
                     Keyboard Coordinate Entry (manually drawn section)
                   </p>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <label className="text-xs text-[var(--text-secondary)]">
                       Latitude
                       <input
@@ -3126,7 +3126,7 @@ export default function RouteStudioPanel({
                         value={coordLat}
                         onChange={(e) => setCoordLat(e.target.value)}
                         placeholder="e.g., 14.5995"
-                        className="mt-1 min-h-10 w-full rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2 text-xs text-[var(--text-primary)]"
+                        className="mt-1 min-h-11 lg:min-h-10 w-full rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2 text-xs text-[var(--text-primary)]"
                       />
                     </label>
                     <label className="text-xs text-[var(--text-secondary)]">
@@ -3136,7 +3136,7 @@ export default function RouteStudioPanel({
                         value={coordLon}
                         onChange={(e) => setCoordLon(e.target.value)}
                         placeholder="e.g., 120.9842"
-                        className="mt-1 min-h-10 w-full rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2 text-xs text-[var(--text-primary)]"
+                        className="mt-1 min-h-11 lg:min-h-10 w-full rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2 text-xs text-[var(--text-primary)]"
                       />
                     </label>
                     <label className="text-xs text-[var(--text-secondary)]">
@@ -3146,14 +3146,14 @@ export default function RouteStudioPanel({
                         value={coordEle}
                         onChange={(e) => setCoordEle(e.target.value)}
                         placeholder="Optional"
-                        className="mt-1 min-h-10 w-full rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2 text-xs text-[var(--text-primary)]"
+                        className="mt-1 min-h-11 lg:min-h-10 w-full rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2 text-xs text-[var(--text-primary)]"
                       />
                     </label>
                   </div>
                   <button
                     type="button"
                     onClick={handleAppendManualPoint}
-                    className="min-h-10 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+                    className="min-h-11 lg:min-h-10 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
                   >
                     Append drawn coordinate
                   </button>
@@ -4037,14 +4037,14 @@ export default function RouteStudioPanel({
                     <button
                       type="button"
                       onClick={handleWeeklyImageryCheck}
-                      className="min-h-10 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+                      className="min-h-11 lg:min-h-10 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 font-semibold text-[var(--text-primary)] hover:border-red-600/50"
                     >
                       Run weekly clear-imagery check
                     </button>
                     <button
                       type="button"
                       onClick={handleQuarterlyMosaicRefresh}
-                      className="min-h-10 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+                      className="min-h-11 lg:min-h-10 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 font-semibold text-[var(--text-primary)] hover:border-red-600/50"
                     >
                       Refresh quarterly national mosaic
                     </button>
@@ -4064,7 +4064,7 @@ export default function RouteStudioPanel({
                   <button
                     type="button"
                     onClick={() => setSimulatedRaceFreeze((v) => !v)}
-                    className="min-h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 font-semibold"
+                    className="min-h-11 lg:min-h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 font-semibold"
                   >
                     {simulatedRaceFreeze ? 'Clear test freeze' : 'Simulate active gun start'}
                   </button>
@@ -4138,7 +4138,7 @@ export default function RouteStudioPanel({
                     type="button"
                     disabled={!canPublishRoute}
                     onClick={handleWithdrawPublication}
-                    className="min-h-10 rounded-xl border border-red-500/40 px-3 font-semibold text-red-700 hover:bg-red-500/10 dark:text-red-300 disabled:opacity-45 disabled:cursor-not-allowed"
+                    className="min-h-11 lg:min-h-10 rounded-xl border border-red-500/40 px-3 font-semibold text-red-700 hover:bg-red-500/10 dark:text-red-300 disabled:opacity-45 disabled:cursor-not-allowed"
                   >
                     Withdraw published course
                   </button>

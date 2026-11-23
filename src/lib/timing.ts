@@ -50,40 +50,40 @@ export function findRunnerAgeCategory(
     && runner.age <= category.maxAge);
 }
 
-function validTimestamp(value?: string): number | undefined {
+function preciseTimestampTicks(value?: string): bigint | undefined {
   if (!value) return undefined;
-  const time = new Date(value).getTime();
-  return Number.isNaN(time) ? undefined : time;
+  const exact = timestampTicks(value);
+  if (exact !== undefined) return exact;
+  const ms = new Date(value).getTime();
+  return Number.isNaN(ms) ? undefined : BigInt(Math.trunc(ms)) * 10000n;
+}
+
+function compareOptionalTimestamps(a?: string, b?: string): number {
+  const ta = preciseTimestampTicks(a);
+  const tb = preciseTimestampTicks(b);
+  if (ta !== undefined && tb !== undefined) return ta === tb ? 0 : (ta < tb ? -1 : 1);
+  if (ta !== undefined) return -1;
+  if (tb !== undefined) return 1;
+  return 0;
 }
 
 function compareReadOrder(a: ChipRead, b: ChipRead): number {
-  const crossedA = validTimestamp(a.timestamp);
-  const crossedB = validTimestamp(b.timestamp);
-  if (crossedA !== undefined && crossedB !== undefined && crossedA !== crossedB) return crossedA - crossedB;
-  if (crossedA !== undefined && crossedB === undefined) return -1;
-  if (crossedA === undefined && crossedB !== undefined) return 1;
-  const recordedA = validTimestamp(a.createdAt);
-  const recordedB = validTimestamp(b.createdAt);
-  if (recordedA !== undefined && recordedB !== undefined && recordedA !== recordedB) return recordedA - recordedB;
-  if (recordedA !== undefined && recordedB === undefined) return -1;
-  if (recordedA === undefined && recordedB !== undefined) return 1;
-  return (a.id || '').localeCompare(b.id || '') || (a.bibNumber || '').localeCompare(b.bibNumber || '');
+  return (
+    compareOptionalTimestamps(a.timestamp, b.timestamp)
+    || compareOptionalTimestamps(a.createdAt, b.createdAt)
+    || (a.id || '').localeCompare(b.id || '')
+    || (a.bibNumber || '').localeCompare(b.bibNumber || '')
+  );
 }
 
-// Results display whole seconds. Keep the actual crossing sequence as the
-// second tie-break so an earlier finisher is never displaced by bib number.
+// Results display whole seconds. Keep the actual crossing sequence (to 7-digit ticks)
+// as the second tie-break so an earlier finisher is never displaced by bib number.
 export function compareResultFinishOrder(a: RunnerResult, b: RunnerResult): number {
-  const crossedA = validTimestamp(a.finishReadAt);
-  const crossedB = validTimestamp(b.finishReadAt);
-  if (crossedA !== undefined && crossedB !== undefined && crossedA !== crossedB) return crossedA - crossedB;
-  if (crossedA !== undefined && crossedB === undefined) return -1;
-  if (crossedA === undefined && crossedB !== undefined) return 1;
-  const recordedA = validTimestamp(a.finishReadRecordedAt);
-  const recordedB = validTimestamp(b.finishReadRecordedAt);
-  if (recordedA !== undefined && recordedB !== undefined && recordedA !== recordedB) return recordedA - recordedB;
-  if (recordedA !== undefined && recordedB === undefined) return -1;
-  if (recordedA === undefined && recordedB !== undefined) return 1;
-  return a.bibNumber.localeCompare(b.bibNumber);
+  return (
+    compareOptionalTimestamps(a.finishReadAt, b.finishReadAt)
+    || compareOptionalTimestamps(a.finishReadRecordedAt, b.finishReadRecordedAt)
+    || a.bibNumber.localeCompare(b.bibNumber)
+  );
 }
 
 export function orderFemaleOverallResults(
@@ -94,9 +94,10 @@ export function orderFemaleOverallResults(
   const automatic = [...results]
     .filter((result) => result.finishSeconds !== undefined
       && !result.disqualified
-      && !result.runnerProfile.isFreeSlot
-      && runnerEntryCategory(result.runnerProfile) === 'solo'
-      && result.runnerProfile.gender === 'female')
+      && Boolean(result.runnerProfile)
+      && !result.runnerProfile!.isFreeSlot
+      && runnerEntryCategory(result.runnerProfile!) === 'solo'
+      && result.runnerProfile!.gender === 'female')
     .sort((a, b) => a.finishSeconds! - b.finishSeconds! || compareResultFinishOrder(a, b));
   const byBib = new Map(automatic.map((result) => [result.bibNumber.toUpperCase(), result]));
   const placed = new Set<string>();
@@ -297,7 +298,7 @@ export function computeResults(
   const ageCategoryAwardExclusions = new Set<string>();
   for (const [division, list] of byDivision.entries()) {
     list
-      .filter((result) => result.finishSeconds !== undefined && !result.disqualified && !result.runnerProfile.isFreeSlot && runnerEntryCategory(result.runnerProfile) === 'solo')
+      .filter((result) => result.finishSeconds !== undefined && !result.disqualified && !result.runnerProfile?.isFreeSlot && runnerEntryCategory(result.runnerProfile) === 'solo')
       .sort((a, b) => a.finishSeconds! - b.finishSeconds! || compareResultFinishOrder(a, b))
       .slice(0, 3)
       .forEach((result) => ageCategoryAwardExclusions.add(result.bibNumber));

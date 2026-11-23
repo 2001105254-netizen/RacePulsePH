@@ -470,3 +470,23 @@ test('broadcast SSR renders 4-place podium + chaser split and pre-finish active 
   assert.match(preFinishHtml, /Approaching splits/);
   assert.match(preFinishHtml, /Pre-Finish/);
 });
+
+test('compareReadOrder and compareResultFinishOrder break ties using 7-digit sub-millisecond ticks', () => {
+  const { compareResultFinishOrder } = loadTs(path.join(root, 'src/lib/timing.ts'));
+  // Same millisecond for both reads of bib S; earlier 7-digit tick has later read id 'z'.
+  const results = compute(
+    [solo],
+    [
+      { id: 'a', bibNumber: 'S', checkpointId: 'finish', timestamp: '2026-10-26T00:30:00.1230009Z', createdAt: '2026-10-26T00:30:01Z' },
+      { id: 'z', bibNumber: 'S', checkpointId: 'finish', timestamp: '2026-10-26T00:30:00.1230001Z', createdAt: '2026-10-26T00:30:01Z' },
+    ],
+  );
+  assert.equal(byBib(results, 'S').finishReadAt, '2026-10-26T00:30:00.1230001Z');
+
+  // Same elapsed seconds across staggered waves or identical finishReadAt millisecond: earlier sub-ms crossing wins.
+  const order = [
+    { bibNumber: 'A', splits: [], finishReadAt: '2026-10-26T00:30:00.1230009Z', finishReadRecordedAt: '2026-10-26T00:30:01Z' },
+    { bibNumber: 'Z', splits: [], finishReadAt: '2026-10-26T00:30:00.1230001Z', finishReadRecordedAt: '2026-10-26T00:30:01Z' },
+  ].sort(compareResultFinishOrder);
+  assert.deepEqual(order.map((r) => r.bibNumber), ['Z', 'A']);
+});

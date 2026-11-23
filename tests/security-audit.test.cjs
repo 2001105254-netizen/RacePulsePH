@@ -118,7 +118,6 @@ test('scanWorkflowSecurity rejects missing permissions, pull_request_target, unp
 test('evaluateNpmAudit blocks critical vulnerabilities and any unapproved high vulnerabilities', () => {
   const reportWithApprovedOnly = {
     vulnerabilities: {
-      xlsx: { severity: 'high' },
       '@grpc/grpc-js': { severity: 'high' },
       qs: { severity: 'moderate' },
     },
@@ -127,7 +126,7 @@ test('evaluateNpmAudit blocks critical vulnerabilities and any unapproved high v
 
   const reportWithNewHigh = {
     vulnerabilities: {
-      express: { severity: 'high' },
+      xlsx: { severity: 'high' },
     },
   };
   assert.equal(audit.evaluateNpmAudit(reportWithNewHigh, 'root', audit.APPROVED_HIGH_ROOT_PACKAGES).length, 1);

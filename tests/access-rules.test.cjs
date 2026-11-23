@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const policy = require('../functions/access-policy');
 const { initializeTestEnvironment, assertSucceeds, assertFails } = require('@firebase/rules-unit-testing');
-const { doc, setDoc, getDoc, updateDoc, deleteDoc, collection, query, where, getDocs } = require('firebase/firestore');
+const { doc, setDoc, getDoc, updateDoc, deleteDoc, collection, query, where, getDocs, runTransaction } = require('firebase/firestore');
 let env;
 before(async () => {
   env = await initializeTestEnvironment({ projectId: 'demo-racepulse-rbac', firestore: { host: '127.0.0.1', port: 8080, rules: fs.readFileSync('firestore.rules','utf8') } });
@@ -196,5 +196,246 @@ test('superadmin bootstrap and system/meta claims allow owner repeatedly and rej
     role: 'superadmin',
     approved: true,
     createdAt: '2026-01-01',
+  }));
+});
+
+test('bibClaimLocks is strictly backend-only and usernameIndex blocks unauthenticated/cross-user reads while allowing uniqueness checks', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const root = ctx.firestore();
+    await setDoc(doc(root, 'bibClaimLocks', 'race_a_5-001'), { uid: 'runner', raceId: 'race_a', bibNumber: '5-001' });
+    await setDoc(doc(root, 'usernameIndex', 'runner_handle'), { username: 'runner_handle', uid: 'runner', email: 'runner@example.com', createdAt: '2026-01-01' });
+  });
+
+  await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), 'bibClaimLocks', 'race_a_5-001')));
+  await assertFails(getDoc(doc(db('superadmin'), 'bibClaimLocks', 'race_a_5-001')));
+  await assertFails(setDoc(doc(db('superadmin'), 'bibClaimLocks', 'race_a_5-999'), { uid: 'runner', raceId: 'race_a', bibNumber: '5-999' }));
+
+  await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), 'usernameIndex', 'alice')));
+  await assertFails(getDocs(collection(db('superadmin'), 'usernameIndex')));
+  await assertSucceeds(getDoc(doc(db('runner'), 'usernameIndex', 'available_handle_99')));
+  await assertSucceeds(getDoc(doc(db('runner'), 'usernameIndex', 'runner_handle')));
+  await assertFails(getDoc(doc(db('runner'), 'usernameIndex', 'alice')));
+  await assertSucceeds(getDoc(doc(db('superadmin'), 'usernameIndex', 'alice')));
+});
+
+test('publishedRaceRoutes, raceRouteCatalog, routeJobs, and routeAudit enforce race scope and server-only activity writes', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const root = ctx.firestore();
+    await setDoc(doc(root, 'publishedRaceRoutes', 'pub_private_a'), { id: 'pub_private_a', status: 'withdrawn', raceId: 'race_a' });
+    await setDoc(doc(root, 'publishedRaceRoutes', 'pub_private_b'), { id: 'pub_private_b', status: 'superseded', raceId: 'race_b' });
+    await setDoc(doc(root, 'raceRouteCatalog', 'race_b_10k'), { id: 'race_b_10k', status: 'published', raceId: 'race_b' });
+    await setDoc(doc(root, 'routeJobs', 'job_a'), { id: 'job_a', raceId: 'race_a', ownerUid: 'organizer', status: 'queued' });
+    await setDoc(doc(root, 'routeJobs', 'job_b'), { id: 'job_b', raceId: 'race_b', ownerUid: 'other', status: 'queued' });
+    await setDoc(doc(root, 'routeAudit', 'audit_a'), { id: 'audit_a', raceId: 'race_a', actorUid: 'organizer', action: 'publish' });
+    await setDoc(doc(root, 'routeAudit', 'audit_preset'), { id: 'audit_preset', presetId: 'preset_1', actorUid: 'other', action: 'edit' });
+    await setDoc(doc(root, 'routeAudit', 'audit_b'), { id: 'audit_b', raceId: 'race_b', actorUid: 'other', action: 'publish' });
+  });
+
+  await assertFails(setDoc(doc(db('organizer'), 'publishedRaceRoutes', 'pub_wrong'), { id: 'pub_wrong', status: 'published', raceId: 'race_b' }));
+  await assertFails(updateDoc(doc(db('organizer'), 'publishedRaceRoutes', 'pub_1'), { raceId: 'race_b' }));
+  await assertSucceeds(setDoc(doc(db('organizer'), 'raceRouteCatalog', 'race_a_5k'), { id: 'race_a_5k', status: 'published', raceId: 'race_a' }));
+  await assertFails(setDoc(doc(db('organizer'), 'raceRouteCatalog', 'race_b_5k'), { id: 'race_b_5k', status: 'published', raceId: 'race_b' }));
+  await assertFails(updateDoc(doc(db('organizer'), 'raceRouteCatalog', 'race_b_10k'), { raceId: 'race_a' }));
+
+  await assertSucceeds(getDoc(doc(db('organizer'), 'publishedRaceRoutes', 'pub_private_a')));
+  await assertFails(getDoc(doc(db('organizer'), 'publishedRaceRoutes', 'pub_private_b')));
+  await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), 'publishedRaceRoutes', 'pub_private_a')));
+
+  await assertSucceeds(getDoc(doc(db('organizer'), 'routeJobs', 'job_a')));
+  await assertFails(getDoc(doc(db('organizer'), 'routeJobs', 'job_b')));
+  await assertSucceeds(getDoc(doc(db('organizer'), 'routeAudit', 'audit_a')));
+  await assertSucceeds(getDoc(doc(db('organizer'), 'routeAudit', 'audit_preset')));
+  await assertFails(getDoc(doc(db('organizer'), 'routeAudit', 'audit_b')));
+  await assertSucceeds(getDoc(doc(db('superadmin'), 'routeAudit', 'audit_b')));
+  await assertFails(getDoc(doc(db('runner'), 'routeAudit', 'audit_a')));
+
+  await assertFails(setDoc(doc(db('organizer'), 'routeJobs', 'job_client'), { id: 'job_client', raceId: 'race_a', ownerUid: 'organizer' }));
+  await assertFails(setDoc(doc(db('superadmin'), 'routeJobs', 'job_sa'), { id: 'job_sa', raceId: 'race_a', ownerUid: 'superadmin' }));
+  await assertFails(setDoc(doc(db('organizer'), 'routeAudit', 'audit_client'), { id: 'audit_client', raceId: 'race_a', actorUid: 'organizer' }));
+  await assertFails(setDoc(doc(db('superadmin'), 'routeAudit', 'audit_sa'), { id: 'audit_sa', raceId: 'race_a', actorUid: 'superadmin' }));
+});
+
+test('runner self-updates lock demographics after timing start or kit/chip assignment while allowing emergency/shirt edits', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const root = ctx.firestore();
+    await setDoc(doc(root, 'races', 'race_lock_test'), {
+      id: 'race_lock_test',
+      createdBy: 'organizer',
+      createdAt: '2026-01-01',
+      name: 'Lock Test',
+      date: '2026-12-01',
+      registrationOpen: true,
+      checkpoints: [],
+      distances: [{ id: '5K', label: '5K', km: 5, price: 0 }, { id: '10K', label: '10K', km: 10, price: 0 }],
+    });
+    await setDoc(doc(root, 'runners', 'runner_race_lock_test'), {
+      uid: 'runner',
+      raceId: 'race_lock_test',
+      fullName: 'Runner Initial',
+      bibNumber: '5-001',
+      distance: '5K',
+      gender: 'male',
+      age: 25,
+      createdAt: '2026-01-01',
+    });
+  });
+
+  await assertSucceeds(updateDoc(doc(db('runner'), 'runners', 'runner_race_lock_test'), { fullName: 'Runner Pre-Race', age: 26 }));
+
+  await env.withSecurityRulesDisabled((ctx) => updateDoc(doc(ctx.firestore(), 'races', 'race_lock_test'), { gunStartTime: '2026-12-01T05:00:00Z' }));
+  await assertFails(updateDoc(doc(db('runner'), 'runners', 'runner_race_lock_test'), { fullName: 'Runner Cheating' }));
+  await assertFails(updateDoc(doc(db('runner'), 'runners', 'runner_race_lock_test'), { gender: 'female' }));
+  await assertFails(updateDoc(doc(db('runner'), 'runners', 'runner_race_lock_test'), { distance: '10K' }));
+  await assertSucceeds(updateDoc(doc(db('runner'), 'runners', 'runner_race_lock_test'), {
+    emergencyContactName: 'Jane Doe',
+    emergencyContactPhone: '09171234567',
+    shirtSize: 'M',
+  }));
+  await assertSucceeds(updateDoc(doc(db('organizer'), 'runners', 'runner_race_lock_test'), { fullName: 'Organizer Corrected' }));
+
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const root = ctx.firestore();
+    await updateDoc(doc(root, 'races', 'race_lock_test'), { gunStartTime: '' });
+    await updateDoc(doc(root, 'runners', 'runner_race_lock_test'), { kitClaimedAt: '2026-11-30T10:00:00Z' });
+  });
+  await assertFails(updateDoc(doc(db('runner'), 'runners', 'runner_race_lock_test'), { age: 29 }));
+  await assertSucceeds(updateDoc(doc(db('runner'), 'runners', 'runner_race_lock_test'), { shirtSize: 'L' }));
+});
+
+test('bibCounters restricts runner self-registration to atomic +1 with runner doc while preserving staff bulk limits', async () => {
+  const runnerOneDb = env.authenticatedContext('reg_u1', { email: 'reg1@example.com', email_verified: true }).firestore();
+  const runnerTwoDb = env.authenticatedContext('reg_u2', { email: 'reg2@example.com', email_verified: true }).firestore();
+
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const root = ctx.firestore();
+    for (const uid of ['reg_u1', 'reg_u2']) {
+      await setDoc(doc(root, 'users', uid), { uid, role: 'runner', approved: true, email: `${uid}@example.com`, displayName: uid, createdAt: '2026-01-01' });
+    }
+    await setDoc(doc(root, 'races', 'race_bib_tx'), {
+      id: 'race_bib_tx',
+      createdBy: 'organizer',
+      createdAt: '2026-01-01',
+      name: 'Bib TX Race',
+      date: '2026-12-01',
+      registrationOpen: true,
+      checkpoints: [],
+      distances: [{ id: '5K', label: '5K', km: 5, price: 0 }],
+    });
+  });
+
+  await assertFails(setDoc(doc(runnerOneDb, 'bibCounters', 'race_bib_tx_5K_solo'), { raceId: 'race_bib_tx', count: 1 }));
+  await assertFails(runTransaction(runnerOneDb, async (tx) => {
+    tx.set(doc(runnerOneDb, 'bibCounters', 'race_bib_tx_5K_solo'), { raceId: 'race_bib_tx', count: 2 });
+    tx.set(doc(runnerOneDb, 'runners', 'reg_u1_race_bib_tx'), {
+      uid: 'reg_u1', raceId: 'race_bib_tx', fullName: 'Reg One', bibNumber: '5-002', distance: '5K', gender: 'male', age: 25, createdAt: '2026-01-01',
+    });
+  }));
+
+  await assertSucceeds(runTransaction(runnerOneDb, async (tx) => {
+    tx.set(doc(runnerOneDb, 'bibCounters', 'race_bib_tx_5K_solo'), { raceId: 'race_bib_tx', count: 1 });
+    tx.set(doc(runnerOneDb, 'runners', 'reg_u1_race_bib_tx'), {
+      uid: 'reg_u1', raceId: 'race_bib_tx', fullName: 'Reg One', bibNumber: '5-001', distance: '5K', gender: 'male', age: 25, createdAt: '2026-01-01',
+    });
+  }));
+
+  await assertFails(setDoc(doc(runnerOneDb, 'bibCounters', 'race_bib_tx_5K_solo'), { raceId: 'race_bib_tx', count: 2 }));
+
+  await assertSucceeds(runTransaction(runnerTwoDb, async (tx) => {
+    tx.set(doc(runnerTwoDb, 'bibCounters', 'race_bib_tx_5K_solo'), { raceId: 'race_bib_tx', count: 2 });
+    tx.set(doc(runnerTwoDb, 'runners', 'reg_u2_race_bib_tx'), {
+      uid: 'reg_u2', raceId: 'race_bib_tx', fullName: 'Reg Two', bibNumber: '5-002', distance: '5K', gender: 'female', age: 27, createdAt: '2026-01-01',
+    });
+  }));
+
+  await assertSucceeds(setDoc(doc(db('organizer'), 'bibCounters', 'race_bib_tx_10K_solo'), { raceId: 'race_bib_tx', count: 500 }));
+  await assertSucceeds(updateDoc(doc(db('organizer'), 'bibCounters', 'race_bib_tx_10K_solo'), { count: 1000 }));
+});
+
+test('chipReads, user profile URLs, large distance lists, and engraving orders enforce strict schema and bounds', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const root = ctx.firestore();
+    await setDoc(doc(root, 'races', 'race_open_chip'), {
+      id: 'race_open_chip',
+      createdBy: 'organizer',
+      createdAt: '2026-01-01',
+      name: 'Open Chip Race',
+      date: '2026-12-01',
+      registrationOpen: true,
+      manualPaymentEnabled: true,
+      checkpoints: [],
+      distances: Array.from({ length: 20 }, (_, idx) => ({
+        id: `d${idx + 1}`,
+        label: `${idx + 1}K`,
+        km: idx + 1,
+        price: idx === 19 ? 1500 : 0,
+      })),
+    });
+  });
+
+  const validChip = {
+    id: 'read_1',
+    raceId: 'race_open_chip',
+    bibNumber: '5-001',
+    chipId: 'E200001234',
+    checkpointId: 'start',
+    timestamp: '2026-12-01T05:00:00Z',
+    source: 'rfid-bridge',
+    recordedBy: 'organizer',
+    createdAt: '2026-12-01T05:00:00Z',
+    bridgeEventId: 'evt_1',
+    antenna: 4,
+    readerSequence: 12,
+    monotonicTicks: '123456',
+    monotonicFrequency: '10000000',
+    clockSource: 'bridge-receipt',
+  };
+  await assertSucceeds(setDoc(doc(db('organizer'), 'chipReads', 'read_1'), validChip));
+  await assertFails(setDoc(doc(db('organizer'), 'chipReads', 'read_extra'), { ...validChip, id: 'read_extra', extraField: 'nope' }));
+  await assertFails(setDoc(doc(db('organizer'), 'chipReads', 'read_bad_ant'), { ...validChip, id: 'read_bad_ant', antenna: 9 }));
+
+  await assertSucceeds(updateDoc(doc(db('runner'), 'users', 'runner'), {
+    photoURL: 'data:image/jpeg;base64,abc123==',
+    coverURL: 'https://storage.googleapis.com/bucket/cover.jpg',
+    socialLink: 'https://strava.com/athletes/1',
+  }));
+  await assertFails(updateDoc(doc(db('runner'), 'users', 'runner'), { photoURL: 'javascript:alert(1)' }));
+  await assertFails(updateDoc(doc(db('runner'), 'users', 'runner'), { coverURL: 'data:image/svg+xml;base64,PHN2Zz4=' }));
+  await assertFails(updateDoc(doc(db('runner'), 'users', 'runner'), { socialLink: 'javascript:alert(1)' }));
+  await assertFails(updateDoc(doc(db('runner'), 'users', 'runner'), { socialLink: 'https://example.com/<script>' }));
+
+  const u15Db = env.authenticatedContext('dist_u15', { email: 'dist15@example.com', email_verified: true }).firestore();
+  const u15PaidDb = env.authenticatedContext('dist_u15_paid', { email: 'dist15p@example.com', email_verified: true }).firestore();
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const root = ctx.firestore();
+    await setDoc(doc(root, 'users', 'dist_u15'), { uid: 'dist_u15', role: 'runner', approved: true, email: 'dist15@example.com', displayName: 'U15', createdAt: '2026-01-01' });
+    await setDoc(doc(root, 'users', 'dist_u15_paid'), { uid: 'dist_u15_paid', role: 'runner', approved: true, email: 'dist15p@example.com', displayName: 'U15P', createdAt: '2026-01-01' });
+  });
+
+  await assertFails(setDoc(doc(u15Db, 'runners', 'dist_u15_race_open_chip'), {
+    uid: 'dist_u15', raceId: 'race_open_chip', fullName: 'Unknown Dist', bibNumber: '99-001', distance: 'FAKE_FREE', gender: 'male', age: 25, createdAt: '2026-01-01',
+  }));
+  await assertFails(setDoc(doc(u15Db, 'runners', 'dist_u15_race_open_chip'), {
+    uid: 'dist_u15', raceId: 'race_open_chip', fullName: 'Paid Bypass', bibNumber: '20-001', distance: '20K', gender: 'male', age: 25, createdAt: '2026-01-01',
+  }));
+  await assertSucceeds(setDoc(doc(u15Db, 'runners', 'dist_u15_race_open_chip'), {
+    uid: 'dist_u15', raceId: 'race_open_chip', fullName: 'Free Index 18', bibNumber: '19-001', distance: '19K', gender: 'male', age: 25, createdAt: '2026-01-01',
+  }));
+  await assertFails(setDoc(doc(u15PaidDb, 'runners', 'dist_u15_paid_race_open_chip'), {
+    uid: 'dist_u15_paid', raceId: 'race_open_chip', fullName: 'Underpay', bibNumber: '20-002', distance: '20K', gender: 'female', age: 25, createdAt: '2026-01-01',
+    paymentStatus: 'pending', paymentMethod: 'manual', paymentAmount: 100, paymentReference: 'REF-1234',
+  }));
+  await assertSucceeds(setDoc(doc(u15PaidDb, 'runners', 'dist_u15_paid_race_open_chip'), {
+    uid: 'dist_u15_paid', raceId: 'race_open_chip', fullName: 'Full Pay', bibNumber: '20-002', distance: '20K', gender: 'female', age: 25, createdAt: '2026-01-01',
+    paymentStatus: 'pending', paymentMethod: 'manual', paymentAmount: 1500, paymentReference: 'REF-1234',
+  }));
+
+  await assertSucceeds(setDoc(doc(db('runner'), 'orders', 'ORD1'), {
+    id: 'ORD1', ownerUid: 'runner', runnerName: 'Runner', bibNumber: '5-001', distance: '5K', finishingTime: '00:20:00.1234567', status: 'queued', createdAt: '2026-01-01', updatedAt: '2026-01-01',
+  }));
+  await assertFails(setDoc(doc(db('runner'), 'orders', 'ORD2'), {
+    id: 'ORD2', ownerUid: 'runner', runnerName: 'Runner', bibNumber: '5-001', distance: '5K', finishingTime: '00:20:00', status: 'queued', createdAt: '2026-01-01', updatedAt: '2026-01-01', extraHack: true,
+  }));
+  await assertFails(setDoc(doc(db('runner'), 'orders', 'ORD3'), {
+    id: 'ORD3', ownerUid: 'runner', runnerName: 'Runner', bibNumber: '5-001', distance: '5K', finishingTime: '0'.repeat(33), status: 'queued', createdAt: '2026-01-01', updatedAt: '2026-01-01',
   }));
 });

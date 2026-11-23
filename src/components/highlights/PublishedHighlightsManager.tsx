@@ -196,7 +196,7 @@ export default function PublishedHighlightsManager({
                       className="w-16 h-20 rounded-xl object-cover border border-[var(--border-default)] shrink-0 bg-zinc-900"
                     />
                     <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono">
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs font-mono">
                         <span className="px-2 py-0.5 rounded bg-red-700 text-white font-semibold">
                           {item.placement}
                         </span>
@@ -220,14 +220,14 @@ export default function PublishedHighlightsManager({
                       <p className="text-xs font-mono text-[var(--text-secondary)] truncate">
                         {item.raceName} · {item.chipTime} · {bibLabel}
                       </p>
-                      <p className="text-[11px] font-mono text-[var(--text-secondary)] truncate">
+                      <p className="text-xs font-mono text-[var(--text-secondary)] truncate">
                         {formatReadableDate(item.raceDate)} · {item.borderPreset}
                       </p>
                     </div>
                   </div>
 
                   {(achCount > 0 || evCount > 0) && (
-                    <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-[var(--border-default)] text-[11px] font-mono">
+                    <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-[var(--border-default)] text-xs font-mono">
                       {achCount > 0 && (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-amber-500/35 bg-amber-500/10 text-amber-800 dark:text-amber-300">
                           <Award className="w-3 h-3" aria-hidden="true" />

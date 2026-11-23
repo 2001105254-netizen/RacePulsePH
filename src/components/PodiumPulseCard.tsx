@@ -191,12 +191,12 @@ const PodiumPulseCard = memo(function PodiumPulseCard({
             {layoutMode === 'card' && headerStyle === 'crown-bezel' && (
               <header className="pp-crown-bezel" data-testid="pp-crown-bezel">
                 <span
-                  className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-semibold text-white border bg-black/75 truncate max-w-[132px]"
+                  className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-semibold text-white border bg-black/75 truncate max-w-[132px]"
                   style={{ borderColor: accent }}
                 >
                   {highlight.placement}
                 </span>
-                <span className="inline-flex items-center gap-1.5 text-[11px] font-mono font-semibold text-zinc-100 shrink-0">
+                <span className="inline-flex items-center gap-1.5 text-xs font-mono font-semibold text-zinc-100 shrink-0">
                   <span>{modeBadgeLabel}</span>
                   <span style={{ color: secondaryAccent }}>{highlight.distance}</span>
                 </span>
@@ -316,12 +316,12 @@ const PodiumPulseCard = memo(function PodiumPulseCard({
                     {headerStyle === 'bottom-dock' && (
                       <div className="flex items-center justify-between gap-2 mb-1.5">
                         <span
-                          className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-semibold text-white border bg-black/80 truncate max-w-[132px]"
+                          className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-semibold text-white border bg-black/80 truncate max-w-[132px]"
                           style={{ borderColor: accent }}
                         >
                           {highlight.placement}
                         </span>
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono font-semibold text-zinc-100 bg-black/80 border border-white/20 shrink-0">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-semibold text-zinc-100 bg-black/80 border border-white/20 shrink-0">
                           {modeBadgeLabel} {highlight.distance}
                         </span>
                       </div>
@@ -332,7 +332,7 @@ const PodiumPulseCard = memo(function PodiumPulseCard({
                         {visibleFrontAchievements.map((ach, idx) => (
                           <span
                             key={`${ach}-${idx}`}
-                            className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold tracking-wide uppercase truncate max-w-[140px] ${
+                            className={`inline-block px-1.5 py-0.5 rounded text-xs font-mono font-semibold tracking-wide uppercase truncate max-w-[140px] ${
                               idx === 0
                                 ? 'text-zinc-950'
                                 : 'text-amber-100 bg-black/75 border border-amber-300/45'
@@ -343,7 +343,7 @@ const PodiumPulseCard = memo(function PodiumPulseCard({
                           </span>
                         ))}
                         {extraAchievementCount > 0 && (
-                          <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold text-amber-200 bg-black/75 border border-white/20">
+                          <span className="inline-block px-1.5 py-0.5 rounded text-xs font-mono font-semibold text-amber-200 bg-black/75 border border-white/20">
                             +{extraAchievementCount}
                           </span>
                         )}
@@ -372,7 +372,7 @@ const PodiumPulseCard = memo(function PodiumPulseCard({
                     {visibleFrontEvents.length > 0 && (
                       <div className="mt-1.5 rounded-lg bg-black/65 border border-white/15 px-2 py-1 space-y-0.5 backdrop-blur-xs">
                         {visibleFrontEvents.map((ev, idx) => (
-                          <div key={`${ev.raceName}-${idx}`} className="flex items-center justify-between gap-1.5 text-[10px] font-mono">
+                          <div key={`${ev.raceName}-${idx}`} className="flex items-center justify-between gap-1.5 text-xs font-mono">
                             <span className="text-zinc-200 truncate min-w-0">
                               {ev.raceName} <span className="text-zinc-400">({ev.distance})</span>
                             </span>
@@ -385,7 +385,7 @@ const PodiumPulseCard = memo(function PodiumPulseCard({
                           </div>
                         ))}
                         {extraEventsCount > 0 && (
-                          <p className="text-[10px] font-mono text-zinc-300 text-right">
+                          <p className="text-xs font-mono text-zinc-300 text-right">
                             +{extraEventsCount} more event{extraEventsCount === 1 ? '' : 's'}
                           </p>
                         )}
@@ -395,7 +395,7 @@ const PodiumPulseCard = memo(function PodiumPulseCard({
                     {/* State C: Secondary Telemetry Drawer */}
                     <div className="pp-secondary-drawer">
                       <div>
-                        <div className="pt-2 border-t border-white/20 grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] font-mono text-zinc-200">
+                        <div className="pt-2 border-t border-white/20 grid grid-cols-2 gap-x-2 gap-y-1 text-xs font-mono text-zinc-200">
                           {isDuo ? (
                             <>
                               <span className="truncate">
@@ -452,12 +452,12 @@ const PodiumPulseCard = memo(function PodiumPulseCard({
                   <div className="min-w-0 flex-1 pl-[36%] flex flex-col justify-between h-full">
                     <div className="flex items-center justify-between gap-1.5">
                       <span
-                        className="px-2 py-0.5 rounded text-[11px] font-mono font-semibold text-white bg-black/80 border truncate"
+                        className="px-2 py-0.5 rounded text-xs font-mono font-semibold text-white bg-black/80 border truncate"
                         style={{ borderColor: accent }}
                       >
                         {highlight.placement}
                       </span>
-                      <span className="text-[11px] font-mono font-semibold text-zinc-200 shrink-0">
+                      <span className="text-xs font-mono font-semibold text-zinc-200 shrink-0">
                         {participatedEvents.length > 1
                           ? `${participatedEvents.length} EVENTS · ${highlight.distance}`
                           : `${modeBadgeLabel} ${highlight.distance}`}

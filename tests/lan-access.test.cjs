@@ -27,3 +27,27 @@ test('LAN blocks trailing-slash reset bypasses and unexpected subroutes',()=>{
  assert.equal(authorize({...operator,authority:true,scope:'all'},'POST','/api/orders/reset/',{}),true);
  assert.equal(authorize(operator,'POST','/api/orders/unexpected',{status:'queued'}),false);
 });
+test('LAN blocks bridge metadata tampering on existing chipReads', () => {
+ const existing = {
+  id: 'r1',
+  raceId: 'race_a',
+  recordedBy: 'operator',
+  bibNumber: '5-001',
+  chipId: 'E200',
+  checkpointId: 'finish',
+  timestamp: '2026-10-26T00:10:00Z',
+  source: 'rfid-bridge',
+  bridgeEventId: 'evt_1',
+  antenna: 1,
+  readerSequence: 10,
+  monotonicTicks: '1000',
+  monotonicFrequency: '10000000',
+  clockSource: 'bridge-receipt',
+ };
+ assert.equal(authorize(operator, 'POST', '/api/chip-reads', { ...existing }, existing), true);
+ assert.equal(authorize(operator, 'POST', '/api/chip-reads', { ...existing, antenna: 2 }, existing), false);
+ assert.equal(authorize(operator, 'POST', '/api/chip-reads', { ...existing, readerSequence: 11 }, existing), false);
+ assert.equal(authorize(operator, 'POST', '/api/chip-reads', { ...existing, bridgeEventId: 'evt_2' }, existing), false);
+ assert.equal(authorize(operator, 'POST', '/api/chip-reads', { ...existing, monotonicTicks: '9999' }, existing), false);
+ assert.equal(authorize(operator, 'POST', '/api/chip-reads', { ...existing, clockSource: 'forged' }, existing), false);
+});

@@ -381,7 +381,7 @@ export function GlidingFilterBar({
                 aria-pressed={active}
                 onClick={() => onChange(item.value)}
                 className={cn(
-                  'relative overflow-hidden min-h-11 sm:min-h-9 px-4 rounded-lg text-xs font-semibold cursor-pointer transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400',
+                  'relative min-h-11 px-4 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400',
                   active
                     ? 'text-white'
                     : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]',

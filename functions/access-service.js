@@ -73,7 +73,12 @@ function createAccessService(db) {
         change = { ...restore.data().after.access, role: restore.data().after.role, approved: restore.data().after.approved, revision: input.revision };
       }
       if (path === '/remove') change = { ...policy.accessFor(target.data(), access.data()), revision: input.revision, role: target.data().role, status: 'suspended' };
-      const next = policy.validate(change);
+      let next;
+      try {
+        next = policy.validate(change);
+      } catch (err) {
+        fail(err.message, 400);
+      }
       const approved = change.role === 'organizer' ? (path === '/remove' ? false : change.approved ?? target.data().approved ?? false) : true;
       if (input.uid === actorUid && (change.role !== 'superadmin' || next.status !== 'active' || path === '/remove')) fail('You cannot remove your own Super Admin access.');
       if (target.data().role === 'superadmin' || change.role === 'superadmin') {

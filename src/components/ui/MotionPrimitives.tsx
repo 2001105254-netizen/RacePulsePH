@@ -123,16 +123,22 @@ export function AnimatedTabView({
   className?: string;
   children: ReactNode;
 }) {
+  const prefersReducedMotion = useReducedMotion();
+
   // Single-instance keyed enter unmounts the previous tab immediately so portaled
   // top-header controls and desktop viewport locks never overlap across switches.
   return (
     <div className={`relative overflow-x-clip ${className}`}>
       <m.div
         key={tabKey}
-        initial={{
-          opacity: 0,
-          x: direction === 'forward' ? 12 : -12,
-        }}
+        initial={
+          prefersReducedMotion
+            ? { opacity: 1, x: 0 }
+            : {
+                opacity: 0,
+                x: direction === 'forward' ? 12 : -12,
+              }
+        }
         animate={{
           opacity: 1,
           x: 0,
@@ -140,10 +146,14 @@ export function AnimatedTabView({
             transform: 'none',
           },
         }}
-        transition={{
-          duration: 0.16,
-          ease: EMIL_EASE,
-        }}
+        transition={
+          prefersReducedMotion
+            ? { duration: 0 }
+            : {
+                duration: 0.16,
+                ease: EMIL_EASE,
+              }
+        }
         className={`w-full [backface-visibility:hidden] ${className}`}
       >
         {children}

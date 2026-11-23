@@ -22,7 +22,7 @@ export default defineConfig(() => {
             }
             if (id.includes('maplibre-gl') || id.includes('terra-draw')) return 'vendor-map';
             if (id.includes('firebase') || id.includes('@firebase')) return 'vendor-firebase';
-            if (id.includes('xlsx')) return 'vendor-xlsx';
+            if (id.includes('read-excel-file') || id.includes('fflate') || id.includes('saxen')) return 'vendor-spreadsheet';
             if (id.includes('jspdf')) return 'vendor-pdf';
             if (id.includes('html2canvas')) return 'vendor-canvas';
             if (id.includes('qrcode') || id.includes('jsqr')) return 'vendor-qr';

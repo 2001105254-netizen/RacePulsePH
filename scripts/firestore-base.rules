@@ -11,13 +11,14 @@ service cloud.firestore {
         || exists(/databases/$(database)/documents/users/$(request.auth.uid)));
     }
 
-    // One-time codes, reset grants, delivery limits, idempotency records and payment sessions are backend-only.
+    // One-time codes, reset grants, delivery limits, idempotency records, payment sessions and bib claim locks are backend-only.
     match /accountChallenges/{id} { allow read, write: if false; }
     match /accountResetGrants/{id} { allow read, write: if false; }
     match /accountRateLimits/{id} { allow read, write: if false; }
     match /routeIdempotency/{id} { allow read, write: if false; }
     match /payments/{id} { allow read, write: if false; }
     match /pendingRegistrations/{id} { allow read, write: if false; }
+    match /bibClaimLocks/{lockId} { allow read, write: if false; }
 
     function callerDoc() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid));
@@ -28,7 +29,9 @@ service cloud.firestore {
     }
 
     function isSuperAdmin() {
-      return isSignedIn() && callerDoc().data.role == 'superadmin';
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && callerDoc().data.role == 'superadmin';
     }
 
     // Admins retain operational access; irreversible and account-management
@@ -39,12 +42,6 @@ service cloud.firestore {
 
     function isSuperAdminEmail() {
       return isSignedIn() && request.auth.token.email == 'kiahzeh@gmail.com';
-    }
-
-    function superAdminAlreadyClaimed() {
-      return exists(/databases/$(database)/documents/system/meta)
-        && get(/databases/$(database)/documents/system/meta).data.keys().hasAll(['superAdminClaimed'])
-        && get(/databases/$(database)/documents/system/meta).data.superAdminClaimed == true;
     }
 
     function canBootstrapSuperAdmin(data) {
@@ -133,16 +130,40 @@ service cloud.firestore {
         && hasValidUsernameBinding(data.uid, data);
     }
 
+    function isSafeHttpUrl(url) {
+      return url is string && url.size() >= 8 && url.size() <= 2048 && url.matches('^https?://[^\\s]+$');
+    }
+
+    function isSafeStorageOrHttpsUrl(url) {
+      return url is string && url.size() >= 8 && url.size() <= 2048
+        && url.matches('^(https://[^\\s]+|http://(127\\.0\\.0\\.1|localhost)(:[0-9]+)?/[^\\s]+)$');
+    }
+
+    function isSafeProfileImageUrl(url, maxLen) {
+      return url is string && url.size() <= maxLen && (
+        url == ''
+        || isSafeStorageOrHttpsUrl(url)
+        || url.matches('^data:image/(png|jpeg|jpg|webp|gif|avif);base64,[A-Za-z0-9+/=]+$')
+      );
+    }
+
+    function isSafeSocialUrl(url) {
+      return url is string && url.size() <= 160 && (
+        url == ''
+        || url.matches('^https?://[^\\s<>]+$')
+      );
+    }
+
     function hasSafeProfileDetails(data) {
       return (!data.keys().hasAny(['nickname']) || data.nickname == null || (data.nickname is string && data.nickname.size() <= 30))
-        && (!data.keys().hasAny(['photoURL']) || data.photoURL == null || (data.photoURL is string && data.photoURL.size() <= 100000))
-        && (!data.keys().hasAny(['coverURL']) || data.coverURL == null || (data.coverURL is string && data.coverURL.size() <= 150000))
+        && (!data.keys().hasAny(['photoURL']) || data.photoURL == null || isSafeProfileImageUrl(data.photoURL, 100000))
+        && (!data.keys().hasAny(['coverURL']) || data.coverURL == null || isSafeProfileImageUrl(data.coverURL, 150000))
         && (!data.keys().hasAny(['coverPreset']) || data.coverPreset == null || (data.coverPreset is string && data.coverPreset.size() <= 40))
         && (!data.keys().hasAny(['bio']) || data.bio == null || (data.bio is string && data.bio.size() <= 160))
         && (!data.keys().hasAny(['location']) || data.location == null || (data.location is string && data.location.size() <= 80))
         && (!data.keys().hasAny(['runClub']) || data.runClub == null || (data.runClub is string && data.runClub.size() <= 80))
         && (!data.keys().hasAny(['favoriteDistance']) || data.favoriteDistance == null || (data.favoriteDistance is string && data.favoriteDistance.size() <= 30))
-        && (!data.keys().hasAny(['socialLink']) || data.socialLink == null || (data.socialLink is string && data.socialLink.size() <= 160))
+        && (!data.keys().hasAny(['socialLink']) || data.socialLink == null || isSafeSocialUrl(data.socialLink))
         && (!data.keys().hasAny(['emergencyContactName']) || data.emergencyContactName == null || (data.emergencyContactName is string && data.emergencyContactName.size() <= 100))
         && (!data.keys().hasAny(['emergencyContactPhone']) || data.emergencyContactPhone == null || (data.emergencyContactPhone is string && data.emergencyContactPhone.size() <= 30))
         && (!data.keys().hasAny(['shirtSize']) || data.shirtSize == null || (data.shirtSize is string && data.shirtSize.size() <= 20))
@@ -185,12 +206,11 @@ service cloud.firestore {
       allow delete: if isSuperAdmin() || (isSignedIn() && request.auth.uid == uid);
     }
 
-    // Firebase Auth uses email/password internally. This immutable directory
-    // lets the sign-in form resolve an exact username without exposing the
-    // private user profile collection. Only direct document gets are public;
-    // username enumeration/listing is blocked.
+    // Firebase Auth uses email/password internally. Direct lookups are restricted
+    // to signed-in uniqueness checks (missing doc), the owning account, or Super
+    // Admin; public sign-in username resolution goes through Cloud Functions.
     match /usernameIndex/{username} {
-      allow get: if true;
+      allow get: if isSignedIn() && (resource == null || resource.data.uid == request.auth.uid || isSuperAdmin());
       allow list: if false;
       allow create: if isSignedIn()
         && request.auth.token.email_verified == true
@@ -415,10 +435,10 @@ service cloud.firestore {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(paymentFields());
     }
 
-    function organizerConfirmsManualPayment() {
-      return managesRace(resource.data.raceId)
-        && resource.data.paymentStatus == 'pending'
-        && resource.data.paymentMethod == 'manual'
+    function organizerConfirmsManualPaymentWithPerm(canConfirm) {
+      return resource.data.get('paymentStatus', '') == 'pending'
+        && resource.data.get('paymentMethod', '') == 'manual'
+        && canConfirm
         && request.resource.data.paymentStatus == 'paid'
         && request.resource.data.paymentMethod == 'manual'
         && request.resource.data.paymentAmount == resource.data.paymentAmount
@@ -430,62 +450,106 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(paymentFields());
     }
 
-    function isSafeHttpUrl(url) {
-      return url is string && url.size() >= 8 && url.size() <= 2048 && url.matches('^https?://[^\\s]+$');
-    }
-
-    function isSafeStorageOrHttpsUrl(url) {
-      return url is string && url.size() >= 8 && url.size() <= 2048
-        && url.matches('^(https://[^\\s]+|http://(127\\.0\\.0\\.1|localhost)(:[0-9]+)?/[^\\s]+)$');
+    function organizerConfirmsManualPayment() {
+      return organizerConfirmsManualPaymentWithPerm(managesRace(resource.data.raceId));
     }
 
     function isKnownRaceDistance(distances, label) {
-      return distances.size() == 0
-        || (distances.size() > 0 && distances[0].label == label)
-        || (distances.size() > 1 && distances[1].label == label)
-        || (distances.size() > 2 && distances[2].label == label)
-        || (distances.size() > 3 && distances[3].label == label)
-        || (distances.size() > 4 && distances[4].label == label)
-        || (distances.size() > 5 && distances[5].label == label)
-        || (distances.size() > 6 && distances[6].label == label)
-        || (distances.size() > 7 && distances[7].label == label)
-        || (distances.size() > 8 && distances[8].label == label)
-        || (distances.size() > 9 && distances[9].label == label)
-        || (distances.size() > 10 && distances[10].label == label)
-        || (distances.size() > 11 && distances[11].label == label)
-        || distances.size() > 12;
+      let n = distances.size();
+      return n == 0
+        || (n > 0 && distances[0].label == label)
+        || (n > 1 && distances[1].label == label)
+        || (n > 2 && distances[2].label == label)
+        || (n > 3 && distances[3].label == label)
+        || (n > 4 && distances[4].label == label)
+        || (n > 5 && distances[5].label == label)
+        || (n > 6 && distances[6].label == label)
+        || (n > 7 && distances[7].label == label)
+        || (n > 8 && distances[8].label == label)
+        || (n > 9 && distances[9].label == label)
+        || (n > 10 && distances[10].label == label)
+        || (n > 11 && distances[11].label == label)
+        || (n > 12 && distances[12].label == label)
+        || (n > 13 && distances[13].label == label)
+        || (n > 14 && distances[14].label == label)
+        || (n > 15 && distances[15].label == label)
+        || (n > 16 && distances[16].label == label)
+        || (n > 17 && distances[17].label == label)
+        || (n > 18 && distances[18].label == label)
+        || (n > 19 && distances[19].label == label);
     }
 
     function distanceRequiresPayment(distances, label) {
-      return (distances.size() > 0 && distances[0].label == label && distances[0].get('price', 0) > 0)
-        || (distances.size() > 1 && distances[1].label == label && distances[1].get('price', 0) > 0)
-        || (distances.size() > 2 && distances[2].label == label && distances[2].get('price', 0) > 0)
-        || (distances.size() > 3 && distances[3].label == label && distances[3].get('price', 0) > 0)
-        || (distances.size() > 4 && distances[4].label == label && distances[4].get('price', 0) > 0)
-        || (distances.size() > 5 && distances[5].label == label && distances[5].get('price', 0) > 0)
-        || (distances.size() > 6 && distances[6].label == label && distances[6].get('price', 0) > 0)
-        || (distances.size() > 7 && distances[7].label == label && distances[7].get('price', 0) > 0)
-        || (distances.size() > 8 && distances[8].label == label && distances[8].get('price', 0) > 0)
-        || (distances.size() > 9 && distances[9].label == label && distances[9].get('price', 0) > 0)
-        || (distances.size() > 10 && distances[10].label == label && distances[10].get('price', 0) > 0)
-        || (distances.size() > 11 && distances[11].label == label && distances[11].get('price', 0) > 0)
-        || distances.size() > 12;
+      let n = distances.size();
+      return (n > 0 && distances[0].label == label && distances[0].get('price', 0) > 0)
+        || (n > 1 && distances[1].label == label && distances[1].get('price', 0) > 0)
+        || (n > 2 && distances[2].label == label && distances[2].get('price', 0) > 0)
+        || (n > 3 && distances[3].label == label && distances[3].get('price', 0) > 0)
+        || (n > 4 && distances[4].label == label && distances[4].get('price', 0) > 0)
+        || (n > 5 && distances[5].label == label && distances[5].get('price', 0) > 0)
+        || (n > 6 && distances[6].label == label && distances[6].get('price', 0) > 0)
+        || (n > 7 && distances[7].label == label && distances[7].get('price', 0) > 0)
+        || (n > 8 && distances[8].label == label && distances[8].get('price', 0) > 0)
+        || (n > 9 && distances[9].label == label && distances[9].get('price', 0) > 0)
+        || (n > 10 && distances[10].label == label && distances[10].get('price', 0) > 0)
+        || (n > 11 && distances[11].label == label && distances[11].get('price', 0) > 0)
+        || (n > 12 && distances[12].label == label && distances[12].get('price', 0) > 0)
+        || (n > 13 && distances[13].label == label && distances[13].get('price', 0) > 0)
+        || (n > 14 && distances[14].label == label && distances[14].get('price', 0) > 0)
+        || (n > 15 && distances[15].label == label && distances[15].get('price', 0) > 0)
+        || (n > 16 && distances[16].label == label && distances[16].get('price', 0) > 0)
+        || (n > 17 && distances[17].label == label && distances[17].get('price', 0) > 0)
+        || (n > 18 && distances[18].label == label && distances[18].get('price', 0) > 0)
+        || (n > 19 && distances[19].label == label && distances[19].get('price', 0) > 0);
+    }
+
+    function distanceIsFreeInRace(distances, label) {
+      let n = distances.size();
+      return (n > 0 && distances[0].label == label && distances[0].get('price', 0) <= 0)
+        || (n > 1 && distances[1].label == label && distances[1].get('price', 0) <= 0)
+        || (n > 2 && distances[2].label == label && distances[2].get('price', 0) <= 0)
+        || (n > 3 && distances[3].label == label && distances[3].get('price', 0) <= 0)
+        || (n > 4 && distances[4].label == label && distances[4].get('price', 0) <= 0)
+        || (n > 5 && distances[5].label == label && distances[5].get('price', 0) <= 0)
+        || (n > 6 && distances[6].label == label && distances[6].get('price', 0) <= 0)
+        || (n > 7 && distances[7].label == label && distances[7].get('price', 0) <= 0)
+        || (n > 8 && distances[8].label == label && distances[8].get('price', 0) <= 0)
+        || (n > 9 && distances[9].label == label && distances[9].get('price', 0) <= 0)
+        || (n > 10 && distances[10].label == label && distances[10].get('price', 0) <= 0)
+        || (n > 11 && distances[11].label == label && distances[11].get('price', 0) <= 0)
+        || (n > 12 && distances[12].label == label && distances[12].get('price', 0) <= 0)
+        || (n > 13 && distances[13].label == label && distances[13].get('price', 0) <= 0)
+        || (n > 14 && distances[14].label == label && distances[14].get('price', 0) <= 0)
+        || (n > 15 && distances[15].label == label && distances[15].get('price', 0) <= 0)
+        || (n > 16 && distances[16].label == label && distances[16].get('price', 0) <= 0)
+        || (n > 17 && distances[17].label == label && distances[17].get('price', 0) <= 0)
+        || (n > 18 && distances[18].label == label && distances[18].get('price', 0) <= 0)
+        || (n > 19 && distances[19].label == label && distances[19].get('price', 0) <= 0);
     }
 
     function manualAmountCoversDistance(distances, label, amount) {
-      return !distanceRequiresPayment(distances, label)
-        || (distances.size() > 0 && distances[0].label == label && amount >= distances[0].get('price', 0))
-        || (distances.size() > 1 && distances[1].label == label && amount >= distances[1].get('price', 0))
-        || (distances.size() > 2 && distances[2].label == label && amount >= distances[2].get('price', 0))
-        || (distances.size() > 3 && distances[3].label == label && amount >= distances[3].get('price', 0))
-        || (distances.size() > 4 && distances[4].label == label && amount >= distances[4].get('price', 0))
-        || (distances.size() > 5 && distances[5].label == label && amount >= distances[5].get('price', 0))
-        || (distances.size() > 6 && distances[6].label == label && amount >= distances[6].get('price', 0))
-        || (distances.size() > 7 && distances[7].label == label && amount >= distances[7].get('price', 0))
-        || (distances.size() > 8 && distances[8].label == label && amount >= distances[8].get('price', 0))
-        || (distances.size() > 9 && distances[9].label == label && amount >= distances[9].get('price', 0))
-        || (distances.size() > 10 && distances[10].label == label && amount >= distances[10].get('price', 0))
-        || (distances.size() > 11 && distances[11].label == label && amount >= distances[11].get('price', 0));
+      let n = distances.size();
+      return n == 0
+        || (n > 0 && distances[0].label == label && amount >= distances[0].get('price', 0))
+        || (n > 1 && distances[1].label == label && amount >= distances[1].get('price', 0))
+        || (n > 2 && distances[2].label == label && amount >= distances[2].get('price', 0))
+        || (n > 3 && distances[3].label == label && amount >= distances[3].get('price', 0))
+        || (n > 4 && distances[4].label == label && amount >= distances[4].get('price', 0))
+        || (n > 5 && distances[5].label == label && amount >= distances[5].get('price', 0))
+        || (n > 6 && distances[6].label == label && amount >= distances[6].get('price', 0))
+        || (n > 7 && distances[7].label == label && amount >= distances[7].get('price', 0))
+        || (n > 8 && distances[8].label == label && amount >= distances[8].get('price', 0))
+        || (n > 9 && distances[9].label == label && amount >= distances[9].get('price', 0))
+        || (n > 10 && distances[10].label == label && amount >= distances[10].get('price', 0))
+        || (n > 11 && distances[11].label == label && amount >= distances[11].get('price', 0))
+        || (n > 12 && distances[12].label == label && amount >= distances[12].get('price', 0))
+        || (n > 13 && distances[13].label == label && amount >= distances[13].get('price', 0))
+        || (n > 14 && distances[14].label == label && amount >= distances[14].get('price', 0))
+        || (n > 15 && distances[15].label == label && amount >= distances[15].get('price', 0))
+        || (n > 16 && distances[16].label == label && amount >= distances[16].get('price', 0))
+        || (n > 17 && distances[17].label == label && amount >= distances[17].get('price', 0))
+        || (n > 18 && distances[18].label == label && amount >= distances[18].get('price', 0))
+        || (n > 19 && distances[19].label == label && amount >= distances[19].get('price', 0));
     }
 
     function selfRegistrationAllowed(data) {
@@ -496,23 +560,24 @@ service cloud.firestore {
     function selfRegistrationWithRace(data, race) {
       let raceDistances = race.get('distances', []);
       return race.get('registrationOpen', true)
-        && isKnownRaceDistance(raceDistances, data.distance)
         && (
           (hasNoPaymentMetadata(data)
             && (raceDistances.size() > 0
-              ? !distanceRequiresPayment(raceDistances, data.distance)
+              ? distanceIsFreeInRace(raceDistances, data.distance)
               : (!race.get('onlinePaymentEnabled', false) && !race.get('manualPaymentEnabled', false))))
           || createsManualPaymentReservationForRace(data, race, raceDistances)
         );
     }
 
     function createsManualPaymentReservation(data) {
-      return exists(/databases/$(database)/documents/races/$(data.raceId))
-        && createsManualPaymentReservationForRace(
-          data,
-          get(/databases/$(database)/documents/races/$(data.raceId)).data,
-          get(/databases/$(database)/documents/races/$(data.raceId)).data.get('distances', [])
-        );
+      return data.get('paymentStatus', '') == 'pending'
+        && data.get('paymentMethod', '') == 'manual'
+        && exists(/databases/$(database)/documents/races/$(data.raceId))
+        && createsManualPaymentReservationWithRace(data, get(/databases/$(database)/documents/races/$(data.raceId)).data);
+    }
+
+    function createsManualPaymentReservationWithRace(data, race) {
+      return createsManualPaymentReservationForRace(data, race, race.get('distances', []));
     }
 
     function createsManualPaymentReservationForRace(data, race, raceDistances) {
@@ -522,7 +587,6 @@ service cloud.firestore {
         && data.paymentReference is string && data.paymentReference.size() >= 4 && data.paymentReference.size() <= 100
         && !data.keys().hasAny(['paymentId', 'paymentPaidAt'])
         && race.manualPaymentEnabled == true
-        && isKnownRaceDistance(raceDistances, data.distance)
         && manualAmountCoversDistance(raceDistances, data.distance, data.paymentAmount);
     }
 
@@ -619,14 +683,26 @@ service cloud.firestore {
 
     function isValidChipRead(data) {
       return data.keys().hasAll(['raceId', 'bibNumber', 'checkpointId', 'timestamp', 'source', 'recordedBy', 'createdAt'])
-        && data.raceId is string
+        && data.keys().hasOnly([
+          'id', 'raceId', 'bibNumber', 'chipId', 'checkpointId', 'timestamp', 'source',
+          'recordedBy', 'createdAt', 'bridgeEventId', 'antenna', 'readerSequence',
+          'monotonicTicks', 'monotonicFrequency', 'clockSource'
+        ])
+        && (!data.keys().hasAny(['id']) || (data.id is string && data.id.size() >= 1 && data.id.size() <= 128))
+        && data.raceId is string && data.raceId.size() >= 1 && data.raceId.size() <= 128
         && data.bibNumber is string && data.bibNumber.size() >= 1 && data.bibNumber.size() <= 20
-        && data.checkpointId is string
-        && data.timestamp is string
+        && data.checkpointId is string && data.checkpointId.size() >= 1 && data.checkpointId.size() <= 128
+        && data.timestamp is string && data.timestamp.size() >= 1 && data.timestamp.size() <= 128
         && data.source is string && (data.source == 'manual' || data.source == 'rfid-bridge')
-        && data.recordedBy is string
-        && data.createdAt is string
-        && (!data.keys().hasAny(['chipId']) || data.chipId is string);
+        && data.recordedBy is string && data.recordedBy.size() >= 1 && data.recordedBy.size() <= 128
+        && data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 128
+        && (!data.keys().hasAny(['chipId']) || (data.chipId is string && data.chipId.size() <= 128))
+        && (!data.keys().hasAny(['bridgeEventId']) || (data.bridgeEventId is string && data.bridgeEventId.size() <= 80))
+        && (!data.keys().hasAny(['antenna']) || (data.antenna is int && data.antenna >= 1 && data.antenna <= 8))
+        && (!data.keys().hasAny(['readerSequence']) || (data.readerSequence is int && data.readerSequence >= 0))
+        && (!data.keys().hasAny(['monotonicTicks']) || (data.monotonicTicks is string && data.monotonicTicks.size() <= 32))
+        && (!data.keys().hasAny(['monotonicFrequency']) || (data.monotonicFrequency is string && data.monotonicFrequency.size() <= 32))
+        && (!data.keys().hasAny(['clockSource']) || (data.clockSource is string && data.clockSource.size() <= 64));
     }
 
     match /chipReads/{readId} {
@@ -665,17 +741,18 @@ service cloud.firestore {
 
     function isValidOrder(data) {
       return data.keys().hasAll(['runnerName', 'bibNumber', 'distance', 'finishingTime', 'status', 'createdAt', 'updatedAt'])
-        && data.keys().size() >= 7 && data.keys().size() <= 10
+        && data.keys().hasOnly(['id', 'runnerName', 'bibNumber', 'distance', 'finishingTime', 'status', 'createdAt', 'updatedAt', 'rank', 'customInscription', 'ownerUid'])
+        && (!data.keys().hasAny(['id']) || (data.id is string && data.id.size() >= 1 && data.id.size() <= 64))
         && data.runnerName is string && data.runnerName.size() >= 1 && data.runnerName.size() <= 100
         && data.bibNumber is string && data.bibNumber.size() >= 1 && data.bibNumber.size() <= 20
         && data.distance is string && data.distance.size() >= 1 && data.distance.size() <= 50
-        && data.finishingTime is string && data.finishingTime.size() >= 1 && data.finishingTime.size() <= 20
+        && data.finishingTime is string && data.finishingTime.size() >= 1 && data.finishingTime.size() <= 32
         && data.status is string && (data.status == 'queued' || data.status == 'inprogress' || data.status == 'ready' || data.status == 'completed')
-        && data.createdAt is string
-        && data.updatedAt is string
+        && data.createdAt is string && data.createdAt.size() <= 64
+        && data.updatedAt is string && data.updatedAt.size() <= 64
         && (!data.keys().hasAny(['rank']) || (data.rank is string && data.rank.size() <= 50))
         && (!data.keys().hasAny(['customInscription']) || (data.customInscription is string && data.customInscription.size() <= 150))
-        && (!data.keys().hasAny(['ownerUid']) || data.ownerUid is string);
+        && (!data.keys().hasAny(['ownerUid']) || (data.ownerUid is string && data.ownerUid.size() <= 128));
     }
 
     match /orders/{orderId} {

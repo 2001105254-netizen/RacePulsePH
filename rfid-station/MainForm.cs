@@ -22,6 +22,7 @@ namespace RacePulseTimingStation
         private readonly NumericUpDown _readerPort = new NumericUpDown();
         private readonly TextBox _endpoint = new TextBox();
         private readonly NumericUpDown _dedupe = new NumericUpDown();
+        private readonly TextBox _raceId = new TextBox();
         private readonly CheckedListBox _antennas = new CheckedListBox();
         private readonly Label _bridgeStatus = new Label();
         private readonly ListBox _logs = new ListBox();
@@ -89,7 +90,7 @@ namespace RacePulseTimingStation
         private Control BuildSettingsPanel()
         {
             var panel = NewPanel();
-            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 2, RowCount = 8 };
+            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 2, RowCount = 9 };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             panel.Controls.Add(layout);
@@ -106,6 +107,7 @@ namespace RacePulseTimingStation
             _dedupe.Increment = 500;
             _dedupe.Value = 4000;
             AddField(layout, "Duplicate guard", _dedupe, 4, "milliseconds");
+            AddField(layout, "Race ID", _raceId, 5, "optional default event ID");
 
             var antennaBox = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.LeftToRight };
             for (var antenna = 1; antenna <= 8; antenna++) _antennas.Items.Add(antenna, antenna <= 2);
@@ -115,7 +117,7 @@ namespace RacePulseTimingStation
             _antennas.ForeColor = Color.White;
             _antennas.BorderStyle = BorderStyle.FixedSingle;
             antennaBox.Controls.Add(_antennas);
-            AddField(layout, "Active antennas", antennaBox, 5);
+            AddField(layout, "Active antennas", antennaBox, 6);
 
             var helper = new Label
             {
@@ -125,7 +127,7 @@ namespace RacePulseTimingStation
                 ForeColor = Color.FromArgb(182, 182, 191),
                 Padding = new Padding(0, 5, 0, 8)
             };
-            layout.Controls.Add(helper, 1, 6);
+            layout.Controls.Add(helper, 1, 7);
 
             var actionFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(0, 8, 0, 0) };
             ConfigureButton(_testButton, "Test reader", Color.FromArgb(62, 88, 154));
@@ -137,7 +139,7 @@ namespace RacePulseTimingStation
             actionFlow.Controls.Add(_testButton);
             actionFlow.Controls.Add(_startBridgeButton);
             actionFlow.Controls.Add(_stopBridgeButton);
-            layout.Controls.Add(actionFlow, 1, 7);
+            layout.Controls.Add(actionFlow, 1, 8);
             return panel;
         }
 
@@ -264,6 +266,7 @@ namespace RacePulseTimingStation
             _readerPort.Value = Math.Max(_readerPort.Minimum, Math.Min(_readerPort.Maximum, config.ReaderPort));
             _endpoint.Text = config.RacePulseEndpoint ?? "http://localhost:3000/api/rfid-events";
             _dedupe.Value = Math.Max(_dedupe.Minimum, Math.Min(_dedupe.Maximum, config.DedupeMilliseconds));
+            _raceId.Text = config.RaceId ?? "";
             for (var index = 0; index < _antennas.Items.Count; index++)
                 _antennas.SetItemChecked(index, (config.Antennas ?? new int[0]).Contains((int)_antennas.Items[index]));
         }
@@ -276,6 +279,7 @@ namespace RacePulseTimingStation
                 ReaderPort = Decimal.ToInt32(_readerPort.Value),
                 RacePulseEndpoint = _endpoint.Text.Trim(),
                 DedupeMilliseconds = Decimal.ToInt32(_dedupe.Value),
+                RaceId = _raceId.Text.Trim(),
                 Antennas = _antennas.CheckedItems.Cast<int>().OrderBy(antenna => antenna).ToArray(),
                 BridgeKey = _bridgeKey
             };
@@ -287,7 +291,10 @@ namespace RacePulseTimingStation
             var settingsDirectory = Path.GetDirectoryName(SettingsPath);
             if (!string.IsNullOrEmpty(settingsDirectory))
                 Directory.CreateDirectory(settingsDirectory);
-            File.WriteAllText(SettingsPath, _json.Serialize(config));
+            var tmpPath = SettingsPath + ".tmp";
+            File.WriteAllText(tmpPath, _json.Serialize(config));
+            File.Copy(tmpPath, SettingsPath, true);
+            File.Delete(tmpPath);
             AddLog("Settings saved to user application data.", false);
         }
 
@@ -333,7 +340,7 @@ namespace RacePulseTimingStation
 
         private void UpdateBridgeState(bool isRunning)
         {
-            _bridgeStatus.Text = isRunning ? "● BRIDGE LIVE — reads will be sent to RacePulse" : "● BRIDGE STOPPED — no RFID reads are being sent";
+            _bridgeStatus.Text = isRunning ? "BRIDGE LIVE: reads will be sent to RacePulse" : "BRIDGE STOPPED: no RFID reads are being sent";
             _bridgeStatus.BackColor = isRunning ? Color.FromArgb(18, 76, 55) : Color.FromArgb(70, 35, 37);
             _bridgeStatus.ForeColor = isRunning ? Color.FromArgb(74, 238, 171) : Color.FromArgb(255, 160, 153);
             _startBridgeButton.Enabled = !isRunning;
@@ -367,6 +374,7 @@ namespace RacePulseTimingStation
                     WorkingDirectory = Path.GetDirectoryName(serverPath),
                     UseShellExecute = false,
                     CreateNoWindow = true,
+                    RedirectStandardInput = true,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true
                 };
@@ -374,6 +382,10 @@ namespace RacePulseTimingStation
                 var dataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RacePulseTimingStation", "data");
                 Directory.CreateDirectory(dataDirectory);
                 info.EnvironmentVariables["RACEPULSE_DATA_DIR"] = dataDirectory;
+                if (!string.IsNullOrWhiteSpace(_bridgeKey))
+                    info.EnvironmentVariables["RACEPULSE_BRIDGE_KEY"] = _bridgeKey.Trim();
+                if (!string.IsNullOrWhiteSpace(_raceId.Text))
+                    info.EnvironmentVariables["RACEPULSE_BRIDGE_RACE_ID"] = _raceId.Text.Trim();
                 _localConsoleProcess = new Process { StartInfo = info, EnableRaisingEvents = true };
                 _localConsoleProcess.OutputDataReceived += (sender, args) => { if (!string.IsNullOrWhiteSpace(args.Data)) AddLog("RacePulse: " + args.Data, false); };
                 _localConsoleProcess.ErrorDataReceived += (sender, args) => { if (!string.IsNullOrWhiteSpace(args.Data)) AddLog("RacePulse: " + args.Data, true); };
@@ -421,7 +433,7 @@ namespace RacePulseTimingStation
         {
             SafeUi(() =>
             {
-                _logs.Items.Add("[" + DateTime.Now.ToString("HH:mm:ssfffff") + "] " + (isError ? "ERROR  " : "") + message);
+                _logs.Items.Add("[" + DateTime.Now.ToString("HH:mm:ss.fffff") + "] " + (isError ? "ERROR  " : "") + message);
                 while (_logs.Items.Count > 400) _logs.Items.RemoveAt(0);
                 _logs.TopIndex = _logs.Items.Count - 1;
             });
@@ -443,7 +455,16 @@ namespace RacePulseTimingStation
             _bridge.Dispose();
             if (_localConsoleProcess != null && !_localConsoleProcess.HasExited)
             {
-                try { _localConsoleProcess.Kill(); } catch { }
+                try
+                {
+                    try { _localConsoleProcess.StandardInput?.Close(); } catch (Exception ex) { AddLog("Local console stdin close warning: " + ex.Message, true); }
+                    if (!_localConsoleProcess.WaitForExit(1500))
+                        _localConsoleProcess.Kill();
+                }
+                catch (Exception ex)
+                {
+                    AddLog("Local console shutdown warning: " + ex.Message, true);
+                }
             }
             base.OnFormClosing(e);
         }

@@ -4,8 +4,11 @@ import path from "path";
 import fs from "fs";
 import crypto from 'crypto';
 import zlib from 'zlib';
+import { promisify } from 'util';
 import * as lanPolicy from './functions/lan-policy.js';
 import * as requestGuard from './functions/request-guard.js';
+
+const gzipAsync = promisify(zlib.gzip);
 
 interface EngravingOrder {
   id: string;
@@ -56,6 +59,7 @@ interface RfidBridgeEvent {
   antenna: number;
   timestamp: string;
   receivedAt: string;
+  receivedAtMs?: number;
 }
 
 const PORT = Number(process.env.PORT || 3000);
@@ -158,38 +162,79 @@ const RFID_EVENTS_DB_FILE = path.join(DATA_DIRECTORY, "local_rfid_events.json");
 // Load initial orders from a local JSON db file (handles on-site server restarts)
 let orders: Record<string, EngravingOrder> = loadJsonStore<EngravingOrder>(DB_FILE, "[Local Server DB Orders]");
 
-function writeJsonAtomic(filePath: string, data: unknown): void {
-  const serialized = JSON.stringify(data, null, 2);
+function writeJsonAtomicSync(filePath: string, serialized: string): void {
   const tmpFile = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  fs.writeFileSync(tmpFile, serialized, "utf-8");
   try {
-    fs.writeFileSync(tmpFile, serialized, "utf-8");
     fs.renameSync(tmpFile, filePath);
-  } catch {
+  } catch (err) {
     try {
       fs.unlinkSync(tmpFile);
     } catch {
-      // Ignore cleanup error if temp file was never created
+      // Ignore cleanup error if temp file was already removed
     }
-    fs.writeFileSync(filePath, serialized, "utf-8");
+    throw err;
   }
 }
 
-function saveDB() {
+const TRANSIENT_FS_ERROR_CODES = new Set(['EPERM', 'EBUSY', 'EACCES']);
+
+async function writeSerializedAtomicAsync(filePath: string, serialized: string): Promise<void> {
+  const tmpFile = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  await fs.promises.writeFile(tmpFile, serialized, 'utf-8');
   try {
-    writeJsonAtomic(DB_FILE, orders);
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        await fs.promises.rename(tmpFile, filePath);
+        return;
+      } catch (err: unknown) {
+        const code = (err as NodeJS.ErrnoException)?.code || '';
+        if (!TRANSIENT_FS_ERROR_CODES.has(code) || attempt === 4) {
+          throw err;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 15 * (attempt + 1)));
+      }
+    }
+  } catch (err) {
+    try {
+      await fs.promises.unlink(tmpFile);
+    } catch {
+      // Ignore cleanup error if temp file was never created or already removed
+    }
+    throw err;
+  }
+}
+
+function createSerializedStorePersister(filePath: string, getData: () => unknown): () => Promise<void> {
+  let queue: Promise<void> = Promise.resolve();
+  return () => {
+    const serialized = JSON.stringify(getData(), null, 2);
+    const next = queue.then(() => writeSerializedAtomicAsync(filePath, serialized));
+    queue = next.catch(() => undefined);
+    return next;
+  };
+}
+
+const persistOrders = createSerializedStorePersister(DB_FILE, () => orders);
+async function saveDB(): Promise<void> {
+  try {
+    await persistOrders();
   } catch (err) {
     console.error("[Local Server DB] Write failed:", err);
+    throw err;
   }
 }
 
 // Load initial chip reads (timing checkpoint scans - manual today, RFID bridge later)
 let chipReads: Record<string, ChipRead> = loadJsonStore<ChipRead>(CHIP_READS_DB_FILE, "[Local Server DB ChipReads]");
 
-function saveChipReadsDB() {
+const persistChipReads = createSerializedStorePersister(CHIP_READS_DB_FILE, () => chipReads);
+async function saveChipReadsDB(): Promise<void> {
   try {
-    writeJsonAtomic(CHIP_READS_DB_FILE, chipReads);
+    await persistChipReads();
   } catch (err) {
     console.error("[Local Server DB] Chip reads write failed:", err);
+    throw err;
   }
 }
 
@@ -197,22 +242,36 @@ function saveChipReadsDB() {
 // the signed-in browser.  Events are pruned regularly so old race-day traffic
 // cannot be replayed on a later race.
 let rfidEvents: Record<string, RfidBridgeEvent> = loadJsonStore<RfidBridgeEvent>(RFID_EVENTS_DB_FILE, "[RFID Bridge]");
+for (const event of Object.values(rfidEvents)) {
+  if (typeof event.receivedAtMs !== 'number' || !Number.isFinite(event.receivedAtMs)) {
+    const parsed = Date.parse(event.receivedAt);
+    event.receivedAtMs = Number.isNaN(parsed) ? 0 : parsed;
+  }
+}
+
+function eventReceivedMs(event: RfidBridgeEvent): number {
+  if (typeof event.receivedAtMs === 'number' && Number.isFinite(event.receivedAtMs)) {
+    return event.receivedAtMs;
+  }
+  const parsed = Date.parse(event.receivedAt);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
 
 function pruneRfidEvents(): void {
   const oldestAllowed = Date.now() - 12 * 60 * 60 * 1000;
   for (const [id, event] of Object.entries(rfidEvents)) {
-    if (Number.isNaN(Date.parse(event.receivedAt)) || Date.parse(event.receivedAt) < oldestAllowed) {
+    const ms = eventReceivedMs(event);
+    if (ms <= 0 || ms < oldestAllowed) {
       delete rfidEvents[id];
     }
   }
-
-  // Retain every event within the recovery window, including large bursts.
 }
 
+const persistRfidEvents = createSerializedStorePersister(RFID_EVENTS_DB_FILE, () => rfidEvents);
 let rfidEventsFlushTimer: NodeJS.Timeout | null = null;
 let rfidEventsDirty = false;
 
-function saveRfidEventsDBNow(): void {
+function saveRfidEventsDBNowSync(): void {
   if (rfidEventsFlushTimer) {
     clearTimeout(rfidEventsFlushTimer);
     rfidEventsFlushTimer = null;
@@ -220,9 +279,9 @@ function saveRfidEventsDBNow(): void {
   rfidEventsDirty = false;
   try {
     pruneRfidEvents();
-    writeJsonAtomic(RFID_EVENTS_DB_FILE, rfidEvents);
+    writeJsonAtomicSync(RFID_EVENTS_DB_FILE, JSON.stringify(rfidEvents, null, 2));
   } catch (err) {
-    console.error("[RFID Bridge] Event queue write failed:", err);
+    console.error("[RFID Bridge] Event queue shutdown write failed:", err);
   }
 }
 
@@ -232,7 +291,11 @@ function saveRfidEventsDB(): void {
   rfidEventsFlushTimer = setTimeout(() => {
     rfidEventsFlushTimer = null;
     if (rfidEventsDirty) {
-      saveRfidEventsDBNow();
+      rfidEventsDirty = false;
+      pruneRfidEvents();
+      void persistRfidEvents().catch((err) => {
+        console.error("[RFID Bridge] Event queue write failed:", err);
+      });
     }
   }, 120);
   rfidEventsFlushTimer.unref?.();
@@ -304,19 +367,35 @@ async function startServer() {
     return res.status(429).json({ error: message, retryAfter: Math.max(1, retryAfter) });
   };
 
-  // Security headers on all responses
+  // Correlation ID & structured API access log (no secrets/tokens/bodies)
   app.use((req, res, next) => {
+    const incomingId = req.get('X-Request-Id');
+    const requestId = incomingId && /^[a-zA-Z0-9._:-]{4,64}$/.test(incomingId) ? incomingId : crypto.randomUUID();
+    const startedAt = Date.now();
+    res.locals.requestId = requestId;
+    res.setHeader('X-Request-Id', requestId);
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
     res.setHeader("X-Permitted-Cross-Domain-Policies", "none");
     if (req.path.startsWith("/api")) {
       res.setHeader("Cache-Control", "no-store");
+      res.on('finish', () => {
+        console.log(JSON.stringify({
+          ts: new Date().toISOString(),
+          level: res.statusCode >= 500 ? 'error' : 'info',
+          requestId,
+          method: req.method,
+          path: req.path,
+          status: res.statusCode,
+          durationMs: Date.now() - startedAt,
+        }));
+      });
     }
     next();
   });
 
-  // Lightweight gzip compression for JSON API payloads > 1 KiB
+  // Asynchronous gzip compression for JSON API payloads > 1 KiB
   app.use('/api', (req, res, next) => {
     const acceptEncoding = String(req.get('Accept-Encoding') || '');
     if (!/\bgzip\b/i.test(acceptEncoding)) {
@@ -329,11 +408,18 @@ async function startServer() {
       if (payload.byteLength < 1024 || res.headersSent) {
         return origJson(body);
       }
-      const compressed = zlib.gzipSync(payload);
-      res.setHeader('Content-Encoding', 'gzip');
-      res.setHeader('Vary', 'Accept-Encoding');
-      res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      return res.send(compressed);
+      void gzipAsync(payload)
+        .then((compressed) => {
+          if (res.headersSent) return;
+          res.setHeader('Content-Encoding', 'gzip');
+          res.setHeader('Vary', 'Accept-Encoding');
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.send(compressed);
+        })
+        .catch(() => {
+          if (!res.headersSent) origJson(body);
+        });
+      return res;
     }) as express.Response['json'];
     next();
   });
@@ -381,7 +467,7 @@ async function startServer() {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Vary", "Origin");
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-RacePulse-Bridge-Key, X-Firebase-AppCheck, X-Turnstile-Token, Idempotency-Key");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-RacePulse-Bridge-Key, X-Firebase-AppCheck, X-Turnstile-Token, Idempotency-Key, X-Request-Id");
       res.setHeader("Access-Control-Expose-Headers", "Retry-After");
     }
     if (req.method === "OPTIONS") {
@@ -399,6 +485,18 @@ async function startServer() {
       bridgeConfigured: Boolean((process.env.RACEPULSE_BRIDGE_KEY || '').length >= 32 && process.env.RACEPULSE_BRIDGE_RACE_ID),
       timestamp: new Date().toISOString(),
     });
+  });
+
+  app.get('/api/readyz', async (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const probe = path.join(DATA_DIRECTORY, `.readyz.${process.pid}.${crypto.randomUUID()}.tmp`);
+    try {
+      await fs.promises.writeFile(probe, 'ok', 'utf-8');
+      await fs.promises.unlink(probe);
+      res.json({ ready: true, service: 'racepulse-lan-hub', timestamp: new Date().toISOString() });
+    } catch {
+      res.status(503).json({ ready: false, error: 'Local persistence directory is not writable.' });
+    }
   });
 
   app.get('/api/routes/health', (_req, res) => {
@@ -532,7 +630,7 @@ async function startServer() {
   });
 
   // POST/Create/Update order
-  app.post("/api/orders", (req, res) => {
+  app.post("/api/orders", async (req, res) => {
     const orderData = req.body as Partial<EngravingOrder>;
     if (
       !isValidRecordId(orderData.id) ||
@@ -573,14 +671,20 @@ async function startServer() {
     };
 
     orders[orderId] = merged;
-    saveDB();
+    try {
+      await saveDB();
+    } catch {
+      if (existing) orders[orderId] = existing;
+      else delete orders[orderId];
+      res.status(503).json({ error: "Failed to persist order locally." });
+      return;
+    }
 
-    console.log(`[Local Server DB] Order ${sanitizeLog(orderId)} saved/updated for runner ${sanitizeLog(merged.runnerName)}. Status: ${merged.status}`);
     res.json({ success: true, order: merged });
   });
 
   // DELETE single order
-  app.delete("/api/orders/:id", (req, res) => {
+  app.delete("/api/orders/:id", async (req, res) => {
     const orderId = req.params.id;
     if (!isValidRecordId(orderId)) {
       res.status(400).json({ error: "Invalid order ID." });
@@ -588,10 +692,14 @@ async function startServer() {
     }
     const existing = ownRecord(orders, orderId);
     if (existing) {
-      const removedName = existing.runnerName;
       delete orders[orderId];
-      saveDB();
-      console.log(`[Local Server DB] Removed order ${sanitizeLog(orderId)} for runner ${sanitizeLog(removedName)}.`);
+      try {
+        await saveDB();
+      } catch {
+        orders[orderId] = existing;
+        res.status(503).json({ error: "Failed to persist order deletion locally." });
+        return;
+      }
       res.json({ success: true, message: `Order ${orderId} deleted.` });
     } else {
       res.status(404).json({ error: "Order not found." });
@@ -599,10 +707,16 @@ async function startServer() {
   });
 
   // DELETE ALL (Reset Queue)
-  app.post("/api/orders/reset", (req, res) => {
+  app.post("/api/orders/reset", async (_req, res) => {
+    const prevOrders = orders;
     orders = {};
-    saveDB();
-    console.log("[Local Server DB] Active queue completely reset by administrator.");
+    try {
+      await saveDB();
+    } catch {
+      orders = prevOrders;
+      res.status(503).json({ error: "Failed to persist order reset locally." });
+      return;
+    }
     res.json({ success: true, message: "Local queue completely cleared." });
   });
 
@@ -610,13 +724,19 @@ async function startServer() {
   // Same contract works for manual entry today and a future RFID reader bridge
   // (it just needs to POST here with source: "rfid-bridge" instead of "manual").
 
-  // GET/Read all recorded checkpoint reads
+  // GET/Read recorded checkpoint reads with optional ?raceId= and ?limit= filtering
   app.get("/api/chip-reads", (req, res) => {
-    res.json({ chipReads: Object.values(chipReads).filter(record => lanPolicy.visible(res.locals.accessSession, 'chipReads', record)) });
+    const raceFilter = typeof req.query.raceId === 'string' ? req.query.raceId.trim() : '';
+    const limitRaw = typeof req.query.limit === 'string' ? Number.parseInt(req.query.limit, 10) : 0;
+    const maxLimit = Number.isInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, MAX_LOCAL_CHIP_READS) : MAX_LOCAL_CHIP_READS;
+    const filtered = Object.values(chipReads)
+      .filter((record) => (!raceFilter || record.raceId === raceFilter) && lanPolicy.visible(res.locals.accessSession, 'chipReads', record))
+      .slice(0, maxLimit);
+    res.json({ chipReads: filtered });
   });
 
   // POST/Create a new chip read
-  app.post("/api/chip-reads", (req, res) => {
+  app.post("/api/chip-reads", async (req, res) => {
     const readData = req.body as Partial<ChipRead>;
     if (
       !isValidRecordId(readData.id) ||
@@ -637,7 +757,8 @@ async function startServer() {
       return;
     }
 
-    if (!ownRecord(chipReads, readData.id) && Object.keys(chipReads).length >= MAX_LOCAL_CHIP_READS) {
+    const previous = ownRecord(chipReads, readData.id);
+    if (!previous && Object.keys(chipReads).length >= MAX_LOCAL_CHIP_READS) {
       res.status(507).json({ error: "Local chip-reads capacity reached." });
       return;
     }
@@ -657,22 +778,35 @@ async function startServer() {
     };
 
     chipReads[record.id] = record;
-    saveChipReadsDB();
+    try {
+      await saveChipReadsDB();
+    } catch {
+      if (previous) chipReads[record.id] = previous;
+      else delete chipReads[record.id];
+      res.status(503).json({ error: "Failed to persist chip read locally." });
+      return;
+    }
 
-    console.log(`[Local Server DB] Chip read ${sanitizeLog(record.id)} saved for bib ${sanitizeLog(record.bibNumber)} @ checkpoint ${sanitizeLog(record.checkpointId)}.`);
     res.json({ success: true, chipRead: record });
   });
 
   // DELETE single chip read
-  app.delete("/api/chip-reads/:id", (req, res) => {
+  app.delete("/api/chip-reads/:id", async (req, res) => {
     const readId = req.params.id;
     if (!isValidRecordId(readId)) {
       res.status(400).json({ error: "Invalid chip read ID." });
       return;
     }
-    if (ownRecord(chipReads, readId)) {
+    const existing = ownRecord(chipReads, readId);
+    if (existing) {
       delete chipReads[readId];
-      saveChipReadsDB();
+      try {
+        await saveChipReadsDB();
+      } catch {
+        chipReads[readId] = existing;
+        res.status(503).json({ error: "Failed to persist chip read deletion locally." });
+        return;
+      }
       res.json({ success: true, message: `Chip read ${readId} deleted.` });
     } else {
       res.status(404).json({ error: "Chip read not found." });
@@ -680,10 +814,16 @@ async function startServer() {
   });
 
   // DELETE ALL (Reset timing data)
-  app.post("/api/chip-reads/reset", (req, res) => {
+  app.post("/api/chip-reads/reset", async (_req, res) => {
+    const prevReads = chipReads;
     chipReads = {};
-    saveChipReadsDB();
-    console.log("[Local Server DB] Chip reads completely reset by administrator.");
+    try {
+      await saveChipReadsDB();
+    } catch {
+      chipReads = prevReads;
+      res.status(503).json({ error: "Failed to persist chip reads reset locally." });
+      return;
+    }
     res.json({ success: true, message: "Local chip reads completely cleared." });
   });
 
@@ -697,8 +837,8 @@ async function startServer() {
     const afterRaw = typeof req.query.after === 'string' ? req.query.after : '';
     const after = Date.parse(afterRaw);
     const events = Object.values(rfidEvents)
-      .filter((event) => event.raceId === raceId && (Number.isNaN(after) || Date.parse(event.receivedAt) >= after))
-      .sort((a, b) => Date.parse(a.receivedAt) - Date.parse(b.receivedAt) || a.id.localeCompare(b.id));
+      .filter((event) => event.raceId === raceId && (Number.isNaN(after) || eventReceivedMs(event) >= after))
+      .sort((a, b) => eventReceivedMs(a) - eventReceivedMs(b) || a.id.localeCompare(b.id));
     res.json({ events });
   });
 
@@ -729,6 +869,7 @@ async function startServer() {
       res.status(507).json({ error: 'RFID event queue capacity reached.' });
       return;
     }
+    const receivedAtMs = Date.now();
     const event: RfidBridgeEvent = {
       ...(Number.isSafeInteger(eventData.readerSequence) ? { readerSequence: eventData.readerSequence } : {}),
       ...(typeof eventData.monotonicTicks === 'string' ? { monotonicTicks: eventData.monotonicTicks } : {}),
@@ -739,11 +880,11 @@ async function startServer() {
       epc,
       antenna,
       timestamp,
-      receivedAt: new Date().toISOString(),
+      receivedAt: new Date(receivedAtMs).toISOString(),
+      receivedAtMs,
     };
     rfidEvents[id] = event;
     saveRfidEventsDB();
-    console.log(`[RFID Bridge] EPC ${sanitizeLog(epc)} received from ANT${antenna}.`);
     res.status(201).json({ success: true, event });
   });
 
@@ -788,17 +929,18 @@ async function startServer() {
   server.keepAliveTimeout = 5_000;
   server.maxHeadersCount = 64;
 
-  const flushOnShutdown = () => {
-    if (rfidEventsDirty) saveRfidEventsDBNow();
+  let shuttingDown = false;
+  const shutdownGracefully = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    if (rfidEventsDirty) saveRfidEventsDBNowSync();
+    const forceTimer = setTimeout(() => process.exit(0), 5000);
+    forceTimer.unref?.();
+    server.close(() => process.exit(0));
   };
-  process.once('SIGINT', () => {
-    flushOnShutdown();
-    server.close(() => process.exit(0));
-  });
-  process.once('SIGTERM', () => {
-    flushOnShutdown();
-    server.close(() => process.exit(0));
-  });
+  process.once('SIGINT', shutdownGracefully);
+  process.once('SIGTERM', shutdownGracefully);
+  process.stdin?.once('end', shutdownGracefully);
 }
 
 startServer();

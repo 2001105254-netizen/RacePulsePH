@@ -4,7 +4,7 @@
 @import './components/public-landing.css';
 @import './components/timing-console.css';
 
-/* Toggle-driven (not OS-preference-driven) dark mode: .dark class on <html> */
+/* Toggle-driven (not OS-preference-driven) dark mode: .dark class on root element */
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
@@ -12,22 +12,18 @@
   --font-display: "Space Grotesk", sans-serif;
   --font-mono: "JetBrains Mono", monospace;
 
-  /* Premium Apple-red accent scale (~#FF3B30 system red). "amber-*" and "red-*"
-     are both mapped to this same scale so every existing usage of either name
-     renders identically - one accent color, used consistently everywhere. */
-  --color-amber-50: #fff1f0;
-  --color-amber-100: #ffe1de;
-  --color-amber-200: #ffbcb5;
-  --color-amber-300: #ff8f85;
-  --color-amber-400: #ff6259;
-  --color-amber-500: #ff3b30; /* Apple System Red */
-  --color-amber-600: #cc251c; /* >= 5.28:1 WCAG AA with white/#fffafa */
-  --color-amber-700: #b01e16;
-  --color-amber-800: #8f1812;
-  --color-amber-900: #6b1512;
-  --color-amber-950: #3d0b09;
-  --color-amber-505: #ff6259;
-  --color-amber-550: #ff6259;
+  /* Calibrated OKLCH Amber/Gold warning & podium scale (distinct from System Red accents) */
+  --color-amber-50: oklch(0.985 0.022 95);
+  --color-amber-100: oklch(0.958 0.048 92);
+  --color-amber-200: oklch(0.915 0.095 88);
+  --color-amber-300: oklch(0.875 0.140 86);
+  --color-amber-400: oklch(0.815 0.160 80);
+  --color-amber-500: oklch(0.765 0.165 72);
+  --color-amber-600: oklch(0.640 0.160 66);
+  --color-amber-700: oklch(0.515 0.140 62);
+  --color-amber-800: oklch(0.445 0.125 60);
+  --color-amber-900: oklch(0.375 0.105 58);
+  --color-amber-950: oklch(0.255 0.072 56);
 
   --color-red-50: #fff1f0;
   --color-red-100: #ffe1de;
@@ -49,20 +45,34 @@
   --animate-fadeIn: fadeIn 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+@theme inline {
+  --color-surface-page: var(--surface-page);
+  --color-surface-card: var(--surface-card);
+  --color-surface-inset: var(--surface-inset);
+  --color-surface-hover: var(--surface-hover);
+  --color-border-default: var(--border-default);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-control: var(--border-control);
+  --color-border-strong: var(--border-strong);
+  --color-ink-primary: var(--text-primary);
+  --color-ink-secondary: var(--text-secondary);
+  --color-accent-brand: var(--accent-red);
+}
+
 /* Browser owns root font-size when <meta name="text-scale" content="scale"> is set. */
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }
 
-/* Semantic surface/text tokens: light values are the default, .dark overrides them */
+/* Semantic surface/text tokens in perceptual OKLCH: light values default, .dark overrides them */
 :root {
   /* Motion curves (exponential ease-out, lag-free GPU compositing) */
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 
-  /* Mathematical Modular Scale (16px base, Perfect Fourth 1.333 / Golden Ratio display) */
+  /* Mathematical Modular Scale (16px base * 1.5 leading = 24px web baseline grid unit) */
   --font-size-hero: clamp(2rem, 1.5rem + 2.1vw, 2.875rem);
   --font-size-section: clamp(1.5rem, 1.2065rem + 1.3043vw, 2.25rem);
   --font-size-lead: clamp(1rem, 0.9511rem + 0.2174vw, 1.125rem);
@@ -71,30 +81,30 @@ html {
 
   --leading-hero: 1.08;
   --leading-section: 1.15;
-  --leading-body: 1.6;
+  --leading-body: 1.5;
   --leading-caption: 1.4;
 
   --tracking-hero: -0.035em;
   --tracking-section: -0.025em;
   --tracking-lead: -0.011em;
   --tracking-caption: 0.02em;
-  --surface-page: #FAF9F7;
-  --surface-card: #FFFFFF;
-  --surface-inset: #F3F2EF;
-  --surface-hover: #ECEAE5;
-  --border-default: color-mix(in oklab, #111113 12%, transparent);
-  --border-subtle: color-mix(in oklab, #111113 7%, transparent);
-  --border-strong: #18181B;
-  --border-button: #8E8B88;
-  --text-primary: #111113;
-  --text-secondary: #52525B;
-  --text-muted: #52525B;
-  --accent-red: #CC251C;
+  --surface-page: oklch(0.982 0.003 75);
+  --surface-card: oklch(0.996 0.002 75);
+  --surface-inset: oklch(0.960 0.004 75);
+  --surface-hover: oklch(0.935 0.005 75);
+  --border-default: oklch(0.178 0.004 285 / 0.12);
+  --border-subtle: oklch(0.178 0.004 285 / 0.07);
+  --border-control: oklch(0.585 0.006 60);
+  --border-button: var(--border-control);
+  --border-strong: oklch(0.210 0.005 285);
+  --text-primary: oklch(0.178 0.004 285);
+  --text-secondary: oklch(0.442 0.012 285);
+  --text-muted: var(--text-secondary);
+  --accent-red: oklch(0.520 0.200 27);
   color-scheme: light;
 
   /* Calibrated red text contrast: clears 4.5:1 WCAG AA against light card, page, and inset surfaces */
-  --color-red-500: #cc251c;
-  --color-amber-500: #cc251c;
+  --color-red-500: oklch(0.520 0.200 27);
 
   /* Design-system constants: shared across every page for a consistent stylish-minimalist look */
   --radius-panel: 16px;
@@ -114,24 +124,28 @@ html {
 }
 
 .dark {
-  --color-red-500: #ff6259;
-  --color-amber-500: #ff6259;
-  --accent-red: #ff6259;
-  --surface-page: #0B0B0D;
-  --surface-card: #141417;
-  --surface-inset: #1C1C21;
-  --surface-hover: #24242A;
-  --border-default: color-mix(in oklab, #F5F5F7 14%, transparent);
-  --border-subtle: color-mix(in oklab, #F5F5F7 8%, transparent);
-  --border-strong: #676770;
-  --border-button: #676770;
-  --text-primary: #F5F5F7;
-  --text-secondary: #A1A1AA;
-  --text-muted: #A1A1AA;
+  --color-red-500: oklch(0.680 0.200 25);
+  --accent-red: oklch(0.680 0.200 25);
+  --surface-page: oklch(0.148 0.004 285);
+  --surface-card: oklch(0.192 0.005 285);
+  --surface-inset: oklch(0.228 0.006 285);
+  --surface-hover: oklch(0.264 0.007 285);
+  --border-default: oklch(0.968 0.003 285 / 0.14);
+  --border-subtle: oklch(0.968 0.003 285 / 0.08);
+  --border-control: oklch(0.555 0.012 285);
+  --border-button: var(--border-control);
+  --border-strong: oklch(0.555 0.012 285);
+  --text-primary: oklch(0.968 0.003 285);
+  --text-secondary: oklch(0.712 0.010 285);
+  --text-muted: var(--text-secondary);
   --scrollbar-thumb: oklch(57% 0.01 25);
   --scrollbar-thumb-hover: oklch(71% 0.008 25);
   --scrollbar-thumb-active: oklch(85% 0.006 25);
   color-scheme: dark;
+}
+
+html {
+  scroll-padding-bottom: calc(4.5rem + var(--rp-safe-bottom));
 }
 
 html,
@@ -150,12 +164,16 @@ body {
   background-color: var(--surface-page);
   color: var(--text-primary);
   min-width: 0;
-  overflow-x: clip;
+  overflow-wrap: break-word;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+:where(a, code) {
+  overflow-wrap: anywhere;
 }
 
 button,
@@ -198,7 +216,7 @@ select,
 .type-lead {
   font-family: var(--font-sans);
   font-size: var(--font-size-lead);
-  line-height: 1.6;
+  line-height: 1.5;
   letter-spacing: var(--tracking-lead);
   font-weight: 400;
 }
@@ -270,9 +288,8 @@ video {
    Draws full-bleed behind the Android status bar while padding inner controls below safe-area insets. */
 .brand-nav,
 .glass-nav {
-  /* Override light-mode :root red text token because the header surface stays charcoal (#141416) in both themes (6.26:1 contrast). */
-  --color-red-500: #ff6259;
-  --color-amber-500: #ff6259;
+  /* Override light-mode :root red text token because the header surface stays charcoal (#141416) in both themes. */
+  --color-red-500: oklch(0.680 0.200 25);
   background: #141416;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   padding-top: var(--rp-safe-top);
@@ -302,13 +319,13 @@ video {
 
   .glass-inset {
     background: var(--surface-inset);
-    border: 1px solid var(--border-default);
+    border: 1px solid var(--border-control);
     border-radius: var(--radius-control);
   }
 
   .dark .glass-inset {
     background: var(--surface-inset);
-    border: 1px solid var(--border-default);
+    border: 1px solid var(--border-control);
     border-radius: var(--radius-control);
   }
 
@@ -334,11 +351,11 @@ video {
 
 /* Athletic finish-line focal accent: calibrated >= 5.14:1 WCAG AA in both themes */
 .hero-finish-accent {
-  color: #cc251c;
+  color: var(--accent-red);
 }
 
 .dark .hero-finish-accent {
-  color: #ff6259;
+  color: var(--accent-red);
 }
 
 /* Finish-line timing tape underline */
@@ -585,9 +602,12 @@ video {
   }
 }
 
-/* Button border contrast definition: satisfies WCAG 1.4.11 (>= 3:1) in both light and dark modes */
-button.border-\[var\(--border-default\)\] {
-  border-color: var(--border-button);
+/* Interactive control border contrast: satisfies WCAG 1.4.11 (>= 3:1) in both light and dark modes */
+button.border-\[var\(--border-default\)\],
+input.border-\[var\(--border-default\)\],
+select.border-\[var\(--border-default\)\],
+textarea.border-\[var\(--border-default\)\] {
+  border-color: var(--border-control);
 }
 
 /* Pointer cursor base layer (R-39): Tailwind v4 preflight resets button cursor to default */
@@ -607,7 +627,7 @@ input[type="submit"], input[type="button"], input[type="reset"], input[type="ran
   .desktop-workspace-sidebar {
     position: sticky;
     top: calc(64px + 1px + var(--rp-safe-top));
-    height: calc(100vh - 64px - 1px - var(--rp-safe-top));
+    height: calc(100svh - 64px - 1px - var(--rp-safe-top));
     height: calc(100dvh - 64px - 1px - var(--rp-safe-top));
   }
 
@@ -749,6 +769,34 @@ html::-webkit-scrollbar-thumb:active,
   [tabindex]:focus-visible {
     outline: 2px solid var(--color-red-500);
     outline-offset: 2px;
+  }
+
+  a[href],
+  button,
+  summary,
+  select,
+  input,
+  [role="button"],
+  [role="tab"] {
+    touch-action: manipulation;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]),
+  select,
+  textarea {
+    scroll-margin-bottom: 120px;
+  }
+
+  h1,
+  h2,
+  h3,
+  .type-hero,
+  .type-section {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
   }
 }
 

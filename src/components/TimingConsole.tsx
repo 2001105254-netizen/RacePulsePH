@@ -5,28 +5,28 @@ import { useAndroidBackHandler } from '../lib/capacitorAndroid';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { collection, query, where, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch, deleteField, runTransaction } from 'firebase/firestore';
-import type * as XLSXTypes from 'xlsx';
 import { db } from '../firebase';
 import { useDualSync } from '../lib/dualSync';
 import { checkpointType, computeResults, getCheckpointByType, getWaveStartTime } from '../lib/timing';
 import { groupRankingFolders } from '../lib/rankingFolders';
 import { useOfflineScanQueue } from '../lib/offlineScanQueue';
 import { computeBackoffMs, parseRetryAfterSeconds } from '../lib/resilientFetch';
-import { Race, ChipRead, PublicLeaderboardEntry, PublicLiveResults, RaceEntryCategory, RunnerProfile, RunnerResult } from '../types';
+import { Race, ChipRead, PublicLeaderboardEntry, PublicLiveResults, RunnerProfile, RunnerResult } from '../types';
 import { groupRunnersByDistance, generateRunnerRosterPdf } from '../lib/runnerReport';
 import { generateRankingsReportPdf } from '../lib/rankingsReport';
-import { entryCategoryLabels, entryMemberCount, raceEntryCategories, runnerDivisionLabel, runnerEntryCategory, runnerWaveLabel } from '../lib/raceEntry';
-import { Radio, ScanLine, Trophy, Clock, Wifi, WifiOff, QrCode, RefreshCw, ArrowLeft, Cpu, Users2, FileDown, FileUp, Maximize2, X, ListChecks, CheckCircle2, Circle, PlayCircle, RotateCcw, Timer, Keyboard, Smartphone, Search, UserCheck, Undo2, Folder, FolderOpen, ChevronRight, AlertTriangle, Ban } from 'lucide-react';
+import { entryCategoryLabels, runnerDivisionLabel, runnerEntryCategory, runnerWaveLabel } from '../lib/raceEntry';
+import { Radio, ScanLine, Trophy, Clock, Wifi, WifiOff, QrCode, RefreshCw, ArrowLeft, Cpu, Users2, FileDown, Maximize2, X, ListChecks, CheckCircle2, Circle, PlayCircle, RotateCcw, Timer, Keyboard, Smartphone, Search, UserCheck, Undo2, Folder, FolderOpen, ChevronRight, AlertTriangle, Ban } from 'lucide-react';
 import QrScannerModal from './QrScannerModal';
 import RaceList from './RaceList';
 import LiveRankingsScreen from './LiveRankingsScreen';
+import ManualRunnerPanel from './timing/ManualRunnerPanel';
+import RosterImportPanel from './timing/RosterImportPanel';
 import { buildBroadcastShortcutGuide, getDistanceLabelsForRace } from '../lib/liveRankings';
 import { buildPublicRaceStats } from '../lib/publicLandingStats';
 import EntrySequencePanel from './EntrySequencePanel';
 import DialogSurface from './ui/DialogSurface';
 import { useFeedback } from './ui/FeedbackProvider';
 import { Select } from './ui/Select';
-import { MAX_ROSTER_ROWS, MAX_ROSTER_SHEETS, MAX_XLSX_BYTES, assertSafeImportFile, stripUnsafeKeys } from '../lib/security';
 
 interface DequeuedFinisherRecord {
   bibNumber: string;
@@ -389,14 +389,19 @@ function TimingConsoleForRace({ race, races, onSelectRace, uid, initialMode, ini
   const startCheckpoint = getCheckpointByType(orderedCheckpoints, 'start') || orderedCheckpoints[0];
   const finishCheckpoint = getCheckpointByType(orderedCheckpoints, 'finish') || orderedCheckpoints[orderedCheckpoints.length - 1];
 
-  const { items: chipReads, lanConnected } = useDualSync<ChipRead>({
+  const { items: rawChipReads, lanConnected } = useDualSync<ChipRead>({
     enabled: can('timing.view'),
     firestoreQuery: query(collection(db, 'chipReads'), where('raceId', '==', race.id)),
-    lanEndpoint: '/api/chip-reads',
+    lanEndpoint: `/api/chip-reads?raceId=${encodeURIComponent(race.id)}`,
     lanResponseKey: 'chipReads',
+    queryKey: race.id,
     getId: (r) => r.id,
     getUpdatedAt: (r) => r.createdAt,
   });
+  const chipReads = useMemo(
+    () => rawChipReads.filter((read) => read.raceId === race.id),
+    [rawChipReads, race.id],
+  );
   const { pendingCount: pendingScanCount, enqueue: enqueueScan, discard: discardQueuedScan, queueError } = useOfflineScanQueue(race.id);
 
   const [runnerProfiles, setRunnerProfiles] = useState<RunnerProfile[]>([]);
@@ -2168,7 +2173,7 @@ function MobileCheckInPanel({
             </div>
           </div>
           <div className="h-2 rounded-full bg-white/10 overflow-hidden" aria-hidden="true">
-            <div className="h-full rounded-full bg-red-600 transition-all duration-200" style={{ width: `${progressPct}%` }} />
+            <div className="h-full rounded-full bg-red-600 transition-[width] duration-200" style={{ width: `${progressPct}%` }} />
           </div>
         </div>
 
@@ -2393,576 +2398,6 @@ function MobileCheckInPanel({
 }
 
 // ========== CHIP ASSIGNMENT ==========
-
-type ImportedRunner = Pick<RunnerProfile, 'fullName' | 'bibNumber' | 'distance' | 'gender' | 'age' | 'ageNotProvided' | 'shirtSize' | 'entryCategory' | 'teamMembers'> & {
-  source: string;
-  sourceRows: number[];
-};
-
-interface RosterImportPreview {
-  fileName: string;
-  detectedSheets: string[];
-  runners: ImportedRunner[];
-  skipped: string[];
-  combinedTeams: number;
-}
-
-function spreadsheetText(value: unknown): string {
-  if (value instanceof Date) return value.toISOString();
-  return String(value ?? '').trim();
-}
-
-function spreadsheetHeader(value: unknown): string {
-  return spreadsheetText(value).toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
-function headerIndex(headers: unknown[], candidates: string[]): number {
-  const normalized = headers.map(spreadsheetHeader);
-  return normalized.findIndex((header) => candidates.some((candidate) => header === candidate || header.includes(candidate)));
-}
-
-function normalizeImportBib(value: unknown): string {
-  return spreadsheetText(value).replace(/^#\s*/, '').replace(/\s+/g, '').toUpperCase();
-}
-
-// Older CSV imports were interpreted as spreadsheet dates by SheetJS. For
-// example a valid physical bib `12-20-01` arrived as `12/20/01`. This helper
-// is intentionally used only when locating an existing imported row, so a
-// re-import repairs those old records without treating slash-form bibs as the
-// new stored format.
-function importBibMatchKey(value: unknown): string {
-  const bib = normalizeImportBib(value);
-  return /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(bib) ? bib.replaceAll('/', '-') : bib;
-}
-
-function importGender(value: unknown): RunnerProfile['gender'] | null {
-  const normalized = spreadsheetText(value).toLowerCase();
-  if (normalized.startsWith('m')) return 'male';
-  if (normalized.startsWith('f')) return 'female';
-  return null;
-}
-
-function importEntryCategory(value: unknown): RaceEntryCategory {
-  const category = spreadsheetText(value).toLowerCase();
-  if (category.includes('group') || category.includes('team')) return 'group';
-  if (category.includes('trio')) return 'trio';
-  if (category.includes('duo') || category.includes('pair')) return 'duo';
-  return 'solo';
-}
-
-function ageFromSpreadsheetValue(value: unknown): number | null {
-  const text = spreadsheetText(value);
-  const directAge = Number.parseInt(text, 10);
-  // Do not let an invalid numeric age such as 0 turn into a JavaScript date.
-  if (/^\d{1,3}$/.test(text)) return directAge >= 1 && directAge <= 120 ? directAge : null;
-
-  const birthDate = value instanceof Date ? value : new Date(text);
-  if (Number.isNaN(birthDate.getTime())) return null;
-  const today = new Date();
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const birthdayThisYear = new Date(today.getFullYear(), birthDate.getMonth(), birthDate.getDate());
-  if (today < birthdayThisYear) age -= 1;
-  return age >= 1 && age <= 120 ? age : null;
-}
-
-function matchImportDistance(value: unknown, race: Race): string | null {
-  const source = spreadsheetText(value).toUpperCase().replace(/\s+/g, '');
-  if (!source) return null;
-  const exact = race.distances.find((distance) => distance.label.toUpperCase().replace(/\s+/g, '') === source);
-  if (exact) return exact.label;
-
-  const numeric = Number.parseFloat(source.replace(/[^0-9.]/g, ''));
-  if (!Number.isFinite(numeric)) return null;
-  const matchingKm = race.distances.find((distance) => Math.abs(distance.km - numeric) < 0.15);
-  return matchingKm?.label || null;
-}
-
-function parseRosterWorkbook(
-  workbook: XLSXTypes.WorkBook,
-  utils: typeof XLSXTypes.utils,
-  fileName: string,
-  race: Race,
-): RosterImportPreview {
-  const rowsByBib = new Map<string, ImportedRunner>();
-  const detectedSheets: string[] = [];
-  const skipped: string[] = [];
-  let combinedTeams = 0;
-
-  for (const sheetName of workbook.SheetNames.slice(0, MAX_ROSTER_SHEETS)) {
-    const sheet = workbook.Sheets[sheetName];
-    const rows = stripUnsafeKeys(
-      utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', raw: false }),
-    );
-    const headers = rows[0] || [];
-    const nameColumn = headerIndex(headers, ['fullname', 'runnername', 'participantname', 'name']);
-    const bibColumn = headerIndex(headers, ['racebibnumber', 'bibnumber', 'racebib', 'bib']);
-    const distanceColumn = headerIndex(headers, ['distance', 'racedistance', 'categorydistance']);
-    const categoryColumn = headerIndex(headers, ['entrycategory', 'teamcategory', 'category']);
-    const genderColumn = headerIndex(headers, ['sex', 'gender']);
-    const ageColumn = headerIndex(headers, ['age']);
-    const dateOfBirthColumn = headerIndex(headers, ['dateofbirth', 'birthdate', 'dob']);
-    const shirtSizeColumn = headerIndex(headers, ['shirtsize', 'shirttsize', 'apparelsize', 'size']);
-
-    // We intentionally use only the already-prepared "bib assignment" tabs.
-    // A raw Google Form export can contain several participant columns but no
-    // physical bibs yet, so importing it directly would create unsafe records.
-    if (nameColumn < 0 || bibColumn < 0 || distanceColumn < 0) continue;
-    detectedSheets.push(sheetName);
-
-    rows.slice(1, MAX_ROSTER_ROWS + 1).forEach((row, index) => {
-      const sourceRow = index + 2;
-      const fullName = spreadsheetText(row[nameColumn]);
-      const bibNumber = normalizeImportBib(row[bibColumn]);
-      const distance = matchImportDistance(row[distanceColumn], race);
-      const entryCategory = importEntryCategory(categoryColumn >= 0 ? row[categoryColumn] : '');
-      const gender = importGender(genderColumn >= 0 ? row[genderColumn] : '');
-      const age = ageFromSpreadsheetValue(ageColumn >= 0 ? row[ageColumn] : '')
-        ?? ageFromSpreadsheetValue(dateOfBirthColumn >= 0 ? row[dateOfBirthColumn] : '');
-      const shirtSize = shirtSizeColumn >= 0 ? spreadsheetText(row[shirtSizeColumn]).toUpperCase() : '';
-      // Sex is only used to rank an individual in a Solo division. A Duo,
-      // Trio, or Group can be mixed, so permit a blank column for team rows.
-      // RunnerProfile still requires a value for legacy Firestore records;
-      // that internal fallback is never used to split team results by gender.
-      const genderIsRequired = entryCategory === 'solo';
-      // A Group is ranked as one team and never enters an individual age
-      // division, so its roster can omit Age/DOB. We retain an explicit flag
-      // instead of showing Firestore's required numeric fallback as a real age.
-      const ageIsRequired = entryCategory !== 'group';
-      const ageNotProvided = age === null;
-
-      if (!fullName && !bibNumber) return;
-      if (!fullName || !bibNumber || !distance || (genderIsRequired && !gender) || (ageIsRequired && age === null)) {
-        const missing = [
-          !fullName && 'name',
-          !bibNumber && 'bib',
-          !distance && 'a matching race distance',
-          genderIsRequired && !gender && 'sex/gender (Solo only)',
-          ageIsRequired && age === null && 'valid age or date of birth (Group optional)',
-        ].filter(Boolean).join(', ');
-        skipped.push(`${sheetName} row ${sourceRow}: missing ${missing}`);
-        return;
-      }
-
-      const key = `${distance}|${bibNumber}`;
-      const existing = rowsByBib.get(key);
-      if (existing) {
-        // Duo/team sheets have two people under one physical bib. RacePulse
-        // needs exactly one timing record per chip/bib, so retain one entry
-        // with both names rather than introducing an ambiguous duplicate.
-        const names = existing.fullName.split(' & ');
-        if (!names.includes(fullName)) existing.fullName = `${existing.fullName} & ${fullName}`;
-        existing.teamMembers = [...(existing.teamMembers || names), fullName].filter((name, memberIndex, list) => list.indexOf(name) === memberIndex);
-        existing.sourceRows.push(sourceRow);
-        combinedTeams += 1;
-        return;
-      }
-
-      rowsByBib.set(key, {
-        fullName,
-        bibNumber,
-        distance,
-        entryCategory,
-        gender: gender || 'male',
-        // `age` is required by the existing runner schema. This internal
-        // placeholder is ignored for all Group results and is hidden by the
-        // `ageNotProvided` marker below.
-        age: age ?? 18,
-        ageNotProvided,
-        ...(entryCategory !== 'solo' ? { teamMembers: [fullName] } : {}),
-        ...(shirtSize ? { shirtSize } : {}),
-        source: sheetName,
-        sourceRows: [sourceRow],
-      });
-    });
-  }
-
-  return {
-    fileName,
-    detectedSheets,
-    runners: [...rowsByBib.values()].sort((a, b) => a.bibNumber.localeCompare(b.bibNumber, undefined, { numeric: true })),
-    skipped,
-    combinedTeams,
-  };
-}
-
-function importedRunnerUid(): string {
-  const randomPart = typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID().replace(/-/g, '')
-    : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
-  return `import_${randomPart}`;
-}
-
-interface ManualRunnerPanelProps {
-  race: Race;
-  runnerProfiles: RunnerProfile[];
-}
-
-// A compact desk-registration form for late entries, corrections from paper
-// forms, and runners who were not included in the uploaded roster. These are
-// timing-only registrations: they deliberately do not create Firebase Auth
-// accounts or send login emails.
-function ManualRunnerPanel({ race, runnerProfiles }: ManualRunnerPanelProps) {
-  const { can } = useAccess();
-  const categories = raceEntryCategories(race);
-  const [fullName, setFullName] = useState('');
-  const [bibNumber, setBibNumber] = useState('');
-  const [distance, setDistance] = useState(race.distances[0]?.label || '');
-  const [entryCategory, setEntryCategory] = useState<RaceEntryCategory>(categories[0] || 'solo');
-  const [gender, setGender] = useState<RunnerProfile['gender']>('male');
-  const [age, setAge] = useState('');
-  const [shirtSize, setShirtSize] = useState('');
-  const [teamName, setTeamName] = useState('');
-  const [teamMembers, setTeamMembers] = useState<string[]>(['', '', '', '']);
-  const [saving, setSaving] = useState(false);
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  useEffect(() => {
-    if (!categories.includes(entryCategory)) setEntryCategory(categories[0] || 'solo');
-  }, [categories, entryCategory]);
-
-  const memberCount = entryMemberCount[entryCategory];
-
-  const updateMember = (index: number, value: string) => {
-    setTeamMembers((current) => current.map((member, memberIndex) => memberIndex === index ? value : member));
-  };
-
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    const normalizedBib = normalizeImportBib(bibNumber);
-    const normalizedName = fullName.trim().toUpperCase();
-    const parsedAge = Number.parseInt(age, 10);
-
-    if (!normalizedBib || !/^[A-Z0-9][A-Z0-9_-]{0,19}$/.test(normalizedBib)) {
-      setFeedback({ type: 'error', text: 'Use a bib with 1-20 letters, numbers, hyphens, or underscores.' });
-      return;
-    }
-    if (!distance) {
-      setFeedback({ type: 'error', text: 'Choose a race distance.' });
-      return;
-    }
-    if (!normalizedName || normalizedName.length > 100) {
-      setFeedback({ type: 'error', text: 'Enter the runner name (up to 100 characters).' });
-      return;
-    }
-    if (!Number.isInteger(parsedAge) || parsedAge < 1 || parsedAge > 120) {
-      setFeedback({ type: 'error', text: 'Enter a valid age from 1 to 120.' });
-      return;
-    }
-    if (runnerProfiles.some((runner) => normalizeImportBib(runner.bibNumber) === normalizedBib)) {
-      setFeedback({ type: 'error', text: `Bib #${normalizedBib} is already in this race roster.` });
-      return;
-    }
-
-    const normalizedTeamName = teamName.trim().toUpperCase();
-    const normalizedMembers = [normalizedName, ...teamMembers.slice(1, memberCount).map((member) => member.trim().toUpperCase())];
-    if (entryCategory !== 'solo' && !normalizedTeamName) {
-      setFeedback({ type: 'error', text: `Enter the team name for this ${entryCategoryLabels[entryCategory]} entry.` });
-      return;
-    }
-    if (entryCategory !== 'solo' && normalizedMembers.some((member) => !member || member.length > 100)) {
-      setFeedback({ type: 'error', text: `Enter all ${memberCount} team member names.` });
-      return;
-    }
-
-    setSaving(true);
-    setFeedback(null);
-    try {
-      const uid = importedRunnerUid();
-      const record: RunnerProfile = {
-        uid,
-        raceId: race.id,
-        // For a shared bib, the team name is the display name used in the
-        // roster and official timing result; individual names stay in
-        // teamMembers for the organizer's reference.
-        fullName: entryCategory === 'solo' ? normalizedName : normalizedTeamName,
-        bibNumber: normalizedBib,
-        distance,
-        entryCategory,
-        gender,
-        age: parsedAge,
-        createdAt: new Date().toISOString(),
-        ...(shirtSize.trim() ? { shirtSize: shirtSize.trim().toUpperCase() } : {}),
-        ...(entryCategory !== 'solo' ? { teamName: normalizedTeamName, teamMembers: normalizedMembers } : {}),
-      };
-      await setDoc(doc(db, 'runners', `${uid}_${race.id}`), record);
-      setFeedback({ type: 'success', text: `${entryCategory === 'solo' ? normalizedName : normalizedTeamName} added to ${distance} ${entryCategoryLabels[entryCategory]} with bib #${normalizedBib}.` });
-      setFullName('');
-      setBibNumber('');
-      setAge('');
-      setShirtSize('');
-      setTeamName('');
-      setTeamMembers(['', '', '', '']);
-    } catch (error: any) {
-      setFeedback({ type: 'error', text: error.message || 'Could not add the runner.' });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="space-y-3">
-      <div>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] flex items-center gap-2">
-          <Users2 className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> Add Runner Manually
-        </h3>
-        <p className="text-xs text-[var(--text-secondary)] mt-1">For late registrations or paper-form entries. Adds a roster record only.</p>
-      </div>
-
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <fieldset className="contents" disabled={!can('roster.add')}>
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
-              {entryCategory === 'solo' ? 'Runner name' : 'Team representative / member 1'}
-            </label>
-            <input required value={fullName} onChange={(event) => setFullName(event.target.value.toUpperCase())} placeholder="FULL NAME" className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600/50" />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Race bib number</label>
-            <input required value={bibNumber} onChange={(event) => setBibNumber(event.target.value.toUpperCase())} placeholder="EX: 10-001" className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold font-mono text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600/50" />
-          </div>
-          <div>
-            <label htmlFor="manual-runner-distance" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Distance</label>
-            <Select
-              id="manual-runner-distance"
-              value={distance}
-              onChange={setDistance}
-              surface="inset"
-              size="md"
-              triggerClassName="text-xs"
-              options={race.distances.map((raceDistance) => ({
-                value: raceDistance.label,
-                label: raceDistance.label,
-              }))}
-            />
-          </div>
-          {categories.length > 1 && (
-            <div>
-              <label htmlFor="manual-runner-category" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Entry category</label>
-              <Select
-                id="manual-runner-category"
-                value={entryCategory}
-                onChange={(value) => setEntryCategory(value as RaceEntryCategory)}
-                surface="inset"
-                size="md"
-                triggerClassName="text-xs"
-                options={categories.map((category) => ({
-                  value: category,
-                  label: entryCategoryLabels[category],
-                }))}
-              />
-            </div>
-          )}
-          <div>
-            <label htmlFor="manual-runner-gender" className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Gender</label>
-            <Select
-              id="manual-runner-gender"
-              value={gender}
-              onChange={(value) => setGender(value as RunnerProfile['gender'])}
-              surface="inset"
-              size="md"
-              triggerClassName="text-xs"
-              options={[
-                { value: 'male', label: 'Male' },
-                { value: 'female', label: 'Female' },
-              ]}
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Age</label>
-            <input required type="number" min="1" max="120" value={age} onChange={(event) => setAge(event.target.value)} placeholder="AGE" className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600/50" />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Shirt size (optional)</label>
-            <input value={shirtSize} onChange={(event) => setShirtSize(event.target.value.toUpperCase())} placeholder="EX: M, 2XL" className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600/50" />
-          </div>
-
-          {entryCategory !== 'solo' && (
-            <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-xl border border-red-600/25 bg-red-600/5 p-3">
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-semibold uppercase tracking-wider text-red-700 dark:text-red-400 mb-1">Team name</label>
-                <input required value={teamName} onChange={(event) => setTeamName(event.target.value.toUpperCase())} placeholder="EX: TEAM RACEPULSE" className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600/50" />
-              </div>
-              {Array.from({ length: memberCount - 1 }).map((_, index) => (
-                <div key={index}>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Member {index + 2}</label>
-                  <input required value={teamMembers[index + 1] || ''} onChange={(event) => updateMember(index + 1, event.target.value.toUpperCase())} placeholder={`MEMBER ${index + 2} NAME`} className="w-full min-h-11 glass-inset px-3 py-2 text-xs font-semibold text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600/50" />
-                </div>
-              ))}
-            </div>
-          )}
-
-          <button type="submit" disabled={saving} className="sm:col-span-2 w-full min-h-11 text-xs font-semibold uppercase tracking-wider px-4 rounded-xl text-white bg-red-700 hover:bg-red-600 flex items-center justify-center gap-2 transition-colors disabled:opacity-60">
-            {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Users2 className="w-4 h-4" />} {saving ? 'Adding runner...' : 'Add runner to roster'}
-          </button>
-        </fieldset>
-      </form>
-      {feedback && (
-        <p role="status" className={`text-xs font-semibold ${feedback.type === 'success' ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}`}>
-          {feedback.text}
-        </p>
-      )}
-    </div>
-  );
-}
-
-interface RosterImportPanelProps {
-  race: Race;
-  runnerProfiles: RunnerProfile[];
-}
-
-function RosterImportPanel({ race, runnerProfiles }: RosterImportPanelProps) {
-  const { can } = useAccess();
-  const { confirm } = useFeedback();
-  const [preview, setPreview] = useState<RosterImportPreview | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    setFeedback(null);
-    setPreview(null);
-
-    try {
-      assertSafeImportFile(file, MAX_XLSX_BYTES, /\.(xlsx|xls|csv)$/i, 'Choose an Excel (.xlsx/.xls) or CSV file.');
-    } catch (error: unknown) {
-      setFeedback({ type: 'error', text: error instanceof Error ? error.message : 'Choose an Excel (.xlsx/.xls) or CSV file.' });
-      return;
-    }
-
-    try {
-      const XLSX = await import('xlsx');
-      const data = await file.arrayBuffer();
-      // CSV has no column typing. Without `raw: true`, SheetJS sees a bib
-      // such as 12-20-01 as a calendar date and formats it as 12/20/01.
-      // Keep CSV values as literal text; Excel files still retain their
-      // normal cell formatting and date support for date-of-birth columns.
-      const isCsv = /\.csv$/i.test(file.name);
-      const workbook = XLSX.read(data, { type: 'array', cellDates: !isCsv, raw: isCsv });
-      const parsed = parseRosterWorkbook(workbook, XLSX.utils, file.name, race);
-      if (parsed.detectedSheets.length === 0) {
-        setFeedback({ type: 'error', text: 'No importable roster tab found. The file needs Full name, Race bib number, Distance, Entry category, and Age or Date of birth. Sex/Gender is required only for Solo.' });
-        return;
-      }
-      if (parsed.runners.length === 0) {
-        setFeedback({ type: 'error', text: `No complete runners found. Check the ${parsed.skipped.length} rows flagged by the importer.` });
-      }
-      setPreview(parsed);
-    } catch (error: any) {
-      setFeedback({ type: 'error', text: error.message || 'Could not read this file.' });
-    }
-  };
-
-  const handleImport = async () => {
-    if (!preview || preview.runners.length === 0) return;
-    const existingByBib = new Map(runnerProfiles.map((runner) => [importBibMatchKey(runner.bibNumber), runner]));
-    const existingCount = preview.runners.filter((runner) => existingByBib.has(importBibMatchKey(runner.bibNumber))).length;
-    const newCount = preview.runners.length - existingCount;
-    const approved = await confirm({
-      title: `Import ${preview.runners.length} roster entries into ${race.name}?`,
-      message: `${newCount} new runner${newCount === 1 ? '' : 's'} will be created and ${existingCount} matching bib${existingCount === 1 ? '' : 's'} will be updated. This does not create login accounts.`,
-      confirmLabel: 'Import roster',
-      cancelLabel: 'Cancel',
-    });
-    if (!approved) return;
-
-    setImporting(true);
-    setFeedback(null);
-    try {
-      const now = new Date().toISOString();
-      let created = 0;
-      let updated = 0;
-
-      // Firestore accepts at most 500 writes per batch. Keeping this at 400
-      // leaves a safe margin for larger race-day imports.
-      for (let start = 0; start < preview.runners.length; start += 400) {
-        const batch = writeBatch(db);
-        for (const imported of preview.runners.slice(start, start + 400)) {
-          const existing = existingByBib.get(importBibMatchKey(imported.bibNumber));
-          const uid = existing?.uid || importedRunnerUid();
-          const record: RunnerProfile = {
-            uid,
-            raceId: race.id,
-            fullName: imported.fullName.trim().toUpperCase(),
-            bibNumber: imported.bibNumber,
-            distance: imported.distance,
-            ...(imported.entryCategory ? { entryCategory: imported.entryCategory } : {}),
-            gender: imported.gender,
-            age: imported.age,
-            // Always write an explicit boolean so re-importing a Group with
-            // a real age clears any older "not provided" marker.
-            ageNotProvided: Boolean(imported.ageNotProvided),
-            createdAt: existing?.createdAt || now,
-            ...(imported.shirtSize ? { shirtSize: imported.shirtSize } : {}),
-            ...(imported.teamMembers && imported.teamMembers.length >= entryMemberCount[imported.entryCategory || 'solo'] ? { teamMembers: imported.teamMembers } : {}),
-          };
-          batch.set(doc(db, 'runners', `${uid}_${race.id}`), record, { merge: true });
-          if (existing) updated += 1;
-          else created += 1;
-        }
-        await batch.commit();
-      }
-      setFeedback({ type: 'success', text: `Import complete: ${created} created, ${updated} updated. Select runners in Assign Chips to pair tags.` });
-    } catch (error: any) {
-      setFeedback({ type: 'error', text: error.message || 'Could not import the runner roster.' });
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
-        <div>
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] flex items-center gap-2">
-            <FileUp className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" /> Import Runner Roster
-          </h3>
-          <p className="text-xs text-[var(--text-secondary)] mt-1">Upload an Excel or CSV bib assignment file.</p>
-        </div>
-        <button type="button" onClick={() => fileInputRef.current?.click()} className="min-h-11 shrink-0 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold uppercase tracking-wider transition-colors flex items-center justify-center gap-2">
-          <FileUp className="w-4 h-4" aria-hidden="true" /> Choose File
-        </button>
-        <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFile} />
-      </div>
-
-      <div className="rounded-xl border border-amber-700/25 bg-amber-500/5 px-3 py-2 text-xs text-[var(--text-secondary)] leading-relaxed">
-        Required: <strong className="text-[var(--text-primary)]">Full name, Race bib number, Distance, Entry category</strong>, and <strong className="text-[var(--text-primary)]">Age/DOB</strong> (Group optional; Sex required for Solo only).
-      </div>
-
-      {preview && (
-        <div className="glass-inset p-3 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="text-xs font-semibold text-[var(--text-primary)] truncate max-w-[16rem]">{preview.fileName}</p>
-              <p className="text-xs text-[var(--text-secondary)]">Tabs: {preview.detectedSheets.join(', ')}</p>
-            </div>
-            <span className="text-xs font-mono font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">{preview.runners.length} READY</span>
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-center tabular-nums">
-            <div className="rounded-lg bg-[var(--surface-hover)] px-2 py-2"><p className="text-sm font-semibold text-[var(--text-primary)]">{preview.runners.length}</p><p className="text-xs text-[var(--text-secondary)]">Runners</p></div>
-            <div className="rounded-lg bg-[var(--surface-hover)] px-2 py-2"><p className="text-sm font-semibold text-[var(--text-primary)]">{preview.skipped.length}</p><p className="text-xs text-[var(--text-secondary)]">Skipped</p></div>
-          </div>
-          {preview.skipped.length > 0 && <p className="text-xs text-amber-800 dark:text-amber-300">Skipped: {preview.skipped.slice(0, 2).join(' • ')}{preview.skipped.length > 2 ? ` • +${preview.skipped.length - 2} more` : ''}</p>}
-          <div className="max-h-32 overflow-y-auto space-y-1 pr-1">
-            {preview.runners.slice(0, 8).map((runner) => <div key={`${runner.distance}-${runner.bibNumber}`} className="flex items-center gap-2 text-xs text-[var(--text-secondary)]"><span className="font-mono font-semibold text-[var(--text-primary)] w-16">#{runner.bibNumber}</span><span className="truncate flex-1">{runner.fullName}</span><span>{runner.distance}</span></div>)}
-            {preview.runners.length > 8 && <p className="text-xs text-[var(--text-secondary)]">+ {preview.runners.length - 8} more</p>}
-          </div>
-          <button hidden={!can('roster.import')} type="button" onClick={handleImport} disabled={importing || preview.runners.length === 0} className="w-full min-h-11 text-xs font-semibold uppercase tracking-wider px-4 rounded-xl text-white bg-emerald-700 hover:bg-emerald-600 flex items-center justify-center gap-2 transition-colors disabled:opacity-60">
-            {importing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Users2 className="w-4 h-4" />} {importing ? 'Importing roster...' : `Import ${preview.runners.length} runners`}
-          </button>
-        </div>
-      )}
-
-      {feedback && (
-        <p role="status" className={`text-xs font-semibold ${feedback.type === 'success' ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}`}>
-          {feedback.text}
-        </p>
-      )}
-    </div>
-  );
-}
 
 interface ChipAssignmentPanelProps {
   race: Race;
@@ -3301,7 +2736,7 @@ function ChipAssignmentPanel({ race, runnerProfiles, chipReads }: ChipAssignment
         </div>
 
         <div className="h-2 rounded-full bg-[var(--surface-inset)] overflow-hidden shrink-0" aria-hidden="true">
-          <div className="h-full rounded-full bg-red-600 transition-all duration-200" style={{ width: `${progressPct}%` }} />
+          <div className="h-full rounded-full bg-red-600 transition-[width] duration-200" style={{ width: `${progressPct}%` }} />
         </div>
 
         {runnerProfiles.length > 0 && (

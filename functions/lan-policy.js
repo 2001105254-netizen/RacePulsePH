@@ -21,7 +21,7 @@ function authorize(s, method, route, body, existing) {
   }
   if (cleanRoute === '/api/chip-reads' || /^\/api\/chip-reads\/[^/]+$/.test(cleanRoute)) {
     if (method === 'DELETE' && cleanRoute !== '/api/chip-reads') return !!existing && scope(s, existing.raceId) && (s.authority === true || can(s, 'timing.correct'));
-    return method === 'POST' && cleanRoute === '/api/chip-reads' && can(s, 'timing.scan') && payload.recordedBy === s.uid && typeof payload.raceId === 'string' && scope(s, payload.raceId) && (!existing || ['raceId','bibNumber','chipId','checkpointId','timestamp','source','recordedBy'].every(key => payload[key] === existing[key]));
+    return method === 'POST' && cleanRoute === '/api/chip-reads' && can(s, 'timing.scan') && payload.recordedBy === s.uid && typeof payload.raceId === 'string' && scope(s, payload.raceId) && (!existing || ['raceId','bibNumber','chipId','checkpointId','timestamp','source','recordedBy','bridgeEventId','antenna','readerSequence','monotonicTicks','monotonicFrequency','clockSource'].every(key => payload[key] === existing[key]));
   }
   return false;
 }

@@ -150,7 +150,7 @@ export default function HighlightSmartCropModal({
                 }}
               >
                 <div className="absolute bottom-3 left-3 right-3 text-white space-y-0.5">
-                  <p className="font-mono text-[11px] text-zinc-300">CONTRAST GUARD PREVIEW</p>
+                  <p className="font-mono text-xs text-zinc-300">CONTRAST GUARD PREVIEW</p>
                   <p className="font-display text-base font-semibold">Runner Telemetry</p>
                   <p className="font-mono text-xs text-zinc-200">01:24:18 &bull; 3:59 /km</p>
                 </div>
@@ -205,7 +205,7 @@ export default function HighlightSmartCropModal({
         </div>
 
         {cropError && (
-          <p role="alert" className="text-xs text-red-700 dark:text-red-400 font-medium">
+          <p role="alert" className="text-xs text-red-700 dark:text-red-400 font-semibold">
             {cropError}
           </p>
         )}

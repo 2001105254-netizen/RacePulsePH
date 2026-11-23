@@ -111,6 +111,27 @@ export function createCircuitBreaker({
 const defaultBreaker = createCircuitBreaker();
 const inFlightGets = new Map<string, Promise<Response>>();
 
+function authScopeTag(headers?: HeadersInit): string {
+  if (!headers) return 'anon';
+  let authValue = '';
+  if (typeof Headers !== 'undefined' && headers instanceof Headers) {
+    authValue = headers.get('Authorization') || headers.get('authorization') || '';
+  } else if (Array.isArray(headers)) {
+    const pair = headers.find(([k]) => String(k).toLowerCase() === 'authorization');
+    authValue = pair ? String(pair[1] || '') : '';
+  } else {
+    const record = headers as Record<string, string>;
+    authValue = record.Authorization || record.authorization || '';
+  }
+  if (!authValue) return 'anon';
+  let hash = 2166136261;
+  for (let i = 0; i < authValue.length; i += 1) {
+    hash ^= authValue.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `auth:${(hash >>> 0).toString(36)}`;
+}
+
 function combineAbortSignals(timeoutMs: number, externalSignal?: AbortSignal | null): {
   signal: AbortSignal;
   cleanup: () => void;
@@ -170,7 +191,7 @@ export async function boundedFetch(
   defaultBreaker.check(circuitKey);
 
   const shouldDedupe = Boolean(options.dedupeGet && isIdempotentRead && !init.signal);
-  const dedupeKey = shouldDedupe ? `${method}:${url}` : '';
+  const dedupeKey = shouldDedupe ? `${method}:${authScopeTag(init.headers)}:${url}` : '';
   if (dedupeKey) {
     const existing = inFlightGets.get(dedupeKey);
     if (existing) {

@@ -1,5 +1,6 @@
 import React from 'react';
 import { ArrowLeft, Building2, Cookie, CreditCard, FileText, Mail, ShieldCheck, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { isClientNavigationClick } from '../lib/appRouting';
 import {
   BROWSER_STORAGE_MANIFEST,
   LEGAL_CONFIG,
@@ -13,20 +14,22 @@ interface PublicLegalPageProps {
   onBack: () => void;
   onSwitchDoc: (next: LegalDocKey) => void;
   onOpenAuth: () => void;
+  authActionLabel?: string;
   onOpenCookiePreferences: () => void;
   onOpenUnsubscribe: () => void;
 }
 
 const sectionCardClass = 'rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-4 sm:p-6 space-y-3';
 const headingClass = 'font-display text-base sm:text-lg font-semibold text-[var(--text-primary)]';
-const bodyClass = 'text-sm text-[var(--text-secondary)] leading-relaxed';
-const accentLinkClass = 'font-semibold text-red-700 dark:text-red-400 underline underline-offset-4 hover:opacity-85 break-all';
+const bodyClass = 'max-w-[65ch] text-sm text-[var(--text-secondary)] leading-relaxed';
+const accentLinkClass = 'inline-flex items-center min-h-6 py-0.5 font-semibold text-red-700 dark:text-red-400 underline underline-offset-4 hover:opacity-85 break-all';
 
 export function PublicLegalPage({
   doc,
   onBack,
   onSwitchDoc,
   onOpenAuth,
+  authActionLabel = 'Sign in to manage or delete account data',
   onOpenCookiePreferences,
   onOpenUnsubscribe,
 }: PublicLegalPageProps) {
@@ -42,7 +45,7 @@ export function PublicLegalPage({
 
           <section className={sectionCardClass} aria-labelledby="priv-data">
             <h2 id="priv-data" className={headingClass}>1. Personal data we collect and why</h2>
-            <ul className="list-disc pl-5 space-y-2 text-sm text-[var(--text-secondary)] leading-relaxed">
+            <ul className="max-w-[65ch] list-disc pl-5 space-y-2 text-sm text-[var(--text-secondary)] leading-relaxed">
               <li>
                 <strong className="font-semibold text-[var(--text-primary)]">Account credentials and profile:</strong> Email address, display name, lowercase sign-in username, role, account approval status, and optional profile photo saved in Firebase Authentication and Cloud Firestore so you can sign in and access your runner or race staff dashboard.
               </li>
@@ -115,7 +118,7 @@ export function PublicLegalPage({
             <p className={bodyClass}>
               Under applicable privacy law in {LEGAL_CONFIG.jurisdiction} (including the Data Privacy Act of 2012, RA 10173, and GDPR principles), you have the right to access, correct, opt out of optional updates, or permanently delete your account and personal records:
             </p>
-            <ul className="list-disc pl-5 space-y-2 text-sm text-[var(--text-secondary)] leading-relaxed">
+            <ul className="max-w-[65ch] list-disc pl-5 space-y-2 text-sm text-[var(--text-secondary)] leading-relaxed">
               <li>
                 <strong className="font-semibold text-[var(--text-primary)]">Self-serve account deletion:</strong> Sign in and open your Profile or Account &amp; Data Rights settings to run{' '}
                 <span className="font-semibold text-[var(--text-primary)]">Delete My Account &amp; Data</span>, which purges your profile, runner entries, friend links, username index, and authentication record, and anonymizes payment ledger references.
@@ -138,6 +141,7 @@ export function PublicLegalPage({
                   <a
                     href="/unsubscribe"
                     onClick={(event) => {
+                      if (!isClientNavigationClick(event)) return;
                       event.preventDefault();
                       onOpenUnsubscribe();
                     }}
@@ -212,7 +216,7 @@ export function PublicLegalPage({
 
           <section className={sectionCardClass} aria-labelledby="refund-eligibility">
             <h2 id="refund-eligibility" className={headingClass}>1. Exact cancellation and refund timeframes</h2>
-            <ul className="list-disc pl-5 space-y-2 text-sm text-[var(--text-secondary)] leading-relaxed">
+            <ul className="max-w-[65ch] list-disc pl-5 space-y-2 text-sm text-[var(--text-secondary)] leading-relaxed">
               <li>
                 <strong className="font-semibold text-[var(--text-primary)]">Organizer cancellation without rescheduling (100% refundable):</strong> If an organizer cancels an event outright without an accepted rescheduled date, paid online registrants are eligible for a 100% refund of the paid entry fee within 10 business days of cancellation notice.
               </li>
@@ -324,6 +328,7 @@ export function PublicLegalPage({
                 href={item.path}
                 aria-current={active ? 'page' : undefined}
                 onClick={(event) => {
+                  if (!isClientNavigationClick(event)) return;
                   event.preventDefault();
                   onSwitchDoc(item.key);
                 }}
@@ -357,7 +362,7 @@ export function PublicLegalPage({
           <Building2 className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
           <span>Verified Business &amp; Compliance Contact</span>
         </div>
-        <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+        <p className="max-w-[65ch] text-xs text-[var(--text-secondary)] leading-relaxed">
           Entity: <strong className="font-semibold text-[var(--text-primary)]">{LEGAL_CONFIG.companyName}</strong> | Address: {LEGAL_CONFIG.businessAddress} | Jurisdiction: {LEGAL_CONFIG.jurisdiction} | Support:{' '}
           <a href={`mailto:${LEGAL_CONFIG.supportEmail}`} className={accentLinkClass}>
             {LEGAL_CONFIG.supportEmail}
@@ -371,8 +376,12 @@ export function PublicLegalPage({
           onClick={onOpenAuth}
           className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-800 text-white text-xs font-semibold inline-flex items-center gap-2 transition-colors"
         >
-          <Trash2 className="w-4 h-4" aria-hidden="true" />
-          <span>Sign in to manage or delete account data</span>
+          {authActionLabel === 'Sign in to manage or delete account data' ? (
+            <Trash2 className="w-4 h-4" aria-hidden="true" />
+          ) : (
+            <ArrowLeft className="w-4 h-4" aria-hidden="true" />
+          )}
+          <span>{authActionLabel}</span>
         </button>
 
         <a

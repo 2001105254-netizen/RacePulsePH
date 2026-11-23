@@ -11,6 +11,8 @@ before(async()=>{
   await setDoc(doc(ctx.firestore(),'users','storage_superadmin'),{uid:'storage_superadmin',role:'superadmin',approved:true});
   await setDoc(doc(ctx.firestore(),'races','storage_race'),{createdBy:'storage_owner'});
   await setDoc(doc(ctx.firestore(),'races','unassigned_storage_race'),{createdBy:'other'});
+  await setDoc(doc(ctx.firestore(),'publishedRaceRoutes','pub_storage_1'),{id:'pub_storage_1',status:'published',raceId:'storage_race'});
+  await setDoc(doc(ctx.firestore(),'publishedRaceRoutes','pub_storage_other'),{id:'pub_storage_other',status:'published',raceId:'unassigned_storage_race'});
   // This intentionally stale scope mirrors an account promoted to Super Admin.
   await setDoc(doc(ctx.firestore(),'userAccess','storage_superadmin'),{status:'active',scope:'selected',raceIds:[],overrides:{'race.artwork':false,'race.view':false}});
  });
@@ -32,8 +34,9 @@ test('an artwork denial also blocks direct upload requests',async()=>{
 test('Super Admin can upload artwork for any race despite a legacy restricted scope',async()=>{
  await assertSucceeds(upload(env.authenticatedContext('storage_superadmin'),'unassigned_storage_race','poster-superadmin.jpg','storage_superadmin'));
 });
-test('platform owner email can recover Storage uploads without a profile or access record',async()=>{
- await assertSucceeds(upload(env.authenticatedContext('storage_owner_email',{email:'kiahzeh@gmail.com'}),'unassigned_storage_race','poster-owner-email.jpg','storage_owner_email'));
+test('platform owner email can recover Storage uploads only with a verified email claim',async()=>{
+ await assertFails(upload(env.authenticatedContext('storage_owner_email',{email:'kiahzeh@gmail.com',email_verified:false}),'unassigned_storage_race','poster-owner-unverified.jpg','storage_owner_email'));
+ await assertSucceeds(upload(env.authenticatedContext('storage_owner_email',{email:'kiahzeh@gmail.com',email_verified:true}),'unassigned_storage_race','poster-owner-email.jpg','storage_owner_email'));
 });
 test('highlight asset uploads enforce highlights.manage permission and owner path',async()=>{
  await assertFails(uploadBytes(ref(env.authenticatedContext('storage_owner').storage(),'highlight-assets/storage_owner/hl_1/primary.jpg'),image,{contentType:'image/jpeg'}));
@@ -47,11 +50,16 @@ test('SVG and executable file types are rejected across image and font storage p
  await assertSucceeds(uploadBytes(ref(env.authenticatedContext('storage_superadmin').storage(),'race-bib-fonts/storage_superadmin/custom.woff2'),image,{contentType:'font/woff2'}));
  await assertFails(uploadBytes(ref(env.authenticatedContext('storage_superadmin').storage(),'race-bib-fonts/storage_superadmin/evil.html'),svgBytes,{contentType:'text/html'}));
 });
-test('route-private blocks anonymous writes and cross-owner access while route-published allows authorized publish',async()=>{
+test('route-private blocks anonymous writes and cross-owner access while route-published enforces scope and safe contentType',async()=>{
+ const htmlBytes=new Uint8Array(Buffer.from('<html><script>alert(1)</script></html>'));
  await assertFails(uploadBytes(ref(env.unauthenticatedContext().storage(),'route-private/storage_owner/preset_1/course.gpx'),image,{contentType:'application/gpx+xml'}));
  await assertSucceeds(uploadBytes(ref(env.authenticatedContext('storage_owner').storage(),'route-private/storage_owner/preset_1/course.gpx'),image,{contentType:'application/gpx+xml'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('storage_owner').storage(),'route-private/storage_owner/preset_1/fake.json'),htmlBytes,{contentType:'text/html'}));
  await assertFails(uploadBytes(ref(env.authenticatedContext('storage_owner').storage(),'route-private/other_owner/preset_1/course.gpx'),image,{contentType:'application/gpx+xml'}));
- await assertSucceeds(uploadBytes(ref(env.authenticatedContext('storage_owner').storage(),'route-published/pub_1/manifest.json'),image,{contentType:'application/json'}));
+ await assertSucceeds(uploadBytes(ref(env.authenticatedContext('storage_owner').storage(),'route-published/pub_storage_1/manifest.json'),image,{contentType:'application/json'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('storage_owner').storage(),'route-published/pub_storage_other/manifest.json'),image,{contentType:'application/json'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('storage_owner').storage(),'route-published/pub_storage_missing/manifest.json'),image,{contentType:'application/json'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('storage_owner').storage(),'route-published/pub_storage_1/xss.json'),htmlBytes,{contentType:'text/html'}));
 });
 test('materialized permissions allow delegated runner highlight uploads while explicit overrides deny',async()=>{
  await env.withSecurityRulesDisabled(async ctx=>{

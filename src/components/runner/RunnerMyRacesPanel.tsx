@@ -438,7 +438,9 @@ function CheckpointSplitList({
             const phase = checkpointType(cp, index, orderedCheckpoints.length);
             const waveStartTime = runnerProfile.startsAfterBib
               ? result?.sequenceStartTime
-              : getWaveStartTime(activeRace, runnerProfile.distance, runnerEntryCategory(runnerProfile));
+              : activeRace
+                ? getWaveStartTime(activeRace, runnerProfile.distance, runnerEntryCategory(runnerProfile))
+                : undefined;
             const cutoffDeadline =
               cp.cutoffMinutes && waveStartTime
                 ? new Date(new Date(waveStartTime).getTime() + cp.cutoffMinutes * 60_000)
@@ -480,9 +482,9 @@ function CheckpointSplitList({
                       : usesGunFallback
                         ? `Gun ${formatClockTime(waveStartTime!)}`
                         : 'Pending'}
-                  {usesSequenceStart && <span className="block text-[11px] font-sans">Previous finish</span>}
-                  {afterCutoff && <span className="block text-[11px] font-sans">After cutoff</span>}
-                  {usesGunFallback && <span className="block text-[11px] font-sans">Official fallback</span>}
+                  {usesSequenceStart && <span className="block text-xs font-sans">Previous finish</span>}
+                  {afterCutoff && <span className="block text-xs font-sans">After cutoff</span>}
+                  {usesGunFallback && <span className="block text-xs font-sans">Official fallback</span>}
                 </span>
               </div>
             );

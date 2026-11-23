@@ -478,7 +478,12 @@ export default function EventDataViewer({
             ) : (
               <>
                 {/* Desktop & Tablet Comparison Table */}
-                <div className="hidden md:block rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] overflow-x-auto">
+                <div
+                  tabIndex={0}
+                  role="region"
+                  aria-label="Portfolio event comparison table"
+                  className="hidden md:block rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+                >
                   <table className="w-full text-left border-collapse">
                     <thead className="bg-[var(--surface-inset)] border-b border-[var(--border-default)] text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                       <tr>
@@ -520,15 +525,20 @@ export default function EventDataViewer({
                       {sortedPortfolio.map((row) => (
                         <tr
                           key={row.raceId}
-                          onClick={() => {
-                            onSelectRace(row.raceId);
-                            setScope('event');
-                          }}
-                          className="cursor-pointer hover:bg-[var(--surface-hover)]/70 transition-colors duration-150"
+                          className="hover:bg-[var(--surface-hover)]/70 transition-colors duration-150"
                         >
                           <td className="py-2.5 px-3 font-semibold text-[var(--text-primary)]">
-                            <div className="flex items-center gap-2">
-                              <span className="truncate max-w-[240px]">{row.raceName}</span>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onSelectRace(row.raceId);
+                                  setScope('event');
+                                }}
+                                className="min-h-11 inline-flex items-center text-left font-semibold text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400 hover:underline focus-visible:outline-none focus-visible:underline truncate max-w-[240px]"
+                              >
+                                <span className="truncate">{row.raceName}</span>
+                              </button>
                               <span
                                 className={`px-2 py-0.5 rounded-full border text-xs font-semibold ${
                                   row.completed
@@ -672,7 +682,12 @@ export default function EventDataViewer({
                 <p className="p-4 text-xs text-[var(--text-secondary)]">No distances configured for this event.</p>
               ) : (
                 <>
-                  <div className="hidden md:block overflow-x-auto">
+                  <div
+                    tabIndex={0}
+                    role="region"
+                    aria-label="Event performance by distance table"
+                    className="hidden md:block overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+                  >
                     <table className="w-full text-left border-collapse">
                       <thead className="bg-[var(--surface-inset)] border-b border-[var(--border-default)] text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                         <tr>
@@ -813,7 +828,7 @@ export default function EventDataViewer({
                         </div>
                         <div className="h-2 w-full rounded-full bg-[var(--surface-inset)] overflow-hidden">
                           <div
-                            className="h-full rounded-full bg-emerald-600 transition-all duration-200"
+                            className="h-full rounded-full bg-emerald-600 transition-[width] duration-200"
                             style={{ width: `${Math.max(cp.uniqueBibs > 0 ? 4 : 0, Math.min(100, cp.pctOfRegistered))}%` }}
                           />
                         </div>
@@ -975,7 +990,12 @@ export default function EventDataViewer({
                   Revenue &amp; Yield by Distance
                 </h3>
               </div>
-              <div className="hidden md:block overflow-x-auto">
+              <div
+                tabIndex={0}
+                role="region"
+                aria-label="Revenue and yield by distance table"
+                className="hidden md:block overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+              >
                 <table className="w-full text-left border-collapse">
                   <thead className="bg-[var(--surface-inset)] border-b border-[var(--border-default)] text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                     <tr>
@@ -1200,7 +1220,12 @@ export default function EventDataViewer({
                 <p className="p-4 text-xs text-[var(--text-secondary)]">No shirt size selections recorded yet.</p>
               ) : (
                 <>
-                  <div className="hidden md:block overflow-x-auto">
+                  <div
+                    tabIndex={0}
+                    role="region"
+                    aria-label="Shirt size inventory table"
+                    className="hidden md:block overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+                  >
                     <table className="w-full text-left border-collapse">
                       <thead className="bg-[var(--surface-inset)] border-b border-[var(--border-default)] text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                         <tr>
@@ -1358,7 +1383,7 @@ export default function EventDataViewer({
                     </div>
                     <div className="h-2 w-full rounded-full bg-[var(--surface-card)] overflow-hidden">
                       <div
-                        className="h-full rounded-full bg-emerald-600 transition-all duration-200"
+                        className="h-full rounded-full bg-emerald-600 transition-[width] duration-200"
                         style={{ width: `${Math.min(100, metric.pct)}%` }}
                       />
                     </div>

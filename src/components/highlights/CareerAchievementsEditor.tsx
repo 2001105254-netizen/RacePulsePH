@@ -181,7 +181,7 @@ export default function CareerAchievementsEditor({
               <Award className="w-3.5 h-3.5 text-amber-500 shrink-0" aria-hidden="true" />
               <span>Achievements on Card ({achievements.length}/8)</span>
             </h3>
-            <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">
+            <p className="text-xs text-[var(--text-secondary)] mt-0.5">
               Displayed on the card ribbon and Finisher Dossier honors ledger.
             </p>
           </div>
@@ -191,7 +191,7 @@ export default function CareerAchievementsEditor({
             size="sm"
             disabled={!canManage}
             onClick={handleAutoDeriveAchievements}
-            className="h-9 px-2.5 text-[11px] font-mono"
+            className="min-h-11 px-3 text-xs font-mono"
           >
             <Sparkles className="w-3 h-3" aria-hidden="true" />
             <span>Auto-Derive</span>
@@ -209,7 +209,7 @@ export default function CareerAchievementsEditor({
                 disabled={!canManage}
                 onClick={() => handleTogglePresetAchievement(preset)}
                 aria-pressed={active}
-                className={`min-h-8 px-2.5 py-1 rounded-lg border text-[11px] font-mono transition inline-flex items-center gap-1 ${
+                className={`min-h-11 px-2.5 py-1 rounded-lg border text-xs font-mono transition inline-flex items-center gap-1 ${
                   active
                     ? 'bg-red-700 text-white border-red-800 shadow-xs'
                     : 'bg-[var(--surface-card)] text-[var(--text-secondary)] border-[var(--border-default)] hover:text-[var(--text-primary)]'
@@ -228,7 +228,7 @@ export default function CareerAchievementsEditor({
             {achievements.map((ach, idx) => (
               <span
                 key={`${ach}-${idx}`}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-amber-500/40 bg-amber-500/12 text-[11px] font-mono font-semibold text-amber-800 dark:text-amber-300"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-amber-500/40 bg-amber-500/12 text-xs font-mono font-semibold text-amber-800 dark:text-amber-300"
               >
                 <span>{ach}</span>
                 {canManage && (
@@ -284,7 +284,7 @@ export default function CareerAchievementsEditor({
               <Flag className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
               <span>All Participated Events & Placements ({participatedEvents.length}/8)</span>
             </h3>
-            <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">
+            <p className="text-xs text-[var(--text-secondary)] mt-0.5">
               Shown together inside this card and expandable in the Finisher Dossier.
             </p>
           </div>
@@ -296,7 +296,7 @@ export default function CareerAchievementsEditor({
                 size="sm"
                 disabled={!canManage}
                 onClick={handleSyncAllRunnerEvents}
-                className="h-9 px-2.5 text-[11px] font-mono"
+                className="min-h-11 px-3 text-xs font-mono"
               >
                 Sync {activeRunner.entries.length} Race{activeRunner.entries.length === 1 ? '' : 's'}
               </Button>
@@ -307,7 +307,7 @@ export default function CareerAchievementsEditor({
               size="sm"
               disabled={!canManage || participatedEvents.length >= 8}
               onClick={() => setShowAddEvent((prev) => !prev)}
-              className="h-9 px-2.5 text-[11px] font-mono"
+              className="min-h-11 px-3 text-xs font-mono"
             >
               <Plus className="w-3 h-3" aria-hidden="true" />
               <span>{showAddEvent ? 'Cancel' : 'Add Event'}</span>
@@ -411,7 +411,7 @@ export default function CareerAchievementsEditor({
                   <div className="min-w-0 flex-1 space-y-0.5">
                     <div className="flex items-center gap-1.5">
                       {isPrimary && (
-                        <span className="px-1.5 py-0.5 rounded bg-red-700 text-white text-[10px] font-mono font-semibold shrink-0">
+                        <span className="px-1.5 py-0.5 rounded bg-red-700 text-white text-xs font-mono font-semibold shrink-0">
                           PRIMARY
                         </span>
                       )}
@@ -419,7 +419,7 @@ export default function CareerAchievementsEditor({
                         {ev.raceName}
                       </p>
                     </div>
-                    <p className="text-[11px] font-mono text-[var(--text-secondary)] truncate">
+                    <p className="text-xs font-mono text-[var(--text-secondary)] truncate">
                       {ev.distance}
                       {ev.raceDate ? ` · ${formatReadableDate(ev.raceDate)}` : ''}
                       {ev.chipTime ? ` · ${ev.chipTime}` : ''}
@@ -445,7 +445,7 @@ export default function CareerAchievementsEditor({
                         onClick={() => handleSetPrimaryFromEvent(ev)}
                         title="Set as primary card spotlight race"
                         aria-label={`Set ${ev.raceName} as primary race`}
-                        className="h-10 px-2.5 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-[11px] font-mono text-[var(--text-primary)] inline-flex items-center gap-1"
+                        className="min-h-11 px-2.5 rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-mono text-[var(--text-primary)] inline-flex items-center gap-1"
                       >
                         <Star className="w-3 h-3 text-amber-500" aria-hidden="true" />
                         <span className="hidden md:inline">Spotlight</span>

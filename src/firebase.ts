@@ -1,5 +1,10 @@
 import { initializeApp } from 'firebase/app';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  persistentSingleTabManager,
+} from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import {
   getAuth,
@@ -35,10 +40,16 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 initFirebaseAppCheck(app);
 
-// Initialize Firestore on the default database with multi-tab persistent cache
+// Initialize Firestore on the default database with resilient persistent cache.
+// Native Capacitor apps use persistentSingleTabManager({ forceOwnership: true }) to prevent
+// multi-tab Web Locks hangs across Android activity pauses, resumes, and app restarts.
 export const db = typeof window !== 'undefined'
   ? initializeFirestore(app, {
-      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+      localCache: persistentLocalCache({
+        tabManager: Capacitor.isNativePlatform()
+          ? persistentSingleTabManager({ forceOwnership: true })
+          : persistentMultipleTabManager(),
+      }),
     })
   : initializeFirestore(app, {});
 export const storage = getStorage(app);
@@ -87,8 +98,8 @@ export async function changeAccountPassword(currentPassword: string, newPassword
   if (!currentPassword) {
     throw new Error('Please enter your current password.');
   }
-  if (newPassword.length < 6 || newPassword.length > 128) {
-    throw new Error('New password must be between 6 and 128 characters.');
+  if (newPassword.length < 8 || newPassword.length > 128) {
+    throw new Error('New password must be between 8 and 128 characters.');
   }
   if (!hasPasswordProvider(user)) {
     throw new Error('This account signs in with Google. Use Reset via Email Code to set a password.');
@@ -103,7 +114,7 @@ export async function changeAccountPassword(currentPassword: string, newPassword
       throw new Error('Current password is incorrect. Please try again or use Reset via Email Code.');
     }
     if (code === 'auth/weak-password') {
-      throw new Error('New password is too weak. Use at least 6 characters.');
+      throw new Error('New password is too weak. Use at least 8 characters.');
     }
     if (code === 'auth/too-many-requests') {
       throw new Error('Too many attempts. Please wait a moment or use Reset via Email Code.');

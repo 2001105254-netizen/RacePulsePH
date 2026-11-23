@@ -693,7 +693,7 @@ export default function PhilippinesNationalMap({
                   type="button"
                   aria-pressed={activeRegion === group}
                   onClick={() => fitIslandGroup(group)}
-                  className={`min-h-11 sm:min-h-9 rounded-xl border px-3 text-xs font-semibold shadow-sm transition ${
+                  className={`min-h-11 lg:min-h-9 rounded-xl border px-3 text-xs font-semibold shadow-sm transition ${
                     activeRegion === group
                       ? 'border-red-600 bg-red-700 text-white'
                       : 'border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] hover:border-red-600/50'
@@ -715,7 +715,7 @@ export default function PhilippinesNationalMap({
                 <button
                   type="button"
                   onClick={() => setProviderId('openfreemap')}
-                  className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[var(--border-default)] px-2 font-semibold text-red-700 dark:text-red-400"
+                  className="inline-flex min-h-11 lg:min-h-9 items-center gap-1 rounded-lg border border-[var(--border-default)] px-2 font-semibold text-red-700 dark:text-red-400"
                 >
                   <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
                   Retry
@@ -730,7 +730,7 @@ export default function PhilippinesNationalMap({
               onClick={() => mapRef.current?.zoomIn({ duration: reducedMotion ? 0 : 180 })}
               aria-label="Zoom in Philippines map"
               title="Zoom in"
-              className="flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] shadow-sm hover:border-red-600/60"
+              className="flex min-h-11 min-w-11 lg:min-h-9 lg:min-w-9 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] shadow-sm hover:border-red-600/60"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -739,7 +739,7 @@ export default function PhilippinesNationalMap({
               onClick={() => mapRef.current?.zoomOut({ duration: reducedMotion ? 0 : 180 })}
               aria-label="Zoom out Philippines map"
               title="Zoom out"
-              className="flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] shadow-sm hover:border-red-600/60"
+              className="flex min-h-11 min-w-11 lg:min-h-9 lg:min-w-9 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] shadow-sm hover:border-red-600/60"
             >
               <Minus className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -748,7 +748,7 @@ export default function PhilippinesNationalMap({
               onClick={() => fitIslandGroup(activeRegion)}
               aria-label="Fit Philippines region on map"
               title="Fit view"
-              className="flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] shadow-sm hover:border-red-600/60"
+              className="flex min-h-11 min-w-11 lg:min-h-9 lg:min-w-9 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] shadow-sm hover:border-red-600/60"
             >
               <Focus className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -760,7 +760,7 @@ export default function PhilippinesNationalMap({
                   aria-label={imageryEnabled ? 'Hide satellite imagery' : 'Show satellite imagery'}
                   title={imageryEnabled ? 'Hide satellite' : 'Satellite imagery'}
                   onClick={toggleImageryValue}
-                  className={`flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border shadow-sm transition ${
+                  className={`flex min-h-11 min-w-11 lg:min-h-9 lg:min-w-9 items-center justify-center rounded-xl border shadow-sm transition ${
                     imageryEnabled
                       ? 'border-red-600 bg-red-700 text-white'
                       : 'border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] hover:border-red-600/50'
@@ -774,7 +774,7 @@ export default function PhilippinesNationalMap({
                   aria-label={is3D ? 'Switch to 2D map' : 'Switch to 3D terrain relief'}
                   title={is3D ? '2D map' : '3D relief'}
                   onClick={toggle3DValue}
-                  className={`flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 items-center justify-center rounded-xl border shadow-sm transition ${
+                  className={`flex min-h-11 min-w-11 lg:min-h-9 lg:min-w-9 items-center justify-center rounded-xl border shadow-sm transition ${
                     is3D
                       ? 'border-red-600 bg-red-700 text-white'
                       : 'border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] hover:border-red-600/50'

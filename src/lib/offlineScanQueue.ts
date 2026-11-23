@@ -34,6 +34,19 @@ function readRetryMap(storageKey: string): Record<string, RetryMeta> {
   }
 }
 
+function writeQueue(storageKey: string, records: ChipRead[]): boolean {
+  try {
+    if (records.length === 0) {
+      localStorage.removeItem(storageKey);
+    } else {
+      localStorage.setItem(storageKey, JSON.stringify(records));
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function writeRetryMap(storageKey: string, map: Record<string, RetryMeta>) {
   try {
     if (Object.keys(map).length === 0) {
@@ -62,7 +75,9 @@ export function useOfflineScanQueue(raceId: string) {
 
   const discard = useCallback(
     (id: string) => {
-      localStorage.setItem(storageKey, JSON.stringify(readQueue(storageKey).filter((r) => r.id !== id)));
+      if (!writeQueue(storageKey, readQueue(storageKey).filter((r) => r.id !== id))) {
+        setQueueError('Could not update offline queue storage.');
+      }
       const map = readRetryMap(retryStorageKey);
       if (id in map) {
         delete map[id];
@@ -189,7 +204,10 @@ export function useOfflineScanQueue(raceId: string) {
       }
       const records = readQueue(storageKey);
       if (!records.some((r) => r.id === record.id)) {
-        localStorage.setItem(storageKey, JSON.stringify([...records, record]));
+        if (!writeQueue(storageKey, [...records, record])) {
+          setQueueError('Device storage is full. Sync pending scans or free browser space.');
+          throw new Error('Could not persist offline scan because local storage is full.');
+        }
       }
       refresh();
       void flush(false);
@@ -204,8 +222,9 @@ export function useOfflineScanQueue(raceId: string) {
     const mine = legacy.filter((r) => r.recordedBy === uid && r.raceId === raceId);
     if (mine.length) {
       const merged = new Map([...readQueue(storageKey), ...mine].map((r) => [r.id, r]));
-      localStorage.setItem(storageKey, JSON.stringify([...merged.values()]));
-      localStorage.setItem(legacyKey, JSON.stringify(legacy.filter((r) => !mine.includes(r))));
+      if (writeQueue(storageKey, [...merged.values()])) {
+        writeQueue(legacyKey, legacy.filter((r) => !mine.includes(r)));
+      }
     }
     refresh();
     void flush(false);

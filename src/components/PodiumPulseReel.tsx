@@ -384,7 +384,7 @@ export default function PodiumPulseReel({
             <div
               key={slot}
               className={`shrink-0 rounded-2xl bg-[var(--surface-inset)] animate-pulse ${
-                config.layoutMode === 'pill' ? 'w-[360px] h-[124px]' : 'w-[260px] h-[324px]'
+                config.layoutMode === 'pill' ? 'w-[min(360px,calc(100vw-4rem))] h-[124px]' : 'w-[min(260px,calc(100vw-4rem))] h-[324px]'
               }`}
             />
           ))}

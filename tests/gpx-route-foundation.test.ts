@@ -1638,6 +1638,7 @@ test('21. Route Studio GPS pinpointing tracks coarse quick-lock fixes, preserves
   assert.equal(state.acceptedPoints.length, 1);
   assert.equal(state.acceptedPoints[0].lat, 16.4121);
   assert.equal(state.acceptedPoints[0].lon, 120.5950);
+  assert.ok(state.lastFix);
   assert.equal(state.lastFix.accuracyM, 6);
 
   // 3. Second accurate fix builds the trail breadcrumb polyline

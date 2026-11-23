@@ -122,7 +122,7 @@ test('reset grants are single-use and revoke existing sessions', async () => {
 
 test('reset grants expire and weak passwords do not consume valid grants', async () => {
   const f = fixture(); const delivery = await f.request('reset'); const { resetToken } = await f.confirm(delivery, 'reset');
-  await assert.rejects(f.service.resetPassword({ resetToken, password: 'short', ip: 'test-ip' }), /6 and 128/);
+  await assert.rejects(f.service.resetPassword({ resetToken, password: '1234567', ip: 'test-ip' }), /8 and 128/);
   f.advance(600000);
   await assert.rejects(f.service.resetPassword({ resetToken, password: 'long-enough', ip: 'test-ip' }), /expired/);
 });
@@ -184,4 +184,226 @@ test('transactional messages align sender, envelope and reply address without CI
   assert.equal(message.attachments, undefined);
   assert.ok(!message.html.includes('cid:'));
   assert.equal(message.disableFileAccess, true);
+});
+
+
+test('GET /unsubscribe returns 405 without mutating state, while POST /unsubscribe updates preferences', async () => {
+  const { createAccountApp, createUnsubscribeToken } = require('../functions/auth-api');
+  const docs = new Map([
+    ['users/u1', { uid: 'u1', email: 'runner@example.com', marketingOptIn: true }],
+  ]);
+  const makeSnap = (key) => ({
+    exists: docs.has(key),
+    id: key.split('/').pop(),
+    ref: { path: key },
+    data: () => (docs.has(key) ? structuredClone(docs.get(key)) : undefined),
+  });
+  const db = {
+    doc: (key) => ({
+      path: key,
+      get: async () => makeSnap(key),
+      set: async (data, opts) => docs.set(key, opts?.merge && docs.has(key) ? { ...docs.get(key), ...structuredClone(data) } : structuredClone(data)),
+    }),
+    collection: (name) => ({
+      where: (field, op, val) => ({
+        limit: () => ({
+          get: async () => {
+            const matched = [...docs.entries()]
+              .filter(([k, v]) => k.startsWith(`${name}/`) && op === '==' && v[field] === val)
+              .map(([k]) => makeSnap(k));
+            return { empty: matched.length === 0, forEach: (fn) => matched.forEach(fn), docs: matched };
+          },
+        }),
+      }),
+    }),
+    batch: () => {
+      const ops = [];
+      return {
+        update: (ref, patch) => ops.push(() => docs.set(ref.path, { ...docs.get(ref.path), ...structuredClone(patch) })),
+        commit: async () => ops.forEach((o) => o()),
+      };
+    },
+    runTransaction: async (cb) => {
+      const ops = [];
+      const res = await cb({
+        get: async (ref) => makeSnap(ref.path),
+        set: (ref, data) => ops.push(() => docs.set(ref.path, structuredClone(data))),
+      });
+      ops.forEach((o) => o());
+      return res;
+    },
+  };
+  const secret = 'test-only-secret-that-is-not-a-production-credential';
+  const app = createAccountApp({
+    admin: { auth: () => ({}) },
+    db,
+    getCodeSecret: () => secret,
+    getSmtpPassword: () => 'unused',
+    appCheckMode: 'off',
+    turnstileMode: 'off',
+  });
+
+  const makeRes = () => {
+    const headers = {};
+    let statusCode = 200;
+    let body;
+    return {
+      headers,
+      get statusCode() { return statusCode; },
+      get body() { return body; },
+      set(k, v) { headers[k.toLowerCase()] = v; },
+      status(c) { statusCode = c; return this; },
+      json(v) { body = v; return this; },
+      send(v) { body = v; return this; },
+    };
+  };
+
+  const token = createUnsubscribeToken(secret, 'runner@example.com');
+  const getRes = makeRes();
+  await app({
+    method: 'GET',
+    path: '/unsubscribe',
+    query: { token },
+    ip: '203.0.113.9',
+    get: () => undefined,
+    is: () => false,
+  }, getRes);
+  assert.equal(getRes.statusCode, 405);
+  assert.equal(getRes.headers.allow, 'POST');
+  assert.equal(docs.get('users/u1').marketingOptIn, true);
+
+  const postRes = makeRes();
+  const bodyObj = { token, marketingOptIn: false };
+  await app({
+    method: 'POST',
+    path: '/unsubscribe',
+    body: bodyObj,
+    rawBody: Buffer.from(JSON.stringify(bodyObj), 'utf8'),
+    ip: '203.0.113.9',
+    get: (h) => (h.toLowerCase() === 'content-type' ? 'application/json' : undefined),
+    is: (t) => t === 'application/json',
+  }, postRes);
+  assert.equal(postRes.statusCode, 200);
+  assert.equal(docs.get('users/u1').marketingOptIn, false);
+});
+
+test('POST /auth/resolve-username resolves email cleanly and rejects malformed handles', async () => {
+  const { createAccountApp } = require('../functions/auth-api');
+  const docs = new Map([
+    ['usernameIndex/juan.run', { username: 'juan.run', uid: 'u1', email: 'juan@example.com' }],
+  ]);
+  const makeSnap = (key) => ({
+    exists: docs.has(key),
+    data: () => (docs.has(key) ? structuredClone(docs.get(key)) : undefined),
+  });
+  const db = {
+    doc: (key) => ({ path: key, get: async () => makeSnap(key) }),
+    runTransaction: async (cb) => {
+      const ops = [];
+      const res = await cb({
+        get: async (ref) => makeSnap(ref.path),
+        set: (ref, data) => ops.push(() => docs.set(ref.path, structuredClone(data))),
+      });
+      ops.forEach((o) => o());
+      return res;
+    },
+  };
+  const app = createAccountApp({
+    admin: { auth: () => ({}) },
+    db,
+    getCodeSecret: () => 'test-only-secret-that-is-not-a-production-credential',
+    getSmtpPassword: () => 'unused',
+    appCheckMode: 'off',
+    turnstileMode: 'off',
+  });
+  const makeRes = () => {
+    const headers = {};
+    let statusCode = 200;
+    let body;
+    return {
+      headers,
+      get statusCode() { return statusCode; },
+      get body() { return body; },
+      set(k, v) { headers[k.toLowerCase()] = v; },
+      status(c) { statusCode = c; return this; },
+      json(v) { body = v; return this; },
+    };
+  };
+
+  const okRes = makeRes();
+  const okBody = { username: 'Juan.Run' };
+  await app({
+    method: 'POST',
+    path: '/auth/resolve-username',
+    body: okBody,
+    rawBody: Buffer.from(JSON.stringify(okBody), 'utf8'),
+    ip: '203.0.113.10',
+    get: (h) => (h.toLowerCase() === 'content-type' ? 'application/json' : undefined),
+    is: (t) => t === 'application/json',
+  }, okRes);
+  assert.equal(okRes.statusCode, 200);
+  assert.equal(okRes.body.email, 'juan@example.com');
+
+  const badRes = makeRes();
+  const badBody = { username: 'x' };
+  await app({
+    method: 'POST',
+    path: '/auth/resolve-username',
+    body: badBody,
+    rawBody: Buffer.from(JSON.stringify(badBody), 'utf8'),
+    ip: '203.0.113.10',
+    get: (h) => (h.toLowerCase() === 'content-type' ? 'application/json' : undefined),
+    is: (t) => t === 'application/json',
+  }, badRes);
+  assert.equal(badRes.statusCode, 400);
+});
+
+test('purgeAndAnonymizeUserAccount deletes usernameIndex, friendDirectory, and bibClaimLocks by uid even if users doc is already gone', async () => {
+  const { purgeAndAnonymizeUserAccount } = require('../functions/auth-api');
+  const docs = new Map([
+    ['usernameIndex/orphan.user', { uid: 'u-orphan', username: 'orphan.user', email: 'orphan@example.com' }],
+    ['friendDirectory/orphan.user', { uid: 'u-orphan', username: 'orphan.user', displayName: 'Orphan' }],
+    ['bibClaimLocks/race1_5-001', { uid: 'u-orphan', raceId: 'race1', bibNumber: '5-001' }],
+  ]);
+  const makeSnap = (key) => ({
+    exists: docs.has(key),
+    id: key.split('/').pop(),
+    ref: { path: key },
+    data: () => (docs.has(key) ? structuredClone(docs.get(key)) : undefined),
+  });
+  const db = {
+    doc: (key) => ({ path: key, get: async () => makeSnap(key) }),
+    collection: (name) => ({
+      where: (field, op, val) => ({
+        get: async () => {
+          const matched = [...docs.entries()]
+            .filter(([k, v]) => {
+              if (!k.startsWith(`${name}/`)) return false;
+              if (op === '==') return v[field] === val;
+              if (op === 'array-contains') return Array.isArray(v[field]) && v[field].includes(val);
+              return false;
+            })
+            .map(([k]) => makeSnap(k));
+          return { docs: matched, empty: matched.length === 0, forEach: (fn) => matched.forEach(fn) };
+        },
+      }),
+    }),
+    batch: () => {
+      const ops = [];
+      return {
+        delete: (ref) => ops.push(() => docs.delete(ref.path)),
+        update: (ref, patch) => ops.push(() => docs.set(ref.path, { ...docs.get(ref.path), ...structuredClone(patch) })),
+        commit: async () => ops.forEach((o) => o()),
+      };
+    },
+  };
+  let deletedAuthUid = null;
+  const auth = {
+    deleteUser: async (uid) => { deletedAuthUid = uid; },
+  };
+  await purgeAndAnonymizeUserAccount({ db, auth, uid: 'u-orphan' });
+  assert.equal(docs.has('usernameIndex/orphan.user'), false);
+  assert.equal(docs.has('friendDirectory/orphan.user'), false);
+  assert.equal(docs.has('bibClaimLocks/race1_5-001'), false);
+  assert.equal(deletedAuthUid, 'u-orphan');
 });

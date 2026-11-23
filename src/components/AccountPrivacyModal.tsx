@@ -367,12 +367,12 @@ export function PasswordSecuritySection({ onResetViaEmail }: PasswordSecuritySec
                 id={`${sectionId}-new`}
                 type={showPasswords ? 'text' : 'password'}
                 autoComplete="new-password"
-                minLength={6}
+                minLength={8}
                 maxLength={128}
                 value={newPassword}
                 onChange={(event) => setNewPassword(event.target.value)}
                 disabled={busy}
-                placeholder="At least 6 characters"
+                placeholder="At least 8 characters"
                 className="w-full min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50"
               />
             </div>
@@ -385,7 +385,7 @@ export function PasswordSecuritySection({ onResetViaEmail }: PasswordSecuritySec
                 id={`${sectionId}-confirm`}
                 type={showPasswords ? 'text' : 'password'}
                 autoComplete="new-password"
-                minLength={6}
+                minLength={8}
                 maxLength={128}
                 value={confirmPassword}
                 onChange={(event) => setConfirmPassword(event.target.value)}
@@ -802,7 +802,15 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
       if (!profile.username && nextUsername) {
         await runTransaction(db, async (transaction) => {
           const usernameRef = doc(db, 'usernameIndex', nextUsername);
-          const usernameSnap = await transaction.get(usernameRef);
+          let usernameSnap;
+          try {
+            usernameSnap = await transaction.get(usernameRef);
+          } catch (err: any) {
+            if (err?.code === 'permission-denied') {
+              throw new Error('That @username is already taken. Please choose another one.');
+            }
+            throw err;
+          }
           if (usernameSnap.exists()) {
             throw new Error('That @username is already taken. Please choose another one.');
           }

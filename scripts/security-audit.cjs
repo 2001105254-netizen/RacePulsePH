@@ -15,7 +15,6 @@ const ROOT = process.cwd();
 const PUBLIC_DIST_FIREBASE_KEY = 'AIza' + 'SyBDJINSNOpvVOtichvPKWIKixWvxa5pI9s';
 const ALLOWED_FIREBASE_WEB_KEYS = new Map([
   [PUBLIC_DIST_FIREBASE_KEY, new Set(['src/firebase.ts', 'scripts/smoke-access.cjs', '.gitleaks.toml'])],
-  ['AIza' + 'SyDnDiKSfsjlmZiDkVuxLUwpKbvEjaSPz_c', new Set(['firebase-applet-config.json', '.gitleaks.toml'])],
 ]);
 
 const FORBIDDEN_TRACKED_FILE_PATTERNS = [
@@ -95,8 +94,6 @@ const SAFE_AUTH_ENUM_VALUES = new Set([
 const PLACEHOLDER_VALUE_RE = /^(?:MY_[A-Z0-9_]+|test[-_]|dummy|fake|mock|example|placeholder|changeme|your[_-]|<[^>]+>|\$\{[^}]+\}|\*{4,})/i;
 
 const APPROVED_HIGH_ROOT_PACKAGES = new Set([
-  // xlsx has no upstream fix; mitigated in src/lib/security.ts via stripUnsafeKeys and byte/row bounds.
-  'xlsx',
   // @grpc/grpc-js is transitive under firebase client SDK (not used in browser runtime).
   '@grpc/grpc-js',
   '@firebase/firestore',
@@ -565,13 +562,16 @@ function scanDistArtifacts(rootDir) {
     const text = fs.readFileSync(fullPath, 'utf8');
     findings.push(...scanContentForSecrets(rel, text));
 
-    // Built client assets (excluding server.cjs) must never leak server secret variable identifiers.
+    // Built client assets (excluding server.cjs) must never leak server secret variable identifiers or dev E2E auth hooks.
     if (!relInDist.startsWith('server.cjs')) {
       for (const secretName of SERVER_SECRET_ENV_NAMES) {
         if (secretName === 'GEMINI_API_KEY') continue;
         if (text.includes(secretName)) {
           findings.push({ rule: 'dist-leaked-secret-identifier', file: rel, line: 1, detail: `Client distribution asset references server secret identifier ${secretName}.` });
         }
+      }
+      if (text.includes('racepulse_e2e_profile')) {
+        findings.push({ rule: 'dist-e2e-harness-leak', file: rel, line: 1, detail: 'Production bundle must not contain development E2E profile bypass.' });
       }
     }
   }
@@ -717,6 +717,7 @@ function runAudit(options = {}) {
   if (auditDeps) {
     findings.push(...runNpmAudit(ROOT, 'root', APPROVED_HIGH_ROOT_PACKAGES));
     findings.push(...runNpmAudit(path.join(ROOT, 'functions'), 'functions', new Set()));
+    findings.push(...runNpmAudit(path.join(ROOT, 'functions/rbac'), 'functions/rbac', new Set()));
   }
 
   return { filesScanned: files.length, findings };

@@ -44,6 +44,5 @@ tags = ["secret", "password", "uri"]
 description = "Allowlist only documented public Firebase web API keys and WebCrypto doc algorithm name"
 regexes = [
   '''AIzaSyBDJINSNOpvVOtichvPKWIKixWvxa5pI9s''',
-  '''AIzaSyDnDiKSfsjlmZiDkVuxLUwpKbvEjaSPz_c''',
   '''MLKEM768-X25519''',
 ]

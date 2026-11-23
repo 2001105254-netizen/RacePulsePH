@@ -558,7 +558,7 @@ export default function EventCourseRunnerPanel({
                   role="tab"
                   aria-selected={active}
                   onClick={() => setSelectedDistanceId(c.distanceId)}
-                  className={`min-h-11 sm:min-h-9 rounded-xl border px-3 text-xs font-semibold tabular-nums transition-colors ${
+                  className={`min-h-11 lg:min-h-9 rounded-xl border px-3 text-xs font-semibold tabular-nums transition-colors ${
                     active
                       ? 'border-red-600 bg-red-700 text-white'
                       : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600/50'
@@ -578,13 +578,13 @@ export default function EventCourseRunnerPanel({
             aria-label="Key race course statistics"
           >
             <div className="px-2.5 py-2">
-              <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Distance</dt>
+              <dt className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Distance</dt>
               <dd className="mt-0.5 font-mono text-xs sm:text-sm font-semibold tabular-nums text-[var(--text-primary)] truncate">
                 {activeRoute.distanceKm.toFixed(2)} km
               </dd>
             </div>
             <div className="px-2.5 py-2">
-              <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Elev Gain / Loss</dt>
+              <dt className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Elev Gain / Loss</dt>
               <dd className="mt-0.5 font-mono text-xs sm:text-sm font-semibold tabular-nums text-[var(--text-primary)] truncate">
                 {activeRoute.elevationProvenance.status === 'unavailable'
                   ? 'Unavailable'
@@ -592,7 +592,7 @@ export default function EventCourseRunnerPanel({
               </dd>
             </div>
             <div className="px-2.5 py-2">
-              <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Alt &amp; Grade</dt>
+              <dt className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Alt &amp; Grade</dt>
               <dd className="mt-0.5 font-mono text-xs sm:text-sm font-semibold tabular-nums text-[var(--text-primary)] truncate">
                 {terrainSummary.minEleM !== null && terrainSummary.maxEleM !== null
                   ? `${terrainSummary.minEleM}-${terrainSummary.maxEleM}m (${terrainSummary.maxGradePct}%)`
@@ -600,13 +600,13 @@ export default function EventCourseRunnerPanel({
               </dd>
             </div>
             <div className="px-2.5 py-2">
-              <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Surface</dt>
+              <dt className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Surface</dt>
               <dd className="mt-0.5 font-mono text-xs sm:text-sm font-semibold tabular-nums text-[var(--text-primary)] truncate">
                 {terrainSummary.roadPct}% Rd · {terrainSummary.offRoadPct}% Trl
               </dd>
             </div>
             <div className="px-2.5 py-2">
-              <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">
+              <dt className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">
                 Est. ({formatPaceMinKm(targetPaceMinPerKm)})
               </dt>
               <dd className="mt-0.5 font-mono text-xs sm:text-sm font-semibold tabular-nums text-[var(--text-primary)] truncate">
@@ -631,7 +631,7 @@ export default function EventCourseRunnerPanel({
                 type="button"
                 aria-pressed={colorMode === mode}
                 onClick={() => setColorMode(mode)}
-                className={`min-h-11 sm:min-h-9 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
+                className={`min-h-11 lg:min-h-9 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
                   colorMode === mode
                     ? 'border-red-600 bg-red-700 text-white'
                     : 'border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] hover:border-red-600/50'
@@ -646,7 +646,7 @@ export default function EventCourseRunnerPanel({
               type="button"
               aria-pressed={geo.status === 'active'}
               onClick={geo.status === 'active' ? handleCenterOnUser : handleLocateMe}
-              className={`inline-flex min-h-11 sm:min-h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
+              className={`inline-flex min-h-11 lg:min-h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
                 geo.status === 'active'
                   ? 'border-sky-600 bg-sky-600 text-white hover:bg-sky-500'
                   : 'border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] hover:border-sky-600/50 hover:text-sky-700 dark:hover:text-sky-400'
@@ -665,7 +665,7 @@ export default function EventCourseRunnerPanel({
               type="button"
               aria-pressed={satelliteEnabled}
               onClick={() => setSatelliteEnabled((v) => !v)}
-              className={`inline-flex min-h-11 sm:min-h-9 items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
+              className={`inline-flex min-h-11 lg:min-h-9 items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
                 satelliteEnabled
                   ? 'border-red-600 bg-red-700 text-white'
                   : 'border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] hover:border-red-600/50'
@@ -678,7 +678,7 @@ export default function EventCourseRunnerPanel({
               type="button"
               aria-pressed={terrain3DEnabled}
               onClick={() => setTerrain3DEnabled((v) => !v)}
-              className={`inline-flex min-h-11 sm:min-h-9 items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
+              className={`inline-flex min-h-11 lg:min-h-9 items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
                 terrain3DEnabled
                   ? 'border-red-600 bg-red-700 text-white'
                   : 'border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] hover:border-red-600/50'
@@ -704,18 +704,18 @@ export default function EventCourseRunnerPanel({
             {geo.error ? (
               <>
                 <span>{geo.error}</span>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={handleLocateMe}
-                    className="min-h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 font-semibold hover:border-red-600/50"
+                    className="min-h-11 rounded-lg border border-[var(--border-control)] bg-[var(--surface-card)] px-3 font-semibold hover:border-red-600/50"
                   >
                     Retry GPS
                   </button>
                   <button
                     type="button"
                     onClick={geo.stopTracking}
-                    className="min-h-9 rounded-lg px-2 font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                    className="min-h-11 rounded-lg px-3 font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                   >
                     Dismiss
                   </button>
@@ -727,7 +727,7 @@ export default function EventCourseRunnerPanel({
                 <button
                   type="button"
                   onClick={geo.stopTracking}
-                  className="min-h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 font-semibold"
+                  className="min-h-11 rounded-lg border border-[var(--border-control)] bg-[var(--surface-card)] px-3 font-semibold"
                 >
                   Cancel
                 </button>
@@ -756,15 +756,15 @@ export default function EventCourseRunnerPanel({
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     aria-pressed={geo.autoFollow}
                     onClick={() => geo.setAutoFollow(!geo.autoFollow)}
-                    className={`min-h-9 rounded-lg border px-2.5 font-semibold ${
+                    className={`min-h-11 rounded-lg border px-3 font-semibold ${
                       geo.autoFollow
                         ? 'border-sky-600 bg-sky-600 text-white'
-                        : 'border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)]'
+                        : 'border-[var(--border-control)] bg-[var(--surface-card)] text-[var(--text-primary)]'
                     }`}
                   >
                     Follow
@@ -777,14 +777,14 @@ export default function EventCourseRunnerPanel({
                         locationProjection.passNumber,
                       )
                     }
-                    className="min-h-9 rounded-lg border border-sky-600/40 bg-[var(--surface-card)] px-2.5 font-semibold text-sky-700 hover:border-sky-600 dark:text-sky-300"
+                    className="min-h-11 rounded-lg border border-sky-600/40 bg-[var(--surface-card)] px-3 font-semibold text-sky-700 hover:border-sky-600 dark:text-sky-300"
                   >
                     Jump cursor here
                   </button>
                   <button
                     type="button"
                     onClick={geo.stopTracking}
-                    className="min-h-9 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                    className="min-h-11 rounded-lg border border-[var(--border-control)] bg-[var(--surface-card)] px-3 font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                   >
                     Stop GPS
                   </button>
@@ -893,7 +893,7 @@ export default function EventCourseRunnerPanel({
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="rounded bg-red-700 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-white">
+                      <span className="rounded bg-red-700 px-1.5 py-0.5 text-xs font-semibold uppercase text-white">
                         {selectedMarker.kind}
                       </span>
                       <h4 className="font-semibold text-[var(--text-primary)] truncate">
@@ -914,7 +914,7 @@ export default function EventCourseRunnerPanel({
                     type="button"
                     onClick={() => setSelectedMarkerId(undefined)}
                     aria-label="Clear selected trailmark"
-                    className="inline-flex min-h-8 min-w-8 items-center justify-center rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                    className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-[var(--border-control)] bg-[var(--surface-card)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                   >
                     <X className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
@@ -1040,7 +1040,7 @@ export default function EventCourseRunnerPanel({
                             loading="lazy"
                             className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
                           />
-                          <span className="absolute bottom-1.5 left-1.5 rounded bg-zinc-950/80 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-white">
+                          <span className="absolute bottom-1.5 left-1.5 rounded bg-zinc-950/80 px-1.5 py-0.5 font-mono text-xs font-semibold text-white">
                             {(entry.marker.chainageM / 1000).toFixed(1)} km
                           </span>
                         </div>
@@ -1206,7 +1206,7 @@ export default function EventCourseRunnerPanel({
                         className="w-full flex items-center justify-between gap-2 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 py-2 text-left hover:border-red-600/50"
                       >
                         <span className="truncate font-semibold text-[var(--text-primary)]">
-                          <span className="mr-1.5 inline-block rounded bg-red-700 px-1.5 py-0.5 text-[11px] text-white">
+                          <span className="mr-1.5 inline-block rounded bg-red-700 px-1.5 py-0.5 text-xs text-white">
                             {climb.category}
                           </span>
                           {climb.startKm.toFixed(1)} to {climb.endKm.toFixed(1)} km
@@ -1336,7 +1336,7 @@ export default function EventCourseRunnerPanel({
           <button
             type="button"
             onClick={() => setExpandOpen(true)}
-            className="inline-flex min-h-11 sm:min-h-9 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+            className="inline-flex min-h-11 lg:min-h-9 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
           >
             <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />
             <span>Expand Map</span>
@@ -1344,7 +1344,7 @@ export default function EventCourseRunnerPanel({
           <button
             type="button"
             onClick={handleExportGpx}
-            className="inline-flex min-h-11 sm:min-h-9 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
+            className="inline-flex min-h-11 lg:min-h-9 items-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:border-red-600/50"
           >
             <Download className="h-3.5 w-3.5" aria-hidden="true" />
             GPX
@@ -1355,7 +1355,7 @@ export default function EventCourseRunnerPanel({
               e.preventDefault();
               window.dispatchEvent(new CustomEvent('racepulse:navigate', { detail: { url: courseUrl } }));
             }}
-            className="inline-flex min-h-11 sm:min-h-9 items-center gap-1.5 rounded-xl bg-red-700 px-2.5 text-xs font-semibold text-white hover:bg-red-600"
+            className="inline-flex min-h-11 lg:min-h-9 items-center gap-1.5 rounded-xl bg-red-700 px-2.5 text-xs font-semibold text-white hover:bg-red-600"
           >
             <span>Route Explorer</span>
             <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
@@ -1474,7 +1474,7 @@ export default function EventCourseRunnerPanel({
                       handleSelectMarker(activeSnapshot.marker);
                       setActiveSnapshotIndex(null);
                     }}
-                    className="inline-flex min-h-11 sm:min-h-9 items-center gap-1.5 rounded-xl bg-red-700 px-3 text-xs font-semibold text-white hover:bg-red-600"
+                    className="inline-flex min-h-11 lg:min-h-9 items-center gap-1.5 rounded-xl bg-red-700 px-3 text-xs font-semibold text-white hover:bg-red-600"
                   >
                     <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
                     <span>Focus on Map</span>
@@ -1491,7 +1491,7 @@ export default function EventCourseRunnerPanel({
                               : (curr - 1 + snapshotEntries.length) % snapshotEntries.length,
                           )
                         }
-                        className="inline-flex min-h-11 sm:min-h-9 items-center gap-1 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 text-xs font-semibold"
+                        className="inline-flex min-h-11 lg:min-h-9 items-center gap-1 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 text-xs font-semibold"
                       >
                         <ChevronLeft className="h-4 w-4" aria-hidden="true" />
                         <span>Prev</span>
@@ -1504,7 +1504,7 @@ export default function EventCourseRunnerPanel({
                             curr === null ? null : (curr + 1) % snapshotEntries.length,
                           )
                         }
-                        className="inline-flex min-h-11 sm:min-h-9 items-center gap-1 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 text-xs font-semibold"
+                        className="inline-flex min-h-11 lg:min-h-9 items-center gap-1 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] px-2.5 text-xs font-semibold"
                       >
                         <span>Next</span>
                         <ChevronRight className="h-4 w-4" aria-hidden="true" />

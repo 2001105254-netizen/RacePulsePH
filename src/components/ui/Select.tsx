@@ -458,9 +458,9 @@ export function Select({
 
   const surfaceTriggerClasses = {
     inset:
-      'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-[var(--border-button)] hover:bg-[var(--surface-hover)]',
+      'border-[var(--border-control)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]',
     card:
-      'border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] hover:border-[var(--border-button)] hover:bg-[var(--surface-hover)]',
+      'border-[var(--border-control)] bg-[var(--surface-card)] text-[var(--text-primary)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]',
     header:
       'border-white/20 bg-[#1c1d21] text-white hover:border-red-400/70 hover:bg-[#24262b]',
   }[surface];
@@ -472,14 +472,13 @@ export function Select({
 
   const menuSurfaceClasses = isHeaderSurface
     ? 'border border-white/20 bg-[#141416] text-white shadow-[0_20px_48px_-12px_rgba(0,0,0,0.75)]'
-    : 'border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] shadow-[0_16px_40px_-12px_rgba(0,0,0,0.22)] dark:shadow-[0_20px_48px_-12px_rgba(0,0,0,0.68)]';
+    : 'border border-[var(--border-control)] bg-[var(--surface-card)] text-[var(--text-primary)] shadow-[0_16px_40px_-12px_rgba(0,0,0,0.22)] dark:shadow-[0_20px_48px_-12px_rgba(0,0,0,0.68)]';
 
   const menuContent = open && portalContainer ? (
     <div
       ref={popoverRef}
       {...(supportsPopover ? { popover: 'auto' as const } : {})}
       data-placement={placement}
-      onClick={(ev) => ev.stopPropagation()}
       style={menuStyle}
       className={cn(
         'rp-select-popover rounded-2xl overflow-hidden',
@@ -509,6 +508,7 @@ export function Select({
               ref={searchInputRef}
               type="text"
               value={queryText}
+              onClick={(ev) => ev.stopPropagation()}
               onChange={(ev) => {
                 setQueryText(ev.target.value);
                 setActiveIndex(0);
@@ -517,23 +517,24 @@ export function Select({
               placeholder={searchPlaceholder}
               aria-label={searchPlaceholder}
               className={cn(
-                'w-full min-h-9 pl-8 pr-8 rounded-lg border text-xs focus:outline-none focus-visible:ring-2',
+                'w-full min-h-11 pl-8 pr-10 rounded-lg border text-xs focus:outline-none focus-visible:ring-2',
                 isHeaderSurface
                   ? 'border-white/20 bg-[#141416] text-white placeholder:text-zinc-400 focus-visible:ring-red-400'
-                  : 'border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus-visible:ring-red-600 dark:focus-visible:ring-red-400',
+                  : 'border-[var(--border-control)] bg-[var(--surface-card)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus-visible:ring-red-600 dark:focus-visible:ring-red-400',
               )}
             />
             {queryText && (
               <button
                 type="button"
                 aria-label="Clear filter"
-                onClick={() => {
+                onClick={(ev) => {
+                  ev.stopPropagation();
                   setQueryText('');
                   setActiveIndex(0);
                   searchInputRef.current?.focus();
                 }}
                 className={cn(
-                  'absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 inline-flex items-center justify-center rounded',
+                  'absolute right-1 top-1/2 -translate-y-1/2 w-9 h-9 inline-flex items-center justify-center rounded',
                   isHeaderSurface
                     ? 'text-zinc-300 hover:text-white'
                     : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
@@ -585,7 +586,10 @@ export function Select({
                 onMouseEnter={() => {
                   if (!opt.disabled) setActiveIndex(idx);
                 }}
-                onClick={() => commitOption(opt)}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  commitOption(opt);
+                }}
                 className={cn(
                   'w-full min-h-11 px-3 py-2 rounded-xl border text-left transition-colors duration-100 flex items-center justify-between gap-2.5 disabled:opacity-45 disabled:cursor-not-allowed',
                   align === 'center' && 'justify-center text-center',

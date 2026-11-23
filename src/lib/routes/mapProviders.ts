@@ -447,10 +447,11 @@ export function findFirstVectorOverlayLayerId(
 }
 
 type PaintPropName = Parameters<maplibregl.Map['setPaintProperty']>[1];
+type PaintPropValue = Parameters<maplibregl.Map['setPaintProperty']>[2];
 
 interface SavedHybridLayerState {
   visibility?: 'visible' | 'none';
-  paint: Record<string, unknown>;
+  paint: Record<string, PaintPropValue>;
 }
 
 const hybridStyleCache = new WeakMap<
@@ -504,14 +505,14 @@ export function applySatelliteHybridRoadStyling(
     return;
   }
 
-  const recordAndSetPaint = (layerId: string, prop: PaintPropName, value: unknown) => {
+  const recordAndSetPaint = (layerId: string, prop: PaintPropName, value: PaintPropValue) => {
     let saved = cache!.originals.get(layerId);
     if (!saved) {
       saved = { paint: {} };
       cache!.originals.set(layerId, saved);
     }
     if (!(prop in saved.paint)) {
-      saved.paint[prop] = map.getPaintProperty(layerId, prop);
+      saved.paint[prop] = map.getPaintProperty(layerId, prop) as PaintPropValue;
     }
     map.setPaintProperty(layerId, prop, value);
   };

@@ -727,7 +727,7 @@ export default function MyRaceEventsPanel({
           onClick={() => (viewMode === 'viewer' ? setViewMode('directory') : openDataViewer(safeViewerCategory))}
           aria-pressed={viewMode === 'viewer'}
           disabled={races.length === 0 && viewMode === 'directory'}
-          className={`h-9 px-3 rounded-lg border text-xs font-semibold inline-flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap disabled:opacity-40 ${
+          className={`min-h-11 px-3 rounded-lg border text-xs font-semibold inline-flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap disabled:opacity-40 ${
             viewMode === 'viewer'
               ? 'bg-white text-zinc-900 border-white hover:bg-zinc-100'
               : 'bg-white/10 hover:bg-white/15 text-white border-white/15'
@@ -742,7 +742,7 @@ export default function MyRaceEventsPanel({
         <button
           type="button"
           onClick={onCreateEvent}
-          className="h-9 px-3 rounded-lg bg-red-700 hover:bg-red-600 text-white border border-red-500/30 text-xs font-semibold inline-flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
+          className="min-h-11 px-3 rounded-lg bg-red-700 hover:bg-red-600 text-white border border-red-500/30 text-xs font-semibold inline-flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 whitespace-nowrap"
         >
           <Plus className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
           <span>Create Event</span>
@@ -780,19 +780,18 @@ export default function MyRaceEventsPanel({
   const renderInlineActions = (race: Race, compactMobile = false) => {
     const btnClass = compactMobile
       ? 'min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-2 transition-colors whitespace-nowrap'
-      : 'w-8 h-8 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:border-red-600 hover:text-red-700 dark:hover:text-red-400 text-[var(--text-primary)] inline-flex items-center justify-center shrink-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400';
+      : 'min-h-11 min-w-11 rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] hover:border-red-600 hover:text-red-700 dark:hover:text-red-400 text-[var(--text-primary)] inline-flex items-center justify-center shrink-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400';
 
     const timingBtnClass = compactMobile
       ? 'min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center gap-2 transition-colors whitespace-nowrap'
-      : 'w-8 h-8 rounded-lg bg-red-700 hover:bg-red-600 text-white inline-flex items-center justify-center shrink-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400';
+      : 'min-h-11 min-w-11 rounded-lg bg-red-700 hover:bg-red-600 text-white inline-flex items-center justify-center shrink-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400';
 
     const iconClass = compactMobile ? 'w-3.5 h-3.5 shrink-0' : 'w-4 h-4 shrink-0';
     const labelClass = compactMobile ? undefined : 'sr-only';
 
     return (
       <div
-        className={`flex items-center ${compactMobile ? 'flex-wrap gap-2' : 'justify-end gap-1'}`}
-        onClick={(e) => e.stopPropagation()}
+        className={`flex items-center ${compactMobile ? 'flex-wrap gap-2' : 'justify-end gap-1.5'}`}
       >
         {canViewTiming && (
           <button
@@ -1164,9 +1163,8 @@ export default function MyRaceEventsPanel({
                 {filteredEvents.map((row) => {
                   const isSelected = selectedEvent?.race.id === row.race.id;
                   return (
-                    <div
+                    <article
                       key={row.race.id}
-                      onClick={() => selectRace(row.race.id)}
                       className={`rounded-2xl border border-[var(--border-default)] border-l-4 ${
                         isSelected
                           ? 'border-l-red-600 bg-red-500/[0.06] ring-2 ring-red-600/70'
@@ -1193,10 +1191,8 @@ export default function MyRaceEventsPanel({
                           <div className="flex items-start justify-between gap-2">
                             <button
                               type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                selectRace(row.race.id);
-                              }}
+                              onClick={() => selectRace(row.race.id)}
+                              aria-pressed={isSelected}
                               className="min-h-11 py-1 text-left text-base font-display font-semibold text-[var(--text-primary)] hover:text-red-700 dark:hover:text-red-400"
                             >
                               {row.race.name}
@@ -1264,7 +1260,7 @@ export default function MyRaceEventsPanel({
                       <div className="pt-2 border-t border-[var(--border-subtle)]">
                         {renderInlineActions(row.race, true)}
                       </div>
-                    </div>
+                    </article>
                   );
                 })}
               </div>
@@ -1349,7 +1345,7 @@ export default function MyRaceEventsPanel({
                         {renderSortMarker('revenue')}
                       </button>
                     </th>
-                    <th className="py-2 pl-2 pr-3 text-right whitespace-nowrap w-[160px]">Quick Actions</th>
+                    <th className="py-2 pl-2 pr-3 text-right whitespace-nowrap w-[220px]">Quick Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border-subtle)] text-sm">
@@ -1360,8 +1356,7 @@ export default function MyRaceEventsPanel({
                     return (
                       <tr
                         key={row.race.id}
-                        onClick={() => selectRace(row.race.id)}
-                        className={`cursor-pointer border-l-4 transition-colors ${
+                        className={`border-l-4 transition-colors ${
                           isSelected
                             ? 'border-l-red-600 bg-red-500/[0.08]'
                             : `${
@@ -1392,12 +1387,9 @@ export default function MyRaceEventsPanel({
                             <div className="min-w-0 flex-1">
                               <button
                                 type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  selectRace(row.race.id);
-                                }}
+                                onClick={() => selectRace(row.race.id)}
                                 aria-pressed={isSelected}
-                                className="flex items-center min-h-8 w-full text-left font-display font-semibold text-sm leading-tight text-[var(--text-primary)] truncate hover:text-red-700 dark:hover:text-red-400 focus-visible:outline-none focus-visible:underline"
+                                className="flex items-center min-h-11 w-full text-left font-display font-semibold text-sm leading-tight text-[var(--text-primary)] truncate hover:text-red-700 dark:hover:text-red-400 focus-visible:outline-none focus-visible:underline"
                               >
                                 <span className="truncate">{row.race.name}</span>
                               </button>

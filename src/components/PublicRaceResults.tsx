@@ -216,7 +216,7 @@ export default function PublicRaceResults({
                   aria-label="Race finish statistics"
                 >
                   <div className="px-2.5 py-2">
-                    <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Finishers</dt>
+                    <dt className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Finishers</dt>
                     <dd className="mt-0.5 font-mono text-xs sm:text-sm font-semibold tabular-nums text-[var(--text-primary)] truncate">
                       {raceStats.finished}{raceStats.registered > 0 ? `/${raceStats.registered}` : ''}
                       {raceStats.finishRatePct !== null && (
@@ -225,19 +225,19 @@ export default function PublicRaceResults({
                     </dd>
                   </div>
                   <div className="px-2.5 py-2">
-                    <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Fastest</dt>
+                    <dt className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Fastest</dt>
                     <dd className="mt-0.5 font-mono text-xs sm:text-sm font-semibold tabular-nums text-emerald-700 dark:text-emerald-400 truncate">
                       <RaceTimeText value={raceStats.fastestTime} fallback="--:--:--" />
                     </dd>
                   </div>
                   <div className="px-2.5 py-2">
-                    <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Median</dt>
+                    <dt className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Median</dt>
                     <dd className="mt-0.5 font-mono text-xs sm:text-sm font-semibold tabular-nums text-[var(--text-primary)] truncate">
                       <RaceTimeText value={raceStats.medianTime} fallback="--:--:--" />
                     </dd>
                   </div>
                   <div className="px-2.5 py-2">
-                    <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Chip Timing</dt>
+                    <dt className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate">Chip Timing</dt>
                     <dd className="mt-0.5 font-mono text-xs sm:text-sm font-semibold tabular-nums text-[var(--text-primary)] truncate">
                       {raceStats.chipCount} chip{raceStats.specialAwardsCount > 0 ? ` · ${raceStats.specialAwardsCount} awd` : ''}
                     </dd>
@@ -301,7 +301,7 @@ export default function PublicRaceResults({
                     }`}
                   >
                     <span>{cat.label}</span>
-                    <span className="font-mono text-[11px] opacity-85">({cat.count})</span>
+                    <span className="font-mono text-xs opacity-85">({cat.count})</span>
                   </button>
                 ))}
               </div>
@@ -353,7 +353,7 @@ export default function PublicRaceResults({
                       </span>
                       <span className="shrink-0 text-right font-mono text-xs sm:text-sm font-semibold tabular-nums text-emerald-800 dark:text-emerald-300">
                         <RaceTimeText value={entry.finishTime} />
-                        {entry.finishReviewRequired && <span className="block text-[11px] text-amber-800 dark:text-amber-300">Provisional</span>}
+                        {entry.finishReviewRequired && <span className="block text-xs text-amber-800 dark:text-amber-300">Provisional</span>}
                       </span>
                       <button
                         type="button"

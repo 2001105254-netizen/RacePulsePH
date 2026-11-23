@@ -95,7 +95,7 @@ function createAccountSecurity({ db, auth, sendCode, secret, now = Date.now }) {
     }
     // Equalize password-reset latency in production so SMTP time cannot reveal whether an email exists.
     if (purpose === 'reset' && now === Date.now) {
-      const remainingMs = 650 - (Date.now() - startedAt);
+      const remainingMs = 1200 - (Date.now() - startedAt);
       if (remainingMs > 0) await new Promise((resolve) => setTimeout(resolve, remainingMs));
     }
     // Unknown reset addresses get the same response and cooldown as real accounts.
@@ -140,7 +140,7 @@ function createAccountSecurity({ db, auth, sendCode, secret, now = Date.now }) {
 
   async function resetPassword({ resetToken, password, ip }) {
     await rateLimit(ip);
-    if (typeof password !== 'string' || password.length < 6 || password.length > 128) throw new AccountError(400, 'Use a password between 6 and 128 characters.');
+    if (typeof password !== 'string' || password.length < 8 || password.length > 128) throw new AccountError(400, 'Use a password between 8 and 128 characters.');
     if (typeof resetToken !== 'string' || !/^[a-f0-9]{64}$/.test(resetToken)) throw new AccountError(400, 'Verify your email code before resetting your password.');
     const ref = db.doc(`accountResetGrants/${hash(resetToken)}`);
     const grant = await db.runTransaction(async (transaction) => {

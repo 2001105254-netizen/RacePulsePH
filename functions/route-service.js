@@ -3,6 +3,8 @@ const policy = require('./access-policy');
 
 const VALID_ID_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const VALID_REQUEST_ID_RE = /^[a-zA-Z0-9-]{16,64}$/;
+const MAX_DRAFT_BYTES = 900 * 1024;
+const MAX_MARKERS = 200;
 
 function fail(message, status = 400) {
   throw Object.assign(new Error(message), { status });
@@ -22,6 +24,28 @@ function assertText(value, maxLen, label, required = true) {
   return trimmed;
 }
 
+function assertFiniteNonNegative(value, label) {
+  if (value === undefined || value === null || value === '') return 0;
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) {
+    fail(`${label} must be a non-negative finite number.`, 400);
+  }
+  return num;
+}
+
+function assertDraftBounds(draft, markersInput) {
+  if (markersInput !== undefined && !Array.isArray(markersInput)) {
+    fail('Markers must be an array.', 400);
+  }
+  if (Array.isArray(draft.markers) && draft.markers.length > MAX_MARKERS) {
+    fail(`Maximum ${MAX_MARKERS} markers allowed per course.`, 400);
+  }
+  const sizeBytes = Buffer.byteLength(JSON.stringify(draft), 'utf8');
+  if (sizeBytes > MAX_DRAFT_BYTES) {
+    fail('Course draft exceeds the maximum 900 KB document limit.', 400);
+  }
+}
+
 function canEditPreset(actor, actorAccess, preset) {
   if (policy.isAuthority(actor, actorAccess)) return true;
   if (actorAccess?.scope === 'all' && policy.can(actor, actorAccess, 'routes.view')) return true;
@@ -33,9 +57,17 @@ function computeHash(obj) {
   return crypto.createHash('sha256').update(JSON.stringify(obj)).digest('hex');
 }
 
+function checkIdempotentReplay(idempSnap, reqDigest) {
+  if (!idempSnap.exists) return null;
+  if (idempSnap.data().digest !== reqDigest) {
+    fail('Request ID already used for a different operation.', 409);
+  }
+  return idempSnap.data().response;
+}
+
 function validateMarkersForPublish(markers, raceCheckpoints) {
   const list = Array.isArray(markers) ? markers : [];
-  if (list.length > 200) fail('Maximum 200 markers allowed per course.', 400);
+  if (list.length > MAX_MARKERS) fail(`Maximum ${MAX_MARKERS} markers allowed per course.`, 400);
 
   const hasStart = list.some((m) => m.kind === 'start');
   const hasFinish = list.some((m) => m.kind === 'finish');
@@ -90,7 +122,8 @@ function createRouteService(db, storage = null) {
       const file = storage.bucket().file(objectPath);
       await file.save(content, { contentType, resumable: false });
       return objectPath;
-    } catch {
+    } catch (error) {
+      console.warn('Route storage asset write failed', { objectPath, code: error?.code || 'storage_write_failed' });
       return null;
     }
   }
@@ -112,14 +145,6 @@ function createRouteService(db, storage = null) {
 
     const reqDigest = computeHash({ path, input });
     const idempRef = db.doc(`routeIdempotency/${actorUid}_${requestId}`);
-    const existingIdemp = await idempRef.get();
-    if (existingIdemp.exists) {
-      if (existingIdemp.data().digest !== reqDigest) {
-        fail('Request ID already used for a different operation.', 409);
-      }
-      return existingIdemp.data().response;
-    }
-
     const now = new Date().toISOString();
     const actorName = actor.displayName || actor.email || actorUid;
 
@@ -134,8 +159,6 @@ function createRouteService(db, storage = null) {
       });
     };
 
-    let result;
-
     if (path === '/create-preset') {
       if (!policy.can(actor, actorAccess, 'routes.create')) {
         fail('You do not have permission to create route presets.', 403);
@@ -145,6 +168,9 @@ function createRouteService(db, storage = null) {
       const title = assertText(input.title, 120, 'Course title');
       const region = assertText(input.region || 'Philippines', 80, 'Region');
       const activity = ['road', 'trail', 'mixed'].includes(input.activity) ? input.activity : 'road';
+      const distanceM = assertFiniteNonNegative(input.distanceM, 'distanceM');
+      const elevationGainM = assertFiniteNonNegative(input.elevationGainM, 'elevationGainM');
+      const elevationLossM = assertFiniteNonNegative(input.elevationLossM, 'elevationLossM');
 
       const preset = {
         id: presetId,
@@ -172,32 +198,41 @@ function createRouteService(db, storage = null) {
         elevationProvenance: input.elevationProvenance,
         validationReport: input.validationReport,
         markers: Array.isArray(input.markers) ? input.markers : [],
-        distanceM: Number(input.distanceM || 0),
-        elevationGainM: Number(input.elevationGainM || 0),
-        elevationLossM: Number(input.elevationLossM || 0),
+        distanceM,
+        elevationGainM,
+        elevationLossM,
         editSummary: assertText(input.editSummary || 'Initial course draft', 240, 'Edit summary', false),
         ...(input.mapLayerProvenance ? { mapLayerProvenance: input.mapLayerProvenance } : {}),
         updatedAt: now,
         updatedBy: actorUid,
       };
+      assertDraftBounds(draft, input.markers);
 
-      await db.runTransaction(async (tx) => {
+      const outcome = await db.runTransaction(async (tx) => {
         const ref = db.doc(`routePresets/${presetId}`);
-        const snap = await tx.get(ref);
+        const [idempSnap, snap] = await Promise.all([tx.get(idempRef), tx.get(ref)]);
+        const replayed = checkIdempotentReplay(idempSnap, reqDigest);
+        if (replayed) return { replayed: true, response: replayed };
         if (snap.exists) fail('Preset ID already exists.', 409);
         tx.create(ref, preset);
         tx.create(db.doc(`routePresets/${presetId}/drafts/${draftId}`), draft);
         recordAudit(tx, { action: 'create_preset', presetId, draftId, reason: title });
-        tx.create(idempRef, { digest: reqDigest, response: { preset, draft }, at: now });
+        const response = { preset, draft };
+        tx.create(idempRef, { digest: reqDigest, response, at: now });
+        return { replayed: false, response };
       });
 
-      await writeStorageAsset(
-        `route-private/${actorUid}/${presetId}/${draftId}-geometry.json`,
-        JSON.stringify(draft.canonicalGeometry),
-        'application/json',
-      );
-      result = { preset, draft };
-    } else if (path === '/save-draft') {
+      if (!outcome.replayed && draft.canonicalGeometry !== undefined) {
+        await writeStorageAsset(
+          `route-private/${actorUid}/${presetId}/${draftId}-geometry.json`,
+          JSON.stringify(draft.canonicalGeometry),
+          'application/json',
+        );
+      }
+      return outcome.response;
+    }
+
+    if (path === '/save-draft') {
       if (!policy.can(actor, actorAccess, 'routes.edit')) {
         fail('You do not have permission to edit route drafts.', 403);
       }
@@ -207,11 +242,26 @@ function createRouteService(db, storage = null) {
       if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
         fail('expectedRevision is required.', 400);
       }
+      const distanceM = assertFiniteNonNegative(input.distanceM, 'distanceM');
+      const elevationGainM = assertFiniteNonNegative(input.elevationGainM, 'elevationGainM');
+      const elevationLossM = assertFiniteNonNegative(input.elevationLossM, 'elevationLossM');
+      if (input.markers !== undefined && !Array.isArray(input.markers)) {
+        fail('Markers must be an array.', 400);
+      }
+      if (Array.isArray(input.markers) && input.markers.length > MAX_MARKERS) {
+        fail(`Maximum ${MAX_MARKERS} markers allowed per course.`, 400);
+      }
 
-      const updatedDraft = await db.runTransaction(async (tx) => {
+      return db.runTransaction(async (tx) => {
         const presetRef = db.doc(`routePresets/${presetId}`);
         const draftRef = db.doc(`routePresets/${presetId}/drafts/${draftId}`);
-        const [presetSnap, draftSnap] = await Promise.all([tx.get(presetRef), tx.get(draftRef)]);
+        const [idempSnap, presetSnap, draftSnap] = await Promise.all([
+          tx.get(idempRef),
+          tx.get(presetRef),
+          tx.get(draftRef),
+        ]);
+        const replayed = checkIdempotentReplay(idempSnap, reqDigest);
+        if (replayed) return replayed;
         if (!presetSnap.exists) fail('Route preset not found.', 404);
         const preset = presetSnap.data();
         if (!canEditPreset(actor, actorAccess, preset)) fail('You cannot edit this preset.', 403);
@@ -229,20 +279,21 @@ function createRouteService(db, storage = null) {
           processingState: input.processingState || 'ready',
           sourceFileName: input.sourceFileName || null,
           sourceHash: input.sourceHash || null,
-          sourceBytes: Number(input.sourceBytes || 0),
+          sourceBytes: assertFiniteNonNegative(input.sourceBytes, 'sourceBytes'),
           selectedTrackIndices: Array.isArray(input.selectedTrackIndices) ? input.selectedTrackIndices : [0],
           canonicalGeometry: input.canonicalGeometry,
           elevationProvenance: input.elevationProvenance,
           validationReport: input.validationReport,
           markers: Array.isArray(input.markers) ? input.markers : [],
-          distanceM: Number(input.distanceM || 0),
-          elevationGainM: Number(input.elevationGainM || 0),
-          elevationLossM: Number(input.elevationLossM || 0),
+          distanceM,
+          elevationGainM,
+          elevationLossM,
           editSummary: assertText(input.editSummary || 'Updated course draft', 240, 'Edit summary', false),
           ...(input.mapLayerProvenance ? { mapLayerProvenance: input.mapLayerProvenance } : {}),
           updatedAt: now,
           updatedBy: actorUid,
         };
+        assertDraftBounds(nextDraft, input.markers);
         tx.set(draftRef, nextDraft);
         tx.update(presetRef, {
           title: nextDraft.title,
@@ -252,11 +303,13 @@ function createRouteService(db, storage = null) {
           updatedBy: actorUid,
         });
         recordAudit(tx, { action: 'save_draft', presetId, draftId, reason: nextDraft.editSummary });
-        tx.create(idempRef, { digest: reqDigest, response: { draft: nextDraft }, at: now });
-        return nextDraft;
+        const response = { draft: nextDraft };
+        tx.create(idempRef, { digest: reqDigest, response, at: now });
+        return response;
       });
-      result = { draft: updatedDraft };
-    } else if (path === '/create-version') {
+    }
+
+    if (path === '/create-version') {
       if (!policy.can(actor, actorAccess, 'routes.publish')) {
         fail('You do not have permission to create reviewed route versions.', 403);
       }
@@ -267,10 +320,16 @@ function createRouteService(db, storage = null) {
         fail('expectedRevision is required.', 400);
       }
 
-      const createdVersion = await db.runTransaction(async (tx) => {
+      return db.runTransaction(async (tx) => {
         const presetRef = db.doc(`routePresets/${presetId}`);
         const draftRef = db.doc(`routePresets/${presetId}/drafts/${draftId}`);
-        const [presetSnap, draftSnap] = await Promise.all([tx.get(presetRef), tx.get(draftRef)]);
+        const [idempSnap, presetSnap, draftSnap] = await Promise.all([
+          tx.get(idempRef),
+          tx.get(presetRef),
+          tx.get(draftRef),
+        ]);
+        const replayed = checkIdempotentReplay(idempSnap, reqDigest);
+        if (replayed) return replayed;
         if (!presetSnap.exists || !draftSnap.exists) fail('Preset or draft not found.', 404);
         const preset = presetSnap.data();
         const draft = draftSnap.data();
@@ -311,11 +370,13 @@ function createRouteService(db, storage = null) {
           updatedBy: actorUid,
         });
         recordAudit(tx, { action: 'create_version', presetId, versionId, reason: version.reviewNotes });
-        tx.create(idempRef, { digest: reqDigest, response: { version }, at: now });
-        return version;
+        const response = { version };
+        tx.create(idempRef, { digest: reqDigest, response, at: now });
+        return response;
       });
-      result = { version: createdVersion };
-    } else if (path === '/bind-publish') {
+    }
+
+    if (path === '/bind-publish') {
       if (!policy.can(actor, actorAccess, 'routes.assign') || !policy.can(actor, actorAccess, 'routes.publish')) {
         fail('You need route publish and race assignment permissions.', 403);
       }
@@ -325,17 +386,20 @@ function createRouteService(db, storage = null) {
       const versionId = assertId(input.versionId, 'version ID');
       const expectedBindingRevision = Number(input.expectedBindingRevision ?? 0);
 
-      const pubResult = await db.runTransaction(async (tx) => {
+      const outcome = await db.runTransaction(async (tx) => {
         const raceRef = db.doc(`races/${raceId}`);
         const presetRef = db.doc(`routePresets/${presetId}`);
         const versionRef = db.doc(`routePresets/${presetId}/versions/${versionId}`);
         const bindingRef = db.doc(`races/${raceId}/routeBindings/${distanceId}`);
-        const [raceSnap, presetSnap, versionSnap, bindingSnap] = await Promise.all([
+        const [idempSnap, raceSnap, presetSnap, versionSnap, bindingSnap] = await Promise.all([
+          tx.get(idempRef),
           tx.get(raceRef),
           tx.get(presetRef),
           tx.get(versionRef),
           tx.get(bindingRef),
         ]);
+        const replayed = checkIdempotentReplay(idempSnap, reqDigest);
+        if (replayed) return { replayed: true, response: replayed };
         if (!raceSnap.exists) fail('Race not found.', 404);
         if (!presetSnap.exists || !versionSnap.exists) fail('Preset version not found.', 404);
         const race = { ...raceSnap.data(), id: raceSnap.id };
@@ -455,24 +519,30 @@ function createRouteService(db, storage = null) {
           previousPublicationId: previousPublicationId || null,
           reason: input.reason || `Published v${version.versionNumber}`,
         });
-        tx.create(idempRef, { digest: reqDigest, response: { binding, publication, catalogEntry }, at: now });
-        return { binding, publication, catalogEntry };
+        const response = { binding, publication, catalogEntry };
+        tx.create(idempRef, { digest: reqDigest, response, at: now });
+        return { replayed: false, response };
       });
 
-      await writeStorageAsset(
-        `route-published/${pubResult.publication.id}/manifest.json`,
-        JSON.stringify(pubResult.publication),
-        'application/json',
-      );
-      if (pubResult.publication.mapLayerProvenance) {
+      if (!outcome.replayed) {
+        const pubResult = outcome.response;
         await writeStorageAsset(
-          `route-published/${pubResult.publication.id}/tiles-manifest.json`,
-          JSON.stringify(pubResult.publication.mapLayerProvenance),
+          `route-published/${pubResult.publication.id}/manifest.json`,
+          JSON.stringify(pubResult.publication),
           'application/json',
         );
+        if (pubResult.publication.mapLayerProvenance) {
+          await writeStorageAsset(
+            `route-published/${pubResult.publication.id}/tiles-manifest.json`,
+            JSON.stringify(pubResult.publication.mapLayerProvenance),
+            'application/json',
+          );
+        }
       }
-      result = pubResult;
-    } else if (path === '/withdraw') {
+      return outcome.response;
+    }
+
+    if (path === '/withdraw') {
       if (!policy.can(actor, actorAccess, 'routes.publish')) {
         fail('You do not have permission to withdraw a published course.', 403);
       }
@@ -481,22 +551,34 @@ function createRouteService(db, storage = null) {
       const publicationId = assertId(input.publicationId, 'publication ID');
       const reason = assertText(input.reason, 300, 'Withdrawal reason');
 
-      await db.runTransaction(async (tx) => {
-        const raceSnap = await tx.get(db.doc(`races/${raceId}`));
+      return db.runTransaction(async (tx) => {
+        const pubRef = db.doc(`publishedRaceRoutes/${publicationId}`);
+        const [idempSnap, raceSnap, pubSnap] = await Promise.all([
+          tx.get(idempRef),
+          tx.get(db.doc(`races/${raceId}`)),
+          tx.get(pubRef),
+        ]);
+        const replayed = checkIdempotentReplay(idempSnap, reqDigest);
+        if (replayed) return replayed;
         if (!raceSnap.exists) fail('Race not found.', 404);
         if (!policy.inScope(actor, actorAccess, { ...raceSnap.data(), id: raceSnap.id })) {
           fail('Race is outside your access scope.', 403);
         }
-        const pubRef = db.doc(`publishedRaceRoutes/${publicationId}`);
-        const pubSnap = await tx.get(pubRef);
         if (!pubSnap.exists) fail('Publication not found.', 404);
+        const pub = pubSnap.data();
+        if (pub.raceId !== raceId || pub.distanceId !== distanceId) {
+          fail('Publication does not belong to this race distance.', 400);
+        }
         tx.update(pubRef, { status: 'withdrawn', withdrawalReason: reason });
         tx.update(db.doc(`raceRouteCatalog/${raceId}_${distanceId}`), { status: 'withdrawn' });
         recordAudit(tx, { action: 'withdraw', raceId, distanceId, publicationId, reason });
-        tx.create(idempRef, { digest: reqDigest, response: { withdrawn: true, publicationId }, at: now });
+        const response = { withdrawn: true, publicationId };
+        tx.create(idempRef, { digest: reqDigest, response, at: now });
+        return response;
       });
-      result = { withdrawn: true, publicationId };
-    } else if (path === '/rollback') {
+    }
+
+    if (path === '/rollback') {
       if (!policy.can(actor, actorAccess, 'routes.assign')) {
         fail('You do not have permission to roll back race bindings.', 403);
       }
@@ -505,15 +587,21 @@ function createRouteService(db, storage = null) {
       const targetPublicationId = assertId(input.targetPublicationId, 'target publication ID');
       const reason = assertText(input.reason || 'Rolled back to previous reviewed publication', 300, 'Rollback reason');
 
-      const rb = await db.runTransaction(async (tx) => {
-        const raceSnap = await tx.get(db.doc(`races/${raceId}`));
+      return db.runTransaction(async (tx) => {
+        const bindingRef = db.doc(`races/${raceId}/routeBindings/${distanceId}`);
+        const targetRef = db.doc(`publishedRaceRoutes/${targetPublicationId}`);
+        const [idempSnap, raceSnap, bindingSnap, targetSnap] = await Promise.all([
+          tx.get(idempRef),
+          tx.get(db.doc(`races/${raceId}`)),
+          tx.get(bindingRef),
+          tx.get(targetRef),
+        ]);
+        const replayed = checkIdempotentReplay(idempSnap, reqDigest);
+        if (replayed) return replayed;
         if (!raceSnap.exists) fail('Race not found.', 404);
         if (!policy.inScope(actor, actorAccess, { ...raceSnap.data(), id: raceSnap.id })) {
           fail('Race is outside your access scope.', 403);
         }
-        const bindingRef = db.doc(`races/${raceId}/routeBindings/${distanceId}`);
-        const targetRef = db.doc(`publishedRaceRoutes/${targetPublicationId}`);
-        const [bindingSnap, targetSnap] = await Promise.all([tx.get(bindingRef), tx.get(targetRef)]);
         if (!targetSnap.exists) fail('Target publication not found.', 404);
         const target = targetSnap.data();
         if (target.raceId !== raceId || target.distanceId !== distanceId) {
@@ -548,30 +636,34 @@ function createRouteService(db, storage = null) {
           previousPublicationId: prevPubId,
           reason,
         });
-        tx.create(idempRef, { digest: reqDigest, response: { rolledBackTo: targetPublicationId }, at: now });
-        return { rolledBackTo: targetPublicationId };
+        const response = { rolledBackTo: targetPublicationId };
+        tx.create(idempRef, { digest: reqDigest, response, at: now });
+        return response;
       });
-      result = rb;
-    } else if (path === '/archive-preset') {
+    }
+
+    if (path === '/archive-preset') {
       if (!policy.can(actor, actorAccess, 'routes.archive')) {
         fail('You do not have permission to archive presets.', 403);
       }
       const presetId = assertId(input.presetId, 'preset ID');
-      await db.runTransaction(async (tx) => {
+      return db.runTransaction(async (tx) => {
         const ref = db.doc(`routePresets/${presetId}`);
-        const snap = await tx.get(ref);
+        const [idempSnap, snap] = await Promise.all([tx.get(idempRef), tx.get(ref)]);
+        const replayed = checkIdempotentReplay(idempSnap, reqDigest);
+        if (replayed) return replayed;
         if (!snap.exists) fail('Preset not found.', 404);
         if (!canEditPreset(actor, actorAccess, snap.data())) fail('Preset is outside your access scope.', 403);
-        tx.update(ref, { archived: Boolean(input.archived ?? true), updatedAt: now, updatedBy: actorUid });
+        const archived = Boolean(input.archived ?? true);
+        tx.update(ref, { archived, updatedAt: now, updatedBy: actorUid });
         recordAudit(tx, { action: 'archive_preset', presetId, reason: input.archived === false ? 'Restored' : 'Archived' });
-        tx.create(idempRef, { digest: reqDigest, response: { archived: Boolean(input.archived ?? true) }, at: now });
+        const response = { archived };
+        tx.create(idempRef, { digest: reqDigest, response, at: now });
+        return response;
       });
-      result = { archived: Boolean(input.archived ?? true) };
-    } else {
-      fail('Unknown route command.', 404);
     }
 
-    return result;
+    fail('Unknown route command.', 404);
   }
 
   return { execute };

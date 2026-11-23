@@ -52,7 +52,7 @@ export function AccessProvider({ profile, children, onLoadState }: { profile: Us
   useEffect(() => {
     setReady(false);
     setError('');
-    if (profile.uid.startsWith('e2e-')) {
+    if (import.meta.env.DEV && profile.uid.startsWith('e2e-')) {
       setState({
         status: 'active',
         permissions: defaults(profile.role),
@@ -96,7 +96,8 @@ export function AccessProvider({ profile, children, onLoadState }: { profile: Us
     const permissions = profile.role === 'superadmin'
       ? defaults(profile.role)
       : { ...defaults(profile.role), ...(state.overrides || {}) };
-    const can = (key: string) => active && permissions[key] === true && (key.startsWith('personal.') || profile.role !== 'organizer' || profile.approved) && (catalog.dependencies[key] || []).every((dep: string) => permissions[dep] === true);
+    const dependencies = catalog.dependencies as Record<string, string[]>;
+    const can = (key: string) => active && permissions[key] === true && (key.startsWith('personal.') || profile.role !== 'organizer' || profile.approved) && (dependencies[key] || []).every((dep: string) => permissions[dep] === true);
     // A Super Admin is the platform owner. Older access documents may still
     // contain a selected or owned-only scope from before the role was changed;
     // that must never hide races or lock the Super Admin out of Race Setup.
