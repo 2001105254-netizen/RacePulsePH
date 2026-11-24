@@ -187,6 +187,7 @@ export default function RunnerRecordPanel({
   const lastNotificationAtRef = useRef(0);
   const lastRawTimestampRef = useRef(0);
   const segmentStartFloorMsRef = useRef(0);
+  const drainGenRef = useRef(0);
   const drainingBufferRef = useRef(false);
   const queuedFixesDuringDrainRef = useRef<NativeRunFix[]>([]);
   const prevCorridorChainageRef = useRef<number | undefined>(undefined);
@@ -249,6 +250,8 @@ export default function RunnerRecordPanel({
 
   const stopNativeTracking = useCallback(async () => {
     trackingGenerationRef.current += 1;
+    drainGenRef.current += 1;
+    drainingBufferRef.current = false;
     const handles = listenerHandlesRef.current;
     listenerHandlesRef.current = [];
     await Promise.all(
@@ -529,6 +532,9 @@ export default function RunnerRecordPanel({
         );
       };
 
+      let ownHandles: PluginListenerHandle[] = [];
+      let ownStarted = false;
+
       try {
         const fixHandle = await RunTracking.addListener('locationFix', (fix) => {
           if (trackingGenerationRef.current !== gen) return;
@@ -538,6 +544,7 @@ export default function RunnerRecordPanel({
           await detachPendingHandles([fixHandle]);
           return;
         }
+        ownHandles = [fixHandle];
 
         const errHandle = await RunTracking.addListener('trackingError', (err) => {
           if (trackingGenerationRef.current !== gen) return;
@@ -548,8 +555,10 @@ export default function RunnerRecordPanel({
           return;
         }
 
-        listenerHandlesRef.current = [fixHandle, errHandle];
+        ownHandles = [fixHandle, errHandle];
+        listenerHandlesRef.current = ownHandles;
         trackingStartedRef.current = true;
+        ownStarted = true;
         await RunTracking.startTracking({
           title: buildNotificationTitle(activeSession.mode, activeSession.courseRef),
           subtitle: formatNotificationSubtitle(activeSession),
@@ -560,20 +569,22 @@ export default function RunnerRecordPanel({
           phaseRef.current !== 'live' ||
           sessionRef.current?.status !== 'recording'
         ) {
-          const activeHandles = listenerHandlesRef.current;
-          listenerHandlesRef.current = [];
-          trackingStartedRef.current = false;
-          await detachPendingHandles(activeHandles);
-          await RunTracking.stopTracking().catch((err) => {
-            console.warn('[RunnerRecordPanel] stale startTracking stop failed', err);
-          });
+          if (trackingGenerationRef.current === gen) {
+            listenerHandlesRef.current = [];
+            trackingStartedRef.current = false;
+            await RunTracking.stopTracking().catch((err) => {
+              console.warn('[RunnerRecordPanel] stale startTracking stop failed', err);
+            });
+          }
+          await detachPendingHandles(ownHandles);
         }
       } catch (err) {
-        const partialHandles = listenerHandlesRef.current;
-        listenerHandlesRef.current = [];
-        trackingStartedRef.current = false;
-        await detachPendingHandles(partialHandles);
+        await detachPendingHandles(ownHandles);
         if (trackingGenerationRef.current !== gen) return;
+        listenerHandlesRef.current = [];
+        if (ownStarted) {
+          trackingStartedRef.current = false;
+        }
         const message =
           err instanceof Error && err.message
             ? err.message
@@ -600,6 +611,7 @@ export default function RunnerRecordPanel({
     }
     const handleVisibilityChange = () => {
       if (document.visibilityState !== 'visible' || drainingBufferRef.current) return;
+      const myDrainGen = ++drainGenRef.current;
       drainingBufferRef.current = true;
       const preDrainLastTs = lastRawTimestampRef.current;
 
@@ -611,7 +623,13 @@ export default function RunnerRecordPanel({
         } catch (err) {
           console.warn('[RunnerRecordPanel] buffered fix drain failed', err);
         } finally {
-          drainingBufferRef.current = false;
+          if (drainGenRef.current === myDrainGen) {
+            drainingBufferRef.current = false;
+          }
+        }
+
+        if (drainGenRef.current !== myDrainGen) {
+          return;
         }
 
         const queued = queuedFixesDuringDrainRef.current;
@@ -664,8 +682,10 @@ export default function RunnerRecordPanel({
 
   const resetToSetup = useCallback(async () => {
     enrichmentGenRef.current += 1;
+    drainGenRef.current += 1;
     setEnrichingSummary(false);
     await stopNativeTracking();
+    drainGenRef.current += 1;
     drainingBufferRef.current = false;
     queuedFixesDuringDrainRef.current = [];
     updateSession(null);
@@ -699,6 +719,7 @@ export default function RunnerRecordPanel({
       mapReadyForFreeCenterRef.current = false;
       lastNotificationAtRef.current = 0;
       prevCorridorChainageRef.current = undefined;
+      drainGenRef.current += 1;
       queuedFixesDuringDrainRef.current = [];
       drainingBufferRef.current = false;
       setLiveTrackingError(null);
@@ -776,6 +797,7 @@ export default function RunnerRecordPanel({
       mapReadyForFreeCenterRef.current = false;
       lastNotificationAtRef.current = 0;
       prevCorridorChainageRef.current = undefined;
+      drainGenRef.current += 1;
       queuedFixesDuringDrainRef.current = [];
       drainingBufferRef.current = false;
       setLiveTrackingError(null);
@@ -834,24 +856,30 @@ export default function RunnerRecordPanel({
     }
   };
 
-  const handlePauseRun = useCallback(async () => {
-    if (transitionLockRef.current) return;
-    if (!sessionRef.current || sessionRef.current.status === 'paused') return;
-    transitionLockRef.current = true;
-    try {
-      await stopNativeTracking();
-      const latestBase = sessionRef.current;
-      if (!latestBase || latestBase.status === 'paused') return;
-      const flushed = flushQueuedFixesIntoSession(latestBase);
-      const nowMs = Date.now();
-      const paused = pauseActiveRun(flushed, nowMs);
-      updateSession(paused);
-      setNowTickMs(paused.pausedAtMs ?? nowMs);
-      await persistSnapshotLatest(paused);
-    } finally {
-      transitionLockRef.current = false;
-    }
-  }, [flushQueuedFixesIntoSession, persistSnapshotLatest, stopNativeTracking, updateSession]);
+  const handlePauseRun = useCallback(
+    async (options?: { notifyUser?: boolean }) => {
+      if (transitionLockRef.current) return;
+      if (!sessionRef.current || sessionRef.current.status === 'paused') return;
+      transitionLockRef.current = true;
+      try {
+        await stopNativeTracking();
+        const latestBase = sessionRef.current;
+        if (!latestBase || latestBase.status === 'paused') return;
+        const flushed = flushQueuedFixesIntoSession(latestBase);
+        const nowMs = Date.now();
+        const paused = pauseActiveRun(flushed, nowMs);
+        updateSession(paused);
+        setNowTickMs(paused.pausedAtMs ?? nowMs);
+        await persistSnapshotLatest(paused);
+        if (options?.notifyUser) {
+          notify({ tone: 'info', title: 'Run paused' });
+        }
+      } finally {
+        transitionLockRef.current = false;
+      }
+    },
+    [flushQueuedFixesIntoSession, notify, persistSnapshotLatest, stopNativeTracking, updateSession],
+  );
 
   const handleResumeRun = useCallback(async () => {
     if (transitionLockRef.current) return;
@@ -866,6 +894,7 @@ export default function RunnerRecordPanel({
         lastRawTimestampRef.current,
         current.lastAcceptedAtMs || 0,
       );
+      drainGenRef.current += 1;
       queuedFixesDuringDrainRef.current = [];
       drainingBufferRef.current = false;
       updateSession(resumed);
@@ -898,8 +927,8 @@ export default function RunnerRecordPanel({
         destructive: true,
       });
       if (!ok) return;
-      await clearActiveSnapshotSafely(profile.uid);
       await resetToSetup();
+      await clearActiveSnapshotSafely(profile.uid);
       notify({ tone: 'info', title: 'Run discarded' });
     } finally {
       transitionLockRef.current = false;
@@ -923,8 +952,8 @@ export default function RunnerRecordPanel({
           destructive: true,
         });
         if (discardShort) {
-          await clearActiveSnapshotSafely(profile.uid);
           await resetToSetup();
+          await clearActiveSnapshotSafely(profile.uid);
           notify({ tone: 'info', title: 'Short session discarded' });
         }
         return;
@@ -1246,9 +1275,11 @@ export default function RunnerRecordPanel({
       return true;
     }
     if (phase === 'live') {
+      if (transitionLockRef.current) {
+        return true;
+      }
       if (sessionRef.current?.status === 'recording') {
-        void handlePauseRun();
-        notify({ tone: 'info', title: 'Run paused' });
+        void handlePauseRun({ notifyUser: true });
         return true;
       }
       void handleDiscardLiveOrSummaryRun();
@@ -1417,9 +1448,11 @@ export default function RunnerRecordPanel({
         }
         markers={session.mode === 'course' ? courseMarkers : []}
         selection={mapSelection}
-        provenance={loadedCourse?.mapLayerProvenance}
+        provenance={session.mode === 'course' ? loadedCourse?.mapLayerProvenance : undefined}
         courseScopeId={
-          loadedCourse ? `${loadedCourse.raceId}_${loadedCourse.distanceId}` : undefined
+          session.mode === 'course' && loadedCourse
+            ? `${loadedCourse.raceId}_${loadedCourse.distanceId}`
+            : undefined
         }
         liveGpsPosition={liveGpsPosition}
         liveBreadcrumbPoints={liveBreadcrumbPoints}
@@ -1450,6 +1483,12 @@ export default function RunnerRecordPanel({
               tone: 'info',
               title: 'Run is paused',
               message: 'Tap Resume to acquire your live GPS position.',
+            });
+          } else {
+            notify({
+              tone: 'info',
+              title: 'Acquiring GPS fix',
+              message: 'Waiting for your first accepted GPS location fix to center the map.',
             });
           }
         }}
