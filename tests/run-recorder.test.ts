@@ -45,6 +45,13 @@ import {
   type NativeRunTrackingStatus,
   type RunTrackingPluginInterface,
 } from '../src/lib/runs/nativeRunTracking';
+import {
+  CommunityRunApiError,
+  buildCompleteRunRequestPayload,
+  capServerTrackPoints,
+  createCommunityRequestId,
+  getCommunityApiBaseUrl,
+} from '../src/lib/runs/communityRunsClient';
 import { parseGpxRoute } from '../src/lib/gpxRoute';
 
 function createMemoryStorage(): StorageLike {
@@ -1454,4 +1461,187 @@ test('RunTrackingWeb: handles unsupported wakeLock and releases late sentinel if
     if (origDocDesc) Object.defineProperty(globalThis, 'document', origDocDesc);
     else delete g.document;
   }
+});
+
+test('communityRunsClient: getCommunityApiBaseUrl resolves default and strips trailing slashes', () => {
+  assert.equal(
+    getCommunityApiBaseUrl(''),
+    'https://asia-southeast1-racepulseph.cloudfunctions.net/communityApi',
+  );
+  assert.equal(
+    getCommunityApiBaseUrl('   '),
+    'https://asia-southeast1-racepulseph.cloudfunctions.net/communityApi',
+  );
+  assert.equal(
+    getCommunityApiBaseUrl('  https://custom.racepulse.example/communityApi///  '),
+    'https://custom.racepulse.example/communityApi',
+  );
+  assert.equal(
+    getCommunityApiBaseUrl(),
+    'https://asia-southeast1-racepulseph.cloudfunctions.net/communityApi',
+  );
+});
+
+test('communityRunsClient: CommunityRunApiError classifies retryable vs non-retryable statuses accurately', () => {
+  for (const status of [400, 401, 403, 404, 409, 413, 422]) {
+    const err = new CommunityRunApiError(`HTTP ${status}`, status, { offline: false });
+    assert.equal(err.name, 'CommunityRunApiError');
+    assert.equal(err.status, status);
+    assert.equal(err.retryable, false, `Expected HTTP ${status} to be non-retryable`);
+  }
+
+  for (const status of [0, 408, 429, 500, 502, 503, 504]) {
+    const err = new CommunityRunApiError(`HTTP ${status}`, status, {
+      retryAfter: status === 429 ? 45 : undefined,
+      offline: false,
+    });
+    assert.equal(err.status, status);
+    assert.equal(err.retryable, true, `Expected HTTP ${status} to be retryable`);
+    if (status === 429) {
+      assert.equal(err.retryAfter, 45);
+    }
+  }
+
+  const offlineAuth = new CommunityRunApiError('Session check failed offline', 401, { offline: true });
+  assert.equal(offlineAuth.retryable, true);
+});
+
+test('communityRunsClient: createCommunityRequestId generates unique valid IDs with and without randomUUID', () => {
+  const validRe = /^[a-zA-Z0-9-]{16,64}$/;
+  const ids = new Set<string>();
+  for (let i = 0; i < 12; i += 1) {
+    const id = createCommunityRequestId();
+    assert.match(id, validRe);
+    ids.add(id);
+  }
+  assert.equal(ids.size, 12);
+
+  const origCryptoDesc = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+  Object.defineProperty(globalThis, 'crypto', {
+    value: {
+      getRandomValues: (buf: Uint8Array) => {
+        for (let i = 0; i < buf.length; i += 1) {
+          buf[i] = (i * 37 + 11) % 256;
+        }
+        return buf;
+      },
+    },
+    configurable: true,
+    writable: true,
+  });
+  try {
+    const fallbackId = createCommunityRequestId();
+    assert.match(fallbackId, validRe);
+  } finally {
+    if (origCryptoDesc) Object.defineProperty(globalThis, 'crypto', origCryptoDesc);
+  }
+});
+
+test('communityRunsClient: capServerTrackPoints keeps start, finish, segmentBreak points, and <= 5000 bound', () => {
+  const shortTrack = buildNorthboundTrack({ stepMeters: 10, count: 120 });
+  const untouched = capServerTrackPoints(shortTrack, 5000);
+  assert.equal(untouched.length, 120);
+  assert.notEqual(untouched, shortTrack);
+
+  const longTrack = buildNorthboundTrack({ stepMeters: 5, count: 6200, stepSec: 2 });
+  longTrack[1234] = { ...longTrack[1234], segmentBreak: true };
+  longTrack[4567] = { ...longTrack[4567], segmentBreak: true };
+
+  const capped = capServerTrackPoints(longTrack);
+  assert.equal(capped.length, 5000);
+  assert.equal(capped[0].timestampMs, longTrack[0].timestampMs);
+  assert.equal(capped[capped.length - 1].timestampMs, longTrack[longTrack.length - 1].timestampMs);
+  assert.ok(capped.some((pt) => pt.timestampMs === longTrack[1234].timestampMs && pt.segmentBreak === true));
+  assert.ok(capped.some((pt) => pt.timestampMs === longTrack[4567].timestampMs && pt.segmentBreak === true));
+
+  for (let i = 1; i < capped.length; i += 1) {
+    assert.ok(capped[i].timestampMs >= capped[i - 1].timestampMs);
+  }
+
+  // Tight custom limit preserves mandatory points and enforces <= limit
+  const smallCap = capServerTrackPoints(longTrack, 12);
+  assert.equal(smallCap.length, 12);
+  assert.equal(smallCap[0].timestampMs, longTrack[0].timestampMs);
+  assert.equal(smallCap[smallCap.length - 1].timestampMs, longTrack[longTrack.length - 1].timestampMs);
+  assert.ok(smallCap.some((pt) => pt.timestampMs === longTrack[1234].timestampMs && pt.segmentBreak === true));
+  assert.ok(smallCap.some((pt) => pt.timestampMs === longTrack[4567].timestampMs && pt.segmentBreak === true));
+});
+
+test('communityRunsClient: buildCompleteRunRequestPayload normalizes UTC timestamps, trim bounds, and track points', () => {
+  const track = buildNorthboundTrack({ stepMeters: 20, count: 30, stepSec: 5 });
+  track[0] = { ...track[0], speedMps: null };
+  track[5] = { ...track[5], ele: 99999 }; // outside server [-450, 9000] bounds -> stripped
+
+  const payload = buildCompleteRunRequestPayload({
+    runId: 'run_baguio_2026',
+    mode: 'course',
+    privacy: 'friends',
+    title: '  Baguio Ridge Tempo  ',
+    startedAt: '2026-11-24T06:00:00+08:00',
+    finishedAt: '2026-11-24T06:45:00+08:00',
+    movingTimeMs: 2_650_000.4,
+    clientDistanceM: 5800.14,
+    trimmedHeadM: 312.4,
+    trimmedTailM: -10,
+    homePrivacyTrimEnabled: true,
+    courseRef: {
+      raceId: 'baguio-cordillera-2026',
+      distanceId: '21k',
+      publicationId: 'pub_21k_v1',
+      raceName: 'Baguio Cordillera Ridge Run',
+      distanceLabel: '21K',
+      advertisedKm: 21,
+      region: 'Cordillera',
+    },
+    trackPoints: track,
+  });
+
+  assert.match(payload.requestId, /^[a-zA-Z0-9-]{16,64}$/);
+  assert.equal(payload.startedAt, '2026-11-23T22:00:00.000Z');
+  assert.equal(payload.finishedAt, '2026-11-23T22:45:00.000Z');
+  assert.equal(payload.title, 'Baguio Ridge Tempo');
+  assert.equal(payload.movingTimeMs, 2_650_000);
+  assert.equal(payload.clientDistanceM, 5800.1);
+  assert.equal(payload.trimmedHeadM, 250);
+  assert.equal(payload.trimmedTailM, 0);
+  assert.equal('speedMps' in payload.trackPoints[0], false);
+  assert.equal('ele' in payload.trackPoints[5], false);
+
+  const untrimmedPayload = buildCompleteRunRequestPayload({
+    requestId: 'req-fixed-id-123456',
+    runId: 'run_untrimmed_1',
+    mode: 'free',
+    privacy: 'private',
+    title: 'Morning Free Run',
+    startedAt: '2026-11-24T00:00:00.000Z',
+    finishedAt: '2026-11-24T00:20:00.000Z',
+    movingTimeMs: 1_200_000,
+    clientDistanceM: 3500,
+    trimmedHeadM: 210,
+    trimmedTailM: 205,
+    homePrivacyTrimEnabled: false,
+    trackPoints: track,
+  });
+  assert.equal(untrimmedPayload.requestId, 'req-fixed-id-123456');
+  assert.equal(untrimmedPayload.trimmedHeadM, 0);
+  assert.equal(untrimmedPayload.trimmedTailM, 0);
+
+  assert.throws(
+    () =>
+      buildCompleteRunRequestPayload({
+        runId: 'run_bad_time',
+        mode: 'free',
+        privacy: 'private',
+        title: 'Invalid Time',
+        startedAt: '2026-11-24T06:00:00.000Z',
+        finishedAt: '2026-11-24T05:59:00.000Z',
+        movingTimeMs: 60_000,
+        clientDistanceM: 1000,
+        trimmedHeadM: 0,
+        trimmedTailM: 0,
+        homePrivacyTrimEnabled: false,
+        trackPoints: track,
+      }),
+    (err: unknown) => err instanceof CommunityRunApiError && err.status === 400 && err.retryable === false,
+  );
 });
