@@ -78,3 +78,54 @@ test('event analytics and standalone bib studio permissions follow role defaults
   const delegatedStudio = validate({ ...input, role: 'runner', scope: 'owned-assigned', raceIds: [], overrides: { 'bibs.studio': true } });
   assert.equal(can({ uid: 'r1', role: 'runner', approved: true }, delegatedStudio, 'bibs.studio'), true);
 });
+
+test('badges, clubs, moderation, and extended personal permissions enforce defaults and dependencies', () => {
+  const newKeys = [
+    'badges.view',
+    'badges.manage',
+    'badges.grant',
+    'clubs.view',
+    'clubs.manage',
+    'moderation.manage',
+    'personal.record',
+    'personal.social',
+    'personal.clubs',
+    'personal.inbox',
+  ];
+  assert.equal(keys.length, 72);
+  for (const key of newKeys) {
+    assert.ok(keys.includes(key), `Missing permission key: ${key}`);
+  }
+
+  for (const key of ['badges.view', 'badges.manage', 'badges.grant', 'clubs.view', 'clubs.manage', 'moderation.manage']) {
+    assert.equal(defaults('superadmin')[key], true, `superadmin should default ${key} to true`);
+    assert.equal(defaults('admin')[key], true, `admin should default ${key} to true`);
+    assert.equal(defaults('organizer')[key], false, `organizer should default ${key} to false`);
+    assert.equal(defaults('runner')[key], false, `runner should default ${key} to false`);
+  }
+
+  for (const key of ['personal.record', 'personal.social', 'personal.clubs', 'personal.inbox']) {
+    assert.equal(defaults('superadmin')[key], true, `superadmin should default ${key} to true`);
+    assert.equal(defaults('admin')[key], false, `admin should default ${key} to false`);
+    assert.equal(defaults('organizer')[key], true, `organizer should default ${key} to true`);
+    assert.equal(defaults('runner')[key], true, `runner should default ${key} to true`);
+  }
+
+  const orgUser = { uid: 'org1', role: 'organizer', approved: true };
+  const orgState = { status: 'active', scope: 'owned-assigned', raceIds: [], overrides: {} };
+  assert.equal(can(orgUser, orgState, 'badges.manage'), false);
+  assert.equal(can(orgUser, orgState, 'clubs.manage'), false);
+  assert.equal(can(orgUser, orgState, 'moderation.manage'), false);
+
+  assert.throws(() => validate({ ...input, role: 'organizer', overrides: { 'badges.manage': true } }));
+  assert.throws(() => validate({ ...input, role: 'organizer', overrides: { 'badges.grant': true } }));
+  assert.throws(() => validate({ ...input, role: 'organizer', overrides: { 'clubs.manage': true } }));
+  assert.throws(() => validate({ ...input, role: 'admin', overrides: { 'badges.manage': true, 'badges.view': false } }));
+  assert.throws(() => validate({ ...input, role: 'admin', overrides: { 'badges.grant': true, 'badges.view': false } }));
+  assert.throws(() => validate({ ...input, role: 'admin', overrides: { 'clubs.manage': true, 'clubs.view': false } }));
+
+  const orgWithBadges = validate({ ...input, role: 'organizer', overrides: { 'badges.view': true, 'badges.manage': true } });
+  assert.equal(can(orgUser, orgWithBadges, 'badges.manage'), true);
+  const orgWithModeration = validate({ ...input, role: 'organizer', overrides: { 'moderation.manage': true } });
+  assert.equal(can(orgUser, orgWithModeration, 'moderation.manage'), true);
+});

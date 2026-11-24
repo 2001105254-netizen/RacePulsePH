@@ -8,15 +8,18 @@ const groups = {
   Results: ['results.view', 'results.publish', 'results.export', 'hub.manage', 'hub.publish', 'roster.export', 'bibs.export', 'bibs.studio'],
   Engraving: ['engraving.view', 'engraving.create', 'engraving.status', 'engraving.export', 'engraving.backup'],
   Highlights: ['highlights.view', 'highlights.manage', 'highlights.settings', 'highlights.playlist'],
-  Personal: ['personal.register', 'personal.checkout', 'personal.results', 'personal.bibs', 'personal.certificates', 'personal.engraving', 'personal.friends', 'personal.invites'],
+  Badges: ['badges.view', 'badges.manage', 'badges.grant'],
+  Clubs: ['clubs.view', 'clubs.manage'],
+  Moderation: ['moderation.manage'],
+  Personal: ['personal.register', 'personal.checkout', 'personal.results', 'personal.bibs', 'personal.certificates', 'personal.engraving', 'personal.friends', 'personal.invites', 'personal.record', 'personal.social', 'personal.clubs', 'personal.inbox'],
   Directories: ['users.view'],
 };
 const keys = Object.values(groups).flat();
-const standaloneKeys = new Set(['race.create', 'users.view', 'bibs.studio']);
+const standaloneKeys = new Set(['race.create', 'users.view', 'bibs.studio', 'moderation.manage']);
 function defaults(role) {
   return Object.fromEntries(keys.map(key => [key,
     role === 'superadmin' || (role === 'admin' && !key.startsWith('personal.') && key !== 'highlights.playlist' && key !== 'bibs.studio') ||
-    (role === 'organizer' && !key.startsWith('engraving.') && !key.startsWith('highlights.') && key !== 'users.view' && key !== 'timing.correct' && key !== 'bibs.studio') ||
+    (role === 'organizer' && !key.startsWith('engraving.') && !key.startsWith('highlights.') && !key.startsWith('badges.') && !key.startsWith('clubs.') && !key.startsWith('moderation.') && key !== 'users.view' && key !== 'timing.correct' && key !== 'bibs.studio') ||
     (role === 'runner' && key.startsWith('personal.'))]));
 }
 function effective(role, access = {}) {
@@ -31,6 +34,7 @@ const dependencies = Object.fromEntries(keys.filter(k => !k.startsWith('personal
   k.startsWith('engraving.') ? ['engraving.view'] : k.startsWith('highlights.') ? ['highlights.view'] : k.startsWith('roster.') || k.startsWith('payment.confirm') ? ['roster.view'] : ['race.view']]));
 Object.assign(dependencies, { 'timing.view': ['roster.view', 'race.view'], 'timing.scan': ['timing.view'], 'timing.manual': ['timing.scan'], 'results.view': ['timing.view'], 'results.publish': ['results.view'], 'timing.finish': ['results.publish'], 'revenue.view': ['roster.view'], 'highlights.playlist': ['highlights.view', 'highlights.settings'] });
 Object.assign(dependencies, { 'routes.create': ['routes.view'], 'routes.edit': ['routes.view'], 'routes.media': ['routes.view'], 'routes.publish': ['routes.view', 'routes.edit'], 'routes.assign': ['routes.view', 'race.view'], 'routes.archive': ['routes.view'] });
+Object.assign(dependencies, { 'badges.manage': ['badges.view'], 'badges.grant': ['badges.view'], 'clubs.manage': ['clubs.view'] });
 Object.assign(dependencies, { 'personal.checkout': ['personal.register'], 'personal.certificates': ['personal.results'], 'personal.invites': ['personal.friends'] });
 function accessFor(user, access = {}) {
   const state = { schemaVersion: 1, presetVersion: 1, revision: 0, scope: ['admin', 'superadmin'].includes(user.role) ? 'all' : 'owned-assigned', raceIds: [], status: 'active', overrides: {}, ...access };

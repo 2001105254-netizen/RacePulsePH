@@ -107,7 +107,7 @@ service cloud.firestore {
     // index document in the same transaction/batch. This prevents a profile
     // from claiming a username that resolves to someone else's login.
     function hasValidUsernameBinding(uid, data) {
-      return !data.keys().hasAny(['username']) || (
+      return !('username' in data) || (
         isValidUsername(data.username)
         && existsAfter(/databases/$(database)/documents/usernameIndex/$(data.username))
         && getAfter(/databases/$(database)/documents/usernameIndex/$(data.username)).data.uid == uid
@@ -116,17 +116,30 @@ service cloud.firestore {
     }
 
     function isValidUserCreate(data) {
-      return data.keys().hasAll(['email', 'displayName', 'role', 'approved', 'createdAt'])
-        && data.email is string && data.displayName is string
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'role', 'approved', 'createdAt'])
+        && data.keys().hasOnly([
+          'uid', 'email', 'displayName', 'role', 'approved', 'createdAt',
+          'username', 'over13Confirmed', 'termsAcceptedAt', 'marketingOptIn', 'marketingUpdatedAt',
+          'nickname', 'photoURL', 'coverURL', 'coverPreset', 'bio', 'location', 'runClub',
+          'favoriteDistance', 'socialLink', 'emergencyContactName', 'emergencyContactPhone',
+          'shirtSize', 'medicalNotes', 'weightKg', 'heightCm', 'onboardingSteps',
+          'primaryClubId', 'allowMessageRequests'
+        ])
+        && data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 254
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100
         && data.role is string && (data.role == 'superadmin' || data.role == 'admin' || data.role == 'organizer' || data.role == 'runner')
         && data.approved is bool
-        && data.createdAt is string
+        && data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 60
+        && (data.get('over13Confirmed', null) == null || data.over13Confirmed is bool)
+        && (data.get('termsAcceptedAt', null) == null || (data.termsAcceptedAt is string && data.termsAcceptedAt.size() <= 60))
         // Runner accounts are always auto-approved.
         && (data.role != 'runner' || data.approved == true)
         // Organizer accounts always start unapproved; only a Super Admin can flip that later.
         && (data.role != 'organizer' || data.approved == false)
         // The one-time Super Admin bootstrap is restricted to the owner email.
         && (data.role != 'superadmin' || canBootstrapSuperAdmin(data))
+        && hasSafeProfileDetails(data)
         && hasValidUsernameBinding(data.uid, data);
     }
 
@@ -142,7 +155,7 @@ service cloud.firestore {
     function isSafeProfileImageUrl(url, maxLen) {
       return url is string && url.size() <= maxLen && (
         url == ''
-        || isSafeStorageOrHttpsUrl(url)
+        || (url.size() <= 2048 && url.matches('^(https://[^\\s]+|http://(127\\.0\\.0\\.1|localhost)(:[0-9]+)?/[^\\s]+)$'))
         || url.matches('^data:image/(png|jpeg|jpg|webp|gif|avif);base64,[A-Za-z0-9+/=]+$')
       );
     }
@@ -154,23 +167,43 @@ service cloud.firestore {
       );
     }
 
+    function hasValidOnboardingSteps(steps) {
+      let n = steps.size();
+      return n <= 10
+        && (n <= 0 || (steps[0] is string && steps[0].size() <= 40 && steps[0].matches('^[a-zA-Z0-9_:-]+$')))
+        && (n <= 1 || (steps[1] is string && steps[1].size() <= 40 && steps[1].matches('^[a-zA-Z0-9_:-]+$')))
+        && (n <= 2 || (steps[2] is string && steps[2].size() <= 40 && steps[2].matches('^[a-zA-Z0-9_:-]+$')))
+        && (n <= 3 || (steps[3] is string && steps[3].size() <= 40 && steps[3].matches('^[a-zA-Z0-9_:-]+$')))
+        && (n <= 4 || (steps[4] is string && steps[4].size() <= 40 && steps[4].matches('^[a-zA-Z0-9_:-]+$')))
+        && (n <= 5 || (steps[5] is string && steps[5].size() <= 40 && steps[5].matches('^[a-zA-Z0-9_:-]+$')))
+        && (n <= 6 || (steps[6] is string && steps[6].size() <= 40 && steps[6].matches('^[a-zA-Z0-9_:-]+$')))
+        && (n <= 7 || (steps[7] is string && steps[7].size() <= 40 && steps[7].matches('^[a-zA-Z0-9_:-]+$')))
+        && (n <= 8 || (steps[8] is string && steps[8].size() <= 40 && steps[8].matches('^[a-zA-Z0-9_:-]+$')))
+        && (n <= 9 || (steps[9] is string && steps[9].size() <= 40 && steps[9].matches('^[a-zA-Z0-9_:-]+$')));
+    }
+
     function hasSafeProfileDetails(data) {
-      return (!data.keys().hasAny(['nickname']) || data.nickname == null || (data.nickname is string && data.nickname.size() <= 30))
-        && (!data.keys().hasAny(['photoURL']) || data.photoURL == null || isSafeProfileImageUrl(data.photoURL, 100000))
-        && (!data.keys().hasAny(['coverURL']) || data.coverURL == null || isSafeProfileImageUrl(data.coverURL, 150000))
-        && (!data.keys().hasAny(['coverPreset']) || data.coverPreset == null || (data.coverPreset is string && data.coverPreset.size() <= 40))
-        && (!data.keys().hasAny(['bio']) || data.bio == null || (data.bio is string && data.bio.size() <= 160))
-        && (!data.keys().hasAny(['location']) || data.location == null || (data.location is string && data.location.size() <= 80))
-        && (!data.keys().hasAny(['runClub']) || data.runClub == null || (data.runClub is string && data.runClub.size() <= 80))
-        && (!data.keys().hasAny(['favoriteDistance']) || data.favoriteDistance == null || (data.favoriteDistance is string && data.favoriteDistance.size() <= 30))
-        && (!data.keys().hasAny(['socialLink']) || data.socialLink == null || isSafeSocialUrl(data.socialLink))
-        && (!data.keys().hasAny(['emergencyContactName']) || data.emergencyContactName == null || (data.emergencyContactName is string && data.emergencyContactName.size() <= 100))
-        && (!data.keys().hasAny(['emergencyContactPhone']) || data.emergencyContactPhone == null || (data.emergencyContactPhone is string && data.emergencyContactPhone.size() <= 30))
-        && (!data.keys().hasAny(['shirtSize']) || data.shirtSize == null || (data.shirtSize is string && data.shirtSize.size() <= 20))
-        && (!data.keys().hasAny(['medicalNotes']) || data.medicalNotes == null || (data.medicalNotes is string && data.medicalNotes.size() <= 600))
-        && (!data.keys().hasAny(['username']) || data.username == null || data.username == '' || isValidUsername(data.username))
-        && (!data.keys().hasAny(['marketingOptIn']) || data.marketingOptIn == null || data.marketingOptIn is bool)
-        && (!data.keys().hasAny(['marketingUpdatedAt']) || data.marketingUpdatedAt == null || (data.marketingUpdatedAt is string && data.marketingUpdatedAt.size() <= 60));
+      return (data.get('nickname', null) == null || (data.nickname is string && data.nickname.size() <= 30))
+        && (data.get('photoURL', null) == null || isSafeProfileImageUrl(data.photoURL, 100000))
+        && (data.get('coverURL', null) == null || isSafeProfileImageUrl(data.coverURL, 150000))
+        && (data.get('coverPreset', null) == null || (data.coverPreset is string && data.coverPreset.size() <= 40))
+        && (data.get('bio', null) == null || (data.bio is string && data.bio.size() <= 160))
+        && (data.get('location', null) == null || (data.location is string && data.location.size() <= 80))
+        && (data.get('runClub', null) == null || (data.runClub is string && data.runClub.size() <= 80))
+        && (data.get('favoriteDistance', null) == null || (data.favoriteDistance is string && data.favoriteDistance.size() <= 30))
+        && (data.get('socialLink', null) == null || isSafeSocialUrl(data.socialLink))
+        && (data.get('emergencyContactName', null) == null || (data.emergencyContactName is string && data.emergencyContactName.size() <= 100))
+        && (data.get('emergencyContactPhone', null) == null || (data.emergencyContactPhone is string && data.emergencyContactPhone.size() <= 30))
+        && (data.get('shirtSize', null) == null || (data.shirtSize is string && data.shirtSize.size() <= 20))
+        && (data.get('medicalNotes', null) == null || (data.medicalNotes is string && data.medicalNotes.size() <= 600))
+        && (data.get('username', null) == null || data.username == '' || isValidUsername(data.username))
+        && (data.get('marketingOptIn', null) == null || data.marketingOptIn is bool)
+        && (data.get('marketingUpdatedAt', null) == null || (data.marketingUpdatedAt is string && data.marketingUpdatedAt.size() <= 60))
+        && (data.get('weightKg', null) == null || (data.weightKg is number && data.weightKg >= 25 && data.weightKg <= 250))
+        && (data.get('heightCm', null) == null || (data.heightCm is number && data.heightCm >= 80 && data.heightCm <= 250))
+        && (data.get('onboardingSteps', null) == null || (data.onboardingSteps is list && hasValidOnboardingSteps(data.onboardingSteps)))
+        && (data.get('primaryClubId', null) == null || data.primaryClubId == '' || isValidId(data.primaryClubId))
+        && (data.get('allowMessageRequests', null) == null || data.allowMessageRequests is bool);
     }
 
     match /users/{uid} {

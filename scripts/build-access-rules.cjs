@@ -26,7 +26,7 @@ const helpers = `${markerStart}
     }
     function presetForRole(role, action) {
       return role == 'superadmin' || (role == 'admin' && !action.matches('personal[.].*') && action != 'highlights.playlist' && action != 'bibs.studio')
-        || (role == 'organizer' && !action.matches('engraving[.].*') && !action.matches('highlights[.].*') && action != 'users.view' && action != 'timing.correct' && action != 'bibs.studio')
+        || (role == 'organizer' && !action.matches('engraving[.].*') && !action.matches('highlights[.].*') && !action.matches('badges[.].*') && !action.matches('clubs[.].*') && !action.matches('moderation[.].*') && action != 'users.view' && action != 'timing.correct' && action != 'bibs.studio')
         || (role == 'runner' && action.matches('personal[.].*'));
     }
     function preset(action) {
@@ -44,7 +44,9 @@ const helpers = `${markerStart}
         && (action != 'highlights.playlist' || (directAction(p, o, role, 'highlights.view') && directAction(p, o, role, 'highlights.settings')))
         && (action in ['routes.create','routes.edit','routes.media','routes.archive'] ? directAction(p, o, role, 'routes.view') : true)
         && (action != 'routes.publish' || (directAction(p, o, role, 'routes.view') && directAction(p, o, role, 'routes.edit')))
-        && (action != 'routes.assign' || (directAction(p, o, role, 'routes.view') && directAction(p, o, role, 'race.view')));
+        && (action != 'routes.assign' || (directAction(p, o, role, 'routes.view') && directAction(p, o, role, 'race.view')))
+        && (action in ['badges.manage','badges.grant'] ? directAction(p, o, role, 'badges.view') : true)
+        && (action != 'clubs.manage' || directAction(p, o, role, 'clubs.view'));
     }
     function callerHasAction(acc, role, action) {
       return directAction(acc.get('permissions', {}), acc.get('overrides', {}), role, action);
@@ -60,7 +62,7 @@ const helpers = `${markerStart}
         && (role != 'organizer' || caller.get('approved', false) == true || action.matches('personal[.].*'))
         && (role == 'superadmin'
           || (directAction(p, o, role, action)
-            && (!(action in ['highlights.manage','highlights.settings','highlights.playlist','routes.create','routes.edit','routes.media','routes.publish','routes.assign','routes.archive'])
+            && (!(action in ['highlights.manage','highlights.settings','highlights.playlist','routes.create','routes.edit','routes.media','routes.publish','routes.assign','routes.archive','badges.manage','badges.grant','clubs.manage'])
               || actionDepsOk(p, o, role, action))));
     }
     function permission(action) {
@@ -109,10 +111,10 @@ block('match /users/{uid}',`match /users/{uid} {
       allow update: if request.auth != null && request.auth.uid == uid
         && !isRemovedAccount(uid)
         && (!exists(/databases/$(database)/documents/userAccess/$(uid)) || get(/databases/$(database)/documents/userAccess/$(uid)).data.get('status', 'active') == 'active')
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName','nickname','photoURL','coverURL','coverPreset','bio','location','runClub','favoriteDistance','socialLink','emergencyContactName','emergencyContactPhone','shirtSize','medicalNotes','username','marketingOptIn','marketingUpdatedAt'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName','nickname','photoURL','coverURL','coverPreset','bio','location','runClub','favoriteDistance','socialLink','emergencyContactName','emergencyContactPhone','shirtSize','medicalNotes','username','marketingOptIn','marketingUpdatedAt','weightKg','heightCm','onboardingSteps','primaryClubId','allowMessageRequests'])
         && request.resource.data.displayName is string && request.resource.data.displayName.size() >= 1 && request.resource.data.displayName.size() <= 100
         && hasSafeProfileDetails(request.resource.data)
-        && (!changed(['username']) || ((!resource.data.keys().hasAny(['username']) || resource.data.username == null || resource.data.username == '') && hasValidUsernameBinding(uid, request.resource.data)));
+        && (!changed(['username']) || (resource.data.get('username', '') in [null, ''] && hasValidUsernameBinding(uid, request.resource.data)));
       allow delete: if request.auth != null && request.auth.uid == uid && resource.data.role != 'superadmin';
     }`);
 block('match /removedAccounts/{uid}',`match /removedAccounts/{uid} { allow read: if isSuperAdmin(); allow write: if false; }`);

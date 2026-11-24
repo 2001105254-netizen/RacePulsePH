@@ -18,6 +18,7 @@ import {
   groups,
   permissionCatalog,
   permissionDescription,
+  permissionDomains,
   permissionLabel,
   permissionTitle,
   roleDescriptions,
@@ -166,14 +167,21 @@ test('permission catalog covers every key with unique group titles, descriptions
     }
   }
   assert.equal(Object.keys(permissionCatalog).length, allPermissionKeys.length);
-  assert.equal(allPermissionKeys.length, 62);
+  assert.equal(allPermissionKeys.length, 72);
+  for (const domain of permissionDomains) {
+    assert.equal(domain.label.includes('—'), false);
+  }
+  const domainGroups = new Set(permissionDomains.filter((d) => d.id !== 'all').flatMap((d) => d.groups));
+  for (const group of ['Badges', 'Clubs', 'Moderation']) {
+    assert.ok(domainGroups.has(group), `Missing ${group} in permissionDomains`);
+  }
 });
 
 test('draftSummary and setPermissionWithReport surface pending approval, suspension, and cascade keys', () => {
   const pendingDraft = { ...initial('organizer'), approved: false };
   const pendingOrg = draftSummary(pendingDraft);
   assert.equal(pendingOrg.pendingApproval, true);
-  assert.equal(pendingOrg.effectiveCount, 8);
+  assert.equal(pendingOrg.effectiveCount, 12);
   assert.ok(pendingOrg.configuredCount > pendingOrg.effectiveCount);
   assert.equal(permissionEvaluation(pendingDraft, 'race.view').blockedBy, 'pending-approval');
   assert.equal(permissionEvaluation(pendingDraft, 'personal.register').effective, true);

@@ -23,6 +23,7 @@ export const permissionDomains: PermissionDomain[] = [
   { id: 'events-routes', label: 'Events & Routes', groups: ['Events', 'Routes'] },
   { id: 'race-day', label: 'Roster & Timing', groups: ['Roster', 'Payments', 'Timing', 'Results'] },
   { id: 'studio-media', label: 'Highlights & Engraving', groups: ['Highlights', 'Engraving'] },
+  { id: 'community-safety', label: 'Badges, Clubs & Moderation', groups: ['Badges', 'Clubs', 'Moderation'] },
   { id: 'runner-dir', label: 'Personal & Directories', groups: ['Personal', 'Directories'] },
 ];
 
@@ -42,6 +43,9 @@ export const groupDescriptions: Record<string, string> = {
   Results: 'Publish live results, manage Live Hub streams, export reports, and run standalone Bib Studio.',
   Engraving: 'Operate the global medal engraving queue, LightBurn exports, and queue backups.',
   Highlights: 'Publish Podium Pulse cards, configure Marquee Control Deck, and manage smart playlist rules.',
+  Badges: 'Inspect, configure, and manually grant runner achievement badges.',
+  Clubs: 'Review running club rosters, verification requests, and community status.',
+  Moderation: 'Review flagged posts, comments, and runner safety reports.',
   Personal: "Features for this person's own runner participation, course maps, and friends network.",
   Directories: 'View signed-in organizer and runner directories.',
 };
@@ -312,6 +316,36 @@ export const permissionCatalog: Record<string, PermissionInfo> = {
     title: 'Edit smart playlist rules',
     description: 'Control podium-first pinning, race filtering, and expiry hiding on the landing reel.',
   },
+  'badges.view': {
+    group: 'Badges',
+    title: 'View badge catalog and runner awards',
+    description: 'Inspect platform achievement badges, trigger rules, and earned runner awards.',
+  },
+  'badges.manage': {
+    group: 'Badges',
+    title: 'Create and edit badge definitions',
+    description: 'Configure badge metadata, icons, eligibility criteria, and visibility.',
+  },
+  'badges.grant': {
+    group: 'Badges',
+    title: 'Grant or revoke runner badges',
+    description: 'Manually award or remove achievement badges on runner profiles.',
+  },
+  'clubs.view': {
+    group: 'Clubs',
+    title: 'View running clubs directory',
+    description: 'Inspect running club profiles, member counts, and verification status.',
+  },
+  'clubs.manage': {
+    group: 'Clubs',
+    title: 'Verify and moderate running clubs',
+    description: 'Approve club verification, update club status, and resolve club disputes.',
+  },
+  'moderation.manage': {
+    group: 'Moderation',
+    title: 'Review and act on moderation reports',
+    description: 'Inspect reported posts, comments, and profiles and apply moderation actions.',
+  },
   'personal.register': {
     group: 'Personal',
     title: 'Register for race events',
@@ -351,6 +385,26 @@ export const permissionCatalog: Record<string, PermissionInfo> = {
     group: 'Personal',
     title: 'Send and receive race invitations',
     description: 'Invite accepted friends to upcoming events and open received race invites.',
+  },
+  'personal.record': {
+    group: 'Personal',
+    title: 'Track and save personal GPS runs',
+    description: 'Record outdoor GPS workouts, splits, and elevation tracks to personal history.',
+  },
+  'personal.social': {
+    group: 'Personal',
+    title: 'Publish runner feed posts and reactions',
+    description: 'Share run recaps, photos, kudos, and comments on the runner community feed.',
+  },
+  'personal.clubs': {
+    group: 'Personal',
+    title: 'Join and manage running clubs',
+    description: 'Create or join running clubs, RSVP to club runs, and post club updates.',
+  },
+  'personal.inbox': {
+    group: 'Personal',
+    title: 'Use runner direct messages and requests',
+    description: 'Send and reply to direct messages and manage incoming message requests.',
   },
   'users.view': {
     group: 'Directories',

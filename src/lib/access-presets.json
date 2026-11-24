@@ -75,6 +75,18 @@
       "highlights.settings",
       "highlights.playlist"
     ],
+    "Badges": [
+      "badges.view",
+      "badges.manage",
+      "badges.grant"
+    ],
+    "Clubs": [
+      "clubs.view",
+      "clubs.manage"
+    ],
+    "Moderation": [
+      "moderation.manage"
+    ],
     "Personal": [
       "personal.register",
       "personal.checkout",
@@ -83,7 +95,11 @@
       "personal.certificates",
       "personal.engraving",
       "personal.friends",
-      "personal.invites"
+      "personal.invites",
+      "personal.record",
+      "personal.social",
+      "personal.clubs",
+      "personal.inbox"
     ],
     "Directories": [
       "users.view"
@@ -222,6 +238,15 @@
       "highlights.view",
       "highlights.settings"
     ],
+    "badges.manage": [
+      "badges.view"
+    ],
+    "badges.grant": [
+      "badges.view"
+    ],
+    "clubs.manage": [
+      "clubs.view"
+    ],
     "timing.view": [
       "roster.view",
       "race.view"
@@ -297,6 +322,12 @@
       "highlights.manage": false,
       "highlights.settings": false,
       "highlights.playlist": false,
+      "badges.view": false,
+      "badges.manage": false,
+      "badges.grant": false,
+      "clubs.view": false,
+      "clubs.manage": false,
+      "moderation.manage": false,
       "personal.register": true,
       "personal.checkout": true,
       "personal.results": true,
@@ -305,6 +336,10 @@
       "personal.engraving": true,
       "personal.friends": true,
       "personal.invites": true,
+      "personal.record": true,
+      "personal.social": true,
+      "personal.clubs": true,
+      "personal.inbox": true,
       "users.view": false
     },
     "organizer": {
@@ -361,6 +396,12 @@
       "highlights.manage": false,
       "highlights.settings": false,
       "highlights.playlist": false,
+      "badges.view": false,
+      "badges.manage": false,
+      "badges.grant": false,
+      "clubs.view": false,
+      "clubs.manage": false,
+      "moderation.manage": false,
       "personal.register": true,
       "personal.checkout": true,
       "personal.results": true,
@@ -369,6 +410,10 @@
       "personal.engraving": true,
       "personal.friends": true,
       "personal.invites": true,
+      "personal.record": true,
+      "personal.social": true,
+      "personal.clubs": true,
+      "personal.inbox": true,
       "users.view": false
     },
     "admin": {
@@ -425,6 +470,12 @@
       "highlights.manage": true,
       "highlights.settings": true,
       "highlights.playlist": false,
+      "badges.view": true,
+      "badges.manage": true,
+      "badges.grant": true,
+      "clubs.view": true,
+      "clubs.manage": true,
+      "moderation.manage": true,
       "personal.register": false,
       "personal.checkout": false,
       "personal.results": false,
@@ -433,6 +484,10 @@
       "personal.engraving": false,
       "personal.friends": false,
       "personal.invites": false,
+      "personal.record": false,
+      "personal.social": false,
+      "personal.clubs": false,
+      "personal.inbox": false,
       "users.view": true
     },
     "superadmin": {
@@ -489,6 +544,12 @@
       "highlights.manage": true,
       "highlights.settings": true,
       "highlights.playlist": true,
+      "badges.view": true,
+      "badges.manage": true,
+      "badges.grant": true,
+      "clubs.view": true,
+      "clubs.manage": true,
+      "moderation.manage": true,
       "personal.register": true,
       "personal.checkout": true,
       "personal.results": true,
@@ -497,6 +558,10 @@
       "personal.engraving": true,
       "personal.friends": true,
       "personal.invites": true,
+      "personal.record": true,
+      "personal.social": true,
+      "personal.clubs": true,
+      "personal.inbox": true,
       "users.view": true
     }
   }

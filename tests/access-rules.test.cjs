@@ -439,3 +439,187 @@ test('chipReads, user profile URLs, large distance lists, and engraving orders e
     id: 'ORD3', ownerUid: 'runner', runnerName: 'Runner', bibNumber: '5-001', distance: '5K', finishingTime: '0'.repeat(33), status: 'queued', createdAt: '2026-01-01', updatedAt: '2026-01-01',
   }));
 });
+
+test('users/{uid} enforces safe bounds for Milestone 1-5 profile fields and organizer cannot access badges/clubs permissions', async () => {
+  await assertSucceeds(updateDoc(doc(db('runner'), 'users', 'runner'), {
+    weightKg: 68,
+    heightCm: 172,
+    onboardingSteps: ['welcome'],
+    primaryClubId: '',
+    allowMessageRequests: true,
+  }));
+  await assertSucceeds(updateDoc(doc(db('runner'), 'users', 'runner'), {
+    weightKg: null,
+    heightCm: null,
+    onboardingSteps: null,
+    primaryClubId: 'club_manila_01',
+    allowMessageRequests: false,
+  }));
+
+  await assertFails(updateDoc(doc(db('runner'), 'users', 'runner'), { weightKg: 0 }));
+  await assertFails(updateDoc(doc(db('runner'), 'users', 'runner'), { weightKg: -5 }));
+  await assertFails(updateDoc(doc(db('runner'), 'users', 'runner'), { weightKg: 24.9 }));
+  await assertFails(updateDoc(doc(db('runner'), 'users', 'runner'), { weightKg: 250.1 }));
+  await assertFails(updateDoc(doc(db('runner'), 'users', 'runner'), { weightKg: 251 }));
+  await assertFails(updateDoc(doc(db('runner'), 'users', 'runner'), { weightKg: Number.NaN }));
+  await assertFails(updateDoc(doc(db('runner'), 'users', 'runner'), { weightKg: '68' }));
+  await assertFails(updateDoc(doc(db('runner'), 'users', 'runner'), { heightCm: 79 }));
+  await assertFails(updateDoc(doc(db('runner'), 'users', 'runner'), { heightCm: 251 }));
+  await assertFails(updateDoc(doc(db('runner'), 'users', 'runner'), { heightCm: Number.NaN }));
+  await assertFails(updateDoc(doc(db('runner'), 'users', 'runner'), { onboardingSteps: Array(11).fill('welcome') }));
+  await assertFails(updateDoc(doc(db('runner'), 'users', 'runner'), { onboardingSteps: ['a'.repeat(41)] }));
+  await assertFails(updateDoc(doc(db('runner'), 'users', 'runner'), { onboardingSteps: [123] }));
+  await assertFails(updateDoc(doc(db('runner'), 'users', 'runner'), { onboardingSteps: ['bad space'] }));
+  await assertFails(updateDoc(doc(db('runner'), 'users', 'runner'), { primaryClubId: '../bad' }));
+  await assertFails(updateDoc(doc(db('runner'), 'users', 'runner'), { primaryClubId: 'a'.repeat(65) }));
+  await assertFails(updateDoc(doc(db('runner'), 'users', 'runner'), { allowMessageRequests: 'yes' }));
+  await assertFails(updateDoc(doc(db('runner'), 'users', 'runner'), { extraField: 'polluted' }));
+
+  const authGateFresh = env.authenticatedContext('auth_gate_runner', { email: 'authgate@example.com', email_verified: true }).firestore();
+  await assertSucceeds(runTransaction(authGateFresh, async (tx) => {
+    tx.set(doc(authGateFresh, 'users', 'auth_gate_runner'), {
+      uid: 'auth_gate_runner',
+      email: 'authgate@example.com',
+      displayName: 'Auth Gate Runner',
+      username: 'auth_gate_runner',
+      role: 'runner',
+      approved: true,
+      createdAt: '2026-11-24T00:00:00Z',
+      over13Confirmed: true,
+      termsAcceptedAt: '2026-11-24T00:00:00Z',
+      marketingOptIn: false,
+    });
+    tx.set(doc(authGateFresh, 'usernameIndex', 'auth_gate_runner'), {
+      username: 'auth_gate_runner',
+      uid: 'auth_gate_runner',
+      email: 'authgate@example.com',
+      createdAt: '2026-11-24T00:00:00Z',
+    });
+  }));
+  await assertSucceeds(updateDoc(doc(authGateFresh, 'users', 'auth_gate_runner'), {
+    displayName: 'Auth Gate Runner Updated',
+    nickname: 'AG',
+    photoURL: 'data:image/jpeg;base64,abc123==',
+    coverURL: 'https://storage.googleapis.com/bucket/cover.jpg',
+    coverPreset: 'crimson-track',
+    bio: 'Manila road & trail runner.',
+    location: 'Quezon City, PH',
+    runClub: 'Legacy Run Club',
+    favoriteDistance: '21K',
+    socialLink: 'https://strava.com/athletes/99',
+    emergencyContactName: 'Juan Dela Cruz',
+    emergencyContactPhone: '09171234567',
+    shirtSize: 'M',
+    medicalNotes: 'None',
+    marketingOptIn: true,
+    marketingUpdatedAt: '2026-11-24T01:00:00Z',
+    weightKg: 68.5,
+    heightCm: 172.5,
+    onboardingSteps: ['welcome', 's2', 's3', 's4', 's5', 's6', 's7', 's8', 's9', 's10'],
+    primaryClubId: 'club_manila_01',
+    allowMessageRequests: true,
+  }));
+
+  const rogueFresh = env.authenticatedContext('rogue_runner', { email: 'rogue@example.com', email_verified: true }).firestore();
+  await assertFails(setDoc(doc(rogueFresh, 'users', 'rogue_runner'), {
+    uid: 'rogue_runner',
+    email: 'rogue@example.com',
+    displayName: 'Rogue',
+    role: 'runner',
+    approved: true,
+    createdAt: '2026-10-28',
+    weightKg: 0,
+  }));
+  await assertFails(setDoc(doc(rogueFresh, 'users', 'rogue_runner'), {
+    uid: 'rogue_runner',
+    email: 'rogue@example.com',
+    displayName: 'Rogue',
+    role: 'runner',
+    approved: true,
+    createdAt: '2026-10-28',
+    extraField: 'polluted',
+  }));
+
+  const organizerAccess = await getDoc(doc(db('organizer'), 'userAccess', 'organizer'));
+  assert.equal(organizerAccess.exists(), true);
+  assert.equal(organizerAccess.data().permissions['badges.manage'], false);
+  assert.equal(organizerAccess.data().permissions['clubs.manage'], false);
+  assert.equal(policy.can({ uid: 'organizer', role: 'organizer', approved: true }, organizerAccess.data(), 'badges.manage'), false);
+  assert.equal(policy.can({ uid: 'organizer', role: 'organizer', approved: true }, organizerAccess.data(), 'clubs.manage'), false);
+});
+
+test('compiled firestore.rules helpers enforce organizer exclusions and badge/club view dependencies', async () => {
+  const baseRules = fs.readFileSync('firestore.rules', 'utf8');
+  const probeRules = baseRules.replace(
+    /\r?\n\s*\}\s*\}\s*$/,
+    '\n    match /_rbacProbe/{action} {\n      allow read: if permission(action);\n    }\n  }\n}\n',
+  );
+  assert.notEqual(probeRules, baseRules);
+
+  const probeEnv = await initializeTestEnvironment({
+    projectId: 'demo-racepulse-rbac-probe',
+    firestore: { host: '127.0.0.1', port: 8080, rules: probeRules },
+  });
+  try {
+    await probeEnv.withSecurityRulesDisabled(async (ctx) => {
+      const root = ctx.firestore();
+      await setDoc(doc(root, 'users', 'org_legacy'), { uid: 'org_legacy', role: 'organizer', approved: true, email: 'org_legacy@example.com', displayName: 'Org Legacy', createdAt: '2026-01-01' });
+      await setDoc(doc(root, 'userAccess', 'org_legacy'), { status: 'active', scope: 'owned-assigned', raceIds: [], overrides: {}, permissions: { 'race.view': true } });
+
+      await setDoc(doc(root, 'users', 'org_dep_bypass'), { uid: 'org_dep_bypass', role: 'organizer', approved: true, email: 'org_dep@example.com', displayName: 'Org Dep', createdAt: '2026-01-01' });
+      await setDoc(doc(root, 'userAccess', 'org_dep_bypass'), {
+        status: 'active',
+        scope: 'owned-assigned',
+        raceIds: [],
+        overrides: { 'badges.manage': true, 'badges.grant': true, 'clubs.manage': true },
+        permissions: { 'race.view': true },
+      });
+
+      await setDoc(doc(root, 'users', 'org_badges_ok'), { uid: 'org_badges_ok', role: 'organizer', approved: true, email: 'org_ok@example.com', displayName: 'Org Ok', createdAt: '2026-01-01' });
+      await setDoc(doc(root, 'userAccess', 'org_badges_ok'), {
+        status: 'active',
+        scope: 'owned-assigned',
+        raceIds: [],
+        overrides: { 'badges.view': true, 'badges.manage': true },
+        permissions: { 'race.view': true },
+      });
+
+      await setDoc(doc(root, 'users', 'admin_legacy'), { uid: 'admin_legacy', role: 'admin', approved: true, email: 'admin_legacy@example.com', displayName: 'Admin Legacy', createdAt: '2026-01-01' });
+      await setDoc(doc(root, 'userAccess', 'admin_legacy'), { status: 'active', scope: 'all', raceIds: [], overrides: {}, permissions: { 'race.view': true } });
+
+      await setDoc(doc(root, 'users', 'admin_view_off'), { uid: 'admin_view_off', role: 'admin', approved: true, email: 'admin_off@example.com', displayName: 'Admin Off', createdAt: '2026-01-01' });
+      await setDoc(doc(root, 'userAccess', 'admin_view_off'), {
+        status: 'active',
+        scope: 'all',
+        raceIds: [],
+        overrides: { 'badges.view': false, 'clubs.view': false },
+        permissions: { 'race.view': true },
+      });
+    });
+
+    const probeDb = (uid) => probeEnv.authenticatedContext(uid, { email: `${uid}@example.com`, email_verified: true }).firestore();
+
+    for (const blocked of ['badges.view', 'badges.manage', 'badges.grant', 'clubs.view', 'clubs.manage', 'moderation.manage']) {
+      await assertFails(getDoc(doc(probeDb('org_legacy'), '_rbacProbe', blocked)));
+    }
+    for (const personalKey of ['personal.record', 'personal.social', 'personal.clubs', 'personal.inbox']) {
+      await assertSucceeds(getDoc(doc(probeDb('org_legacy'), '_rbacProbe', personalKey)));
+    }
+
+    await assertFails(getDoc(doc(probeDb('org_dep_bypass'), '_rbacProbe', 'badges.manage')));
+    await assertFails(getDoc(doc(probeDb('org_dep_bypass'), '_rbacProbe', 'badges.grant')));
+    await assertFails(getDoc(doc(probeDb('org_dep_bypass'), '_rbacProbe', 'clubs.manage')));
+
+    await assertSucceeds(getDoc(doc(probeDb('org_badges_ok'), '_rbacProbe', 'badges.manage')));
+
+    for (const adminAllowed of ['badges.view', 'badges.manage', 'badges.grant', 'clubs.view', 'clubs.manage', 'moderation.manage']) {
+      await assertSucceeds(getDoc(doc(probeDb('admin_legacy'), '_rbacProbe', adminAllowed)));
+    }
+
+    await assertFails(getDoc(doc(probeDb('admin_view_off'), '_rbacProbe', 'badges.manage')));
+    await assertFails(getDoc(doc(probeDb('admin_view_off'), '_rbacProbe', 'badges.grant')));
+    await assertFails(getDoc(doc(probeDb('admin_view_off'), '_rbacProbe', 'clubs.manage')));
+  } finally {
+    await probeEnv.cleanup();
+  }
+});
