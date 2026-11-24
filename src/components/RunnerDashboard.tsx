@@ -14,6 +14,24 @@ import {
 } from 'lucide-react';
 import { db } from '../firebase';
 import { useAccess } from '../lib/access';
+import {
+  acknowledgeSeenBadges,
+  createDefaultAthleteProgression,
+  normalizeAthleteProgression,
+  subscribeAthleteProgression,
+  subscribeBadgeCatalog,
+  subscribeUserBadges,
+  syncMyBadges,
+} from '../lib/badges/client';
+import {
+  acknowledgeDevSeenBadgesFixture,
+  E2E_BADGES_KEY,
+  readDevProgressionFixture,
+  readDevSessionJson,
+  readDevUserBadgesFixture,
+} from '../lib/badges/e2eFixtures';
+import { selectNextToastBadge } from '../lib/badges/presets';
+import type { AthleteProgression, BadgeDefinition, UserBadgeAward } from '../lib/badges/types';
 import { useAndroidBackHandler } from '../lib/capacitorAndroid';
 import { subscribeSharedLiveResults } from '../lib/liveResultsStore';
 import { claimRaceBib, claimableEntryLabel, parseRaceBibQr, previewRaceBibClaim, RaceBibClaimPreview } from '../lib/raceBibClaim';
@@ -37,6 +55,7 @@ import {
   loadRecordedRunTrackPoints,
   subscribeMyRecordedRuns,
   updateRecordedRun,
+  type CompleteRecordedRunResponse,
 } from '../lib/runs/communityRunsClient';
 import { slugifyFilename } from '../lib/runs/runLiveHelpers';
 import { buildRunGpxXml } from '../lib/runs/runRecorderEngine';
@@ -50,6 +69,7 @@ import type { WorkspaceSwitchProps } from './DesktopSidebar';
 import QrScannerModal from './QrScannerModal';
 import { RunnerRemindersPanel, useRunnerReminders } from './RunnerReminderCenter';
 import WorkspaceShell from './WorkspaceShell';
+import AchievementUnlockToast from './runner/AchievementUnlockToast';
 import RunnerExplorePanel, { type ExploreCourseRunTarget, type ExploreMetrics } from './runner/RunnerExplorePanel';
 import RunnerHomePanel from './runner/RunnerHomePanel';
 import RunnerInboxPreviewPanel, {
@@ -95,6 +115,28 @@ interface FriendshipDoc {
   createdAt: string;
 }
 
+function mergeAwardedBadges(
+  existing: readonly UserBadgeAward[],
+  incoming: readonly UserBadgeAward[],
+): UserBadgeAward[] {
+  if (incoming.length === 0) return [...existing];
+  const byBadgeId = new Map<string, UserBadgeAward>();
+  for (const item of existing) {
+    if (item?.badgeId) byBadgeId.set(item.badgeId, item);
+  }
+  for (const item of incoming) {
+    if (!item?.badgeId) continue;
+    const prev = byBadgeId.get(item.badgeId);
+    byBadgeId.set(
+      item.badgeId,
+      prev ? { ...item, seenByUser: prev.seenByUser || item.seenByUser } : item,
+    );
+  }
+  return Array.from(byBadgeId.values()).sort((a, b) =>
+    b.earnedAt.localeCompare(a.earnedAt),
+  );
+}
+
 export default function RunnerDashboard({
   profile,
   initialRaceId,
@@ -128,6 +170,15 @@ export default function RunnerDashboard({
   const [recordedRunsLoaded, setRecordedRunsLoaded] = useState(false);
   const [recordedRunsError, setRecordedRunsError] = useState<string | null>(null);
   const [isRecordingRun, setIsRecordingRun] = useState(false);
+  const [badgeCatalog, setBadgeCatalog] = useState<BadgeDefinition[]>([]);
+  const [badgesLoaded, setBadgesLoaded] = useState(false);
+  const [badgesError, setBadgesError] = useState<string | null>(null);
+  const [userBadges, setUserBadges] = useState<UserBadgeAward[]>([]);
+  const [userBadgesLoaded, setUserBadgesLoaded] = useState(false);
+  const [athleteProgression, setAthleteProgression] = useState<AthleteProgression>(() =>
+    createDefaultAthleteProgression(profile.uid),
+  );
+  const syncedBadgesUidRef = useRef<string | null>(null);
 
   const canFriends = can('personal.friends');
   const canInvites = can('personal.invites');
@@ -347,6 +398,82 @@ export default function RunnerDashboard({
       setRecordedRunsError(error);
     });
   }, [canRecord, profile.uid]);
+
+  useEffect(() => {
+    if (import.meta.env.DEV && profile.uid.startsWith('e2e-')) {
+      setBadgeCatalog(readDevSessionJson<BadgeDefinition>(E2E_BADGES_KEY) ?? []);
+      setBadgesLoaded(true);
+      setBadgesError(null);
+      setUserBadges(readDevUserBadgesFixture());
+      setUserBadgesLoaded(true);
+      setAthleteProgression(readDevProgressionFixture(profile.uid));
+      return undefined;
+    }
+
+    setBadgeCatalog([]);
+    setBadgesLoaded(false);
+    setBadgesError(null);
+    setUserBadges([]);
+    setUserBadgesLoaded(false);
+    setAthleteProgression(createDefaultAthleteProgression(profile.uid));
+
+    const unsubCatalog = subscribeBadgeCatalog(
+      (snap) => {
+        setBadgeCatalog(snap.badges);
+        setBadgesLoaded(snap.loaded);
+        setBadgesError(snap.error);
+      },
+      { includeArchived: false },
+    );
+
+    const unsubUserBadges = subscribeUserBadges(profile.uid, (snap) => {
+      setUserBadges((prev) => {
+        const seenById = new Map(prev.map((item) => [item.badgeId, item.seenByUser]));
+        return snap.awards.map((award) => ({
+          ...award,
+          seenByUser: award.seenByUser || Boolean(seenById.get(award.badgeId)),
+        }));
+      });
+      setUserBadgesLoaded(snap.loaded);
+      if (snap.error) {
+        setBadgesError((prevErr) => prevErr ?? snap.error);
+      }
+    });
+
+    const unsubProgression = subscribeAthleteProgression(profile.uid, (snap) => {
+      setAthleteProgression(snap.progression);
+    });
+
+    return () => {
+      unsubCatalog();
+      unsubUserBadges();
+      unsubProgression();
+    };
+  }, [profile.uid]);
+
+  useEffect(() => {
+    if (!profile.uid) return;
+    if (import.meta.env.DEV && profile.uid.startsWith('e2e-')) return;
+    if (syncedBadgesUidRef.current === profile.uid) return;
+    syncedBadgesUidRef.current = profile.uid;
+    let cancelled = false;
+    void syncMyBadges()
+      .then((res) => {
+        if (cancelled) return;
+        if (res.newlyAwarded.length > 0) {
+          setUserBadges((prev) => mergeAwardedBadges(prev, res.newlyAwarded));
+        }
+        if (res.progression) {
+          setAthleteProgression(normalizeAthleteProgression(profile.uid, res.progression));
+        }
+      })
+      .catch((err) => {
+        console.warn('[RunnerDashboard] syncMyBadges skipped or failed:', err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profile.uid]);
 
   useEffect(() => {
     return subscribeSharedRaces((rawList, loaded, err) => {
@@ -883,15 +1010,52 @@ export default function RunnerDashboard({
     [allowedTabs, selectTab],
   );
 
-  const handleRunSaved = useCallback((savedRun: RecordedRunSummary) => {
-    setRecordedRuns((prev) =>
-      [savedRun, ...prev.filter((item) => item.runId !== savedRun.runId)].sort((a, b) =>
-        b.startedAt.localeCompare(a.startedAt),
-      ),
-    );
-    setRecordedRunsLoaded(true);
-    setRecordedRunsError(null);
-  }, []);
+  const badgesById = useMemo(
+    () => new Map(badgeCatalog.map((item) => [item.badgeId, item])),
+    [badgeCatalog],
+  );
+
+  const nextToastItem = useMemo(
+    () => selectNextToastBadge(userBadges, badgesById),
+    [userBadges, badgesById],
+  );
+
+  const handleDismissAchievementToast = useCallback(
+    (award: UserBadgeAward) => {
+      setUserBadges((prev) =>
+        prev.map((item) =>
+          item.badgeId === award.badgeId ? { ...item, seenByUser: true } : item,
+        ),
+      );
+      if (import.meta.env.DEV && profile.uid.startsWith('e2e-')) {
+        acknowledgeDevSeenBadgesFixture([award.badgeId]);
+        return;
+      }
+      void acknowledgeSeenBadges([award.badgeId]).catch((err) => {
+        console.warn('[RunnerDashboard] acknowledgeSeenBadges failed:', err);
+      });
+    },
+    [profile.uid],
+  );
+
+  const handleRunSaved = useCallback(
+    (savedRun: RecordedRunSummary, outcome?: CompleteRecordedRunResponse) => {
+      setRecordedRuns((prev) =>
+        [savedRun, ...prev.filter((item) => item.runId !== savedRun.runId)].sort((a, b) =>
+          b.startedAt.localeCompare(a.startedAt),
+        ),
+      );
+      setRecordedRunsLoaded(true);
+      setRecordedRunsError(null);
+      if (outcome?.newlyAwardedBadges && outcome.newlyAwardedBadges.length > 0) {
+        setUserBadges((prev) => mergeAwardedBadges(prev, outcome.newlyAwardedBadges ?? []));
+      }
+      if (outcome?.progression) {
+        setAthleteProgression(normalizeAthleteProgression(profile.uid, outcome.progression));
+      }
+    },
+    [profile.uid],
+  );
 
   const handleUpdateRunPrivacy = useCallback(
     async (run: RecordedRunSummary, nextPrivacy: RecordedRunPrivacy) => {
@@ -1268,7 +1432,11 @@ export default function RunnerDashboard({
               ? recordedRunsLoaded
                 ? `${recordedRuns.length}`
                 : '0'
-              : youSection === 'passes'
+              : youSection === 'badges'
+                ? userBadgesLoaded
+                  ? `${userBadges.length}`
+                  : '0'
+                : youSection === 'passes'
                 ? `${myPassesMetrics.showing}/${myPassesMetrics.all}`
                 : youSection === 'friends'
                   ? `${friendsCount}`
@@ -1812,6 +1980,12 @@ export default function RunnerDashboard({
               onUpdateRunPrivacy={handleUpdateRunPrivacy}
               onDeleteRun={handleDeleteRun}
               onExportRunGpx={handleExportRunGpx}
+              badgeCatalog={badgeCatalog}
+              badgesLoaded={badgesLoaded}
+              badgesError={badgesError}
+              userBadges={userBadges}
+              userBadgesLoaded={userBadgesLoaded}
+              athleteProgression={athleteProgression}
               requestedPassRaceId={requestedPassRaceId}
               onRequestedPassHandled={handlePassDeepLinkHandled}
               onBrowseEvents={() => {
@@ -1863,7 +2037,7 @@ export default function RunnerDashboard({
           storageKey="racepulse_hint_explore_v1"
           title="Events, Routes & Clubs"
           body="Switch between Races, Philippine Course Maps, and Clubs from the Explore bar."
-          suppress={hintSuppressed}
+          suppress={hintSuppressed || Boolean(nextToastItem)}
         />
       )}
 
@@ -1873,9 +2047,17 @@ export default function RunnerDashboard({
           storageKey="racepulse_hint_record_v1"
           title="Live Run Recorder"
           body="Test your satellite lock, pick an optional race course, and record splits with 200 m home privacy trim."
-          suppress={hintSuppressed}
+          suppress={hintSuppressed || Boolean(nextToastItem)}
         />
       )}
+
+      <AchievementUnlockToast
+        award={nextToastItem?.award ?? null}
+        badge={nextToastItem?.badge ?? null}
+        suppress={hintSuppressed || isRecordingRun}
+        onOpenBadges={() => switchTabThen('you', () => setYouSection('badges'))}
+        onDismiss={handleDismissAchievementToast}
+      />
 
       {showEventQrScanner && (
         <QrScannerModal

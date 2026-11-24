@@ -360,6 +360,17 @@ test('resolveBackNavigationTarget steps out of sub-sections before returning to 
     { tab: 'you', youSection: 'overview' },
   );
 
+  const badgesSection: runnerShell.YouSection = 'badges';
+  assert.deepEqual(
+    runnerShell.resolveBackNavigationTarget({
+      tab: 'you',
+      homeTab: 'home',
+      exploreSection: 'races',
+      youSection: badgesSection,
+    }),
+    { tab: 'you', youSection: 'overview' },
+  );
+
   assert.deepEqual(
     runnerShell.resolveBackNavigationTarget({
       tab: 'you',

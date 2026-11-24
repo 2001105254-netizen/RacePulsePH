@@ -1,5 +1,6 @@
 import type { RecordedRunSummary } from '../runs/types';
 import type {
+  AthleteProgression,
   AthleteRankTitle,
   BadgeAnimationEffect,
   BadgeBorderStyle,
@@ -838,4 +839,56 @@ export function selectNextToastBadge(
   });
 
   return { award: candidates[0].award, badge: candidates[0].badge };
+}
+
+export interface LevelXpWindow {
+  xpIntoLevel: number;
+  xpForNextLevel: number;
+  percent: number;
+}
+
+export function computeLevelXpWindow(
+  progression: Pick<AthleteProgression, 'totalXp' | 'currentLevelXp' | 'nextLevelXp'>,
+): LevelXpWindow {
+  const floor =
+    typeof progression.currentLevelXp === 'number' &&
+    Number.isFinite(progression.currentLevelXp) &&
+    progression.currentLevelXp > 0
+      ? Math.floor(progression.currentLevelXp)
+      : 0;
+  const ceil =
+    typeof progression.nextLevelXp === 'number' && Number.isFinite(progression.nextLevelXp)
+      ? Math.floor(progression.nextLevelXp)
+      : 0;
+  if (ceil <= floor) {
+    return { xpIntoLevel: 0, xpForNextLevel: 0, percent: 0 };
+  }
+  const span = ceil - floor;
+  const total =
+    typeof progression.totalXp === 'number' && Number.isFinite(progression.totalXp)
+      ? Math.floor(progression.totalXp)
+      : 0;
+  const intoLevel = Math.max(0, total - floor);
+  const percent = Math.max(0, Math.min(100, Math.floor((intoLevel * 100) / span)));
+  return {
+    xpIntoLevel: intoLevel,
+    xpForNextLevel: span,
+    percent,
+  };
+}
+
+export function computeXpProgressPercent(
+  progression: Pick<AthleteProgression, 'totalXp' | 'currentLevelXp' | 'nextLevelXp'>,
+): number {
+  return computeLevelXpWindow(progression).percent;
+}
+
+export function formatAchievementToastAnnouncement(
+  badgeName: string,
+  xpAwarded: number,
+  hasAction: boolean,
+): string {
+  const name = (badgeName || 'Achievement').trim() || 'Achievement';
+  const safeXp = Number.isFinite(xpAwarded) && xpAwarded > 0 ? Math.floor(xpAwarded) : 0;
+  return `${name} unlocked. +${safeXp} XP.${hasAction ? ' Actions available.' : ''}`;
 }

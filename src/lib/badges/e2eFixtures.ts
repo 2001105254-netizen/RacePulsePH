@@ -4,15 +4,18 @@ import {
   type GrantBadgeResult,
   type SaveBadgeDefinitionInput,
   buildBadgeAssetStoragePath,
+  normalizeAthleteProgression,
   validateBadgeAssetUploadFile,
 } from './client';
 import { computeLevelFromXp } from './presets';
-import type { BadgeDefinition, BadgeStatus, UserBadgeAward } from './types';
+import type { AthleteProgression, BadgeDefinition, BadgeStatus, UserBadgeAward } from './types';
 
 export const E2E_BADGES_KEY = 'racepulse_e2e_badges';
 export const E2E_USERS_KEY = 'racepulse_e2e_users';
 export const E2E_RACES_KEY = 'racepulse_e2e_races';
 export const E2E_GRANTS_KEY = 'racepulse_e2e_badge_grants';
+export const E2E_USER_BADGES_KEY = 'racepulse_e2e_user_badges';
+export const E2E_PROGRESSION_KEY = 'racepulse_e2e_progression';
 
 export interface DevBadgeGrantRecord {
   uid: string;
@@ -395,4 +398,37 @@ export function evaluateDevRetroactiveFixture(
     hasMore: false,
     nextAfterUid: null,
   };
+}
+
+export function readDevUserBadgesFixture(): UserBadgeAward[] {
+  return readDevSessionJson<UserBadgeAward>(E2E_USER_BADGES_KEY) ?? [];
+}
+
+export function writeDevUserBadgesFixture(items: readonly UserBadgeAward[]): void {
+  writeDevSessionJson(E2E_USER_BADGES_KEY, items);
+}
+
+export function acknowledgeDevSeenBadgesFixture(badgeIds: readonly string[]): UserBadgeAward[] {
+  const idSet = new Set(badgeIds.map((id) => id.trim()).filter(Boolean));
+  const current = readDevUserBadgesFixture();
+  if (idSet.size === 0) return current;
+  const updated = current.map((award) =>
+    idSet.has(award.badgeId) && !award.seenByUser ? { ...award, seenByUser: true } : award,
+  );
+  writeDevUserBadgesFixture(updated);
+  return updated;
+}
+
+export function readDevProgressionFixture(uid: string): AthleteProgression {
+  if (typeof window === 'undefined') {
+    return normalizeAthleteProgression(uid, null);
+  }
+  try {
+    const raw = window.sessionStorage.getItem(E2E_PROGRESSION_KEY);
+    if (!raw) return normalizeAthleteProgression(uid, null);
+    const parsed = JSON.parse(raw) as Partial<AthleteProgression> | null;
+    return normalizeAthleteProgression(uid, parsed);
+  } catch {
+    return normalizeAthleteProgression(uid, null);
+  }
 }

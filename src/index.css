@@ -974,7 +974,8 @@ html::-webkit-scrollbar-thumb:active,
 
 @layer base {
   /* Top-layer onboarding hint popover overrides UA [popover] centering while letting @layer utilities position it */
-  :where([popover].rp-hint-popover) {
+  :where([popover].rp-hint-popover),
+  :where([popover].rp-achievement-toast) {
     position: fixed;
     inset: auto;
     margin: 0;
@@ -1008,5 +1009,49 @@ html::-webkit-scrollbar-thumb:active,
       opacity: 0;
       transform: translate3d(0, 8px, 0);
     }
+  }
+}
+
+[popover].rp-achievement-toast:not(:is(:popover-open, .\:popover-open)) {
+  display: none;
+}
+
+[popover].rp-achievement-toast {
+  opacity: 0;
+  transition-property: opacity, transform, display, overlay;
+  transition-duration: 200ms;
+  transition-timing-function: var(--ease-out-quint);
+  /* Separate from transition shorthand so older browsers still parse the fade/slide rules. */
+  transition-behavior: allow-discrete;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [popover].rp-achievement-toast {
+    transform: translate3d(0, 12px, 0);
+  }
+}
+
+[popover].rp-achievement-toast:is(:popover-open, .\:popover-open):where(:not([data-closing])) {
+  display: block;
+  opacity: 1;
+
+  @starting-style {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [popover].rp-achievement-toast:is(:popover-open, .\:popover-open):where(:not([data-closing])) {
+    transform: translate3d(0, 0, 0);
+
+    @starting-style {
+      transform: translate3d(0, 12px, 0);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [popover].rp-achievement-toast {
+    transition-duration: 100ms;
   }
 }

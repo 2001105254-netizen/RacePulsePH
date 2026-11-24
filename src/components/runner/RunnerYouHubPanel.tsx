@@ -16,11 +16,15 @@ import {
   User,
   Users2,
 } from 'lucide-react';
+import { computeLevelXpWindow } from '../../lib/badges/presets';
+import type { AthleteProgression, BadgeDefinition, UserBadgeAward } from '../../lib/badges/types';
 import { computeRunnerPortfolioCounts, type YouSection } from '../../lib/runnerShell';
 import { formatDuration, formatPace, PRIVACY_OPTIONS } from '../../lib/runs/runLiveHelpers';
 import type { RecordedRunPrivacy, RecordedRunSummary } from '../../lib/runs/types';
 import type { Race, RunnerProfile, UserProfile } from '../../types';
+import BadgeArtwork from '../badges/BadgeArtwork';
 import Select from '../ui/Select';
+import RunnerBadgesPanel, { buildAwardFallbackBadge } from './RunnerBadgesPanel';
 import RunnerFriendsPanel from './RunnerFriendsPanel';
 import { RunnerQueueSkeleton } from './RunnerMobilePrimitives';
 import RunnerMyRacesPanel, { type MyPassesFilter } from './RunnerMyRacesPanel';
@@ -61,6 +65,12 @@ export interface RunnerYouHubPanelProps {
   onUpdateRunPrivacy?: (run: RecordedRunSummary, nextPrivacy: RecordedRunPrivacy) => Promise<void>;
   onDeleteRun?: (run: RecordedRunSummary) => Promise<void>;
   onExportRunGpx?: (run: RecordedRunSummary) => Promise<void> | void;
+  badgeCatalog: BadgeDefinition[];
+  badgesLoaded: boolean;
+  badgesError: string | null;
+  userBadges: UserBadgeAward[];
+  userBadgesLoaded: boolean;
+  athleteProgression: AthleteProgression;
   requestedPassRaceId?: string | null;
   onRequestedPassHandled?: () => void;
   onBrowseEvents: () => void;
@@ -100,6 +110,12 @@ export default function RunnerYouHubPanel({
   onUpdateRunPrivacy,
   onDeleteRun,
   onExportRunGpx,
+  badgeCatalog,
+  badgesLoaded,
+  badgesError,
+  userBadges,
+  userBadgesLoaded,
+  athleteProgression,
   requestedPassRaceId,
   onRequestedPassHandled,
   onBrowseEvents,
@@ -127,10 +143,23 @@ export default function RunnerYouHubPanel({
   const tabRefs = useRef<Record<YouSection, HTMLButtonElement | null>>({
     overview: null,
     runs: null,
+    badges: null,
     passes: null,
     friends: null,
     engraving: null,
   });
+
+  const xpWindow = useMemo(
+    () => computeLevelXpWindow(athleteProgression),
+    [athleteProgression],
+  );
+
+  const recentEarnedBadges = useMemo(() => {
+    const byId = new Map(badgeCatalog.map((b) => [b.badgeId, b]));
+    return userBadges
+      .slice(0, 3)
+      .map((award) => byId.get(award.badgeId) ?? buildAwardFallbackBadge(award));
+  }, [badgeCatalog, userBadges]);
 
   const showRunsSection = canRecord || recordedRuns.length > 0;
 
@@ -155,6 +184,11 @@ export default function RunnerYouHubPanel({
         count: recordedRunsLoaded ? recordedRuns.length : undefined,
       });
     }
+    items.push({
+      key: 'badges',
+      label: 'Badges',
+      count: userBadgesLoaded ? userBadges.length : undefined,
+    });
     items.push({ key: 'passes', label: 'My Passes', count: runnerProfiles.length });
     if (canFriends) {
       items.push({ key: 'friends', label: 'Friends', count: friendsCount });
@@ -167,6 +201,8 @@ export default function RunnerYouHubPanel({
     showRunsSection,
     recordedRunsLoaded,
     recordedRuns.length,
+    userBadgesLoaded,
+    userBadges.length,
     runnerProfiles.length,
     canFriends,
     friendsCount,
@@ -515,43 +551,120 @@ export default function RunnerYouHubPanel({
               )}
 
               <article className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-4 flex flex-col justify-between gap-3">
-                <div className="space-y-1.5">
-                  <div className="w-9 h-9 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] flex items-center justify-center text-amber-700 dark:text-amber-300">
-                    <Trophy className="w-4 h-4" aria-hidden="true" />
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-9 h-9 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] flex items-center justify-center text-amber-700 dark:text-amber-300 shrink-0">
+                        <Trophy className="w-4 h-4" aria-hidden="true" />
+                      </div>
+                      <h3 className="font-display font-semibold text-base text-[var(--text-primary)] truncate">
+                        Badges &amp; Level
+                      </h3>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)] whitespace-nowrap tabular-nums">
+                      Lv {athleteProgression.level} {athleteProgression.rankTitle}
+                    </span>
                   </div>
-                  <h3 className="font-display font-semibold text-base text-[var(--text-primary)]">
-                    Earned Badges Showcase
-                  </h3>
-                  <p className="text-xs font-normal text-[var(--text-secondary)] leading-relaxed">
-                    Official finisher and distance milestone badges unlock in Milestone 3 as verified race results sync to your profile.
-                  </p>
+
+                  <div className="space-y-1">
+                    <div
+                      role="progressbar"
+                      aria-label="Level XP progress"
+                      aria-valuenow={xpWindow.percent}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      className="h-2 w-full rounded-full border border-[var(--border-default)] bg-[var(--surface-inset)] overflow-hidden"
+                    >
+                      <div
+                        className="h-full rounded-full bg-red-600 dark:bg-red-500 transition-all duration-200"
+                        style={{ width: `${xpWindow.percent}%` }}
+                      />
+                    </div>
+                    <p className="text-xs font-normal text-[var(--text-secondary)] tabular-nums">
+                      {xpWindow.xpIntoLevel.toLocaleString('en-US')} /{' '}
+                      {xpWindow.xpForNextLevel.toLocaleString('en-US')} XP ({userBadges.length}{' '}
+                      {userBadges.length === 1 ? 'badge' : 'badges'} earned)
+                    </p>
+                  </div>
+
+                  {recentEarnedBadges.length > 0 ? (
+                    <div className="flex items-center gap-2.5 pt-0.5">
+                      {recentEarnedBadges.map((badgeItem) => (
+                        <BadgeArtwork key={badgeItem.badgeId} badge={badgeItem} size="sm" />
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs font-normal text-[var(--text-secondary)] leading-relaxed">
+                      Log verified runs or finish official events to unlock badges and climb ranks.
+                    </p>
+                  )}
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  {canFriends && (
-                    <button
-                      type="button"
-                      onClick={() => onSectionChange('friends')}
-                      className="min-h-11 flex-1 px-3 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
-                    >
-                      <Users2 className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
-                      <span>Friends</span>
-                    </button>
-                  )}
-                  {canEngraving && (
-                    <button
-                      type="button"
-                      onClick={() => onSectionChange('engraving')}
-                      className="min-h-11 flex-1 px-3 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
-                    >
-                      <Award className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
-                      <span>Engraving</span>
-                    </button>
+                <div className="space-y-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => onSectionChange('badges')}
+                    className="min-h-11 w-full px-3 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
+                  >
+                    <Trophy className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                    <span>Open Trophy Case</span>
+                  </button>
+
+                  {(canFriends || canEngraving) && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {canFriends && (
+                        <button
+                          type="button"
+                          onClick={() => onSectionChange('friends')}
+                          className="min-h-11 flex-1 px-3 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
+                        >
+                          <Users2 className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+                          <span>Friends</span>
+                        </button>
+                      )}
+                      {canEngraving && (
+                        <button
+                          type="button"
+                          onClick={() => onSectionChange('engraving')}
+                          className="min-h-11 flex-1 px-3 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
+                        >
+                          <Award className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+                          <span>Engraving</span>
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               </article>
             </div>
           </div>
+        )}
+
+        {effectiveSection === 'badges' && (
+          <section
+            aria-labelledby={`${baseId}-badges-heading`}
+            className="w-full max-w-5xl mx-auto space-y-4 pb-2"
+          >
+            <div className="min-w-0 px-1">
+              <h2
+                id={`${baseId}-badges-heading`}
+                className="font-display font-semibold text-lg text-[var(--text-primary)]"
+              >
+                Trophy Case &amp; Level
+              </h2>
+              <p className="text-xs font-normal text-[var(--text-secondary)]">
+                Verified distance, streak, and official race milestones on your RacePulsePH profile.
+              </p>
+            </div>
+            <RunnerBadgesPanel
+              badges={badgeCatalog}
+              badgesLoaded={badgesLoaded}
+              badgesError={badgesError}
+              userBadges={userBadges}
+              userBadgesLoaded={userBadgesLoaded}
+              athleteProgression={athleteProgression}
+            />
+          </section>
         )}
 
         {effectiveSection === 'runs' && (

@@ -38,10 +38,11 @@ import {
 import { resolveCalorieWeightKg } from '../../lib/runs/calorieEngine';
 import {
   CommunityRunApiError,
-  completeRecordedRun,
+  completeRecordedRunWithOutcome,
   createRecordedRunId,
   prepareCompleteRecordedRunInput,
   type CompleteRecordedRunInput,
+  type CompleteRecordedRunResponse,
 } from '../../lib/runs/communityRunsClient';
 import {
   RunTracking,
@@ -104,7 +105,7 @@ export interface RunnerRecordPanelProps {
   onOpenProfile: () => void;
   onBrowseRoutes?: () => void;
   onRecordingStateChange?: (active: boolean) => void;
-  onRunSaved?: (run: RecordedRunSummary) => void;
+  onRunSaved?: (run: RecordedRunSummary, outcome?: CompleteRecordedRunResponse) => void;
   theme: 'light' | 'dark';
 }
 
@@ -1179,14 +1180,15 @@ export default function RunnerRecordPanel({
     try {
       const preparedInput = await prepareCompleteRecordedRunInput(completeInput);
       try {
-        const savedRun = await completeRecordedRun(preparedInput);
+        const outcome = await completeRecordedRunWithOutcome(preparedInput);
+        const savedRun = outcome.run;
         await clearActiveSnapshotSafely(profile.uid);
         notify({
           tone: 'success',
           title: 'Run saved',
           message: `${(savedRun.distanceM / 1000).toFixed(2)} km logged to your activity feed.`,
         });
-        onRunSaved?.(savedRun);
+        onRunSaved?.(savedRun, outcome);
         await resetToSetup();
       } catch (err) {
         const apiErr =
@@ -1264,10 +1266,10 @@ export default function RunnerRecordPanel({
         };
 
         try {
-          const savedRun = await completeRecordedRun(input);
+          const outcome = await completeRecordedRunWithOutcome(input);
           await removePendingRunUpload(profile.uid, item.requestId);
           syncedCount += 1;
-          onRunSaved?.(savedRun);
+          onRunSaved?.(outcome.run, outcome);
         } catch (err) {
           const apiErr =
             err instanceof CommunityRunApiError

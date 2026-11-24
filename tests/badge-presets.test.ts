@@ -598,3 +598,105 @@ test('e2eFixtures performs deterministic offline catalog, artwork, grant, and sy
   assert.equal(syncRes.hasMore, false);
   assert.equal(syncRes.nextAfterUid, null);
 });
+
+test('XP bar integer percentage, toast announcement formatting, and DEV runner badge fixtures', () => {
+  const lv1Start = presets.computeLevelFromXp(0);
+  assert.deepEqual(presets.computeLevelXpWindow(lv1Start), {
+    xpIntoLevel: 0,
+    xpForNextLevel: 100,
+    percent: 0,
+  });
+  assert.equal(presets.computeXpProgressPercent(lv1Start), 0);
+
+  const lv1Half = presets.computeLevelFromXp(50);
+  assert.deepEqual(presets.computeLevelXpWindow(lv1Half), {
+    xpIntoLevel: 50,
+    xpForNextLevel: 100,
+    percent: 50,
+  });
+
+  const lv2Start = presets.computeLevelFromXp(100);
+  assert.deepEqual(presets.computeLevelXpWindow(lv2Start), {
+    xpIntoLevel: 0,
+    xpForNextLevel: 200,
+    percent: 0,
+  });
+
+  const lv2Half = presets.computeLevelFromXp(200);
+  assert.deepEqual(presets.computeLevelXpWindow(lv2Half), {
+    xpIntoLevel: 100,
+    xpForNextLevel: 200,
+    percent: 50,
+  });
+
+  const lv3 = presets.computeLevelFromXp(350);
+  assert.deepEqual(presets.computeLevelXpWindow(lv3), {
+    xpIntoLevel: 50,
+    xpForNextLevel: 300,
+    percent: 16,
+  });
+
+  assert.equal(presets.computeXpProgressPercent({ totalXp: -10, currentLevelXp: 0, nextLevelXp: 100 }), 0);
+  assert.equal(presets.computeXpProgressPercent({ totalXp: 500, currentLevelXp: 100, nextLevelXp: 300 }), 100);
+  assert.equal(presets.computeXpProgressPercent({ totalXp: 120, currentLevelXp: 100, nextLevelXp: 100 }), 0);
+  assert.equal(presets.computeXpProgressPercent({ totalXp: 25, currentLevelXp: 50, nextLevelXp: 25 }), 0);
+
+  const msgWithAction = presets.formatAchievementToastAnnouncement('Dawn Patrol PH', 150, true);
+  assert.equal(msgWithAction, 'Dawn Patrol PH unlocked. +150 XP. Actions available.');
+  assert.doesNotMatch(msgWithAction, /\u2014/);
+
+  const msgNoAction = presets.formatAchievementToastAnnouncement('Welcome, Ka-RacePulse', 50, false);
+  assert.equal(msgNoAction, 'Welcome, Ka-RacePulse unlocked. +50 XP.');
+
+  // Exercise DEV runner badge/progression sessionStorage helpers cleanly
+  const mem = new Map<string, string>();
+  const prevWindow = (globalThis as Record<string, unknown>).window;
+  (globalThis as Record<string, unknown>).window = {
+    sessionStorage: {
+      getItem: (k: string) => mem.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        mem.set(k, v);
+      },
+      removeItem: (k: string) => {
+        mem.delete(k);
+      },
+    },
+  };
+  try {
+    const starter = e2eFixtures.buildDevStarterPack('e2e-admin');
+    const award1 = e2eFixtures.grantDevBadgeFixture(starter[0], 'e2e-runner-m3', []).userBadge;
+    const award2 = e2eFixtures.grantDevBadgeFixture(starter[1], 'e2e-runner-m3', [
+      { uid: 'e2e-runner-m3', badgeId: starter[0].badgeId, xpAwarded: starter[0].xpReward },
+    ]).userBadge;
+    e2eFixtures.writeDevUserBadgesFixture([award1, award2]);
+    const readAwards = e2eFixtures.readDevUserBadgesFixture();
+    assert.equal(readAwards.length, 2);
+    assert.equal(readAwards[0].seenByUser, false);
+
+    const updated = e2eFixtures.acknowledgeDevSeenBadgesFixture([starter[0].badgeId]);
+    assert.equal(updated.find((a) => a.badgeId === starter[0].badgeId)?.seenByUser, true);
+    assert.equal(updated.find((a) => a.badgeId === starter[1].badgeId)?.seenByUser, false);
+
+    const fallbackProg = e2eFixtures.readDevProgressionFixture('e2e-runner-m3');
+    assert.equal(fallbackProg.uid, 'e2e-runner-m3');
+    assert.equal(fallbackProg.totalXp, 0);
+
+    mem.set(
+      e2eFixtures.E2E_PROGRESSION_KEY,
+      JSON.stringify({ uid: 'e2e-runner-m3', totalXp: 320, badgesCount: 2, runStreakWeeks: 4, runStreakGraceRemaining: 1 }),
+    );
+    const hydratedProg = e2eFixtures.readDevProgressionFixture('e2e-runner-m3');
+    assert.equal(hydratedProg.totalXp, 320);
+    assert.equal(hydratedProg.level, 3);
+    assert.equal(hydratedProg.rankTitle, 'Road Runner');
+    assert.equal(hydratedProg.badgesCount, 2);
+    assert.equal(hydratedProg.runStreakWeeks, 4);
+    assert.equal(hydratedProg.runStreakGraceRemaining, 1);
+  } finally {
+    if (prevWindow === undefined) {
+      delete (globalThis as Record<string, unknown>).window;
+    } else {
+      (globalThis as Record<string, unknown>).window = prevWindow;
+    }
+  }
+});
