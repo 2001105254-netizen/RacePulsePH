@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as runnerShell from '../src/lib/runnerShell.ts';
 import { getWorkspaceNavBadge, type WorkspaceNavItem } from '../src/components/BottomNav.tsx';
 import {
+  mergeDismissedOnboardingHints,
   persistDismissedOnboardingHint,
   readDismissedOnboardingHints,
   supportsNativePopover,
@@ -421,4 +422,16 @@ test('RunnerOnboardingHint persistence helpers safely read, persist, and integra
   assert.equal(persistDismissedOnboardingHint(key, brokenStorage), false);
   assert.equal(readDismissedOnboardingHints('   ', mockStorage).size, 0);
   assert.equal(persistDismissedOnboardingHint('   ', mockStorage), false);
+
+  // Switching storageKey preserves prior in-session dismissals when storage is blocked or misses
+  store.set('rp_hint_explore_v1', 'dismissed');
+  const inSession = new Set(['rp_hint_session_only']);
+  const mergedWithStorage = mergeDismissedOnboardingHints(inSession, 'rp_hint_explore_v1', mockStorage);
+  assert.equal(mergedWithStorage.has('rp_hint_session_only'), true);
+  assert.equal(mergedWithStorage.has('rp_hint_explore_v1'), true);
+
+  const mergedWithBroken = mergeDismissedOnboardingHints(mergedWithStorage, 'rp_hint_other', brokenStorage);
+  assert.equal(mergedWithBroken.has('rp_hint_session_only'), true);
+  assert.equal(mergedWithBroken.has('rp_hint_explore_v1'), true);
+  assert.equal(mergedWithBroken.has('rp_hint_other'), false);
 });

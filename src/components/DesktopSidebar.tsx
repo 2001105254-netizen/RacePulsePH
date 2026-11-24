@@ -245,8 +245,8 @@ export default function DesktopSidebar({
                 } ${
                   item.active
                     ? isPrimaryRecord
-                      ? 'bg-red-700 text-white shadow-sm forced-colors:border forced-colors:border-current'
-                      : 'bg-red-700 text-white forced-colors:border forced-colors:border-current'
+                      ? 'bg-red-700 text-white shadow-sm forced-colors:border-2 forced-colors:border-current'
+                      : 'bg-red-700 text-white forced-colors:border-2 forced-colors:border-current'
                     : isPrimaryRecord
                       ? 'border border-red-600/35 bg-red-700/[0.06] text-red-700 dark:bg-red-500/10 dark:text-red-300 hover:bg-red-700/12 dark:hover:bg-red-500/15'
                       : 'text-zinc-700 dark:text-zinc-300 hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
@@ -255,7 +255,7 @@ export default function DesktopSidebar({
                 {item.active && (
                   <span
                     aria-hidden="true"
-                    className={`absolute top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-full bg-white ${
+                    className={`absolute top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-full bg-white forced-colors:border forced-colors:border-current ${
                       collapsed ? 'left-0.5' : 'left-1'
                     }`}
                   />

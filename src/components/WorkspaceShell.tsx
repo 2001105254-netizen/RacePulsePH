@@ -167,7 +167,7 @@ export default function WorkspaceShell({
                   {item.active && (
                     <span
                       aria-hidden="true"
-                      className="absolute left-0.5 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-full bg-white"
+                      className="absolute left-0.5 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-full bg-white forced-colors:border forced-colors:border-current"
                     />
                   )}
                   <span

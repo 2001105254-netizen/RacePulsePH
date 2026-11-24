@@ -153,7 +153,7 @@ export default function BottomNav({
                 onClick={item.onClick}
                 aria-label={ariaLabel}
                 aria-current={item.active ? 'page' : undefined}
-                className={`relative flex-1 min-w-0 min-h-[44px] my-1 px-1 pt-2 pb-1 rounded-xl flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-colors duration-150 motion-safe:active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
+                className={`relative flex-1 min-w-0 min-h-[44px] my-1 px-1 pt-2.5 pb-0.5 rounded-xl flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-colors duration-150 motion-safe:active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
                   item.active
                     ? isPrimaryRecord
                       ? 'bg-red-700 text-white shadow-sm forced-colors:border forced-colors:border-current'
@@ -166,7 +166,7 @@ export default function BottomNav({
                 {item.active && (
                   <span
                     aria-hidden="true"
-                    className="absolute top-0.5 left-1/2 -translate-x-1/2 h-[3px] w-6 rounded-full bg-white"
+                    className="absolute top-0.5 left-1/2 -translate-x-1/2 h-[3px] w-6 rounded-full bg-white forced-colors:border forced-colors:border-current"
                   />
                 )}
                 <span
@@ -184,7 +184,7 @@ export default function BottomNav({
                   </span>
                   {badgeText && (
                     <span
-                      className={`absolute -top-1 left-[calc(50%+1px)] px-1 min-w-[16px] h-4 rounded-full text-[10px] leading-none font-mono font-bold tabular-nums flex items-center justify-center pointer-events-none ${
+                      className={`absolute -top-0.5 left-[calc(50%+1px)] px-1 min-w-[16px] h-4 rounded-full text-[10px] leading-none font-mono font-bold tabular-nums flex items-center justify-center pointer-events-none ${
                         item.active
                           ? 'bg-white text-red-700 ring-1 ring-red-700'
                           : 'bg-red-700 text-white ring-1 ring-[var(--surface-card)]'
@@ -232,7 +232,7 @@ export default function BottomNav({
                     onClick={item.onClick}
                     aria-label={ariaLabel}
                     aria-current={item.active ? 'page' : undefined}
-                    className={`relative flex min-w-fit min-h-11 shrink-0 flex-1 flex-col items-center justify-center gap-1 px-2 pt-2.5 pb-1.5 sm:px-4 rounded-xl cursor-pointer transition-colors duration-150 motion-safe:active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
+                    className={`relative flex min-w-fit min-h-11 shrink-0 flex-1 flex-col items-center justify-center gap-1 px-2 pt-3 pb-1.5 sm:px-4 rounded-xl cursor-pointer transition-colors duration-150 motion-safe:active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
                       item.active
                         ? 'bg-red-700 text-white forced-colors:border forced-colors:border-current'
                         : isPrimaryRecord
@@ -243,7 +243,7 @@ export default function BottomNav({
                     {item.active && (
                       <span
                         aria-hidden="true"
-                        className="absolute top-1 left-1/2 -translate-x-1/2 h-[3px] w-6 rounded-full bg-white"
+                        className="absolute top-1 left-1/2 -translate-x-1/2 h-[3px] w-6 rounded-full bg-white forced-colors:border forced-colors:border-current"
                       />
                     )}
                     <span
@@ -259,7 +259,7 @@ export default function BottomNav({
                       <span className="flex items-center justify-center">{item.icon}</span>
                       {badgeText && (
                         <span
-                          className={`absolute -top-1.5 left-[calc(50%+2px)] px-1 min-w-[16px] h-4 rounded-full text-[10px] leading-none font-mono font-bold tabular-nums flex items-center justify-center pointer-events-none ${
+                          className={`absolute -top-0.5 left-[calc(50%+2px)] px-1 min-w-[16px] h-4 rounded-full text-[10px] leading-none font-mono font-bold tabular-nums flex items-center justify-center pointer-events-none ${
                             item.active
                               ? 'bg-white text-red-700 ring-1 ring-red-700'
                               : 'bg-red-700 text-white ring-1 ring-[var(--surface-card)]'

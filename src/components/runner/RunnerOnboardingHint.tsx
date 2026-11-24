@@ -36,6 +36,22 @@ export function readDismissedOnboardingHints(
   return dismissed;
 }
 
+export function mergeDismissedOnboardingHints(
+  prev: ReadonlySet<string>,
+  storageKey: string,
+  storage?: Pick<Storage, 'getItem'> | null,
+): Set<string> {
+  const fromStorage = readDismissedOnboardingHints(storageKey, storage);
+  if (fromStorage.size === 0) {
+    return prev instanceof Set ? prev : new Set(prev);
+  }
+  const next = new Set(prev);
+  for (const key of fromStorage) {
+    next.add(key);
+  }
+  return next;
+}
+
 export function persistDismissedOnboardingHint(
   storageKey: string,
   storage?: Pick<Storage, 'setItem'> | null,
@@ -80,15 +96,16 @@ export default function RunnerOnboardingHint({
 }: RunnerOnboardingHintProps) {
   const popoverRef = useRef<PopoverHostElement | null>(null);
   const [dismissedKeys, setDismissedKeys] = useState<Set<string>>(() => new Set());
-  const [storageChecked, setStorageChecked] = useState(false);
+  const [checkedStorageKey, setCheckedStorageKey] = useState<string | null>(null);
 
   const supportsPopover = useMemo(() => supportsNativePopover(), []);
 
   useEffect(() => {
-    setDismissedKeys(readDismissedOnboardingHints(storageKey));
-    setStorageChecked(true);
+    setDismissedKeys((prev) => mergeDismissedOnboardingHints(prev, storageKey));
+    setCheckedStorageKey(storageKey);
   }, [storageKey]);
 
+  const storageChecked = checkedStorageKey === storageKey;
   const visible =
     storageChecked && shouldShowOnboardingHint(storageKey, Boolean(suppress), dismissedKeys);
 
@@ -123,11 +140,11 @@ export default function RunnerOnboardingHint({
     }
   }, [supportsPopover, visible, suppress]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const el = popoverRef.current;
+    if (!el || !supportsPopover) return;
     return () => {
-      if (supportsPopover) {
-        hideHintPopoverSafely(popoverRef.current);
-      }
+      hideHintPopoverSafely(el);
     };
   }, [supportsPopover]);
 

@@ -2,7 +2,7 @@
 ; It packages the staged files produced by package-station.ps1.
 
 #define AppName "RacePulse Timing Station"
-#define AppVersion "1.0.36"
+#define AppVersion "1.0.37"
 #define AppPublisher "RacePulse PH"
 #define AppExeName "RacePulseTimingStation.exe"
 #define StageDir "..\release\RacePulseTimingStation"
