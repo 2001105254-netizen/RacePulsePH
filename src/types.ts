@@ -53,6 +53,11 @@ export interface UserProfile {
   termsAcceptedAt?: string;
   marketingOptIn?: boolean;
   marketingUpdatedAt?: string;
+  weightKg?: number | null;
+  heightCm?: number | null;
+  onboardingSteps?: string[];
+  primaryClubId?: string | null;
+  allowMessageRequests?: boolean;
 }
 
 // Deliberately separate from UserProfile: this is the small, consent-based

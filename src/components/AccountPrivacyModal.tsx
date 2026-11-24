@@ -43,6 +43,7 @@ import { updateMarketingPreference } from '../lib/accountSecurity';
 import { useAndroidBackHandler } from '../lib/capacitorAndroid';
 import { resizeImageToDataUrl } from '../lib/image';
 import { subscribeSharedRaces } from '../lib/racesStore';
+import { validateOptionalBodyMetric } from '../lib/runnerShell';
 import { computeResults } from '../lib/timing';
 import { sanitizeHttpUrl } from '../lib/security';
 import { ChipRead, Race, RunnerProfile, UserProfile } from '../types';
@@ -511,6 +512,13 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
   const [emergencyContactPhone, setEmergencyContactPhone] = useState(profile.emergencyContactPhone || '');
   const [medicalNotes, setMedicalNotes] = useState(profile.medicalNotes || '');
   const [marketingOptIn, setMarketingOptIn] = useState(Boolean(profile.marketingOptIn));
+  const [weightKg, setWeightKg] = useState(
+    profile.weightKg != null && Number.isFinite(profile.weightKg) ? String(profile.weightKg) : '',
+  );
+  const [heightCm, setHeightCm] = useState(
+    profile.heightCm != null && Number.isFinite(profile.heightCm) ? String(profile.heightCm) : '',
+  );
+  const [allowMessageRequests, setAllowMessageRequests] = useState(profile.allowMessageRequests ?? true);
 
   const [saving, setSaving] = useState(false);
   const [processingMedia, setProcessingMedia] = useState(false);
@@ -776,6 +784,16 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
       setErrorMessage('Social or athlete profile link must start with https:// or http://.');
       return;
     }
+    const weightCheck = validateOptionalBodyMetric(weightKg, 25, 250, 'Body weight');
+    if (!weightCheck.ok) {
+      setErrorMessage(weightCheck.error);
+      return;
+    }
+    const heightCheck = validateOptionalBodyMetric(heightCm, 80, 250, 'Height');
+    if (!heightCheck.ok) {
+      setErrorMessage(heightCheck.error);
+      return;
+    }
 
     setSaving(true);
     try {
@@ -797,6 +815,9 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
         medicalNotes: trimmedMedical,
         marketingOptIn,
         marketingUpdatedAt: new Date().toISOString(),
+        weightKg: weightCheck.value,
+        heightCm: heightCheck.value,
+        allowMessageRequests,
       };
 
       if (!profile.username && nextUsername) {
@@ -1821,6 +1842,90 @@ export default function AccountPrivacyModal({ profile, runnerProfiles: providedR
                   className="w-full resize-y rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50"
                 />
               </div>
+            </div>
+
+            {/* Body Metrics & Messaging Privacy */}
+            <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-4 space-y-4">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Body Metrics &amp; Messaging</h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor={`${dialogId}-weight`} className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+                    Body Weight (kg)
+                  </label>
+                  <input
+                    id={`${dialogId}-weight`}
+                    name="weightKg"
+                    type="text"
+                    inputMode="decimal"
+                    value={weightKg}
+                    onChange={(event) => {
+                      setWeightKg(event.target.value);
+                      if (errorMessage.startsWith('Body weight')) {
+                        setErrorMessage('');
+                      }
+                    }}
+                    disabled={saving}
+                    placeholder="e.g. 65"
+                    aria-describedby={`${dialogId}-weight-help`}
+                    aria-invalid={errorMessage.startsWith('Body weight') ? true : undefined}
+                    className="w-full min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50"
+                  />
+                  <p id={`${dialogId}-weight-help`} className="text-xs text-[var(--text-secondary)] mt-1">
+                    Optional. Used for grade-adjusted calorie burn; defaults to 65 kg if left blank.
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor={`${dialogId}-height`} className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+                    Height (cm)
+                  </label>
+                  <input
+                    id={`${dialogId}-height`}
+                    name="heightCm"
+                    type="text"
+                    inputMode="decimal"
+                    value={heightCm}
+                    onChange={(event) => {
+                      setHeightCm(event.target.value);
+                      if (errorMessage.startsWith('Height')) {
+                        setErrorMessage('');
+                      }
+                    }}
+                    disabled={saving}
+                    placeholder="e.g. 170"
+                    aria-describedby={`${dialogId}-height-help`}
+                    aria-invalid={errorMessage.startsWith('Height') ? true : undefined}
+                    className="w-full min-h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-red-700/50 dark:focus:ring-red-400/50"
+                  />
+                  <p id={`${dialogId}-height-help`} className="text-xs text-[var(--text-secondary)] mt-1">
+                    Optional. Range: 80 to 250 cm.
+                  </p>
+                </div>
+              </div>
+
+              <label
+                htmlFor={`${dialogId}-message-requests`}
+                className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)] p-3 flex items-start justify-between gap-4 cursor-pointer min-h-11"
+              >
+                <span className="space-y-0.5">
+                  <span className="block text-sm font-semibold text-[var(--text-primary)]">
+                    Allow Message Requests from non-friends
+                  </span>
+                  <span className="block text-xs text-[var(--text-secondary)] leading-relaxed">
+                    Let other signed-in runners send you a message request before you add each other as friends.
+                  </span>
+                </span>
+                <input
+                  id={`${dialogId}-message-requests`}
+                  name="allowMessageRequests"
+                  type="checkbox"
+                  disabled={saving}
+                  checked={allowMessageRequests}
+                  onChange={(event) => setAllowMessageRequests(event.target.checked)}
+                  className="rp-checkbox shrink-0"
+                />
+              </label>
             </div>
 
             <button
