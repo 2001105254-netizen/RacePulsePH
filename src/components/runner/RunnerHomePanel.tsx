@@ -345,7 +345,11 @@ export default function RunnerHomePanel({
             </h2>
             <p className="font-mono text-xs font-normal tabular-nums text-[var(--text-secondary)] truncate">
               {(recordedRuns[0].distanceM / 1000).toFixed(2)} km · {formatDuration(recordedRuns[0].movingTimeMs)} ·{' '}
-              {formatPace(recordedRuns[0].avgPaceSecPerKm)} · {Math.round(recordedRuns[0].caloriesKcal)} kcal
+              {formatPace(recordedRuns[0].avgPaceSecPerKm)} ·{' '}
+              {Number.isFinite(recordedRuns[0].caloriesKcal)
+                ? Math.round(recordedRuns[0].caloriesKcal)
+                : 0}{' '}
+              kcal
             </p>
           </div>
 

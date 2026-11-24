@@ -323,6 +323,22 @@ export default function RunnerDashboard({
       setRecordedRunsError(null);
       return;
     }
+    if (import.meta.env.DEV && profile.uid.startsWith('e2e-') && typeof window !== 'undefined') {
+      try {
+        const raw = window.sessionStorage.getItem('racepulse_e2e_recorded_runs');
+        if (raw !== null) {
+          const parsed = JSON.parse(raw) as RecordedRunSummary[];
+          if (Array.isArray(parsed)) {
+            setRecordedRuns(parsed);
+            setRecordedRunsLoaded(true);
+            setRecordedRunsError(null);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('[RunnerDashboard] Ignored invalid E2E recordedRuns fixture:', err);
+      }
+    }
     setRecordedRunsLoaded(false);
     setRecordedRunsError(null);
     return subscribeMyRecordedRuns(profile.uid, (runs, loaded, error) => {
@@ -547,6 +563,7 @@ export default function RunnerDashboard({
           return;
         }
         if (tabRef.current === 'record' && isRecordingRunRef.current) {
+          event.preventDefault();
           return;
         }
         const target = resolveBackNavigationTarget({
@@ -778,10 +795,11 @@ export default function RunnerDashboard({
       }
       setEventQrError('');
       setEventQrMessage('Event found: opening its registration form...');
-      setScannedRaceId(raceId);
-      setExploreSection('races');
-      setExploreRacesFilter('open');
-      selectTab('explore');
+      switchTabThen('explore', () => {
+        setScannedRaceId(raceId);
+        setExploreSection('races');
+        setExploreRacesFilter('open');
+      });
       window.setTimeout(() => setShowEventQrScanner(false), 450);
       return true;
     } catch {
@@ -792,22 +810,26 @@ export default function RunnerDashboard({
 
   const confirmBibClaim = async () => {
     if (!pendingBibClaim || pendingBibClaim.alreadyLinked) {
-      if (pendingBibClaim?.race.id) {
-        setRequestedPassRaceId(pendingBibClaim.race.id);
-      }
+      const raceId = pendingBibClaim?.race.id;
       setPendingBibClaim(null);
-      setYouSection('passes');
-      selectTab('you');
+      switchTabThen('you', () => {
+        if (raceId) {
+          setRequestedPassRaceId(raceId);
+        }
+        setYouSection('passes');
+      });
       return;
     }
     setClaimingBib(true);
     setBibClaimError('');
     try {
       await claimRaceBib(pendingBibClaim.payload);
-      setRequestedPassRaceId(pendingBibClaim.race.id);
+      const raceId = pendingBibClaim.race.id;
       setPendingBibClaim(null);
-      setYouSection('passes');
-      selectTab('you');
+      switchTabThen('you', () => {
+        setRequestedPassRaceId(raceId);
+        setYouSection('passes');
+      });
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : 'Unable to add this race to your account.';
       setBibClaimError(msg);
@@ -862,13 +884,11 @@ export default function RunnerDashboard({
   );
 
   const handleRunSaved = useCallback((savedRun: RecordedRunSummary) => {
-    setRecordedRuns((prev) => {
-      const exists = prev.some((item) => item.runId === savedRun.runId);
-      if (exists) {
-        return prev.map((item) => (item.runId === savedRun.runId ? savedRun : item));
-      }
-      return [savedRun, ...prev];
-    });
+    setRecordedRuns((prev) =>
+      [savedRun, ...prev.filter((item) => item.runId !== savedRun.runId)].sort((a, b) =>
+        b.startedAt.localeCompare(a.startedAt),
+      ),
+    );
     setRecordedRunsLoaded(true);
     setRecordedRunsError(null);
   }, []);

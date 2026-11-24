@@ -112,7 +112,6 @@ export function RecordLiveView({
 
   return (
     <div className="w-full max-w-6xl mx-auto py-1 pb-[max(1rem,var(--rp-safe-bottom))] space-y-3">
-      {/* Compact Active Run Status Header */}
       <section
         aria-label="Active run status"
         className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2.5 flex flex-wrap items-center justify-between gap-2"
@@ -190,7 +189,6 @@ export function RecordLiveView({
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
-        {/* Map Canvas */}
         <div className="lg:col-span-7 min-w-0">
           <Suspense
             fallback={
@@ -227,7 +225,6 @@ export function RecordLiveView({
           </Suspense>
         </div>
 
-        {/* Live Telemetry, Splits & Thumb-Zone Controls */}
         <div className="lg:col-span-5 min-w-0 space-y-3">
           <section
             aria-label="Live run telemetry"
@@ -272,7 +269,6 @@ export function RecordLiveView({
               </div>
             </dl>
 
-            {/* Collapsible Splits Drawer */}
             <div className="border-t border-[var(--border-subtle)]">
               <button
                 type="button"
@@ -334,7 +330,6 @@ export function RecordLiveView({
             </div>
           </section>
 
-          {/* Thumb-Zone Controls */}
           <div className="grid grid-cols-2 gap-2.5">
             {isPaused ? (
               <button
@@ -474,7 +469,6 @@ export function RecordSummaryView({
           </div>
         )}
 
-        {/* Title & Privacy Controls */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <label
@@ -540,7 +534,6 @@ export function RecordSummaryView({
           </div>
         </div>
 
-        {/* Summary Metrics */}
         <dl className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-3">
             <dt className="text-xs text-[var(--text-secondary)]">Distance</dt>
@@ -594,7 +587,6 @@ export function RecordSummaryView({
           </div>
         </dl>
 
-        {/* Kilometer Splits Table */}
         {summaryData.splits.length > 0 && (
           <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-3 space-y-2">
             <h3 className="font-display font-semibold text-sm text-[var(--text-primary)]">
@@ -647,7 +639,6 @@ export function RecordSummaryView({
           </div>
         )}
 
-        {/* Summary Actions */}
         <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-between gap-2.5 pt-1">
           <div className="flex flex-wrap items-center gap-2">
             <button

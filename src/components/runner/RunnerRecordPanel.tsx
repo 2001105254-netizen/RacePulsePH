@@ -998,8 +998,19 @@ export default function RunnerRecordPanel({
       setPhase('summary');
 
       void (async () => {
+        let timeoutId: number | undefined;
         try {
-          const enriched = await enrichRunTrackElevation(paused.points);
+          const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+          const offlineFallbackSampler = () =>
+            Promise.resolve(new Array<number | null>(paused.points.length).fill(null));
+          const timed = await Promise.race([
+            enrichRunTrackElevation(paused.points, isOffline ? offlineFallbackSampler : undefined),
+            new Promise<null>((resolve) => {
+              timeoutId = window.setTimeout(() => resolve(null), 3500);
+            }),
+          ]);
+          const enriched =
+            timed ?? (await enrichRunTrackElevation(paused.points, offlineFallbackSampler));
           if (enrichmentGenRef.current !== myEnrichGen || phaseRef.current !== 'summary') return;
 
           setSummaryData((prev) =>
@@ -1026,6 +1037,9 @@ export default function RunnerRecordPanel({
         } catch (err) {
           console.warn('[RunnerRecordPanel] summary elevation enrichment failed', err);
         } finally {
+          if (timeoutId !== undefined) {
+            window.clearTimeout(timeoutId);
+          }
           if (enrichmentGenRef.current === myEnrichGen) {
             setEnrichingSummary(false);
           }
@@ -1530,10 +1544,8 @@ export default function RunnerRecordPanel({
     );
   }
 
-  // Phase 1: Setup & Pre-Run Readiness
   return (
     <div className="w-full max-w-4xl mx-auto py-1 pb-[max(1.25rem,var(--rp-safe-bottom))] space-y-4">
-      {/* Interrupted Run Recovery Banner */}
       {recoveryLoaded && recoveredDraft && (
         <section
           aria-labelledby={`${baseId}-recovery-heading`}
@@ -1579,7 +1591,6 @@ export default function RunnerRecordPanel({
         </section>
       )}
 
-      {/* Offline Pending Uploads Queue Banner */}
       {recoveryLoaded && pendingUploads.length > 0 && (
         <section
           aria-labelledby={`${baseId}-pending-heading`}
@@ -1655,7 +1666,6 @@ export default function RunnerRecordPanel({
         </section>
       )}
 
-      {/* Live GNSS Signal Readiness Card */}
       <section
         aria-labelledby={`${baseId}-gnss-heading`}
         className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-4 space-y-3"
@@ -1748,7 +1758,6 @@ export default function RunnerRecordPanel({
         </p>
       </section>
 
-      {/* Course Selection & Calorie / Privacy Calibration */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <section
           aria-labelledby={courseLabelId}
@@ -1905,7 +1914,6 @@ export default function RunnerRecordPanel({
             </div>
           )}
 
-          {/* 200m Home Privacy Trim Toggle */}
           <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-3 flex items-start justify-between gap-3">
             <div className="min-w-0 space-y-1">
               <div className="flex items-center gap-1.5">
@@ -1952,7 +1960,6 @@ export default function RunnerRecordPanel({
           </div>
         </section>
 
-        {/* Body Weight Calibration Card */}
         <section
           aria-labelledby={`${baseId}-weight-heading`}
           className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-4 flex flex-col justify-between gap-4"
@@ -2005,7 +2012,6 @@ export default function RunnerRecordPanel({
         </section>
       </div>
 
-      {/* Thumb-Zone Start Run CTA */}
       <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="space-y-0.5">
           <p className="font-display font-semibold text-sm text-[var(--text-primary)]">

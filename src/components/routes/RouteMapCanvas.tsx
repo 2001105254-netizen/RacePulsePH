@@ -575,11 +575,31 @@ export default function RouteMapCanvas({
   const isEmptyCanvas = Boolean(
     route.canonicalGeometry.isCanvasCleared && route.points.length === 0,
   );
+  const latestCameraTargetRef = useRef({ flyToTrigger, gpsLivePosition });
+  latestCameraTargetRef.current = { flyToTrigger, gpsLivePosition };
 
   const fitRouteBounds = useCallback((immediate = false) => {
     const map = mapRef.current;
     if (!map) return;
     if (isEmptyCanvas) {
+      const targetFly = latestCameraTargetRef.current.flyToTrigger;
+      const targetGps = latestCameraTargetRef.current.gpsLivePosition;
+      if (targetFly) {
+        map.easeTo({
+          center: [targetFly.lon, targetFly.lat],
+          zoom: targetFly.zoom ?? 16,
+          duration: immediate || reducedMotion ? 0 : 240,
+        });
+        return;
+      }
+      if (targetGps) {
+        map.easeTo({
+          center: [targetGps.lon, targetGps.lat],
+          zoom: 16,
+          duration: immediate || reducedMotion ? 0 : 240,
+        });
+        return;
+      }
       map.fitBounds(
         [
           [PHILIPPINES_NATIONAL_BOUNDS.west, PHILIPPINES_NATIONAL_BOUNDS.south],
