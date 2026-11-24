@@ -276,7 +276,7 @@ export default function AchievementUnlockToast({
           }}
           className={`rp-achievement-toast fixed ${
             supportsPopover ? '' : 'z-50'
-          } bottom-[calc(4.5rem+var(--rp-safe-bottom))] left-[max(0.75rem,var(--rp-safe-left))] right-[max(0.75rem,var(--rp-safe-right))] min-[600px]:left-auto min-[600px]:right-[max(1rem,var(--rp-safe-right))] min-[600px]:bottom-[max(1rem,var(--rp-safe-bottom))] min-[600px]:w-[min(24rem,calc(100vw-6rem))] max-h-[calc(100dvh-6.5rem)] overflow-y-auto rounded-2xl border border-[var(--border-control)] bg-[var(--surface-card)] text-[var(--text-primary)] p-3.5 shadow-[0_14px_36px_-8px_rgba(0,0,0,0.28)] dark:shadow-[0_18px_44px_-8px_rgba(0,0,0,0.72)]`}
+          } bottom-[calc(4.5rem+var(--rp-safe-bottom))] left-[max(0.75rem,var(--rp-safe-left))] right-[max(0.75rem,var(--rp-safe-right))] w-[calc(100vw-max(1.5rem,var(--rp-safe-left)+var(--rp-safe-right)))] max-w-none min-[600px]:left-auto min-[600px]:right-[max(1rem,var(--rp-safe-right))] min-[600px]:bottom-[max(1rem,var(--rp-safe-bottom))] min-[600px]:w-[min(24rem,calc(100vw-6rem))] max-h-[calc(100dvh-6.5rem)] overflow-y-auto rounded-2xl border border-[var(--border-control)] bg-[var(--surface-card)] text-[var(--text-primary)] p-3.5 shadow-[0_14px_36px_-8px_rgba(0,0,0,0.28)] dark:shadow-[0_18px_44px_-8px_rgba(0,0,0,0.72)]`}
         >
           <div className="flex items-start gap-3">
             <BadgeArtwork badge={activeBadge} size="sm" />

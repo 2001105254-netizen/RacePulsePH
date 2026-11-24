@@ -346,7 +346,7 @@ export default function RunnerYouHubPanel({
                   aria-selected={active}
                   tabIndex={active ? 0 : -1}
                   onClick={() => onSectionChange(item.key)}
-                  className={`relative min-h-11 px-3 sm:px-4 rounded-xl border text-xs font-semibold inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
+                  className={`relative min-h-11 px-3 sm:px-4 rounded-xl border text-xs font-semibold inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
                     active
                       ? 'border-red-600 bg-red-700 text-white after:content-[""] after:absolute after:inset-x-2.5 after:bottom-1 after:border-b-2 after:border-white'
                       : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'

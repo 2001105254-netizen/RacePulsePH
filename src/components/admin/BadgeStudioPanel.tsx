@@ -713,7 +713,6 @@ export default function BadgeStudioPanel({ profile }: BadgeStudioPanelProps) {
           aria-labelledby={`${baseId}-tab-designer`}
           className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start"
         >
-          {/* Catalog Browser */}
           <aside className="xl:col-span-3 glass-panel p-4 sm:p-5 space-y-4 xl:sticky xl:top-20 xl:max-h-[calc(100dvh-6rem)] xl:flex xl:flex-col">
             <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
               <h3 className="text-base font-semibold font-display text-[var(--text-primary)]">
@@ -878,7 +877,6 @@ export default function BadgeStudioPanel({ profile }: BadgeStudioPanelProps) {
             )}
           </aside>
 
-          {/* Live Preview Card */}
           <section
             aria-labelledby={`${baseId}-preview-heading`}
             className="xl:col-span-4 glass-panel p-4 sm:p-5 space-y-4 xl:sticky xl:top-20"
@@ -1037,7 +1035,6 @@ export default function BadgeStudioPanel({ profile }: BadgeStudioPanelProps) {
             )}
           </section>
 
-          {/* Customizer Form */}
           <form
             onSubmit={(e) => void handleSave(e)}
             noValidate
@@ -1241,10 +1238,11 @@ export default function BadgeStudioPanel({ profile }: BadgeStudioPanelProps) {
                 </div>
               </fieldset>
 
-              <fieldset className="space-y-4 border-0 border-t border-[var(--border-subtle)] pt-5 p-0 m-0">
-                <legend className="text-sm font-semibold font-display text-[var(--text-primary)]">
-                  Artwork, Frame & GPU Motion
-                </legend>
+              <div className="border-t border-[var(--border-subtle)] pt-5">
+                <fieldset className="space-y-4 border-0 p-0 m-0">
+                  <legend className="text-sm font-semibold font-display text-[var(--text-primary)]">
+                    Artwork, Frame & GPU Motion
+                  </legend>
 
                 <div className="space-y-2">
                   <span className="block text-xs font-semibold text-[var(--text-primary)]">
@@ -1425,7 +1423,8 @@ export default function BadgeStudioPanel({ profile }: BadgeStudioPanelProps) {
                     onChange={(secondaryColor) => patchDraft({ secondaryColor })}
                   />
                 </div>
-              </fieldset>
+                </fieldset>
+              </div>
 
               <div className="space-y-5 border-t border-[var(--border-subtle)] pt-5">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
