@@ -192,6 +192,7 @@ public class RunTrackingPlugin extends Plugin {
         String title = call.getString("title", DEFAULT_TITLE);
         String subtitle = call.getString("subtitle", DEFAULT_SUBTITLE);
 
+        RunTrackingForegroundService.clearBufferedFixesIfIdle();
         RunTrackingForegroundService.setJsBackgrounded(false);
         RunTrackingForegroundService.setFixListener(fixListener);
 

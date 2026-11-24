@@ -1,5 +1,12 @@
 import { WebPlugin, registerPlugin, type Plugin, type PluginListenerHandle } from '@capacitor/core';
-import { watchDeviceLocation, type DeviceRawFix } from '../routes/deviceGeolocation';
+import {
+  isGeolocationAvailable,
+  watchDeviceLocation,
+  type DeviceLocationError,
+  type DeviceRawFix,
+} from '../routes/deviceGeolocation';
+
+export type { DeviceLocationError } from '../routes/deviceGeolocation';
 
 export type NativeRunFixProvider = 'native-foreground-gnss' | 'web-geolocation';
 export type NativeRunTrackingMode = 'native-foreground-service' | 'web-wake-lock';
@@ -43,6 +50,10 @@ export interface RunTrackingPluginInterface extends Plugin {
     eventName: 'locationFix',
     listenerFunc: (fix: NativeRunFix) => void,
   ): Promise<PluginListenerHandle>;
+  addListener(
+    eventName: 'trackingError',
+    listenerFunc: (error: DeviceLocationError) => void,
+  ): Promise<PluginListenerHandle>;
   removeAllListeners(): Promise<void>;
 }
 
@@ -75,15 +86,26 @@ function toNativeRunFix(raw: DeviceRawFix): NativeRunFix {
   };
 }
 
+async function releaseSentinelSafely(sentinel: WakeLockSentinelLike | null): Promise<void> {
+  if (!sentinel) return;
+  try {
+    await sentinel.release();
+  } catch {
+    // Ignore errors when sentinel was already released by visibility loss or browser teardown.
+  }
+}
+
 export class RunTrackingWeb extends WebPlugin implements RunTrackingPluginInterface {
   private active = false;
+  private sessionEpoch = 0;
   private stopWatch: (() => void) | null = null;
   private wakeLockSentinel: WakeLockSentinelLike | null = null;
-  private wakeLockPending = false;
+  private wakeLockRequestEpoch: number | null = null;
   private visibilityHandler: (() => void) | null = null;
 
-  private async acquireWakeLock(): Promise<void> {
-    if (!this.active || this.wakeLockPending) return;
+  private async acquireWakeLock(epoch: number): Promise<void> {
+    if (!this.active || epoch !== this.sessionEpoch) return;
+    if (this.wakeLockRequestEpoch === epoch) return;
     if (this.wakeLockSentinel && !this.wakeLockSentinel.released) return;
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
 
@@ -92,11 +114,11 @@ export class RunTrackingWeb extends WebPlugin implements RunTrackingPluginInterf
     const requestWakeLock = wakeLockApi?.request;
     if (typeof requestWakeLock !== 'function') return;
 
-    this.wakeLockPending = true;
+    this.wakeLockRequestEpoch = epoch;
     try {
       const sentinel = await requestWakeLock.call(wakeLockApi, 'screen');
-      if (!this.active) {
-        await sentinel.release().catch(() => {});
+      if (!this.active || epoch !== this.sessionEpoch) {
+        await releaseSentinelSafely(sentinel);
         return;
       }
       this.wakeLockSentinel = sentinel;
@@ -108,7 +130,9 @@ export class RunTrackingWeb extends WebPlugin implements RunTrackingPluginInterf
     } catch {
       // Screen Wake Lock is optional on web and may be blocked in background or battery-saver modes.
     } finally {
-      this.wakeLockPending = false;
+      if (this.wakeLockRequestEpoch === epoch) {
+        this.wakeLockRequestEpoch = null;
+      }
     }
   }
 
@@ -118,7 +142,7 @@ export class RunTrackingWeb extends WebPlugin implements RunTrackingPluginInterf
     }
     this.visibilityHandler = () => {
       if (this.active && document.visibilityState !== 'hidden') {
-        void this.acquireWakeLock();
+        void this.acquireWakeLock(this.sessionEpoch);
       }
     };
     document.addEventListener('visibilitychange', this.visibilityHandler);
@@ -134,33 +158,57 @@ export class RunTrackingWeb extends WebPlugin implements RunTrackingPluginInterf
   async startTracking(
     _options?: NativeRunTrackingStartOptions,
   ): Promise<{ active: boolean; mode: NativeRunTrackingMode }> {
-    if (this.active) {
-      await this.acquireWakeLock();
-      if (!this.active) {
+    if (!isGeolocationAvailable()) {
+      throw new Error('Geolocation is unavailable in this browser.');
+    }
+
+    if (this.active && this.stopWatch) {
+      const currentEpoch = this.sessionEpoch;
+      await this.acquireWakeLock(currentEpoch);
+      if (!this.active || currentEpoch !== this.sessionEpoch) {
         return { active: false, mode: 'web-wake-lock' };
       }
       return { active: true, mode: 'web-wake-lock' };
     }
 
+    this.sessionEpoch += 1;
+    const epoch = this.sessionEpoch;
     this.active = true;
     this.attachVisibilityListener();
-    await this.acquireWakeLock();
 
-    // Re-check active state in case stopTracking() ran while wakeLock.request was pending.
-    if (!this.active) {
-      this.detachVisibilityListener();
-      return { active: false, mode: 'web-wake-lock' };
+    if (this.stopWatch) {
+      this.stopWatch();
+      this.stopWatch = null;
     }
 
-    this.stopWatch = watchDeviceLocation({
+    // Bind watchDeviceLocation synchronously so stopTracking() can always cancel it deterministically.
+    const cleanup = watchDeviceLocation({
       enableHighAccuracy: true,
       maximumAgeMs: 0,
       onFix: (raw) => {
-        if (!this.active) return;
+        if (!this.active || epoch !== this.sessionEpoch) return;
         this.notifyListeners('locationFix', toNativeRunFix(raw));
+      },
+      onError: (err) => {
+        if (!this.active || epoch !== this.sessionEpoch) return;
+        this.notifyListeners('trackingError', err);
+        if (err.code === 1) {
+          void this.stopTracking();
+        }
       },
     });
 
+    if (!this.active || epoch !== this.sessionEpoch) {
+      cleanup();
+      return { active: false, mode: 'web-wake-lock' };
+    }
+    this.stopWatch = cleanup;
+
+    await this.acquireWakeLock(epoch);
+
+    if (!this.active || epoch !== this.sessionEpoch) {
+      return { active: false, mode: 'web-wake-lock' };
+    }
     return { active: true, mode: 'web-wake-lock' };
   }
 
@@ -169,7 +217,9 @@ export class RunTrackingWeb extends WebPlugin implements RunTrackingPluginInterf
   }
 
   async stopTracking(): Promise<{ active: boolean }> {
+    this.sessionEpoch += 1;
     this.active = false;
+    this.wakeLockRequestEpoch = null;
     if (this.stopWatch) {
       this.stopWatch();
       this.stopWatch = null;
@@ -177,13 +227,7 @@ export class RunTrackingWeb extends WebPlugin implements RunTrackingPluginInterf
     this.detachVisibilityListener();
     const sentinel = this.wakeLockSentinel;
     this.wakeLockSentinel = null;
-    if (sentinel) {
-      try {
-        await sentinel.release();
-      } catch {
-        // Sentinel may already have been released when the browser tab lost visibility.
-      }
-    }
+    await releaseSentinelSafely(sentinel);
     return { active: false };
   }
 

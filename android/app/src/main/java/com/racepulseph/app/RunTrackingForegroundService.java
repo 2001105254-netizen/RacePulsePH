@@ -118,6 +118,14 @@ public class RunTrackingForegroundService extends Service {
         }
     }
 
+    public static void clearBufferedFixesIfIdle() {
+        synchronized (STATE_LOCK) {
+            if (!running) {
+                BUFFERED_FIXES.clear();
+            }
+        }
+    }
+
     public static JSObject bundleToJsObject(@NonNull Bundle bundle) {
         JSObject obj = new JSObject();
         obj.put("latitude", bundle.getDouble("latitude"));
@@ -199,32 +207,39 @@ public class RunTrackingForegroundService extends Service {
             return START_NOT_STICKY;
         }
 
+        if (ACTION_UPDATE_NOTIFICATION.equals(action)) {
+            if (!isRunning() || !hasFineLocationPermission()) {
+                stopSelf();
+                return START_NOT_STICKY;
+            }
+            applyNotificationExtras(intent);
+            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) {
+                nm.notify(NOTIFICATION_ID, buildNotification(currentTitle, currentSubtitle));
+            }
+            return START_STICKY;
+        }
+
         // Android 14+ throws SecurityException if a location FGS starts without ACCESS_FINE_LOCATION.
         if (!hasFineLocationPermission()) {
             shutdownService(false);
             return START_NOT_STICKY;
         }
 
-        if (intent != null) {
-            String nextTitle = intent.getStringExtra(EXTRA_TITLE);
-            String nextSubtitle = intent.getStringExtra(EXTRA_SUBTITLE);
-            if (nextTitle != null && !nextTitle.isEmpty()) {
-                currentTitle = nextTitle;
-            }
-            if (nextSubtitle != null && !nextSubtitle.isEmpty()) {
-                currentSubtitle = nextSubtitle;
+        boolean startingFreshRun;
+        synchronized (STATE_LOCK) {
+            startingFreshRun = !running;
+            if (startingFreshRun) {
+                BUFFERED_FIXES.clear();
             }
         }
+        if (startingFreshRun) {
+            currentTitle = DEFAULT_TITLE;
+            currentSubtitle = DEFAULT_SUBTITLE;
+        }
+        applyNotificationExtras(intent);
 
         Notification notification = buildNotification(currentTitle, currentSubtitle);
-
-        if (ACTION_UPDATE_NOTIFICATION.equals(action) && isRunning()) {
-            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-            if (nm != null) {
-                nm.notify(NOTIFICATION_ID, notification);
-            }
-            return START_STICKY;
-        }
 
         int foregroundType = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
             ? ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
@@ -262,6 +277,20 @@ public class RunTrackingForegroundService extends Service {
     @Override
     public IBinder onBind(Intent intent) {
         return null;
+    }
+
+    private void applyNotificationExtras(@Nullable Intent intent) {
+        if (intent == null) {
+            return;
+        }
+        String nextTitle = intent.getStringExtra(EXTRA_TITLE);
+        String nextSubtitle = intent.getStringExtra(EXTRA_SUBTITLE);
+        if (nextTitle != null && !nextTitle.isEmpty()) {
+            currentTitle = nextTitle;
+        }
+        if (nextSubtitle != null && !nextSubtitle.isEmpty()) {
+            currentSubtitle = nextSubtitle;
+        }
     }
 
     private boolean hasFineLocationPermission() {

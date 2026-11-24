@@ -1175,6 +1175,225 @@ test('RunTrackingWeb: exposes status, acquires/re-acquires screen wake lock, emi
   }
 });
 
+test('RunTrackingWeb: rejects startTracking when geolocation is unavailable without activating tracking', async () => {
+  const g = globalThis as Record<string, unknown>;
+  const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const origDocDesc = Object.getOwnPropertyDescriptor(globalThis, 'document');
+
+  let wakeLockRequests = 0;
+  Object.defineProperty(globalThis, 'navigator', {
+    value: {
+      wakeLock: {
+        request: async () => {
+          wakeLockRequests += 1;
+          return { released: false, release: async () => undefined };
+        },
+      },
+    },
+    configurable: true,
+    writable: true,
+  });
+  Object.defineProperty(globalThis, 'document', {
+    value: { visibilityState: 'visible', addEventListener: () => undefined, removeEventListener: () => undefined },
+    configurable: true,
+    writable: true,
+  });
+
+  try {
+    const plugin = new RunTrackingWeb();
+    await assert.rejects(() => plugin.startTracking(), /Geolocation is unavailable/i);
+    assert.equal((await plugin.getStatus()).active, false);
+    assert.equal(wakeLockRequests, 0);
+  } finally {
+    if (origNavDesc) Object.defineProperty(globalThis, 'navigator', origNavDesc);
+    else delete g.navigator;
+    if (origDocDesc) Object.defineProperty(globalThis, 'document', origDocDesc);
+    else delete g.document;
+  }
+});
+
+test('RunTrackingWeb: emits trackingError and stops + releases wake lock on permission denial', async () => {
+  const g = globalThis as Record<string, unknown>;
+  const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const origDocDesc = Object.getOwnPropertyDescriptor(globalThis, 'document');
+
+  type WatchErr = (err: { code: number; message: string }) => void;
+  let errorCallback = null as WatchErr | null;
+  const clearedWatchIds: number[] = [];
+  let sentinelReleased = false;
+
+  Object.defineProperty(globalThis, 'navigator', {
+    value: {
+      geolocation: {
+        getCurrentPosition: () => undefined,
+        watchPosition: (_onSuccess: unknown, onError: WatchErr) => {
+          errorCallback = onError;
+          return 301;
+        },
+        clearWatch: (id: number) => {
+          clearedWatchIds.push(id);
+        },
+      },
+      wakeLock: {
+        request: async () => ({
+          get released() {
+            return sentinelReleased;
+          },
+          release: async () => {
+            sentinelReleased = true;
+          },
+        }),
+      },
+    },
+    configurable: true,
+    writable: true,
+  });
+  Object.defineProperty(globalThis, 'document', {
+    value: { visibilityState: 'visible', addEventListener: () => undefined, removeEventListener: () => undefined },
+    configurable: true,
+    writable: true,
+  });
+
+  try {
+    const plugin = new RunTrackingWeb();
+    const errors: Array<{ code: number; message: string }> = [];
+    const listener = await plugin.addListener('trackingError', (err: { code: number; message: string }) => {
+      errors.push(err);
+    });
+
+    await plugin.startTracking();
+    assert.ok(errorCallback);
+
+    // Non-fatal timeout keeps tracking active while emitting trackingError
+    (errorCallback as WatchErr)({ code: 3, message: 'Temporary GPS timeout' });
+    assert.equal(errors.length, 1);
+    assert.equal(errors[0].code, 3);
+    assert.equal((await plugin.getStatus()).active, true);
+    assert.equal(sentinelReleased, false);
+
+    // Permission denied (code 1) emits trackingError and stops tracking + releases wake lock
+    (errorCallback as WatchErr)({ code: 1, message: 'User denied Geolocation' });
+    await Promise.resolve();
+    assert.equal(errors.length, 2);
+    assert.equal(errors[1].code, 1);
+    assert.equal((await plugin.getStatus()).active, false);
+    assert.deepEqual(clearedWatchIds, [301]);
+    assert.equal(sentinelReleased, true);
+
+    await listener.remove();
+  } finally {
+    if (origNavDesc) Object.defineProperty(globalThis, 'navigator', origNavDesc);
+    else delete g.navigator;
+    if (origDocDesc) Object.defineProperty(globalThis, 'document', origDocDesc);
+    else delete g.document;
+  }
+});
+
+test('RunTrackingWeb: start -> stop -> start race releases stale wakeLock sentinel and leaks zero watchers', async () => {
+  const g = globalThis as Record<string, unknown>;
+  const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const origDocDesc = Object.getOwnPropertyDescriptor(globalThis, 'document');
+
+  type WatchSuccess = (pos: {
+    timestamp: number;
+    coords: {
+      latitude: number;
+      longitude: number;
+      accuracy: number;
+      altitude: number | null;
+      speed: number | null;
+      heading: number | null;
+    };
+  }) => void;
+
+  const watchCallbacks: WatchSuccess[] = [];
+  const clearedWatchIds: number[] = [];
+  let nextWatchId = 500;
+  const wakeResolvers: Array<(sentinel: { released: boolean; release: () => Promise<void> }) => void> = [];
+
+  Object.defineProperty(globalThis, 'navigator', {
+    value: {
+      geolocation: {
+        getCurrentPosition: () => undefined,
+        watchPosition: (onSuccess: WatchSuccess) => {
+          watchCallbacks.push(onSuccess);
+          nextWatchId += 1;
+          return nextWatchId;
+        },
+        clearWatch: (id: number) => {
+          clearedWatchIds.push(id);
+        },
+      },
+      wakeLock: {
+        request: () =>
+          new Promise<{ released: boolean; release: () => Promise<void> }>((resolve) => {
+            wakeResolvers.push(resolve);
+          }),
+      },
+    },
+    configurable: true,
+    writable: true,
+  });
+  Object.defineProperty(globalThis, 'document', {
+    value: { visibilityState: 'visible', addEventListener: () => undefined, removeEventListener: () => undefined },
+    configurable: true,
+    writable: true,
+  });
+
+  try {
+    const plugin = new RunTrackingWeb();
+    const fixes: NativeRunFix[] = [];
+    const listener = await plugin.addListener('locationFix', (fix) => fixes.push(fix));
+
+    const start1 = plugin.startTracking();
+    assert.equal(watchCallbacks.length, 1);
+
+    await plugin.stopTracking();
+    assert.deepEqual(clearedWatchIds, [501]);
+
+    const start2 = plugin.startTracking();
+    assert.equal(watchCallbacks.length, 2);
+
+    const sentinel1 = { released: false, release: async () => { sentinel1.released = true; } };
+    const sentinel2 = { released: false, release: async () => { sentinel2.released = true; } };
+
+    // First request resolves AFTER stopTracking + second startTracking
+    wakeResolvers[0](sentinel1);
+    await Promise.resolve();
+    wakeResolvers[1](sentinel2);
+
+    assert.deepEqual(await start1, { active: false, mode: 'web-wake-lock' });
+    assert.deepEqual(await start2, { active: true, mode: 'web-wake-lock' });
+    assert.equal(watchCallbacks.length, 2);
+    assert.deepEqual(clearedWatchIds, [501]);
+    assert.equal(sentinel1.released, true);
+    assert.equal(sentinel2.released, false);
+
+    // Stale first watcher callback is ignored; second watcher delivers fixes
+    watchCallbacks[0]({
+      timestamp: 1_764_000_030_000,
+      coords: { latitude: 14.55, longitude: 121.05, accuracy: 5, altitude: 10, speed: 3, heading: 0 },
+    });
+    assert.equal(fixes.length, 0);
+
+    watchCallbacks[1]({
+      timestamp: 1_764_000_031_000,
+      coords: { latitude: 14.551, longitude: 121.051, accuracy: 4, altitude: 11, speed: 3.1, heading: 5 },
+    });
+    assert.equal(fixes.length, 1);
+
+    await plugin.stopTracking();
+    assert.deepEqual(clearedWatchIds, [501, 502]);
+    assert.equal(sentinel2.released, true);
+    await listener.remove();
+  } finally {
+    if (origNavDesc) Object.defineProperty(globalThis, 'navigator', origNavDesc);
+    else delete g.navigator;
+    if (origDocDesc) Object.defineProperty(globalThis, 'document', origDocDesc);
+    else delete g.document;
+  }
+});
+
 test('RunTrackingWeb: handles unsupported wakeLock and releases late sentinel if stopped mid-acquire', async () => {
   const g = globalThis as Record<string, unknown>;
   const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
