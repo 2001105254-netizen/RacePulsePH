@@ -685,3 +685,284 @@ test('runCrashRecovery: uses IndexedDB activeRuns and pendingUploads stores when
     }
   }
 });
+
+test('pause/resume prevents interval leakage across live session, splits, calories, and DEM enrichment', async () => {
+  const startMs = 1_764_000_000_000;
+  const dLatPerMeter = 1 / 111_195;
+  let session = createActiveRunSession({
+    sessionId: 'sess_pause_gap',
+    uid: 'runner_gap',
+    mode: 'free',
+    startedAtMs: startMs,
+  });
+
+  // Segment 1: run 100m in 30s (t=1s..31s), flat 10m altitude
+  session = ingestRunFix(
+    session,
+    { lat: 14.55, lon: 121.05, accuracyM: 5, altitudeM: 10, speedMps: 3.3, timestampMs: startMs + 1000 },
+    { weightKg: 65 },
+  );
+  session = ingestRunFix(
+    session,
+    {
+      lat: 14.55 + 100 * dLatPerMeter,
+      lon: 121.05,
+      accuracyM: 5,
+      altitudeM: 10,
+      speedMps: 3.33,
+      timestampMs: startMs + 31_000,
+    },
+    { weightKg: 65 },
+  );
+
+  const prePauseDist = session.distanceM;
+  const prePauseMoving = session.movingTimeMs;
+  const prePauseTotalKcal = session.totalKcal;
+  assert.ok(prePauseDist > 90 && prePauseDist < 110);
+  assert.equal(prePauseMoving, 30_000);
+
+  // Pause for 10 minutes while moving 1500m and climbing +80m in a vehicle
+  session = pauseActiveRun(session, startMs + 31_000);
+  session = resumeActiveRun(session, startMs + 631_000);
+  assert.equal(session.pendingSegmentBreak, true);
+
+  // First post-resume fix is 1500m north and +80m higher: must accept without spike rejection and bridge ZERO gap metrics
+  session = ingestRunFix(
+    session,
+    {
+      lat: 14.55 + 1600 * dLatPerMeter,
+      lon: 121.05,
+      accuracyM: 5,
+      altitudeM: 90,
+      speedMps: 3.2,
+      timestampMs: startMs + 632_000,
+    },
+    { weightKg: 65 },
+  );
+  assert.equal(session.points.length, 3);
+  assert.equal(session.points[2].segmentBreak, true);
+  assert.equal(session.pendingSegmentBreak, false);
+  assert.equal(session.lastElevationAnchorM, 90);
+  assert.equal(session.distanceM, prePauseDist);
+  assert.equal(session.movingTimeMs, prePauseMoving);
+  assert.equal(session.elevationGainM, 0);
+  assert.equal(session.totalKcal, prePauseTotalKcal);
+
+  // Segment 2: run 100m further in 30s (t=632s..662s) climbing +5m
+  session = ingestRunFix(
+    session,
+    {
+      lat: 14.55 + 1700 * dLatPerMeter,
+      lon: 121.05,
+      accuracyM: 5,
+      altitudeM: 95,
+      speedMps: 3.33,
+      timestampMs: startMs + 662_000,
+    },
+    { weightKg: 65 },
+  );
+  const elapsedAtEnd = computeActiveElapsedTimeMs(session, startMs + 662_000);
+  assert.equal(elapsedAtEnd, 62_000);
+  assert.equal(session.movingTimeMs, 60_000);
+  assert.ok(session.movingTimeMs <= elapsedAtEnd);
+  assert.ok(session.distanceM < 220);
+  assert.equal(session.elevationGainM, 5);
+
+  // Post-run calories & splits must skip the segmentBreak gap and match live totals
+  const postCalories = computeRunCalorieEstimate(session.points, 65);
+  assert.equal(postCalories.totalKcal, Math.round((Math.round(session.netKcal * 10) / 10 + Math.round(session.restingKcal * 10) / 10) * 10) / 10);
+  assert.ok(postCalories.totalKcal < 30);
+
+  const postSplits = computePerKmSplits(session.points, 65);
+  assert.equal(postSplits.length, 1);
+  assert.ok(postSplits[0].distanceM < 220);
+  assert.equal(postSplits[0].elapsedSec, 60);
+  assert.equal(postSplits[0].movingSec, 60);
+  assert.equal(postSplits[0].elevationGainM, 5);
+
+  // DEM enrichment must also avoid counting elevation across segmentBreak
+  const enriched = await enrichRunTrackElevation(session.points, async () => [10, 10, 90, 95]);
+  assert.equal(enriched.elevationGainM, 5);
+
+  // Privacy trim must not count paused car/commute jump toward run length (prevents short-run leak)
+  const trim = trimRunTrackEndpoints(session.points, 200);
+  assert.deepEqual(trim.trimmedPoints, []);
+});
+
+test('runCrashRecovery: IndexedDB onblocked and tx.onabort reject cleanly and fall back to localStorage with warn', async () => {
+  const withTimeout = async <T>(promise: Promise<T>, label: string, ms = 150): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`Timed out waiting for ${label}`)), ms);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+
+  const g = globalThis as unknown as { indexedDB?: unknown; localStorage?: StorageLike };
+  const hadIdb = 'indexedDB' in g;
+  const origIdb = g.indexedDB;
+  const hadLs = 'localStorage' in g;
+  const origLs = g.localStorage;
+  const origWarn = console.warn;
+
+  const fallbackLs = createMemoryStorage();
+  const warnLogs: unknown[][] = [];
+  console.warn = (...args: unknown[]) => {
+    warnLogs.push(args);
+  };
+  g.localStorage = fallbackLs;
+
+  try {
+    // Case 1: open blocked
+    g.indexedDB = {
+      open: () => {
+        const req: Record<string, unknown> = {
+          onblocked: null,
+          onerror: null,
+          onsuccess: null,
+          onupgradeneeded: null,
+        };
+        queueMicrotask(() => {
+          if (typeof req.onblocked === 'function') req.onblocked({});
+        });
+        return req;
+      },
+    };
+
+    const session = ingestRunFix(
+      createActiveRunSession({ sessionId: 's_abort', uid: 'u_abort', mode: 'free', startedAtMs: 1_764_000_000_000 }),
+      { lat: 14.55, lon: 121.05, accuracyM: 5, altitudeM: 12, timestampMs: 1_764_000_001_000 },
+    );
+    await withTimeout(saveActiveRunSnapshot(session), 'onblocked saveActiveRunSnapshot');
+    assert.ok(warnLogs.length >= 1);
+    assert.ok(fallbackLs.getItem('racepulse_active_run_v1::u_abort'));
+
+    // Case 2: transaction aborted across all 6 operations
+    warnLogs.length = 0;
+    const mockDbAbort = {
+      objectStoreNames: { contains: () => true },
+      transaction: () => {
+        const tx: Record<string, unknown> = {
+          onabort: null,
+          onerror: null,
+          oncomplete: null,
+          error: new Error('Transaction aborted'),
+          objectStore: () => ({
+            get: () => {
+              const r: Record<string, unknown> = { onsuccess: null, onerror: null };
+              queueMicrotask(() => {
+                if (typeof tx.onabort === 'function') tx.onabort({});
+              });
+              return r;
+            },
+            put: () => {
+              queueMicrotask(() => {
+                if (typeof tx.onabort === 'function') tx.onabort({});
+              });
+            },
+            getAll: () => {
+              const r: Record<string, unknown> = { onsuccess: null, onerror: null };
+              queueMicrotask(() => {
+                if (typeof tx.onabort === 'function') tx.onabort({});
+              });
+              return r;
+            },
+            delete: () => {
+              queueMicrotask(() => {
+                if (typeof tx.onabort === 'function') tx.onabort({});
+              });
+            },
+          }),
+        };
+        return tx;
+      },
+      close: () => undefined,
+    };
+    g.indexedDB = {
+      open: () => {
+        const req: Record<string, unknown> = {
+          result: mockDbAbort,
+          onsuccess: null,
+          onerror: null,
+          onblocked: null,
+          onupgradeneeded: null,
+        };
+        queueMicrotask(() => {
+          if (typeof req.onsuccess === 'function') req.onsuccess({});
+        });
+        return req;
+      },
+    };
+
+    const recovered = await withTimeout(loadActiveRunSnapshot('u_abort'), 'onabort loadActiveRunSnapshot');
+    assert.ok(recovered);
+    assert.equal(recovered.sessionId, 's_abort');
+    assert.ok(warnLogs.length >= 1);
+
+    await withTimeout(
+      savePendingRunUpload({
+        requestId: 'req_abort',
+        runId: 'run_abort',
+        uid: 'u_abort',
+        payload: {},
+        trimmedTrackPoints: session.points,
+        createdAt: '2026-11-24T08:00:00.000Z',
+        attempts: 1,
+      }),
+      'onabort savePendingRunUpload',
+    );
+    const list = await withTimeout(listPendingRunUploads('u_abort'), 'onabort listPendingRunUploads');
+    assert.equal(list.length, 1);
+    assert.equal(list[0].requestId, 'req_abort');
+
+    await withTimeout(removePendingRunUpload('u_abort', 'req_abort'), 'onabort removePendingRunUpload');
+    assert.equal((await withTimeout(listPendingRunUploads('u_abort'), 'post-remove listPendingRunUploads')).length, 0);
+
+    await withTimeout(clearActiveRunSnapshot('u_abort'), 'onabort clearActiveRunSnapshot');
+    assert.equal(await withTimeout(loadActiveRunSnapshot('u_abort'), 'post-clear loadActiveRunSnapshot'), null);
+  } finally {
+    console.warn = origWarn;
+    if (hadIdb) g.indexedDB = origIdb;
+    else delete g.indexedDB;
+    if (hadLs) g.localStorage = origLs;
+    else delete g.localStorage;
+  }
+});
+
+test('runRecorderEngine & runCrashRecovery: handle invalid timestamps, malformed pending records, and -0 normalization', async () => {
+  // Out-of-range Date and NaN timestamps must not throw in GPX export or split math
+  const weirdPts: RecordedTrackPoint[] = [
+    { lat: 14.55, lon: 121.05, ele: 10, accuracyM: 5, timestampMs: 1e20, speedMps: 3 },
+    { lat: 14.555, lon: 121.05, ele: 10, accuracyM: 5, timestampMs: Number.NaN, speedMps: 3 },
+  ];
+  const xml = buildRunGpxXml({ title: 'Edge Run', startedAt: '2026-11-24T06:00:00.000Z', points: weirdPts });
+  assert.ok(xml.includes('<trkpt lat="14.550000" lon="121.050000">'));
+  assert.equal(computePerKmSplits(weirdPts).length, 0);
+
+  // Zero-negative rounding must normalize to +0 (not -0)
+  const zeroEst = computeRunCalorieEstimate([]);
+  assert.equal(Object.is(zeroEst.netKcal, -0), false);
+  const flatPts = buildNorthboundTrack({ stepMeters: 500, count: 3, stepSec: 150, eleFn: () => 10 });
+  const splits = computePerKmSplits(flatPts);
+  assert.equal(Object.is(splits[0].avgGradePct, -0), false);
+
+  // Malformed pending items in localStorage are filtered out
+  const storage = createMemoryStorage();
+  storage.setItem(
+    'racepulse_pending_uploads_v1::u_filter',
+    JSON.stringify([
+      null,
+      { uid: 'u_filter', requestId: 123, createdAt: '2026-01-01' },
+      { uid: 'u_filter', requestId: 'ok_1', runId: 'r_1', payload: {}, trimmedTrackPoints: [], createdAt: '2026-11-24T08:00:00.000Z', attempts: 1 },
+    ]),
+  );
+  const validOnly = await listPendingRunUploads('u_filter', storage);
+  assert.equal(validOnly.length, 1);
+  assert.equal(validOnly[0].requestId, 'ok_1');
+});

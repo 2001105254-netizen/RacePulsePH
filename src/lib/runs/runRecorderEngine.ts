@@ -12,6 +12,7 @@ import {
 import {
   MAX_ACTIVE_STATIONARY_GAP_SEC,
   computeSegmentCaloriesKcal,
+  round1,
 } from './calorieEngine';
 import type {
   ActiveRunSession,
@@ -30,10 +31,6 @@ const SLOW_APPEND_INTERVAL_MS = 10_000;
 const SLOW_APPEND_MIN_DISTANCE_M = 1.0;
 const SPLIT_INTERVAL_M = 1000;
 const MIN_TRAILING_SPLIT_M = 50;
-
-function round1(value: number): number {
-  return Number(value.toFixed(1));
-}
 
 function applyElevationHysteresis(
   anchorM: number | null,
@@ -96,6 +93,7 @@ export function createActiveRunSession(input: {
     points: [],
     lastAcceptedAtMs: startedAtMs,
     lastElevationAnchorM: null,
+    pendingSegmentBreak: false,
     updatedAtMs: startedAtMs,
   };
 }
@@ -124,16 +122,22 @@ export function ingestRunFix(
 
   const lastPoint =
     session.points.length > 0 ? session.points[session.points.length - 1] : null;
-  const distM = lastPoint
-    ? geodesicDistanceM(
-        { latitude: lastPoint.lat, longitude: lastPoint.lon },
-        { latitude: nextCurrent.lat, longitude: nextCurrent.lon },
-      )
-    : 0;
-  const dtMs = lastPoint ? Math.max(0, nextCurrent.updatedAtMs - lastPoint.timestampMs) : 0;
+  const isResumedBreak = Boolean(lastPoint && session.pendingSegmentBreak);
+  const distM =
+    lastPoint && !isResumedBreak
+      ? geodesicDistanceM(
+          { latitude: lastPoint.lat, longitude: lastPoint.lon },
+          { latitude: nextCurrent.lat, longitude: nextCurrent.lon },
+        )
+      : 0;
+  const dtMs =
+    lastPoint && !isResumedBreak
+      ? Math.max(0, nextCurrent.updatedAtMs - lastPoint.timestampMs)
+      : 0;
 
   const shouldAppend =
     !lastPoint ||
+    isResumedBreak ||
     distM >= MIN_APPEND_DISTANCE_M ||
     (dtMs >= SLOW_APPEND_INTERVAL_MS && distM >= SLOW_APPEND_MIN_DISTANCE_M);
 
@@ -153,6 +157,7 @@ export function ingestRunFix(
     accuracyM: nextCurrent.accuracyM,
     timestampMs: nextCurrent.updatedAtMs,
     speedMps: nextCurrent.speedMps,
+    ...(isResumedBreak ? { segmentBreak: true } : {}),
   };
 
   let nextDistanceM = session.distanceM;
@@ -161,7 +166,7 @@ export function ingestRunFix(
   let nextRestingKcal = session.restingKcal;
   let nextTotalKcal = session.totalKcal;
 
-  if (lastPoint) {
+  if (lastPoint && !isResumedBreak) {
     nextDistanceM += distM;
     const dtSec = dtMs / 1000;
     const speedMps = nextCurrent.speedMps ?? 0;
@@ -189,12 +194,18 @@ export function ingestRunFix(
     nextTotalKcal = nextNetKcal + nextRestingKcal;
   }
 
-  const eleState = applyElevationHysteresis(
-    session.lastElevationAnchorM,
-    session.elevationGainM,
-    session.elevationLossM,
-    nextCurrent.altitudeM,
-  );
+  const eleState = isResumedBreak
+    ? {
+        anchorM: nextCurrent.altitudeM ?? null,
+        gainM: session.elevationGainM,
+        lossM: session.elevationLossM,
+      }
+    : applyElevationHysteresis(
+        session.lastElevationAnchorM,
+        session.elevationGainM,
+        session.elevationLossM,
+        nextCurrent.altitudeM,
+      );
   const nextMaxSpeedMps =
     nextCurrent.speedMps !== null && Number.isFinite(nextCurrent.speedMps)
       ? Math.max(session.maxSpeedMps, nextCurrent.speedMps)
@@ -214,6 +225,7 @@ export function ingestRunFix(
     totalKcal: nextTotalKcal,
     maxSpeedMps: nextMaxSpeedMps,
     lastAcceptedAtMs: nextCurrent.updatedAtMs,
+    pendingSegmentBreak: false,
     updatedAtMs: nextCurrent.updatedAtMs,
   };
 }
@@ -247,6 +259,12 @@ export function resumeActiveRun(
     status: 'recording',
     pausedAtMs: null,
     accumulatedPausedMs: session.accumulatedPausedMs + pausedDuration,
+    pendingSegmentBreak: session.points.length > 0,
+    gpsFilter: createGpsFilterState({
+      maxAccuracyM: session.gpsFilter.maxAccuracyM,
+      initialCoarseLimitM: session.gpsFilter.initialCoarseLimitM,
+      maxSpeedMps: session.gpsFilter.maxSpeedMps,
+    }),
     updatedAtMs: nowMs,
   };
 }
@@ -325,11 +343,18 @@ export function computePerKmSplits(
   for (let i = 1; i < points.length; i += 1) {
     const prev = points[i - 1];
     const curr = points[i];
+    if (curr.segmentBreak) {
+      bucket.eleAnchorM =
+        typeof curr.ele === 'number' && Number.isFinite(curr.ele) ? curr.ele : null;
+      continue;
+    }
     if (
       !Number.isFinite(prev.lat) ||
       !Number.isFinite(prev.lon) ||
       !Number.isFinite(curr.lat) ||
-      !Number.isFinite(curr.lon)
+      !Number.isFinite(curr.lon) ||
+      !Number.isFinite(prev.timestampMs) ||
+      !Number.isFinite(curr.timestampMs)
     ) {
       continue;
     }
@@ -466,10 +491,12 @@ export function trimRunTrackEndpoints(
   for (let i = 1; i < points.length; i += 1) {
     const prev = points[i - 1];
     const curr = points[i];
-    const delta = geodesicDistanceM(
-      { latitude: prev.lat, longitude: prev.lon },
-      { latitude: curr.lat, longitude: curr.lon },
-    );
+    const delta = curr.segmentBreak
+      ? 0
+      : geodesicDistanceM(
+          { latitude: prev.lat, longitude: prev.lon },
+          { latitude: curr.lat, longitude: curr.lon },
+        );
     cumDistM.push(cumDistM[i - 1] + delta);
   }
 
@@ -587,7 +614,12 @@ export async function enrichRunTrackElevation(
       }
     }
 
-    const eleState = applyElevationHysteresis(anchorM, gainM, lossM, resolvedEle);
+    const eleState = applyElevationHysteresis(
+      pt.segmentBreak ? null : anchorM,
+      gainM,
+      lossM,
+      resolvedEle,
+    );
     anchorM = eleState.anchorM;
     gainM = eleState.gainM;
     lossM = eleState.lossM;
@@ -653,6 +685,14 @@ function escapeXml(value: string): string {
     .replace(/'/g, '&apos;');
 }
 
+function formatIsoTimestamp(timestampMs: number): string | null {
+  if (!Number.isFinite(timestampMs) || timestampMs <= 0) {
+    return null;
+  }
+  const date = new Date(timestampMs);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 export function buildRunGpxXml(input: {
   title: string;
   startedAt: string;
@@ -668,10 +708,8 @@ export function buildRunGpxXml(input: {
         typeof pt.ele === 'number' && Number.isFinite(pt.ele)
           ? `<ele>${pt.ele.toFixed(1)}</ele>`
           : '';
-      const timeTag =
-        Number.isFinite(pt.timestampMs) && pt.timestampMs > 0
-          ? `<time>${new Date(pt.timestampMs).toISOString()}</time>`
-          : '';
+      const isoTime = formatIsoTimestamp(pt.timestampMs);
+      const timeTag = isoTime ? `<time>${isoTime}</time>` : '';
       const inner = `${eleTag}${timeTag}`;
       return inner
         ? `      <trkpt lat="${pt.lat.toFixed(6)}" lon="${pt.lon.toFixed(6)}">${inner}</trkpt>`

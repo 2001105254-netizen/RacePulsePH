@@ -11,6 +11,7 @@ export interface RecordedTrackPoint {
   accuracyM: number;
   timestampMs: number;
   speedMps?: number | null;
+  segmentBreak?: boolean;
 }
 
 export interface RunSplitKm {
@@ -98,6 +99,7 @@ export interface ActiveRunSession {
   points: RecordedTrackPoint[];
   lastAcceptedAtMs: number;
   lastElevationAnchorM: number | null;
+  pendingSegmentBreak?: boolean;
   updatedAtMs: number;
 }
 

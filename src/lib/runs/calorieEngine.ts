@@ -14,8 +14,9 @@ export const MAX_ACTIVE_STATIONARY_GAP_SEC = 180;
 const MIN_GRADE = -0.45;
 const MAX_GRADE = 0.45;
 
-function round1(value: number): number {
-  return Math.round(value * 10) / 10;
+export function round1(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.round(value * 10) / 10 + 0;
 }
 
 export function resolveCalorieWeightKg(weightKg?: number | null): {
@@ -126,6 +127,9 @@ export function computeRunCalorieEstimate(
   for (let i = 1; i < points.length; i += 1) {
     const prev = points[i - 1];
     const curr = points[i];
+    if (curr.segmentBreak) {
+      continue;
+    }
     if (
       !Number.isFinite(prev.lat) ||
       !Number.isFinite(prev.lon) ||

@@ -50,6 +50,59 @@ function openRecoveryDb(): Promise<IDBDatabase> {
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error || new Error('Failed to open run recovery database.'));
+    req.onblocked = () => reject(new Error('IndexedDB open blocked by another tab'));
+  });
+}
+
+function runWriteTx(
+  db: IDBDatabase,
+  storeName: string,
+  action: (store: IDBObjectStore) => void,
+  errorMessage: string,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (err: unknown) => {
+      if (settled) return;
+      settled = true;
+      reject(err instanceof Error ? err : new Error(errorMessage));
+    };
+    const tx = db.transaction(storeName, 'readwrite');
+    tx.oncomplete = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    tx.onerror = () => fail(tx.error || new Error(errorMessage));
+    tx.onabort = () => fail(tx.error || new Error(`${errorMessage} (aborted)`));
+    action(tx.objectStore(storeName));
+  });
+}
+
+function runReadTx<T>(
+  db: IDBDatabase,
+  storeName: string,
+  requestFactory: (store: IDBObjectStore) => IDBRequest,
+  transform: (result: unknown) => T,
+  errorMessage: string,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (err: unknown) => {
+      if (settled) return;
+      settled = true;
+      reject(err instanceof Error ? err : new Error(errorMessage));
+    };
+    const tx = db.transaction(storeName, 'readonly');
+    tx.onerror = () => fail(tx.error || new Error(errorMessage));
+    tx.onabort = () => fail(tx.error || new Error(`${errorMessage} (aborted)`));
+    const req = requestFactory(tx.objectStore(storeName));
+    req.onsuccess = () => {
+      if (settled) return;
+      settled = true;
+      resolve(transform(req.result));
+    };
+    req.onerror = () => fail(req.error || tx.error || new Error(errorMessage));
   });
 }
 
@@ -82,6 +135,14 @@ function isValidSessionShape(value: unknown, expectedUid: string): value is Acti
   );
 }
 
+function isValidPendingUpload(value: unknown, expectedUid?: string): value is PendingRunUpload {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<PendingRunUpload>;
+  if (typeof candidate.uid !== 'string' || !candidate.uid) return false;
+  if (expectedUid !== undefined && candidate.uid !== expectedUid) return false;
+  return typeof candidate.requestId === 'string' && typeof candidate.createdAt === 'string';
+}
+
 export async function saveActiveRunSnapshot(
   session: ActiveRunSession,
   storageOverride?: StorageLike,
@@ -92,12 +153,12 @@ export async function saveActiveRunSnapshot(
     try {
       const db = await openRecoveryDb();
       try {
-        await new Promise<void>((resolve, reject) => {
-          const tx = db.transaction(ACTIVE_STORE, 'readwrite');
-          tx.objectStore(ACTIVE_STORE).put(session);
-          tx.oncomplete = () => resolve();
-          tx.onerror = () => reject(tx.error || new Error('Failed saving active run snapshot.'));
-        });
+        await runWriteTx(
+          db,
+          ACTIVE_STORE,
+          (store) => store.put(session),
+          'Failed saving active run snapshot.',
+        );
         return;
       } finally {
         db.close();
@@ -123,12 +184,13 @@ export async function loadActiveRunSnapshot(
     try {
       const db = await openRecoveryDb();
       try {
-        const record = await new Promise<unknown>((resolve, reject) => {
-          const tx = db.transaction(ACTIVE_STORE, 'readonly');
-          const req = tx.objectStore(ACTIVE_STORE).get(uid);
-          req.onsuccess = () => resolve(req.result ?? null);
-          req.onerror = () => reject(req.error || new Error('Failed loading active run snapshot.'));
-        });
+        const record = await runReadTx(
+          db,
+          ACTIVE_STORE,
+          (store) => store.get(uid),
+          (result) => result ?? null,
+          'Failed loading active run snapshot.',
+        );
         return isValidSessionShape(record, uid) ? record : null;
       } finally {
         db.close();
@@ -154,12 +216,12 @@ export async function clearActiveRunSnapshot(
     try {
       const db = await openRecoveryDb();
       try {
-        await new Promise<void>((resolve, reject) => {
-          const tx = db.transaction(ACTIVE_STORE, 'readwrite');
-          tx.objectStore(ACTIVE_STORE).delete(uid);
-          tx.oncomplete = () => resolve();
-          tx.onerror = () => reject(tx.error || new Error('Failed clearing active run snapshot.'));
-        });
+        await runWriteTx(
+          db,
+          ACTIVE_STORE,
+          (store) => store.delete(uid),
+          'Failed clearing active run snapshot.',
+        );
         return;
       } finally {
         db.close();
@@ -199,12 +261,12 @@ export async function savePendingRunUpload(
           ...entry,
           id: `${entry.uid}::${entry.requestId}`,
         };
-        await new Promise<void>((resolve, reject) => {
-          const tx = db.transaction(PENDING_STORE, 'readwrite');
-          tx.objectStore(PENDING_STORE).put(record);
-          tx.oncomplete = () => resolve();
-          tx.onerror = () => reject(tx.error || new Error('Failed saving pending run upload.'));
-        });
+        await runWriteTx(
+          db,
+          PENDING_STORE,
+          (store) => store.put(record),
+          'Failed saving pending run upload.',
+        );
         return;
       } finally {
         db.close();
@@ -217,8 +279,10 @@ export async function savePendingRunUpload(
   const storage = resolveFallbackStorage(storageOverride);
   if (!storage) return;
   const key = `${PENDING_FALLBACK_PREFIX}${entry.uid}`;
-  const existing = readJsonStorage<PendingRunUpload[]>(storage, key);
-  const items = Array.isArray(existing) ? existing : [];
+  const existing = readJsonStorage<unknown>(storage, key);
+  const items = Array.isArray(existing)
+    ? existing.filter((item): item is PendingRunUpload => isValidPendingUpload(item, entry.uid))
+    : [];
   const next = items.filter((item) => item.requestId !== entry.requestId);
   next.push(entry);
   writeJsonStorage(storage, key, sortPendingUploads(next));
@@ -234,15 +298,15 @@ export async function listPendingRunUploads(
     try {
       const db = await openRecoveryDb();
       try {
-        const records = await new Promise<StoredPendingUploadRecord[]>((resolve, reject) => {
-          const tx = db.transaction(PENDING_STORE, 'readonly');
-          const req = tx.objectStore(PENDING_STORE).getAll();
-          req.onsuccess = () =>
-            resolve(Array.isArray(req.result) ? (req.result as StoredPendingUploadRecord[]) : []);
-          req.onerror = () => reject(req.error || new Error('Failed listing pending uploads.'));
-        });
+        const records = await runReadTx(
+          db,
+          PENDING_STORE,
+          (store) => store.getAll(),
+          (result) => (Array.isArray(result) ? result : []),
+          'Failed listing pending uploads.',
+        );
         const filtered = records
-          .filter((item) => item && item.uid === uid)
+          .filter((item): item is StoredPendingUploadRecord => isValidPendingUpload(item, uid))
           .map(({ id: _id, ...rest }) => rest as PendingRunUpload);
         return sortPendingUploads(filtered);
       } finally {
@@ -255,8 +319,12 @@ export async function listPendingRunUploads(
 
   const storage = resolveFallbackStorage(storageOverride);
   if (!storage) return [];
-  const parsed = readJsonStorage<PendingRunUpload[]>(storage, `${PENDING_FALLBACK_PREFIX}${uid}`);
-  return Array.isArray(parsed) ? sortPendingUploads(parsed.filter((item) => item.uid === uid)) : [];
+  const parsed = readJsonStorage<unknown>(storage, `${PENDING_FALLBACK_PREFIX}${uid}`);
+  return Array.isArray(parsed)
+    ? sortPendingUploads(
+        parsed.filter((item): item is PendingRunUpload => isValidPendingUpload(item, uid)),
+      )
+    : [];
 }
 
 export async function removePendingRunUpload(
@@ -270,12 +338,12 @@ export async function removePendingRunUpload(
     try {
       const db = await openRecoveryDb();
       try {
-        await new Promise<void>((resolve, reject) => {
-          const tx = db.transaction(PENDING_STORE, 'readwrite');
-          tx.objectStore(PENDING_STORE).delete(`${uid}::${requestId}`);
-          tx.oncomplete = () => resolve();
-          tx.onerror = () => reject(tx.error || new Error('Failed removing pending upload.'));
-        });
+        await runWriteTx(
+          db,
+          PENDING_STORE,
+          (store) => store.delete(`${uid}::${requestId}`),
+          'Failed removing pending upload.',
+        );
         return;
       } finally {
         db.close();
@@ -288,9 +356,11 @@ export async function removePendingRunUpload(
   const storage = resolveFallbackStorage(storageOverride);
   if (!storage) return;
   const key = `${PENDING_FALLBACK_PREFIX}${uid}`;
-  const existing = readJsonStorage<PendingRunUpload[]>(storage, key);
+  const existing = readJsonStorage<unknown>(storage, key);
   if (!Array.isArray(existing)) return;
-  const remaining = existing.filter((item) => item.requestId !== requestId);
+  const remaining = existing
+    .filter((item): item is PendingRunUpload => isValidPendingUpload(item, uid))
+    .filter((item) => item.requestId !== requestId);
   if (remaining.length === 0) {
     try {
       storage.removeItem(key);
