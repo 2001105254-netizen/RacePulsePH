@@ -251,7 +251,6 @@ export default function RunnerRecordPanel({
   const stopNativeTracking = useCallback(async () => {
     trackingGenerationRef.current += 1;
     drainGenRef.current += 1;
-    drainingBufferRef.current = false;
     const handles = listenerHandlesRef.current;
     listenerHandlesRef.current = [];
     await Promise.all(
@@ -267,6 +266,7 @@ export default function RunnerRecordPanel({
         console.warn('[RunnerRecordPanel] stopTracking warning', err);
       });
     }
+    drainingBufferRef.current = false;
   }, []);
 
   useEffect(() => {
@@ -451,22 +451,51 @@ export default function RunnerRecordPanel({
   );
 
   const flushQueuedFixesIntoSession = useCallback(
-    (baseSession: ActiveRunSession): ActiveRunSession => {
+    (
+      baseSession: ActiveRunSession,
+      extraFixes: NativeRunFix[] = [],
+      minLastTimestampMs?: number,
+    ): ActiveRunSession => {
       const queued = queuedFixesDuringDrainRef.current;
       queuedFixesDuringDrainRef.current = [];
-      if (queued.length === 0) return baseSession;
+      const incomingFixes = extraFixes.length > 0 ? [...extraFixes, ...queued] : queued;
+      if (incomingFixes.length === 0) return baseSession;
 
       const existingTimestamps = new Set(baseSession.points.map((pt) => pt.timestampMs));
       const merged = mergeAndFilterRunFixes({
-        incomingFixes: queued,
+        incomingFixes,
         minAcceptedTimestampMs: segmentStartFloorMsRef.current,
         existingTimestamps,
-        lastProcessedTimestampMs: lastRawTimestampRef.current,
+        lastProcessedTimestampMs: minLastTimestampMs ?? lastRawTimestampRef.current,
       });
       return applyAcceptedFixBatch(merged, baseSession) ?? baseSession;
     },
     [applyAcceptedFixBatch],
   );
+
+  const drainNativeBufferedFixesForStop = useCallback(async (): Promise<NativeRunFix[]> => {
+    drainGenRef.current += 1;
+    drainingBufferRef.current = true;
+    try {
+      const result = await RunTracking.getBufferedFixes();
+      return Array.isArray(result?.fixes) ? result.fixes : [];
+    } catch (err) {
+      console.warn('[RunnerRecordPanel] pre-stop buffered fix drain failed', err);
+      return [];
+    }
+  }, []);
+
+  const stopAndFlushActiveSession = useCallback(async (): Promise<ActiveRunSession | null> => {
+    const current = sessionRef.current;
+    if (!current) return null;
+    const preDrainLastTs = lastRawTimestampRef.current;
+    const preStopBuffered =
+      current.status === 'recording' ? await drainNativeBufferedFixesForStop() : [];
+    await stopNativeTracking();
+    const latestBase = sessionRef.current;
+    if (!latestBase) return null;
+    return flushQueuedFixesIntoSession(latestBase, preStopBuffered, preDrainLastTs);
+  }, [drainNativeBufferedFixesForStop, flushQueuedFixesIntoSession, stopNativeTracking]);
 
   const handleIncomingFix = useCallback(
     (fix: NativeRunFix) => {
@@ -590,9 +619,22 @@ export default function RunnerRecordPanel({
             ? err.message
             : 'Unable to start GPS tracking on this device.';
         setLiveTrackingError(message);
+        const active = sessionRef.current;
+        if (active && active.status === 'recording' && phaseRef.current === 'live') {
+          const pausedAt = Date.now();
+          const paused = pauseActiveRun(active, pausedAt);
+          updateSession(paused);
+          setNowTickMs(paused.pausedAtMs ?? pausedAt);
+          void persistSnapshotLatest(paused);
+        }
+        notify({
+          tone: 'error',
+          title: 'GPS tracking unavailable',
+          message,
+        });
       }
     },
-    [handleIncomingFix, handleTrackingError],
+    [handleIncomingFix, handleTrackingError, notify, persistSnapshotLatest, updateSession],
   );
 
   useEffect(() => {
@@ -655,8 +697,14 @@ export default function RunnerRecordPanel({
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', handleVisibilityChange);
+    }
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', handleVisibilityChange);
+      }
     };
   }, [phase, session?.status, applyAcceptedFixBatch]);
 
@@ -848,6 +896,9 @@ export default function RunnerRecordPanel({
         destructive: true,
       });
       if (!ok) return;
+      await RunTracking.stopTracking().catch((err) => {
+        console.warn('[RunnerRecordPanel] stop tracking on draft discard failed', err);
+      });
       await clearActiveSnapshotSafely(profile.uid);
       setRecoveredDraft(null);
       notify({ tone: 'info', title: 'Draft discarded' });
@@ -862,10 +913,8 @@ export default function RunnerRecordPanel({
       if (!sessionRef.current || sessionRef.current.status === 'paused') return;
       transitionLockRef.current = true;
       try {
-        await stopNativeTracking();
-        const latestBase = sessionRef.current;
-        if (!latestBase || latestBase.status === 'paused') return;
-        const flushed = flushQueuedFixesIntoSession(latestBase);
+        const flushed = await stopAndFlushActiveSession();
+        if (!flushed || flushed.status === 'paused') return;
         const nowMs = Date.now();
         const paused = pauseActiveRun(flushed, nowMs);
         updateSession(paused);
@@ -878,7 +927,7 @@ export default function RunnerRecordPanel({
         transitionLockRef.current = false;
       }
     },
-    [flushQueuedFixesIntoSession, notify, persistSnapshotLatest, stopNativeTracking, updateSession],
+    [notify, persistSnapshotLatest, stopAndFlushActiveSession, updateSession],
   );
 
   const handleResumeRun = useCallback(async () => {
@@ -937,11 +986,25 @@ export default function RunnerRecordPanel({
 
   const handleFinishRun = async () => {
     if (transitionLockRef.current) return;
-    const initial = sessionRef.current;
+    let initial = sessionRef.current;
     if (!initial) return;
 
     transitionLockRef.current = true;
     try {
+      if (initial.status === 'recording' && initial.movingTimeMs < MIN_SERVER_MOVING_TIME_MS) {
+        const preDrainLastTs = lastRawTimestampRef.current;
+        let preCheckBuffered: NativeRunFix[] = [];
+        try {
+          preCheckBuffered = await drainNativeBufferedFixesForStop();
+        } finally {
+          drainingBufferRef.current = false;
+        }
+        const refreshed = sessionRef.current;
+        if (refreshed) {
+          initial = flushQueuedFixesIntoSession(refreshed, preCheckBuffered, preDrainLastTs);
+        }
+      }
+
       if (initial.movingTimeMs < MIN_SERVER_MOVING_TIME_MS) {
         const discardShort = await confirm({
           title: 'Run is under 10 seconds',
@@ -959,10 +1022,8 @@ export default function RunnerRecordPanel({
         return;
       }
 
-      await stopNativeTracking();
-      const postStopBase = sessionRef.current;
-      if (!postStopBase) return;
-      const flushed = flushQueuedFixesIntoSession(postStopBase);
+      const flushed = await stopAndFlushActiveSession();
+      if (!flushed) return;
       const nowMs = Date.now();
       const paused = pauseActiveRun(flushed, nowMs);
       updateSession(paused);

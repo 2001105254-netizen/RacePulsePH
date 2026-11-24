@@ -152,7 +152,8 @@ public class RunTrackingForegroundService extends Service {
         Bundle fixBundle = toFixBundle(location);
         FixListener liveTarget = null;
         synchronized (STATE_LOCK) {
-            if (fixListener != null && !jsBackgrounded) {
+            // Drain any screen-off backlog before resuming live emission so fixes remain FIFO-ordered.
+            if (fixListener != null && !jsBackgrounded && BUFFERED_FIXES.isEmpty()) {
                 liveTarget = fixListener;
             } else {
                 while (BUFFERED_FIXES.size() >= MAX_BUFFERED_FIXES) {

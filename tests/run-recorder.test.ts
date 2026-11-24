@@ -2026,3 +2026,65 @@ test('communityRunsClient: loadRecordedRunTrackPoints decodes Storage JSON and f
   };
   assert.deepEqual(await loadRecordedRunTrackPoints(shortTrimmedRun), []);
 });
+
+test('mergeAndFilterRunFixes preserves screen-off Android buffered fixes when drained FIFO ahead of wake fix', () => {
+  const t0 = 1_764_000_000_000;
+  const buffered: NativeRunFix[] = [
+    { latitude: 14.555, longitude: 121.024, accuracyM: 5, altitudeM: 18, speedMps: 3.4, headingDeg: 10, timestamp: t0 + 10_000, provider: 'native-foreground-gnss' },
+    { latitude: 14.556, longitude: 121.0241, accuracyM: 5, altitudeM: 19, speedMps: 3.5, headingDeg: 11, timestamp: t0 + 20_000, provider: 'native-foreground-gnss' },
+    { latitude: 14.557, longitude: 121.0242, accuracyM: 6, altitudeM: 20, speedMps: 3.6, headingDeg: 12, timestamp: t0 + 30_000, provider: 'native-foreground-gnss' },
+  ];
+  const queuedWake: NativeRunFix[] = [
+    { latitude: 14.557, longitude: 121.0242, accuracyM: 6, altitudeM: 20, speedMps: 3.6, headingDeg: 12, timestamp: t0 + 30_000, provider: 'native-foreground-gnss' },
+    { latitude: 14.558, longitude: 121.0243, accuracyM: 5, altitudeM: 21, speedMps: 3.5, headingDeg: 12, timestamp: t0 + 40_000, provider: 'native-foreground-gnss' },
+  ];
+  const stalePreStart: NativeRunFix = {
+    latitude: 14.554,
+    longitude: 121.0239,
+    accuracyM: 5,
+    altitudeM: 17,
+    speedMps: 3.2,
+    headingDeg: 10,
+    timestamp: t0 - 5_000,
+    provider: 'native-foreground-gnss',
+  };
+
+  const merged = mergeAndFilterRunFixes({
+    incomingFixes: [stalePreStart, ...buffered, ...queuedWake],
+    minAcceptedTimestampMs: t0,
+    existingTimestamps: new Set([t0]),
+    lastProcessedTimestampMs: t0,
+  });
+
+  assert.deepEqual(
+    merged.map((fix) => fix.timestamp),
+    [t0 + 10_000, t0 + 20_000, t0 + 30_000, t0 + 40_000],
+  );
+});
+
+test('pauseActiveRun on failed startTracking stops elapsed timer drift and stays cleanly resumable', () => {
+  const tStart = 1_764_000_000_000;
+  const session = createActiveRunSession({
+    sessionId: 'sess_start_fail',
+    uid: 'u_start_fail',
+    mode: 'free',
+    startedAtMs: tStart,
+    homePrivacyTrimEnabled: true,
+  });
+  assert.equal(session.status, 'recording');
+
+  const paused = pauseActiveRun(session, tStart + 50);
+  assert.equal(paused.status, 'paused');
+  assert.equal(paused.pausedAtMs, tStart + 50);
+
+  // Elapsed active time stays frozen regardless of how long the user waits before tapping Resume
+  assert.equal(
+    computeActiveElapsedTimeMs(paused, tStart + 60_000),
+    computeActiveElapsedTimeMs(paused, tStart + 50),
+  );
+
+  const resumed = resumeActiveRun(paused, tStart + 65_000);
+  assert.equal(resumed.status, 'recording');
+  assert.equal(resumed.accumulatedPausedMs, 64_950);
+  assert.equal(computeActiveElapsedTimeMs(resumed, tStart + 70_000), 5_050);
+});
