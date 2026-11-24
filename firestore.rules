@@ -95,6 +95,7 @@ service cloud.firestore {
     match /accountResetGrants/{id} { allow read, write: if false; }
     match /accountRateLimits/{id} { allow read, write: if false; }
     match /routeIdempotency/{id} { allow read, write: if false; }
+    match /communityIdempotency/{id} { allow read, write: if false; }
     match /payments/{id} { allow read, write: if false; }
     match /pendingRegistrations/{id} { allow read, write: if false; }
     match /bibClaimLocks/{lockId} { allow read, write: if false; }
@@ -1113,6 +1114,20 @@ service cloud.firestore {
 
     match /routeAudit/{eventId} {
       allow read: if canReadRouteActivity(resource.data);
+      allow create, update, delete: if false;
+    }
+
+    // ========== RECORDED RUNS ==========
+
+    // Server-verified GPS activities written exclusively via communityApi (Admin SDK).
+    // Keep resource.data.uid == request.auth.uid first so owner list queries short-circuit cleanly.
+    match /recordedRuns/{runId} {
+      allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid) && (
+        resource.data.uid == request.auth.uid
+        || isSuperAdmin()
+        || resource.data.privacy == 'public'
+        || (resource.data.privacy == 'friends' && isFriendOf(resource.data.uid))
+      );
       allow create, update, delete: if false;
     }
   }

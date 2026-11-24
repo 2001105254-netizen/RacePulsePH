@@ -91,6 +91,7 @@ async function purgeAndAnonymizeUserAccount({ db, auth, storage = null, uid }) {
     usernameIndexSnap,
     friendDirSnap,
     bibClaimLocksSnap,
+    recordedRunsSnap,
   ] = await Promise.all([
     db.collection('runners').where('uid', '==', uid).get(),
     db.collection('runnerClaims').where('uid', '==', uid).get(),
@@ -105,6 +106,7 @@ async function purgeAndAnonymizeUserAccount({ db, auth, storage = null, uid }) {
     db.collection('usernameIndex').where('uid', '==', uid).get(),
     db.collection('friendDirectory').where('uid', '==', uid).get(),
     db.collection('bibClaimLocks').where('uid', '==', uid).get(),
+    db.collection('recordedRuns').where('uid', '==', uid).get(),
   ]);
 
   const deleteByPath = new Map();
@@ -126,6 +128,7 @@ async function purgeAndAnonymizeUserAccount({ db, auth, storage = null, uid }) {
     ...usernameIndexSnap.docs,
     ...friendDirSnap.docs,
     ...bibClaimLocksSnap.docs,
+    ...recordedRunsSnap.docs,
   ].forEach((d) => enqueueDelete(d.ref));
 
   [
@@ -192,6 +195,7 @@ async function purgeAndAnonymizeUserAccount({ db, auth, storage = null, uid }) {
           `route-private/${uid}/`,
           `highlight-assets/${uid}/`,
           `race-bib-fonts/${uid}/`,
+          `run-tracks/${uid}/`,
         ];
         await Promise.allSettled(
           prefixes.map((prefix) => bucket.deleteFiles({ prefix, force: true }).catch(() => {})),

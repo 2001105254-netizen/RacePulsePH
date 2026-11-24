@@ -2,7 +2,7 @@ const {test,before,after}=require('node:test');
 const fs=require('node:fs');
 const {initializeTestEnvironment,assertSucceeds,assertFails}=require('@firebase/rules-unit-testing');
 const {doc,setDoc}=require('firebase/firestore');
-const {ref,uploadBytes}=require('firebase/storage');
+const {ref,uploadBytes,deleteObject,getBytes}=require('firebase/storage');
 let env;
 before(async()=>{
  env=await initializeTestEnvironment({projectId:'demo-racepulse-rbac',firestore:{host:'127.0.0.1',port:8080},storage:{host:'127.0.0.1',port:9199,rules:fs.readFileSync('storage.rules','utf8')}});
@@ -69,4 +69,31 @@ test('materialized permissions allow delegated runner highlight uploads while ex
  await assertSucceeds(uploadBytes(ref(env.authenticatedContext('storage_runner').storage(),'highlight-assets/storage_runner/hl_run/portrait.jpg'),image,{contentType:'image/jpeg'}));
  await env.withSecurityRulesDisabled(ctx=>setDoc(doc(ctx.firestore(),'userAccess','storage_runner'),{status:'active',scope:'owned-assigned',raceIds:[],overrides:{'highlights.view':true,'highlights.manage':false},permissions:{'highlights.view':true,'highlights.manage':true}}));
  await assertFails(uploadBytes(ref(env.authenticatedContext('storage_runner').storage(),'highlight-assets/storage_runner/hl_run/blocked.jpg'),image,{contentType:'image/jpeg'}));
+});
+test('run-tracks enforces owner JSON < 5MB, personal.record permission, and blocks SVG/HTML/cross-owner access',async()=>{
+ await env.withSecurityRulesDisabled(async ctx=>{
+  const root=ctx.firestore();
+  await setDoc(doc(root,'users','track_runner'),{uid:'track_runner',role:'runner',approved:true});
+  await setDoc(doc(root,'users','track_other'),{uid:'track_other',role:'runner',approved:true});
+  await setDoc(doc(root,'users','track_unapproved_org'),{uid:'track_unapproved_org',role:'organizer',approved:false});
+  await setDoc(doc(root,'users','track_admin'),{uid:'track_admin',role:'admin',approved:true});
+ });
+ const jsonBytes=new Uint8Array(Buffer.from(JSON.stringify([{lat:14.55,lon:121.05,timestampMs:1764000000000}])));
+ const svgBytes=new Uint8Array(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'));
+ const htmlBytes=new Uint8Array(Buffer.from('<html><script>alert(1)</script></html>'));
+ await assertFails(uploadBytes(ref(env.unauthenticatedContext().storage(),'run-tracks/track_runner/run_1.json'),jsonBytes,{contentType:'application/json'}));
+ await assertSucceeds(uploadBytes(ref(env.authenticatedContext('track_runner').storage(),'run-tracks/track_runner/run_1.json'),jsonBytes,{contentType:'application/json'}));
+ await assertSucceeds(getBytes(ref(env.authenticatedContext('track_runner').storage(),'run-tracks/track_runner/run_1.json')));
+ await assertSucceeds(uploadBytes(ref(env.authenticatedContext('track_unapproved_org').storage(),'run-tracks/track_unapproved_org/run_org_1.json'),jsonBytes,{contentType:'application/json'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('track_admin').storage(),'run-tracks/track_admin/run_admin_1.json'),jsonBytes,{contentType:'application/json'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('track_runner').storage(),'run-tracks/track_runner/xss.svg'),svgBytes,{contentType:'image/svg+xml'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('track_runner').storage(),'run-tracks/track_runner/evil.html'),htmlBytes,{contentType:'text/html'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('track_runner').storage(),'run-tracks/track_runner/run_bad_ct.json'),htmlBytes,{contentType:'text/html'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('track_runner').storage(),'run-tracks/track_runner/too_big.json'),new Uint8Array(5*1024*1024),{contentType:'application/json'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('track_other').storage(),'run-tracks/track_runner/run_2.json'),jsonBytes,{contentType:'application/json'}));
+ await assertFails(getBytes(ref(env.authenticatedContext('track_other').storage(),'run-tracks/track_runner/run_1.json')));
+ await assertFails(deleteObject(ref(env.authenticatedContext('track_other').storage(),'run-tracks/track_runner/run_1.json')));
+ await assertSucceeds(deleteObject(ref(env.authenticatedContext('storage_superadmin').storage(),'run-tracks/track_runner/run_1.json')));
+ await env.withSecurityRulesDisabled(ctx=>setDoc(doc(ctx.firestore(),'userAccess','track_runner'),{status:'active',scope:'owned-assigned',raceIds:[],overrides:{'personal.record':false}}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('track_runner').storage(),'run-tracks/track_runner/run_blocked.json'),jsonBytes,{contentType:'application/json'}));
 });

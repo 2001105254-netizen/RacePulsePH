@@ -623,3 +623,85 @@ test('compiled firestore.rules helpers enforce organizer exclusions and badge/cl
     await probeEnv.cleanup();
   }
 });
+
+test('recordedRuns and communityIdempotency enforce owner, friend, public, superadmin, and server-only write gates', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const root = ctx.firestore();
+    for (const uid of ['run_owner', 'run_friend', 'run_stranger']) {
+      await setDoc(doc(root, 'users', uid), {
+        uid,
+        role: 'runner',
+        approved: true,
+        email: `${uid}@example.com`,
+        displayName: uid,
+        createdAt: '2026-11-24',
+      });
+    }
+    await setDoc(doc(root, 'friendships', 'run_owner_run_friend'), {
+      fromUid: 'run_owner',
+      toUid: 'run_friend',
+      members: ['run_owner', 'run_friend'],
+      createdAt: '2026-11-24',
+    });
+    const baseRun = {
+      uid: 'run_owner',
+      mode: 'free',
+      title: 'Morning 5K',
+      startedAt: '2026-11-24T06:00:00Z',
+      finishedAt: '2026-11-24T06:25:00Z',
+      elapsedTimeMs: 1500000,
+      movingTimeMs: 1500000,
+      distanceM: 5000,
+      verificationStatus: 'verified',
+      verificationFlags: [],
+      createdAt: '2026-11-24T06:25:00Z',
+    };
+    await setDoc(doc(root, 'recordedRuns', 'run_private'), { ...baseRun, runId: 'run_private', privacy: 'private' });
+    await setDoc(doc(root, 'recordedRuns', 'run_friends'), { ...baseRun, runId: 'run_friends', privacy: 'friends' });
+    await setDoc(doc(root, 'recordedRuns', 'run_public'), { ...baseRun, runId: 'run_public', privacy: 'public' });
+    await setDoc(doc(root, 'communityIdempotency', 'run_owner_req1'), {
+      digest: 'abc',
+      response: { ok: true },
+      createdAt: '2026-11-24T06:25:00Z',
+    });
+  });
+
+  const anonDb = env.unauthenticatedContext().firestore();
+  await assertFails(getDoc(doc(anonDb, 'recordedRuns', 'run_public')));
+  await assertFails(getDoc(doc(anonDb, 'recordedRuns', 'run_friends')));
+  await assertFails(getDoc(doc(anonDb, 'recordedRuns', 'run_private')));
+  await assertFails(getDoc(doc(anonDb, 'communityIdempotency', 'run_owner_req1')));
+
+  // Owner can read all own runs (including query) but cannot create/update/delete via client SDK
+  await assertSucceeds(getDoc(doc(db('run_owner'), 'recordedRuns', 'run_private')));
+  await assertSucceeds(getDoc(doc(db('run_owner'), 'recordedRuns', 'run_friends')));
+  await assertSucceeds(getDoc(doc(db('run_owner'), 'recordedRuns', 'run_public')));
+  await assertSucceeds(getDocs(query(collection(db('run_owner'), 'recordedRuns'), where('uid', '==', 'run_owner'))));
+  await assertFails(setDoc(doc(db('run_owner'), 'recordedRuns', 'run_forged'), { runId: 'run_forged', uid: 'run_owner', privacy: 'public' }));
+  await assertFails(updateDoc(doc(db('run_owner'), 'recordedRuns', 'run_private'), { title: 'Tampered' }));
+  await assertFails(deleteDoc(doc(db('run_owner'), 'recordedRuns', 'run_private')));
+
+  // Superadmin can read all runs, still cannot write via client SDK
+  await assertSucceeds(getDoc(doc(db('superadmin'), 'recordedRuns', 'run_private')));
+  await assertSucceeds(getDoc(doc(db('superadmin'), 'recordedRuns', 'run_friends')));
+  await assertSucceeds(getDoc(doc(db('superadmin'), 'recordedRuns', 'run_public')));
+  await assertFails(setDoc(doc(db('superadmin'), 'recordedRuns', 'run_sa_forged'), { runId: 'run_sa_forged', uid: 'superadmin', privacy: 'public' }));
+  await assertFails(updateDoc(doc(db('superadmin'), 'recordedRuns', 'run_private'), { verificationStatus: 'verified' }));
+  await assertFails(deleteDoc(doc(db('superadmin'), 'recordedRuns', 'run_private')));
+
+  // Friend can read public & friends runs via isFriendOf, not private
+  await assertSucceeds(getDoc(doc(db('run_friend'), 'recordedRuns', 'run_public')));
+  await assertSucceeds(getDoc(doc(db('run_friend'), 'recordedRuns', 'run_friends')));
+  await assertFails(getDoc(doc(db('run_friend'), 'recordedRuns', 'run_private')));
+
+  // Non-friend signed-in user can read public, not friends or private
+  await assertSucceeds(getDoc(doc(db('run_stranger'), 'recordedRuns', 'run_public')));
+  await assertFails(getDoc(doc(db('run_stranger'), 'recordedRuns', 'run_friends')));
+  await assertFails(getDoc(doc(db('run_stranger'), 'recordedRuns', 'run_private')));
+
+  // communityIdempotency is completely locked from client reads and writes
+  await assertFails(getDoc(doc(db('run_owner'), 'communityIdempotency', 'run_owner_req1')));
+  await assertFails(getDoc(doc(db('superadmin'), 'communityIdempotency', 'run_owner_req1')));
+  await assertFails(setDoc(doc(db('run_owner'), 'communityIdempotency', 'run_owner_req2'), { digest: 'x' }));
+  await assertFails(setDoc(doc(db('superadmin'), 'communityIdempotency', 'run_owner_req2'), { digest: 'x' }));
+});

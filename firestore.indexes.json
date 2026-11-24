@@ -15,6 +15,23 @@
         { "fieldPath": "raceId", "order": "ASCENDING" },
         { "fieldPath": "bibNumber", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "recordedRuns",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "uid", "order": "ASCENDING" },
+        { "fieldPath": "startedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "recordedRuns",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "uid", "order": "ASCENDING" },
+        { "fieldPath": "verificationStatus", "order": "ASCENDING" },
+        { "fieldPath": "startedAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [

@@ -158,5 +158,31 @@ service firebase.storage {
         && (file.matches('.*\\.(gpx|GPX)$') ? request.resource.size < 50 * 1024 * 1024 : request.resource.size < 8 * 1024 * 1024);
       allow delete: if request.auth != null && (isPlatformOwner() || profile().role == 'superadmin');
     }
+    function canPersonalWithRole(action, role) {
+      let fallback = role in ['runner', 'organizer', 'superadmin'];
+      return access().status == 'active'
+        && (role == 'superadmin' || hasStoredPermission(action, fallback));
+    }
+    function canPersonal(action) {
+      return request.auth != null && (isPlatformOwner() || (
+        firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && canPersonalWithRole(action, profile().role)
+      ));
+    }
+    match /run-tracks/{ownerUid}/{file} {
+      allow read, delete: if request.auth != null && (
+        request.auth.uid == ownerUid
+        || isPlatformOwner()
+        || (firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+          && profile().role == 'superadmin'
+          && access().status == 'active')
+      );
+      allow create, update: if request.auth != null
+        && request.auth.uid == ownerUid
+        && canPersonal('personal.record')
+        && file.matches('^[a-zA-Z0-9_-]{1,64}\\.json$')
+        && request.resource.contentType == 'application/json'
+        && request.resource.size < 5 * 1024 * 1024;
+    }
   }
 }
