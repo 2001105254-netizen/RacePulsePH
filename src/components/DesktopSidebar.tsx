@@ -4,7 +4,7 @@ import { AnimatePresence, m } from 'motion/react';
 import { LogOut, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, User } from 'lucide-react';
 import { signOutUser } from '../firebase';
 import { UserProfile } from '../types';
-import type { WorkspaceNavItem } from './BottomNav';
+import { getWorkspaceNavBadge, type WorkspaceNavItem } from './BottomNav';
 import { EMIL_EASE } from './ui/MotionPrimitives';
 
 export interface WorkspaceSwitchProps {
@@ -227,32 +227,82 @@ export default function DesktopSidebar({
           data-workspace-nav="desktop"
           className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain px-3 py-2 space-y-1"
         >
-          {items.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              onClick={item.onClick}
-              aria-label={item.label}
-              aria-current={item.active ? 'page' : undefined}
-              title={item.label}
-              className={`relative min-h-11 rounded-xl flex items-center cursor-pointer transition-colors duration-150 motion-safe:active:scale-[0.98] ${focusRing} ${
-                collapsed
-                  ? 'w-full py-2 px-1 flex-col justify-center gap-1 text-xs leading-tight font-semibold'
-                  : 'w-full px-3 py-2 gap-3 text-left text-sm font-semibold'
-              } ${
-                item.active
-                  ? 'bg-red-700 text-white'
-                  : 'text-zinc-700 dark:text-zinc-300 hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
-              }`}
-            >
-              <span className="shrink-0 flex items-center justify-center [&>svg]:w-4 [&>svg]:h-4" aria-hidden="true">
-                {item.icon}
-              </span>
-              <span className={collapsed ? 'truncate max-w-full text-center' : 'truncate'}>
-                {collapsed ? (item.shortLabel || item.label) : item.label}
-              </span>
-            </button>
-          ))}
+          {items.map((item) => {
+            const { badgeText, ariaLabel } = getWorkspaceNavBadge(item);
+            const isPrimaryRecord = item.emphasis === 'primary-record';
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={item.onClick}
+                aria-label={ariaLabel}
+                aria-current={item.active ? 'page' : undefined}
+                title={item.label}
+                className={`relative min-h-11 rounded-xl flex items-center cursor-pointer transition-colors duration-150 motion-safe:active:scale-[0.98] ${focusRing} ${
+                  collapsed
+                    ? 'w-full py-2 pl-1.5 pr-1 flex-col justify-center gap-1 text-xs leading-tight font-semibold'
+                    : 'w-full pl-3.5 pr-3 py-2 gap-3 text-left text-sm font-semibold'
+                } ${
+                  item.active
+                    ? isPrimaryRecord
+                      ? 'bg-red-700 text-white shadow-sm forced-colors:border forced-colors:border-current'
+                      : 'bg-red-700 text-white forced-colors:border forced-colors:border-current'
+                    : isPrimaryRecord
+                      ? 'border border-red-600/35 bg-red-700/[0.06] text-red-700 dark:bg-red-500/10 dark:text-red-300 hover:bg-red-700/12 dark:hover:bg-red-500/15'
+                      : 'text-zinc-700 dark:text-zinc-300 hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
+                }`}
+              >
+                {item.active && (
+                  <span
+                    aria-hidden="true"
+                    className={`absolute top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-full bg-white ${
+                      collapsed ? 'left-0.5' : 'left-1'
+                    }`}
+                  />
+                )}
+                <span
+                  aria-hidden="true"
+                  className={`relative shrink-0 inline-flex items-center justify-center [&>svg]:w-4 [&>svg]:h-4 ${
+                    isPrimaryRecord
+                      ? collapsed
+                        ? item.active
+                          ? 'px-2 py-0.5 rounded-full bg-white/15 text-white border border-white/25'
+                          : 'px-2 py-0.5 rounded-full bg-red-700/15 text-red-700 dark:bg-red-500/20 dark:text-red-300 border border-red-600/35'
+                        : item.active
+                          ? 'w-7 h-7 rounded-full bg-white/15 text-white border border-white/25'
+                          : 'w-7 h-7 rounded-full bg-red-700/15 text-red-700 dark:bg-red-500/20 dark:text-red-300 border border-red-600/35'
+                      : ''
+                  }`}
+                >
+                  {item.icon}
+                  {collapsed && badgeText && (
+                    <span
+                      className={`absolute -top-1.5 left-[calc(50%+1px)] px-1 min-w-[16px] h-4 rounded-full text-[10px] leading-none font-mono font-bold tabular-nums flex items-center justify-center pointer-events-none ${
+                        item.active
+                          ? 'bg-white text-red-700 ring-1 ring-red-700'
+                          : 'bg-red-700 text-white ring-1 ring-[var(--surface-card)]'
+                      }`}
+                    >
+                      {badgeText}
+                    </span>
+                  )}
+                </span>
+                <span className={collapsed ? 'truncate max-w-full text-center' : 'truncate flex-1 min-w-0'}>
+                  {collapsed ? (item.shortLabel || item.label) : item.label}
+                </span>
+                {!collapsed && badgeText && (
+                  <span
+                    aria-hidden="true"
+                    className={`shrink-0 px-1.5 min-w-[20px] h-5 rounded-full text-[11px] leading-none font-mono font-bold tabular-nums flex items-center justify-center ${
+                      item.active ? 'bg-white text-red-700' : 'bg-red-700 text-white'
+                    }`}
+                  >
+                    {badgeText}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </nav>
 
       <div className="p-3 border-t border-[var(--border-subtle)] space-y-2 shrink-0">

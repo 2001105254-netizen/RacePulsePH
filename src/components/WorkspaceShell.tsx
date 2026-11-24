@@ -1,7 +1,7 @@
 import React from 'react';
 import { SlidersHorizontal, User } from 'lucide-react';
 import { UserProfile } from '../types';
-import BottomNav, { WorkspaceNavItem } from './BottomNav';
+import BottomNav, { getWorkspaceNavBadge, WorkspaceNavItem } from './BottomNav';
 import DesktopSidebar, { WorkspaceSwitchProps } from './DesktopSidebar';
 
 interface WorkspaceShellProps {
@@ -143,28 +143,64 @@ export default function WorkspaceShell({
             aria-label={navLabel}
             className="flex-1 min-h-0 w-full overflow-y-auto overscroll-y-contain flex flex-col items-center gap-1 px-1"
           >
-            {items.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={item.onClick}
-                aria-label={item.label}
-                aria-current={item.active ? 'page' : undefined}
-                title={item.label}
-                className={`w-full min-h-[48px] px-1 py-1 rounded-xl flex flex-col items-center justify-center gap-0.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 shrink-0 ${
-                  item.active
-                    ? 'bg-red-700 text-white'
-                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
-                }`}
-              >
-                <span aria-hidden="true" className="flex items-center justify-center">
-                  {item.icon}
-                </span>
-                <span className="w-full truncate text-center text-xs leading-tight font-semibold">
-                  {item.shortLabel || item.label}
-                </span>
-              </button>
-            ))}
+            {items.map((item) => {
+              const { badgeText, ariaLabel } = getWorkspaceNavBadge(item);
+              const isPrimaryRecord = item.emphasis === 'primary-record';
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={item.onClick}
+                  aria-label={ariaLabel}
+                  aria-current={item.active ? 'page' : undefined}
+                  title={item.label}
+                  className={`relative w-full min-h-[48px] pl-1.5 pr-1 py-1.5 rounded-xl flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 shrink-0 ${
+                    item.active
+                      ? isPrimaryRecord
+                        ? 'bg-red-700 text-white shadow-sm forced-colors:border forced-colors:border-current'
+                        : 'bg-red-700 text-white forced-colors:border forced-colors:border-current'
+                      : isPrimaryRecord
+                        ? 'text-red-700 dark:text-red-300 hover:bg-[var(--surface-hover)]'
+                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
+                  }`}
+                >
+                  {item.active && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute left-0.5 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-full bg-white"
+                    />
+                  )}
+                  <span
+                    aria-hidden="true"
+                    className={`relative inline-flex items-center justify-center shrink-0 ${
+                      isPrimaryRecord
+                        ? item.active
+                          ? 'px-2 py-0.5 rounded-full bg-white/15 text-white border border-white/25'
+                          : 'px-2 py-0.5 rounded-full bg-red-700/15 text-red-700 dark:bg-red-500/20 dark:text-red-300 border border-red-600/35'
+                        : ''
+                    }`}
+                  >
+                    <span className="flex items-center justify-center [&>svg]:w-4 [&>svg]:h-4">
+                      {item.icon}
+                    </span>
+                    {badgeText && (
+                      <span
+                        className={`absolute -top-1.5 left-[calc(50%+1px)] px-1 min-w-[16px] h-4 rounded-full text-[10px] leading-none font-mono font-bold tabular-nums flex items-center justify-center pointer-events-none ${
+                          item.active
+                            ? 'bg-white text-red-700 ring-1 ring-red-700'
+                            : 'bg-red-700 text-white ring-1 ring-[var(--surface-card)]'
+                        }`}
+                      >
+                        {badgeText}
+                      </span>
+                    )}
+                  </span>
+                  <span className="w-full truncate text-center text-xs leading-tight font-semibold">
+                    {item.shortLabel || item.label}
+                  </span>
+                </button>
+              );
+            })}
           </nav>
 
           {onOpenProfile && (

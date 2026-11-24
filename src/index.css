@@ -971,3 +971,42 @@ html::-webkit-scrollbar-thumb:active,
     scroll-padding-bottom: 1.5rem;
   }
 }
+
+@layer base {
+  /* Top-layer onboarding hint popover overrides UA [popover] centering while letting @layer utilities position it */
+  :where([popover].rp-hint-popover) {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+  }
+}
+
+[popover].rp-hint-popover:not(:is(:popover-open, .\:popover-open)) {
+  display: none;
+  opacity: 0;
+  transform: translate3d(0, 8px, 0);
+}
+
+[popover].rp-hint-popover:is(:popover-open, .\:popover-open) {
+  display: block;
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [popover].rp-hint-popover {
+    transition:
+      opacity 180ms var(--ease-out-quint),
+      transform 180ms var(--ease-out-quint),
+      display 180ms,
+      overlay 180ms;
+    transition-behavior: allow-discrete;
+  }
+
+  @starting-style {
+    [popover].rp-hint-popover:is(:popover-open, .\:popover-open) {
+      opacity: 0;
+      transform: translate3d(0, 8px, 0);
+    }
+  }
+}

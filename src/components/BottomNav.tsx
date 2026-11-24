@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { formatNavBadgeCount } from '../lib/runnerShell';
 
 export interface WorkspaceNavItem {
   key: string;
@@ -7,9 +8,22 @@ export interface WorkspaceNavItem {
   shortLabel?: string;
   active: boolean;
   onClick: () => void;
+  emphasis?: 'primary-record';
+  badgeCount?: number;
 }
 
 export type BottomNavItem = WorkspaceNavItem;
+
+export function getWorkspaceNavBadge(item: Pick<WorkspaceNavItem, 'label' | 'badgeCount'>): {
+  badgeText: string | null;
+  ariaLabel: string;
+} {
+  const badgeText = formatNavBadgeCount(item.badgeCount);
+  return {
+    badgeText,
+    ariaLabel: badgeText ? `${item.label}, ${badgeText} unread` : item.label,
+  };
+}
 
 interface BottomNavProps {
   items: WorkspaceNavItem[];
@@ -127,6 +141,8 @@ export default function BottomNav({
         <div className="min-h-[56px] w-full flex items-stretch justify-around px-1 gap-0.5">
           {items.map((item) => {
             const compactText = item.shortLabel || item.label;
+            const { badgeText, ariaLabel } = getWorkspaceNavBadge(item);
+            const isPrimaryRecord = item.emphasis === 'primary-record';
             return (
               <button
                 key={item.key}
@@ -135,16 +151,48 @@ export default function BottomNav({
                 }}
                 type="button"
                 onClick={item.onClick}
-                aria-label={item.label}
+                aria-label={ariaLabel}
                 aria-current={item.active ? 'page' : undefined}
-                className={`relative flex-1 min-w-0 min-h-[44px] my-1 px-1 rounded-xl flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-colors duration-150 motion-safe:active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
+                className={`relative flex-1 min-w-0 min-h-[44px] my-1 px-1 pt-2 pb-1 rounded-xl flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-colors duration-150 motion-safe:active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
                   item.active
-                    ? 'bg-red-700 text-white'
-                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
+                    ? isPrimaryRecord
+                      ? 'bg-red-700 text-white shadow-sm forced-colors:border forced-colors:border-current'
+                      : 'bg-red-700 text-white forced-colors:border forced-colors:border-current'
+                    : isPrimaryRecord
+                      ? 'text-red-700 dark:text-red-300 hover:bg-[var(--surface-hover)]'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
                 }`}
               >
-                <span aria-hidden="true" className="flex items-center justify-center shrink-0">
-                  {item.icon}
+                {item.active && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute top-0.5 left-1/2 -translate-x-1/2 h-[3px] w-6 rounded-full bg-white"
+                  />
+                )}
+                <span
+                  aria-hidden="true"
+                  className={`relative inline-flex items-center justify-center shrink-0 h-6 ${
+                    isPrimaryRecord
+                      ? item.active
+                        ? 'px-2.5 rounded-full bg-white/15 text-white border border-white/25'
+                        : 'px-2.5 rounded-full bg-red-700/15 text-red-700 dark:bg-red-500/20 dark:text-red-300 border border-red-600/35'
+                      : 'px-1'
+                  }`}
+                >
+                  <span className="flex items-center justify-center [&>svg]:w-4 [&>svg]:h-4">
+                    {item.icon}
+                  </span>
+                  {badgeText && (
+                    <span
+                      className={`absolute -top-1 left-[calc(50%+1px)] px-1 min-w-[16px] h-4 rounded-full text-[10px] leading-none font-mono font-bold tabular-nums flex items-center justify-center pointer-events-none ${
+                        item.active
+                          ? 'bg-white text-red-700 ring-1 ring-red-700'
+                          : 'bg-red-700 text-white ring-1 ring-[var(--surface-card)]'
+                      }`}
+                    >
+                      {badgeText}
+                    </span>
+                  )}
                 </span>
                 <span className="w-full truncate text-center text-xs leading-tight font-semibold">
                   {compactText}
@@ -171,30 +219,62 @@ export default function BottomNav({
           className="racepulse-horizontal-scroll touch-pan-x w-full select-none"
         >
           <div className="flex min-w-full w-max items-center gap-1 p-2">
-              {items.map((item) => (
-                <button
-                  key={item.key}
-                  ref={(node) => {
-                    itemRefs.current[item.key] = node;
-                  }}
-                  type="button"
-                  onClick={item.onClick}
-                  aria-label={item.label}
-                  aria-current={item.active ? 'page' : undefined}
-                  className={`relative flex min-w-fit min-h-11 shrink-0 flex-1 flex-col items-center justify-center gap-1 px-2 py-2 sm:px-4 rounded-xl cursor-pointer transition-colors duration-150 motion-safe:active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
-                    item.active
-                      ? 'bg-red-700 text-white'
-                      : 'text-zinc-700 dark:text-zinc-300 hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
-                  }`}
-                >
-                  <span aria-hidden="true" className="flex items-center justify-center">
-                    {item.icon}
-                  </span>
-                  <span className="whitespace-nowrap text-xs font-semibold tracking-wide">
-                    {item.label}
-                  </span>
-                </button>
-              ))}
+              {items.map((item) => {
+                const { badgeText, ariaLabel } = getWorkspaceNavBadge(item);
+                const isPrimaryRecord = item.emphasis === 'primary-record';
+                return (
+                  <button
+                    key={item.key}
+                    ref={(node) => {
+                      itemRefs.current[item.key] = node;
+                    }}
+                    type="button"
+                    onClick={item.onClick}
+                    aria-label={ariaLabel}
+                    aria-current={item.active ? 'page' : undefined}
+                    className={`relative flex min-w-fit min-h-11 shrink-0 flex-1 flex-col items-center justify-center gap-1 px-2 pt-2.5 pb-1.5 sm:px-4 rounded-xl cursor-pointer transition-colors duration-150 motion-safe:active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
+                      item.active
+                        ? 'bg-red-700 text-white forced-colors:border forced-colors:border-current'
+                        : isPrimaryRecord
+                          ? 'text-red-700 dark:text-red-300 hover:bg-[var(--surface-hover)]'
+                          : 'text-zinc-700 dark:text-zinc-300 hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
+                    }`}
+                  >
+                    {item.active && (
+                      <span
+                        aria-hidden="true"
+                        className="absolute top-1 left-1/2 -translate-x-1/2 h-[3px] w-6 rounded-full bg-white"
+                      />
+                    )}
+                    <span
+                      aria-hidden="true"
+                      className={`relative inline-flex items-center justify-center ${
+                        isPrimaryRecord
+                          ? item.active
+                            ? 'px-2.5 py-0.5 rounded-full bg-white/15 text-white border border-white/25'
+                            : 'px-2.5 py-0.5 rounded-full bg-red-700/15 text-red-700 dark:bg-red-500/20 dark:text-red-300 border border-red-600/35'
+                          : ''
+                      }`}
+                    >
+                      <span className="flex items-center justify-center">{item.icon}</span>
+                      {badgeText && (
+                        <span
+                          className={`absolute -top-1.5 left-[calc(50%+2px)] px-1 min-w-[16px] h-4 rounded-full text-[10px] leading-none font-mono font-bold tabular-nums flex items-center justify-center pointer-events-none ${
+                            item.active
+                              ? 'bg-white text-red-700 ring-1 ring-red-700'
+                              : 'bg-red-700 text-white ring-1 ring-[var(--surface-card)]'
+                          }`}
+                        >
+                          {badgeText}
+                        </span>
+                      )}
+                    </span>
+                    <span className="whitespace-nowrap text-xs font-semibold tracking-wide">
+                      {item.label}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
         </div>
       </div>

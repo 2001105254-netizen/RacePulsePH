@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as runnerShell from '../src/lib/runnerShell.ts';
+import { getWorkspaceNavBadge, type WorkspaceNavItem } from '../src/components/BottomNav.tsx';
+import {
+  persistDismissedOnboardingHint,
+  readDismissedOnboardingHints,
+  supportsNativePopover,
+} from '../src/components/runner/RunnerOnboardingHint.tsx';
 import type { Race, RunnerProfile } from '../src/types.ts';
 
 function makeRace(overrides: Partial<Race> = {}): Race {
@@ -347,4 +353,72 @@ test('resolveBackNavigationTarget steps out of sub-sections before returning to 
     }),
     null,
   );
+});
+
+test('getWorkspaceNavBadge formats badge counts and appends unread context to ariaLabel', () => {
+  const recordItem: WorkspaceNavItem = {
+    key: 'record',
+    icon: null,
+    label: 'Record Run',
+    shortLabel: 'Record',
+    active: false,
+    onClick: () => {},
+    emphasis: 'primary-record',
+  };
+  assert.deepEqual(getWorkspaceNavBadge(recordItem), {
+    badgeText: null,
+    ariaLabel: 'Record Run',
+  });
+
+  assert.deepEqual(getWorkspaceNavBadge({ label: 'Inbox', badgeCount: 0 }), {
+    badgeText: null,
+    ariaLabel: 'Inbox',
+  });
+  assert.deepEqual(getWorkspaceNavBadge({ label: 'Inbox', badgeCount: 4 }), {
+    badgeText: '4',
+    ariaLabel: 'Inbox, 4 unread',
+  });
+  assert.deepEqual(getWorkspaceNavBadge({ label: 'Inbox', badgeCount: 120 }), {
+    badgeText: '99+',
+    ariaLabel: 'Inbox, 99+ unread',
+  });
+});
+
+test('RunnerOnboardingHint persistence helpers safely read, persist, and integrate with shouldShowOnboardingHint', () => {
+  const store = new Map<string, string>();
+  const mockStorage = {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      store.set(key, value);
+    },
+  };
+
+  assert.equal(supportsNativePopover(), false);
+
+  const key = 'rp_hint_record_v1';
+  const initialDismissed = readDismissedOnboardingHints(key, mockStorage);
+  assert.equal(initialDismissed.size, 0);
+  assert.equal(runnerShell.shouldShowOnboardingHint(key, false, initialDismissed), true);
+  assert.equal(runnerShell.shouldShowOnboardingHint(key, true, initialDismissed), false);
+  assert.equal(store.has(key), false);
+
+  assert.equal(persistDismissedOnboardingHint(key, mockStorage), true);
+  assert.equal(store.get(key), 'dismissed');
+
+  const afterDismiss = readDismissedOnboardingHints(key, mockStorage);
+  assert.equal(afterDismiss.has(key), true);
+  assert.equal(runnerShell.shouldShowOnboardingHint(key, false, afterDismiss), false);
+
+  const brokenStorage = {
+    getItem: () => {
+      throw new Error('SecurityError');
+    },
+    setItem: () => {
+      throw new Error('QuotaExceededError');
+    },
+  };
+  assert.equal(readDismissedOnboardingHints(key, brokenStorage).size, 0);
+  assert.equal(persistDismissedOnboardingHint(key, brokenStorage), false);
+  assert.equal(readDismissedOnboardingHints('   ', mockStorage).size, 0);
+  assert.equal(persistDismissedOnboardingHint('   ', mockStorage), false);
 });
