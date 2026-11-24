@@ -6,7 +6,7 @@ export type RunnerTab = 'home' | 'explore' | 'record' | 'inbox' | 'you';
 export type ExploreSection = 'races' | 'routes' | 'clubs';
 export type ExploreRacesFilter = 'open' | 'upcoming' | 'completed' | 'all' | 'joined';
 export type ExploreIslandGroupFilter = 'all' | PhilippineIslandGroup;
-export type YouSection = 'overview' | 'passes' | 'friends' | 'engraving';
+export type YouSection = 'overview' | 'runs' | 'passes' | 'friends' | 'engraving';
 export type OnboardingStepId = 'welcome' | 'first_run' | 'explore_community' | 'connect_friend';
 
 export interface FilterExploreRoutesOptions {

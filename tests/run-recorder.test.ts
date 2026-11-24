@@ -38,7 +38,7 @@ import {
   savePendingRunUpload,
   type StorageLike,
 } from '../src/lib/runs/runCrashRecovery';
-import type { PendingRunUpload, RecordedTrackPoint } from '../src/lib/runs/types';
+import type { PendingRunUpload, RecordedRunSummary, RecordedTrackPoint } from '../src/lib/runs/types';
 import {
   RunTracking,
   RunTrackingWeb,
@@ -53,7 +53,9 @@ import {
   completeRecordedRun,
   createCommunityRequestId,
   getCommunityApiBaseUrl,
+  loadRecordedRunTrackPoints,
   prepareCompleteRecordedRunInput,
+  previewPolylineToTrackPoints,
 } from '../src/lib/runs/communityRunsClient';
 import {
   buildSummaryComputation,
@@ -1844,4 +1846,183 @@ test('communityRunsClient: prepareCompleteRecordedRunInput settles storage once 
       }),
     (err: unknown) => err instanceof CommunityRunApiError && err.status === 400,
   );
+});
+
+test('communityRunsClient: previewPolylineToTrackPoints maps [lon, lat] tuples with monotonic timestamps and rejects short/malformed input', () => {
+  const startedAt = '2026-11-24T06:00:00.000Z';
+  const finishedAt = '2026-11-24T06:10:00.000Z';
+  const startMs = Date.parse(startedAt);
+  const endMs = Date.parse(finishedAt);
+
+  const valid = previewPolylineToTrackPoints(
+    [
+      [121.05123, 14.55123],
+      [121.05234, 14.55234],
+      [121.05345, 14.55345],
+    ],
+    startedAt,
+    finishedAt,
+  );
+
+  assert.equal(valid.length, 3);
+  assert.deepEqual(valid[0], {
+    lat: 14.55123,
+    lon: 121.05123,
+    accuracyM: 10,
+    timestampMs: startMs,
+  });
+  assert.deepEqual(valid[1], {
+    lat: 14.55234,
+    lon: 121.05234,
+    accuracyM: 10,
+    timestampMs: Math.round((startMs + endMs) / 2),
+  });
+  assert.deepEqual(valid[2], {
+    lat: 14.55345,
+    lon: 121.05345,
+    accuracyM: 10,
+    timestampMs: endMs,
+  });
+
+  // Invalid / out-of-range coordinates are filtered; < 2 valid points returns []
+  assert.deepEqual(previewPolylineToTrackPoints([], startedAt, finishedAt), []);
+  assert.deepEqual(previewPolylineToTrackPoints([[121.05, 14.55]], startedAt, finishedAt), []);
+  assert.deepEqual(
+    previewPolylineToTrackPoints(
+      [
+        [121.05, 14.55],
+        [121.06, 95.0], // invalid lat > 90
+        [185.0, 14.57], // invalid lon > 180
+        [Number.NaN, 14.58],
+      ],
+      startedAt,
+      finishedAt,
+    ),
+    [],
+  );
+
+  // Invalid timestamps still yield strictly positive, monotonically increasing timestampMs
+  const fallbackTimes = previewPolylineToTrackPoints(
+    [
+      [121.05, 14.55],
+      [121.06, 14.56],
+      [121.07, 14.57],
+    ],
+    'not-a-date',
+    'still-not-a-date',
+  );
+  assert.equal(fallbackTimes.length, 3);
+  assert.ok(fallbackTimes[0].timestampMs > 0);
+  assert.ok(fallbackTimes[1].timestampMs > fallbackTimes[0].timestampMs);
+  assert.ok(fallbackTimes[2].timestampMs > fallbackTimes[1].timestampMs);
+});
+
+test('communityRunsClient: loadRecordedRunTrackPoints decodes Storage JSON and falls back with console.warn on errors or timeouts', async () => {
+  const baseRun: RecordedRunSummary = {
+    runId: 'run_gpx_1',
+    uid: 'u_test',
+    mode: 'free',
+    privacy: 'private',
+    title: 'UP Oval Tempo',
+    startedAt: '2026-11-24T06:00:00.000Z',
+    finishedAt: '2026-11-24T06:10:00.000Z',
+    elapsedTimeMs: 600_000,
+    movingTimeMs: 600_000,
+    distanceM: 2100,
+    elevationGainM: 12,
+    elevationLossM: 10,
+    caloriesKcal: 145,
+    calorieEstimate: {
+      totalKcal: 145,
+      netKcal: 130,
+      restingKcal: 15,
+      weightKgUsed: 65,
+      usedReferenceWeight: true,
+      methodVersion: 'minetti2002-herrmann2024-v1',
+    },
+    avgPaceSecPerKm: 286,
+    avgSpeedMps: 3.5,
+    maxSpeedMps: 4.1,
+    splits: [],
+    previewPolyline: [
+      [121.064, 14.654],
+      [121.068, 14.658],
+    ],
+    islandGroups: ['Luzon'],
+    homePrivacyTrimEnabled: true,
+    trimmedHeadM: 205,
+    trimmedTailM: 210,
+    trackStoragePath: 'run-tracks/u_test/run_gpx_1.json',
+    pointCount: 3,
+    verificationStatus: 'verified',
+    verificationFlags: [],
+    createdAt: '2026-11-24T06:10:05.000Z',
+  };
+
+  const fullTrack: RecordedTrackPoint[] = [
+    { lat: 14.6541, lon: 121.0641, ele: 62.5, accuracyM: 5, timestampMs: 1_764_000_000_000 },
+    { lat: 14.6561, lon: 121.0661, ele: 64.0, accuracyM: 4, timestampMs: 1_764_000_120_000 },
+    { lat: 14.6581, lon: 121.0681, ele: 63.2, accuracyM: 5, timestampMs: 1_764_000_240_000 },
+  ];
+
+  // 1. Valid Storage JSON returns full trackPoints decoded via UTF-8
+  const encoded = new TextEncoder().encode(JSON.stringify({ version: 1, runId: 'run_gpx_1', trackPoints: fullTrack }));
+  const loadedFromStorage = await loadRecordedRunTrackPoints(baseRun, {
+    fetchBytes: async (path) => {
+      assert.equal(path, 'run-tracks/u_test/run_gpx_1.json');
+      return encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength);
+    },
+  });
+  assert.equal(loadedFromStorage.length, 3);
+  assert.equal(loadedFromStorage[0].lat, 14.6541);
+  assert.equal(loadedFromStorage[0].lon, 121.0641);
+  assert.equal(loadedFromStorage[1].ele, 64.0);
+
+  // 2. Storage error / bad JSON / timeout logs console.warn and falls back to [lon, lat] -> { lat, lon }
+  const origWarn = console.warn;
+  let warnCount = 0;
+  console.warn = () => {
+    warnCount += 1;
+  };
+  try {
+    const onMalformed = await loadRecordedRunTrackPoints(baseRun, {
+      fetchBytes: async () => new TextEncoder().encode('{bad json').buffer,
+    });
+    assert.equal(onMalformed.length, 2);
+    assert.equal(onMalformed[0].lat, 14.654);
+    assert.equal(onMalformed[0].lon, 121.064);
+
+    const onShortPayload = await loadRecordedRunTrackPoints(baseRun, {
+      fetchBytes: async () =>
+        new TextEncoder().encode(JSON.stringify({ trackPoints: [fullTrack[0]] })).buffer,
+    });
+    assert.equal(onShortPayload.length, 2);
+    assert.equal(onShortPayload[1].lat, 14.658);
+    assert.equal(onShortPayload[1].lon, 121.068);
+
+    const onTimeout = await loadRecordedRunTrackPoints(baseRun, {
+      timeoutMs: 20,
+      fetchBytes: () => new Promise<ArrayBuffer>(() => undefined),
+    });
+    assert.equal(onTimeout.length, 2);
+    assert.equal(onTimeout[0].lat, 14.654);
+    assert.equal(warnCount, 3);
+  } finally {
+    console.warn = origWarn;
+  }
+
+  // 3. No trackStoragePath uses previewPolyline directly, and short < 450m run returns []
+  const noStorageRun: RecordedRunSummary = { ...baseRun, trackStoragePath: undefined };
+  const fromPreview = await loadRecordedRunTrackPoints(noStorageRun);
+  assert.equal(fromPreview.length, 2);
+  assert.equal(fromPreview[0].lat, 14.654);
+  assert.equal(fromPreview[0].lon, 121.064);
+
+  const shortTrimmedRun: RecordedRunSummary = {
+    ...baseRun,
+    trackStoragePath: undefined,
+    previewPolyline: [],
+    pointCount: 0,
+  };
+  assert.deepEqual(await loadRecordedRunTrackPoints(shortTrimmedRun), []);
 });

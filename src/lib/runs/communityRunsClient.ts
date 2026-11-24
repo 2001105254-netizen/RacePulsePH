@@ -6,7 +6,7 @@ import {
   query,
   where,
 } from 'firebase/firestore';
-import { ref, uploadBytes } from 'firebase/storage';
+import { getBytes, ref, uploadBytes } from 'firebase/storage';
 import { auth, db, storage } from '../../firebase';
 import { authenticatedFetch } from '../access';
 import { CircuitOpenError, parseRetryAfterSeconds } from '../resilientFetch';
@@ -25,6 +25,7 @@ export const MAX_SERVER_TRACK_POINTS = 5000;
 export const MAX_TRIM_CREDIT_M = 250;
 export const MAX_STORAGE_TRACK_BYTES = 5 * 1024 * 1024;
 const STORAGE_UPLOAD_TIMEOUT_MS = 12_000;
+const STORAGE_DOWNLOAD_TIMEOUT_MS = 10_000;
 const MIN_ELEVATION_M = -450;
 const MAX_ELEVATION_M = 9000;
 
@@ -178,17 +179,22 @@ export function capServerTrackPoints(
     .map((idx) => ({ ...points[idx] }));
 }
 
-function sanitizeServerTrackPoints(rawPoints: RecordedTrackPoint[]): RecordedTrackPoint[] {
+function normalizeValidTrackPoints(rawPoints: unknown): RecordedTrackPoint[] {
+  if (!Array.isArray(rawPoints)) return [];
   const sanitized: RecordedTrackPoint[] = [];
   let prevTs = 0;
 
-  for (const pt of rawPoints) {
+  for (const rawPt of rawPoints) {
+    if (!rawPt || typeof rawPt !== 'object') continue;
+    const pt = rawPt as Partial<RecordedTrackPoint>;
     if (
-      !pt ||
+      typeof pt.lat !== 'number' ||
+      typeof pt.lon !== 'number' ||
       !Number.isFinite(pt.lat) ||
       !Number.isFinite(pt.lon) ||
       Math.abs(pt.lat) > 90 ||
       Math.abs(pt.lon) > 180 ||
+      typeof pt.timestampMs !== 'number' ||
       !Number.isFinite(pt.timestampMs) ||
       pt.timestampMs <= 0
     ) {
@@ -226,6 +232,11 @@ function sanitizeServerTrackPoints(rawPoints: RecordedTrackPoint[]): RecordedTra
     sanitized.push(clean);
   }
 
+  return sanitized;
+}
+
+function sanitizeServerTrackPoints(rawPoints: RecordedTrackPoint[]): RecordedTrackPoint[] {
+  const sanitized = normalizeValidTrackPoints(rawPoints);
   if (sanitized.length === 1) {
     return [];
   }
@@ -611,6 +622,114 @@ export async function deleteRecordedRun(
     runId: trimmedRunId,
   });
   return { deleted: true, runId: trimmedRunId };
+}
+
+export function previewPolylineToTrackPoints(
+  previewPolyline: Array<[number, number]> | undefined | null,
+  startedAt?: string,
+  finishedAt?: string,
+): RecordedTrackPoint[] {
+  if (!Array.isArray(previewPolyline) || previewPolyline.length === 0) {
+    return [];
+  }
+
+  const validCoords: Array<{ lat: number; lon: number }> = [];
+  for (const pair of previewPolyline) {
+    if (!Array.isArray(pair) || pair.length < 2) continue;
+    const lon = pair[0];
+    const lat = pair[1];
+    if (
+      typeof lat !== 'number' ||
+      typeof lon !== 'number' ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lon) ||
+      Math.abs(lat) > 90 ||
+      Math.abs(lon) > 180
+    ) {
+      continue;
+    }
+    validCoords.push({ lat, lon });
+  }
+
+  if (validCoords.length < 2) {
+    return [];
+  }
+
+  const parsedStartMs = typeof startedAt === 'string' ? Date.parse(startedAt) : Number.NaN;
+  const parsedEndMs = typeof finishedAt === 'string' ? Date.parse(finishedAt) : Number.NaN;
+  const minSpanMs = validCoords.length - 1;
+
+  let startMs: number;
+  if (Number.isFinite(parsedStartMs) && parsedStartMs > 0) {
+    startMs = parsedStartMs;
+  } else if (Number.isFinite(parsedEndMs) && parsedEndMs > minSpanMs * 1000) {
+    startMs = parsedEndMs - minSpanMs * 1000;
+  } else {
+    startMs = Date.now() - minSpanMs * 1000;
+  }
+
+  const endMs =
+    Number.isFinite(parsedEndMs) && parsedEndMs > startMs
+      ? parsedEndMs
+      : startMs + minSpanMs * 1000;
+  const spanMs = Math.max(minSpanMs, Math.round(endMs - startMs));
+
+  return validCoords.map((coord, index) => ({
+    lat: coord.lat,
+    lon: coord.lon,
+    accuracyM: 10,
+    timestampMs: Math.round(startMs + (index / minSpanMs) * spanMs),
+  }));
+}
+
+export interface LoadRecordedRunTrackOptions {
+  timeoutMs?: number;
+  fetchBytes?: (storagePath: string, maxBytes: number) => Promise<ArrayBuffer>;
+}
+
+export async function loadRecordedRunTrackPoints(
+  run: RecordedRunSummary,
+  options: LoadRecordedRunTrackOptions = {},
+): Promise<RecordedTrackPoint[]> {
+  const storagePath = typeof run.trackStoragePath === 'string' ? run.trackStoragePath.trim() : '';
+  if (!storagePath) {
+    return previewPolylineToTrackPoints(run.previewPolyline, run.startedAt, run.finishedAt);
+  }
+
+  const timeoutMs = Math.max(10, options.timeoutMs ?? STORAGE_DOWNLOAD_TIMEOUT_MS);
+  let timer: ReturnType<typeof globalThis.setTimeout> | undefined;
+
+  try {
+    const fetchPromise = options.fetchBytes
+      ? options.fetchBytes(storagePath, MAX_STORAGE_TRACK_BYTES)
+      : getBytes(ref(storage, storagePath), MAX_STORAGE_TRACK_BYTES);
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = globalThis.setTimeout(() => {
+        reject(new Error('Storage track download timed out.'));
+      }, timeoutMs);
+    });
+    const racePromise = Promise.race([fetchPromise, timeoutPromise]);
+    fetchPromise.catch(() => undefined);
+
+    const bytes = await racePromise;
+    const jsonText = new TextDecoder().decode(bytes);
+    const parsed = JSON.parse(jsonText) as { trackPoints?: unknown };
+    const points = normalizeValidTrackPoints(parsed?.trackPoints);
+    if (points.length < 2) {
+      throw new Error('Track archive contains fewer than 2 valid track points.');
+    }
+    return points;
+  } catch (err) {
+    console.warn(
+      '[communityRunsClient] track storage download failed; using preview polyline fallback',
+      err,
+    );
+    return previewPolylineToTrackPoints(run.previewPolyline, run.startedAt, run.finishedAt);
+  } finally {
+    if (timer !== undefined) {
+      globalThis.clearTimeout(timer);
+    }
+  }
 }
 
 export function subscribeMyRecordedRuns(

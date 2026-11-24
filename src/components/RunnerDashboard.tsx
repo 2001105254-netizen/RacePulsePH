@@ -32,6 +32,15 @@ import {
   type RunnerTab,
   type YouSection,
 } from '../lib/runnerShell';
+import {
+  deleteRecordedRun,
+  loadRecordedRunTrackPoints,
+  subscribeMyRecordedRuns,
+  updateRecordedRun,
+} from '../lib/runs/communityRunsClient';
+import { slugifyFilename } from '../lib/runs/runLiveHelpers';
+import { buildRunGpxXml } from '../lib/runs/runRecorderEngine';
+import type { RecordedRunPrivacy, RecordedRunSummary } from '../lib/runs/types';
 import { useWorkspaceHeader } from '../lib/workspaceHeader';
 import { FriendActivity, FriendProfile, PublicLiveResults, Race, RunnerProfile, UserProfile } from '../types';
 import AccountPrivacyModal from './AccountPrivacyModal';
@@ -55,7 +64,7 @@ import {
 } from './runner/RunnerMobilePrimitives';
 import type { MyPassesFilter } from './runner/RunnerMyRacesPanel';
 import RunnerOnboardingHint from './runner/RunnerOnboardingHint';
-import RunnerRecordPreviewPanel from './runner/RunnerRecordPreviewPanel';
+import RunnerRecordPanel from './runner/RunnerRecordPanel';
 import RunnerYouHubPanel from './runner/RunnerYouHubPanel';
 import {
   philippineTodayStr,
@@ -64,6 +73,7 @@ import {
   useSoftKeyboardOpen,
 } from './runner/runnerUtils';
 import DialogSurface from './ui/DialogSurface';
+import { useFeedback } from './ui/FeedbackProvider';
 import {
   AnimatedTabView,
   resolveTabDirection,
@@ -93,10 +103,16 @@ export default function RunnerDashboard({
   pendingApprovalNotice,
 }: RunnerDashboardProps) {
   const { can } = useAccess();
+  const { confirm, notify } = useFeedback();
   const headerCtx = useWorkspaceHeader();
   const { isCompact, isSplitPane, isDesktop } = useRunnerViewport();
   const { online } = useNetworkSyncStatus();
   const [mobileCanvasActive, setMobileCanvasActive] = useState(false);
+  const [theme, setTheme] = useState<'light' | 'dark'>(() =>
+    typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+      ? 'dark'
+      : 'light',
+  );
 
   const [runnerProfiles, setRunnerProfiles] = useState<RunnerProfile[] | undefined>(undefined);
   const [sharedRaces, setSharedRaces] = useState<Race[]>([]);
@@ -108,12 +124,17 @@ export default function RunnerDashboard({
   const [raceInvites, setRaceInvites] = useState<InboxRaceInviteItem[]>([]);
   const [friendProfilesByUid, setFriendProfilesByUid] = useState<Record<string, FriendProfile>>({});
   const [friendActivitiesByUid, setFriendActivitiesByUid] = useState<Record<string, FriendActivity>>({});
+  const [recordedRuns, setRecordedRuns] = useState<RecordedRunSummary[]>([]);
+  const [recordedRunsLoaded, setRecordedRunsLoaded] = useState(false);
+  const [recordedRunsError, setRecordedRunsError] = useState<string | null>(null);
+  const [isRecordingRun, setIsRecordingRun] = useState(false);
 
   const canFriends = can('personal.friends');
   const canInvites = can('personal.invites');
   const canSocial = can('personal.social');
   const canEngraving = can('personal.engraving');
   const canRegister = can('personal.register');
+  const canRecord = can('personal.record');
   const canAnyRunnerData =
     can('personal.register') ||
     can('personal.results') ||
@@ -226,24 +247,90 @@ export default function RunnerDashboard({
   showProfileRef.current = showProfile;
   const alertsOpenRef = useRef(alertsOpen);
   alertsOpenRef.current = alertsOpen;
+  const isRecordingRunRef = useRef(isRecordingRun);
+  isRecordingRunRef.current = isRecordingRun;
 
-  const selectTab = useCallback((nextTab: RunnerTab, explicitDirection?: NavDirection) => {
-    const currentTab = tabRef.current;
-    if (nextTab === currentTab) return;
-    setMobileCanvasActive(false);
-    setEventsInFormFlow(false);
-    setTabDirection(explicitDirection ?? resolveTabDirection(RUNNER_TAB_ORDER, currentTab, nextTab));
-    setTab(nextTab);
-    if (typeof window !== 'undefined') {
-      window.scrollTo({ top: 0, behavior: 'auto' });
-    }
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const root = document.documentElement;
+    const syncTheme = () => setTheme(root.classList.contains('dark') ? 'dark' : 'light');
+    syncTheme();
+    const observer = new MutationObserver(syncTheme);
+    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
+    if (tab !== 'record') {
+      setIsRecordingRun(false);
+    }
+  }, [tab]);
+
+  const selectTab = useCallback(
+    async (
+      nextTab: RunnerTab,
+      explicitDirection?: NavDirection,
+      options?: { force?: boolean },
+    ): Promise<boolean> => {
+      const currentTab = tabRef.current;
+      if (nextTab === currentTab) return true;
+      if (!options?.force && isRecordingRunRef.current && currentTab === 'record' && nextTab !== 'record') {
+        const leave = await confirm({
+          title: 'Leave active run?',
+          message:
+            'Leaving Record stops live GPS tracking. Your latest saved snapshot stays recoverable when you return to Record.',
+          confirmLabel: 'Leave Record',
+          cancelLabel: 'Stay on Record',
+        });
+        if (!leave) return false;
+      }
+      setMobileCanvasActive(false);
+      setEventsInFormFlow(false);
+      setTabDirection(explicitDirection ?? resolveTabDirection(RUNNER_TAB_ORDER, currentTab, nextTab));
+      setTab(nextTab);
+      if (typeof window !== 'undefined') {
+        window.scrollTo({ top: 0, behavior: 'auto' });
+      }
+      return true;
+    },
+    [confirm],
+  );
+
+  const switchTabThen = useCallback(
+    (nextTab: RunnerTab, afterSwitch?: () => void, explicitDirection?: NavDirection) => {
+      if (isRecordingRunRef.current && tabRef.current === 'record' && nextTab !== 'record') {
+        void selectTab(nextTab, explicitDirection).then((moved) => {
+          if (moved) afterSwitch?.();
+        });
+        return;
+      }
+      afterSwitch?.();
+      void selectTab(nextTab, explicitDirection);
+    },
+    [selectTab],
+  );
+
+  useEffect(() => {
     if (!allowedTabs.includes(tab)) {
-      selectTab(homeTab, 'back');
+      void selectTab(homeTab, 'back', { force: true });
     }
   }, [allowedTabs, tab, homeTab, selectTab]);
+
+  useEffect(() => {
+    if (!canRecord) {
+      setRecordedRuns([]);
+      setRecordedRunsLoaded(true);
+      setRecordedRunsError(null);
+      return;
+    }
+    setRecordedRunsLoaded(false);
+    setRecordedRunsError(null);
+    return subscribeMyRecordedRuns(profile.uid, (runs, loaded, error) => {
+      setRecordedRuns(runs);
+      setRecordedRunsLoaded(loaded);
+      setRecordedRunsError(error);
+    });
+  }, [canRecord, profile.uid]);
 
   useEffect(() => {
     return subscribeSharedRaces((rawList, loaded, err) => {
@@ -459,6 +546,9 @@ export default function RunnerDashboard({
           setAlertsOpen(false);
           return;
         }
+        if (tabRef.current === 'record' && isRecordingRunRef.current) {
+          return;
+        }
         const target = resolveBackNavigationTarget({
           tab: tabRef.current,
           homeTab: homeTabRef.current,
@@ -469,7 +559,12 @@ export default function RunnerDashboard({
         event.preventDefault();
         if (target.exploreSection) setExploreSection(target.exploreSection);
         if (target.youSection) setYouSection(target.youSection);
-        selectTab(target.tab, 'back');
+        void selectTab(target.tab, 'back');
+        return;
+      }
+
+      if (tabRef.current === 'record' && isRecordingRunRef.current) {
+        void selectTab(homeTabRef.current, 'back');
         return;
       }
 
@@ -477,7 +572,7 @@ export default function RunnerDashboard({
       setAlertsOpen(false);
       setExploreSection('races');
       setYouSection('overview');
-      selectTab(homeTabRef.current, 'back');
+      void selectTab(homeTabRef.current, 'back');
     };
     window.addEventListener('racepulse:back', handleBack);
     return () => window.removeEventListener('racepulse:back', handleBack);
@@ -766,6 +861,123 @@ export default function RunnerDashboard({
     [allowedTabs, selectTab],
   );
 
+  const handleRunSaved = useCallback((savedRun: RecordedRunSummary) => {
+    setRecordedRuns((prev) => {
+      const exists = prev.some((item) => item.runId === savedRun.runId);
+      if (exists) {
+        return prev.map((item) => (item.runId === savedRun.runId ? savedRun : item));
+      }
+      return [savedRun, ...prev];
+    });
+    setRecordedRunsLoaded(true);
+    setRecordedRunsError(null);
+  }, []);
+
+  const handleUpdateRunPrivacy = useCallback(
+    async (run: RecordedRunSummary, nextPrivacy: RecordedRunPrivacy) => {
+      if (run.privacy === nextPrivacy) return;
+      try {
+        const updated = await updateRecordedRun({ runId: run.runId, privacy: nextPrivacy });
+        setRecordedRuns((prev) => prev.map((item) => (item.runId === updated.runId ? updated : item)));
+        notify({
+          tone: 'success',
+          title: 'Run visibility updated',
+          message: `"${updated.title}" is now set to ${updated.privacy}.`,
+        });
+      } catch (err) {
+        const message =
+          err instanceof Error && err.message ? err.message : 'Unable to update run visibility right now.';
+        notify({
+          tone: 'error',
+          title: 'Visibility update failed',
+          message,
+        });
+      }
+    },
+    [notify],
+  );
+
+  const handleDeleteRun = useCallback(
+    async (run: RecordedRunSummary) => {
+      const confirmed = await confirm({
+        title: 'Delete recorded run?',
+        message: `Delete "${run.title}" (${(run.distanceM / 1000).toFixed(2)} km)? This permanently removes the run summary and stored GPS track.`,
+        confirmLabel: 'Delete run',
+        cancelLabel: 'Keep run',
+        destructive: true,
+      });
+      if (!confirmed) return;
+      try {
+        await deleteRecordedRun(run.runId);
+        setRecordedRuns((prev) => prev.filter((item) => item.runId !== run.runId));
+        notify({
+          tone: 'info',
+          title: 'Recorded run deleted',
+          message: `"${run.title}" was removed from your profile.`,
+        });
+      } catch (err) {
+        const message =
+          err instanceof Error && err.message ? err.message : 'Unable to delete this recorded run right now.';
+        notify({
+          tone: 'error',
+          title: 'Delete failed',
+          message,
+        });
+      }
+    },
+    [confirm, notify],
+  );
+
+  const handleExportRunGpx = useCallback(
+    async (run: RecordedRunSummary) => {
+      try {
+        const points = await loadRecordedRunTrackPoints(run);
+        if (points.length === 0) {
+          notify({
+            tone: 'info',
+            title: 'No GPX points to export',
+            message: run.homePrivacyTrimEnabled
+              ? 'Runs under 450 m fall inside the 200 m privacy trim zone, so GPS coordinates are omitted.'
+              : 'No GPS track points were stored for this recorded run.',
+          });
+          return;
+        }
+        const xml = buildRunGpxXml({
+          title: run.title,
+          startedAt: run.startedAt,
+          points,
+          privacyTrimApplied: run.homePrivacyTrimEnabled,
+        });
+        const blob = new Blob([xml], { type: 'application/gpx+xml' });
+        const url = URL.createObjectURL(blob);
+        try {
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `${slugifyFilename(run.title)}.gpx`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+        notify({
+          tone: 'success',
+          title: 'GPX track exported',
+          message: `${points.length} track points saved for "${run.title}".`,
+        });
+      } catch (err) {
+        const message =
+          err instanceof Error && err.message ? err.message : 'Unable to export GPX track right now.';
+        notify({
+          tone: 'error',
+          title: 'GPX export failed',
+          message,
+        });
+      }
+    },
+    [notify],
+  );
+
   const navItems: WorkspaceNavItem[] = useMemo(
     () =>
       allowedTabs.map((key) => {
@@ -1025,16 +1237,22 @@ export default function RunnerDashboard({
               ? `${exploreMetrics.showing}/${exploreMetrics.total}`
               : `${exploreMetrics.showing}/${exploreMetrics.catalogAll}`
         : tab === 'record'
-          ? profile.weightKg
-            ? `${profile.weightKg}kg`
-            : 'GNSS'
+          ? recordedRunsLoaded
+            ? `${recordedRuns.length} ${recordedRuns.length === 1 ? 'run' : 'runs'}`
+            : profile.weightKg
+              ? `${profile.weightKg}kg`
+              : 'GNSS'
           : tab === 'inbox'
             ? `${inboxUnreadCount}`
-            : youSection === 'passes'
-              ? `${myPassesMetrics.showing}/${myPassesMetrics.all}`
-              : youSection === 'friends'
-                ? `${friendsCount}`
-                : `${portfolioCounts.totalPasses}`;
+            : youSection === 'runs'
+              ? recordedRunsLoaded
+                ? `${recordedRuns.length}`
+                : '0'
+              : youSection === 'passes'
+                ? `${myPassesMetrics.showing}/${myPassesMetrics.all}`
+                : youSection === 'friends'
+                  ? `${friendsCount}`
+                  : `${portfolioCounts.totalPasses}`;
 
   const telemetryItems: RunnerTelemetryItem[] = [
     {
@@ -1045,9 +1263,10 @@ export default function RunnerDashboard({
       active: tab === 'you' && youSection === 'passes' && myPassesFilter === 'all',
       onClick: allowedTabs.includes('you')
         ? () => {
-            setMyPassesFilter('all');
-            setYouSection('passes');
-            selectTab('you');
+            switchTabThen('you', () => {
+              setMyPassesFilter('all');
+              setYouSection('passes');
+            });
           }
         : undefined,
     },
@@ -1060,9 +1279,10 @@ export default function RunnerDashboard({
       active: tab === 'you' && youSection === 'passes' && myPassesFilter === 'upcoming',
       onClick: allowedTabs.includes('you')
         ? () => {
-            setMyPassesFilter('upcoming');
-            setYouSection('passes');
-            selectTab('you');
+            switchTabThen('you', () => {
+              setMyPassesFilter('upcoming');
+              setYouSection('passes');
+            });
           }
         : undefined,
     },
@@ -1076,9 +1296,10 @@ export default function RunnerDashboard({
             accent: 'red' as const,
             active: tab === 'explore' && exploreSection === 'races' && exploreRacesFilter === 'open',
             onClick: () => {
-              setExploreSection('races');
-              setExploreRacesFilter('open');
-              selectTab('explore');
+              switchTabThen('explore', () => {
+                setExploreSection('races');
+                setExploreRacesFilter('open');
+              });
             },
           },
         ]
@@ -1091,8 +1312,9 @@ export default function RunnerDashboard({
             value: friendsCount,
             active: tab === 'you' && youSection === 'friends',
             onClick: () => {
-              setYouSection('friends');
-              selectTab('you');
+              switchTabThen('you', () => {
+                setYouSection('friends');
+              });
             },
           },
         ]
@@ -1164,6 +1386,7 @@ export default function RunnerDashboard({
     showEventQrScanner ||
     Boolean(pendingBibClaim) ||
     imeOpen ||
+    isRecordingRun ||
     (isCompact && mobileCanvasActive) ||
     eventsInFormFlow;
 
@@ -1180,7 +1403,7 @@ export default function RunnerDashboard({
       splitLocked={isSplitLocked}
       mobileBreakpoint="md600"
       bottomNavVariant="docked"
-      hideBottomNav={imeOpen || (isCompact && mobileCanvasActive)}
+      hideBottomNav={imeOpen || isRecordingRun || (isCompact && mobileCanvasActive)}
       compactGutters
       onOpenProfile={() => setShowProfile(true)}
     >
@@ -1269,11 +1492,12 @@ export default function RunnerDashboard({
               notificationPermission={notificationPermission}
               requestAlerts={requestAlerts}
               onOpenPass={(raceId) => {
-                setAlertsOpen(false);
-                setMyPassesFilter('all');
-                setRequestedPassRaceId(raceId);
-                setYouSection('passes');
-                selectTab('you');
+                switchTabThen('you', () => {
+                  setAlertsOpen(false);
+                  setMyPassesFilter('all');
+                  setRequestedPassRaceId(raceId);
+                  setYouSection('passes');
+                });
               }}
               onClose={() => setAlertsOpen(false)}
             />
@@ -1286,11 +1510,12 @@ export default function RunnerDashboard({
               notificationPermission={notificationPermission}
               requestAlerts={requestAlerts}
               onOpenPass={(raceId) => {
-                setAlertsOpen(false);
-                setMyPassesFilter('all');
-                setRequestedPassRaceId(raceId);
-                setYouSection('passes');
-                selectTab('you');
+                switchTabThen('you', () => {
+                  setAlertsOpen(false);
+                  setMyPassesFilter('all');
+                  setRequestedPassRaceId(raceId);
+                  setYouSection('passes');
+                });
               }}
               onClose={() => setAlertsOpen(false)}
             />
@@ -1408,13 +1633,14 @@ export default function RunnerDashboard({
               racesLoaded={racesLoaded}
               friendsCount={friendsCount}
               friendFeed={friendFeed}
+              recordedRuns={recordedRuns}
               onOpenPass={
                 allowedTabs.includes('you')
                   ? (raceId) => {
                       setMyPassesFilter('all');
                       setRequestedPassRaceId(raceId);
                       setYouSection('passes');
-                      selectTab('you');
+                      void selectTab('you');
                     }
                   : undefined
               }
@@ -1426,16 +1652,24 @@ export default function RunnerDashboard({
                       if (raceId) {
                         setPendingDeepLinkRaceId(raceId);
                       }
-                      selectTab('explore');
+                      void selectTab('explore');
                     }
                   : undefined
               }
-              onOpenRecord={allowedTabs.includes('record') ? () => selectTab('record') : undefined}
+              onOpenRecord={allowedTabs.includes('record') ? () => void selectTab('record') : undefined}
+              onOpenRuns={
+                allowedTabs.includes('you') && (canRecord || recordedRuns.length > 0)
+                  ? () => {
+                      setYouSection('runs');
+                      void selectTab('you');
+                    }
+                  : undefined
+              }
               onOpenFriends={
                 canFriends && allowedTabs.includes('you')
                   ? () => {
                       setYouSection('friends');
-                      selectTab('you');
+                      void selectTab('you');
                     }
                   : undefined
               }
@@ -1488,7 +1722,7 @@ export default function RunnerDashboard({
           )}
 
           {tab === 'record' && allowedTabs.includes('record') && (
-            <RunnerRecordPreviewPanel
+            <RunnerRecordPanel
               profile={profile}
               preselectedCourse={preselectedCourse}
               onSelectCourse={setPreselectedCourse}
@@ -1496,11 +1730,15 @@ export default function RunnerDashboard({
               onBrowseRoutes={
                 allowedTabs.includes('explore')
                   ? () => {
-                      setExploreSection('routes');
-                      selectTab('explore');
+                      switchTabThen('explore', () => {
+                        setExploreSection('routes');
+                      });
                     }
                   : undefined
               }
+              onRecordingStateChange={setIsRecordingRun}
+              onRunSaved={handleRunSaved}
+              theme={theme}
             />
           )}
 
@@ -1547,6 +1785,13 @@ export default function RunnerDashboard({
               friendsCount={friendsCount}
               canFriends={canFriends}
               canEngraving={canEngraving}
+              canRecord={canRecord}
+              recordedRuns={recordedRuns}
+              recordedRunsLoaded={recordedRunsLoaded}
+              recordedRunsError={recordedRunsError}
+              onUpdateRunPrivacy={handleUpdateRunPrivacy}
+              onDeleteRun={handleDeleteRun}
+              onExportRunGpx={handleExportRunGpx}
               requestedPassRaceId={requestedPassRaceId}
               onRequestedPassHandled={handlePassDeepLinkHandled}
               onBrowseEvents={() => {
@@ -1606,8 +1851,8 @@ export default function RunnerDashboard({
         <RunnerOnboardingHint
           id="runner-record-hint"
           storageKey="racepulse_hint_record_v1"
-          title="GPS Readiness Check"
-          body="Test your satellite lock and pick an optional race course before heading out."
+          title="Live Run Recorder"
+          body="Test your satellite lock, pick an optional race course, and record splits with 200 m home privacy trim."
           suppress={hintSuppressed}
         />
       )}

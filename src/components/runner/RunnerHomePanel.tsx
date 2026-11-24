@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ChevronRight,
   Circle,
+  ClipboardList,
   Compass,
   Flag,
   Navigation,
@@ -23,6 +24,8 @@ import {
   type ExploreSection,
   type HomeFriendFeedItem,
 } from '../../lib/runnerShell';
+import { formatDuration, formatPace } from '../../lib/runs/runLiveHelpers';
+import type { RecordedRunSummary } from '../../lib/runs/types';
 import { isRaceRegistrationOpen } from '../../lib/raceRegistration';
 import type { Race, RunnerProfile, UserProfile } from '../../types';
 import { RunnerQueueSkeleton } from './RunnerMobilePrimitives';
@@ -35,9 +38,11 @@ export interface RunnerHomePanelProps {
   racesLoaded: boolean;
   friendsCount: number;
   friendFeed: HomeFriendFeedItem[];
+  recordedRuns?: RecordedRunSummary[];
   onOpenPass?: (raceId: string) => void;
   onOpenExplore?: (section?: ExploreSection, filter?: ExploreRacesFilter, raceId?: string) => void;
   onOpenRecord?: () => void;
+  onOpenRuns?: () => void;
   onOpenFriends?: () => void;
 }
 
@@ -59,9 +64,11 @@ export default function RunnerHomePanel({
   racesLoaded,
   friendsCount,
   friendFeed,
+  recordedRuns = [],
   onOpenPass,
   onOpenExplore,
   onOpenRecord,
+  onOpenRuns,
   onOpenFriends,
 }: RunnerHomePanelProps) {
   const baseId = useId();
@@ -80,11 +87,11 @@ export default function RunnerHomePanel({
   const trailProgress = useMemo(
     () =>
       computeStarterTrailProgress(profile.onboardingSteps, {
-        hasRuns: false,
+        hasRuns: recordedRuns.length > 0,
         hasJoinedRaceOrClub: runnerProfiles.length > 0 || Boolean(profile.primaryClubId || profile.runClub),
         hasFriends: friendsCount > 0,
       }),
-    [profile.onboardingSteps, profile.primaryClubId, profile.runClub, runnerProfiles.length, friendsCount],
+    [profile.onboardingSteps, recordedRuns.length, profile.primaryClubId, profile.runClub, runnerProfiles.length, friendsCount],
   );
 
   const raceWeekMatch = useMemo(
@@ -151,7 +158,7 @@ export default function RunnerHomePanel({
       ? [
           {
             id: 'first_run' as const,
-            label: 'Check GPS / Record',
+            label: 'Record a GPS Run',
             done: trailProgress.completed.includes('first_run'),
             onClick: onOpenRecord,
           },
@@ -324,6 +331,51 @@ export default function RunnerHomePanel({
         </section>
       )}
 
+      {recordedRuns.length > 0 && (
+        <section
+          aria-labelledby={`${baseId}-latest-run-heading`}
+          className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+        >
+          <div className="min-w-0 space-y-1">
+            <h2
+              id={`${baseId}-latest-run-heading`}
+              className="font-display font-semibold text-base text-[var(--text-primary)] truncate"
+            >
+              Latest Run: {recordedRuns[0].title}
+            </h2>
+            <p className="font-mono text-xs font-normal tabular-nums text-[var(--text-secondary)] truncate">
+              {(recordedRuns[0].distanceM / 1000).toFixed(2)} km · {formatDuration(recordedRuns[0].movingTimeMs)} ·{' '}
+              {formatPace(recordedRuns[0].avgPaceSecPerKm)} · {Math.round(recordedRuns[0].caloriesKcal)} kcal
+            </p>
+          </div>
+
+          {(onOpenRuns || onOpenRecord) && (
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {onOpenRuns && (
+                <button
+                  type="button"
+                  onClick={onOpenRuns}
+                  className="min-h-11 px-3.5 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+                >
+                  <ClipboardList className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+                  <span>View Runs ({recordedRuns.length})</span>
+                </button>
+              )}
+              {onOpenRecord && (
+                <button
+                  type="button"
+                  onClick={onOpenRecord}
+                  className="min-h-11 px-3.5 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+                >
+                  <Navigation className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                  <span>Record Run</span>
+                </button>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
       <section aria-label="Weekly activity snapshot">
         <dl className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2.5 flex flex-col gap-0.5">
@@ -413,10 +465,10 @@ export default function RunnerHomePanel({
                     </span>
                     <div className="min-w-0 space-y-0.5">
                       <h3 className="font-display font-semibold text-sm sm:text-base text-[var(--text-primary)]">
-                        Check GPS for a Run
+                        Record a GPS Run
                       </h3>
                       <p className="text-xs font-normal text-[var(--text-secondary)]">
-                        Verify live GNSS signal accuracy and pick a published Philippine course before heading out.
+                        Track live distance, splits, and elevation on a Free Run or published Philippine course.
                       </p>
                     </div>
                   </div>
@@ -427,7 +479,7 @@ export default function RunnerHomePanel({
                     className="min-h-11 px-4 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
                   >
                     <Navigation className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
-                    <span>Open GPS Check</span>
+                    <span>Record Run</span>
                   </button>
                 </div>
               )}

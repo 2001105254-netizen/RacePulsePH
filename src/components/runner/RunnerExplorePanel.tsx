@@ -529,9 +529,14 @@ export default function RunnerExplorePanel({
   const activeTabId = `${baseId}-tab-${section}`;
   const activeTabLabel =
     EXPLORE_SECTIONS.find((item) => item.key === section)?.label ?? 'Explore';
+  const allowStickyFormScroll = section === 'races' && eventsInFormFlow;
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[var(--surface-page)]">
+    <div
+      className={`flex-1 min-h-0 flex flex-col bg-[var(--surface-page)] ${
+        allowStickyFormScroll ? 'overflow-visible' : 'overflow-hidden'
+      }`}
+    >
       {!hideTopSwitcher && (
         <div className="shrink-0 border-b border-[var(--border-default)] bg-[var(--surface-card)]">
           <div className="px-3 py-2 flex items-center justify-between gap-2">
@@ -633,7 +638,9 @@ export default function RunnerExplorePanel({
         role="tabpanel"
         aria-labelledby={hideTopSwitcher ? undefined : activeTabId}
         aria-label={hideTopSwitcher ? activeTabLabel : undefined}
-        className="flex-1 min-h-0 flex flex-col overflow-hidden"
+        className={`flex-1 min-h-0 flex flex-col ${
+          allowStickyFormScroll ? 'overflow-visible' : 'overflow-hidden'
+        }`}
       >
         {section === 'races' &&
           (mode.mode === 'events' ? (

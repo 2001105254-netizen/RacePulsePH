@@ -1,20 +1,48 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   Award,
   ClipboardList,
+  Download,
+  Lock,
   Navigation,
   QrCode,
+  RefreshCw,
   Scale,
   Settings,
+  ShieldCheck,
+  Trash2,
   Trophy,
   User,
   Users2,
 } from 'lucide-react';
 import { computeRunnerPortfolioCounts, type YouSection } from '../../lib/runnerShell';
+import { formatDuration, formatPace, PRIVACY_OPTIONS } from '../../lib/runs/runLiveHelpers';
+import type { RecordedRunPrivacy, RecordedRunSummary } from '../../lib/runs/types';
 import type { Race, RunnerProfile, UserProfile } from '../../types';
+import Select from '../ui/Select';
 import RunnerFriendsPanel from './RunnerFriendsPanel';
+import { RunnerQueueSkeleton } from './RunnerMobilePrimitives';
 import RunnerMyRacesPanel, { type MyPassesFilter } from './RunnerMyRacesPanel';
 import { philippineTodayStr } from './runnerUtils';
+
+const manilaRunDateFormatter = new Intl.DateTimeFormat('en-PH', {
+  timeZone: 'Asia/Manila',
+  dateStyle: 'medium',
+  timeStyle: 'short',
+});
+
+function formatManilaRunTimestamp(isoString: string): string {
+  const parsedMs = Date.parse(isoString);
+  if (!Number.isFinite(parsedMs)) return isoString;
+  try {
+    return manilaRunDateFormatter.format(new Date(parsedMs));
+  } catch {
+    return isoString;
+  }
+}
+
+type RunCardBusyAction = 'privacy' | 'gpx' | 'delete';
 
 export interface RunnerYouHubPanelProps {
   section: YouSection;
@@ -26,6 +54,13 @@ export interface RunnerYouHubPanelProps {
   friendsCount: number;
   canFriends: boolean;
   canEngraving: boolean;
+  canRecord: boolean;
+  recordedRuns: RecordedRunSummary[];
+  recordedRunsLoaded: boolean;
+  recordedRunsError?: string | null;
+  onUpdateRunPrivacy?: (run: RecordedRunSummary, nextPrivacy: RecordedRunPrivacy) => Promise<void>;
+  onDeleteRun?: (run: RecordedRunSummary) => Promise<void>;
+  onExportRunGpx?: (run: RecordedRunSummary) => Promise<void> | void;
   requestedPassRaceId?: string | null;
   onRequestedPassHandled?: () => void;
   onBrowseEvents: () => void;
@@ -58,6 +93,13 @@ export default function RunnerYouHubPanel({
   friendsCount,
   canFriends,
   canEngraving,
+  canRecord,
+  recordedRuns,
+  recordedRunsLoaded,
+  recordedRunsError,
+  onUpdateRunPrivacy,
+  onDeleteRun,
+  onExportRunGpx,
   requestedPassRaceId,
   onRequestedPassHandled,
   onBrowseEvents,
@@ -81,18 +123,39 @@ export default function RunnerYouHubPanel({
 }: RunnerYouHubPanelProps) {
   const baseId = useId();
   const [mobileCanvasActive, setMobileCanvasActive] = useState(false);
+  const [busyByRunId, setBusyByRunId] = useState<Record<string, RunCardBusyAction | undefined>>({});
   const tabRefs = useRef<Record<YouSection, HTMLButtonElement | null>>({
     overview: null,
+    runs: null,
     passes: null,
     friends: null,
     engraving: null,
   });
 
+  const showRunsSection = canRecord || recordedRuns.length > 0;
+
+  const privacySelectOptions = useMemo(
+    () =>
+      PRIVACY_OPTIONS.map((opt) => ({
+        value: opt.value,
+        label: opt.label,
+        sublabel: opt.hint,
+      })),
+    [],
+  );
+
   const sections = useMemo(() => {
     const items: Array<{ key: YouSection; label: string; count?: number }> = [
       { key: 'overview', label: 'Overview' },
-      { key: 'passes', label: 'My Passes', count: runnerProfiles.length },
     ];
+    if (showRunsSection) {
+      items.push({
+        key: 'runs',
+        label: 'Runs',
+        count: recordedRunsLoaded ? recordedRuns.length : undefined,
+      });
+    }
+    items.push({ key: 'passes', label: 'My Passes', count: runnerProfiles.length });
     if (canFriends) {
       items.push({ key: 'friends', label: 'Friends', count: friendsCount });
     }
@@ -100,7 +163,66 @@ export default function RunnerYouHubPanel({
       items.push({ key: 'engraving', label: 'Engraving' });
     }
     return items;
-  }, [runnerProfiles.length, canFriends, friendsCount, canEngraving]);
+  }, [
+    showRunsSection,
+    recordedRunsLoaded,
+    recordedRuns.length,
+    runnerProfiles.length,
+    canFriends,
+    friendsCount,
+    canEngraving,
+  ]);
+
+  const setRunBusy = useCallback((runId: string, action: RunCardBusyAction | undefined) => {
+    setBusyByRunId((prev) => {
+      if (action === undefined) {
+        if (!(runId in prev)) return prev;
+        const next = { ...prev };
+        delete next[runId];
+        return next;
+      }
+      return { ...prev, [runId]: action };
+    });
+  }, []);
+
+  const handlePrivacyChange = useCallback(
+    async (run: RecordedRunSummary, nextPrivacy: RecordedRunPrivacy) => {
+      if (!onUpdateRunPrivacy || run.privacy === nextPrivacy) return;
+      setRunBusy(run.runId, 'privacy');
+      try {
+        await onUpdateRunPrivacy(run, nextPrivacy);
+      } finally {
+        setRunBusy(run.runId, undefined);
+      }
+    },
+    [onUpdateRunPrivacy, setRunBusy],
+  );
+
+  const handleExportGpx = useCallback(
+    async (run: RecordedRunSummary) => {
+      if (!onExportRunGpx) return;
+      setRunBusy(run.runId, 'gpx');
+      try {
+        await onExportRunGpx(run);
+      } finally {
+        setRunBusy(run.runId, undefined);
+      }
+    },
+    [onExportRunGpx, setRunBusy],
+  );
+
+  const handleDelete = useCallback(
+    async (run: RecordedRunSummary) => {
+      if (!onDeleteRun) return;
+      setRunBusy(run.runId, 'delete');
+      try {
+        await onDeleteRun(run);
+      } finally {
+        setRunBusy(run.runId, undefined);
+      }
+    },
+    [onDeleteRun, setRunBusy],
+  );
 
   const effectiveSection: YouSection =
     sections.some((item) => item.key === section) ? section : 'overview';
@@ -338,28 +460,57 @@ export default function RunnerYouHubPanel({
                 </div>
               </article>
 
-              {onOpenRecord && (
+              {(showRunsSection || onOpenRecord) && (
                 <article className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-4 flex flex-col justify-between gap-3">
                   <div className="space-y-1.5">
                     <div className="w-9 h-9 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] flex items-center justify-center text-red-700 dark:text-red-400">
                       <Navigation className="w-4 h-4" aria-hidden="true" />
                     </div>
                     <h3 className="font-display font-semibold text-base text-[var(--text-primary)]">
-                      GPS Run Check
+                      Recorded Runs &amp; GPS
                     </h3>
-                    <p className="text-xs font-normal text-[var(--text-secondary)] leading-relaxed">
-                      Check live satellite accuracy, calibrate body weight for calorie estimates, and select a published course.
-                    </p>
+                    {!recordedRunsLoaded ? (
+                      <p className="text-xs font-normal text-[var(--text-secondary)] leading-relaxed">
+                        Loading your recorded runs and live GPS activity.
+                      </p>
+                    ) : recordedRuns.length > 0 ? (
+                      <p className="text-xs font-normal text-[var(--text-secondary)] leading-relaxed tabular-nums">
+                        {recordedRuns.length} {recordedRuns.length === 1 ? 'saved run' : 'saved runs'}. Latest:{' '}
+                        <strong className="font-semibold text-[var(--text-primary)]">
+                          {recordedRuns[0].title}
+                        </strong>{' '}
+                        ({(recordedRuns[0].distanceM / 1000).toFixed(2)} km,{' '}
+                        {(Number.isFinite(recordedRuns[0].caloriesKcal) ? recordedRuns[0].caloriesKcal : 0).toFixed(1)} kcal).
+                      </p>
+                    ) : (
+                      <p className="text-xs font-normal text-[var(--text-secondary)] leading-relaxed">
+                        No saved GPS runs yet. Start a Free Run or follow a published Philippine course with 200 m home privacy trim.
+                      </p>
+                    )}
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={onOpenRecord}
-                    className="min-h-11 w-full px-3 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
-                  >
-                    <Navigation className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
-                    <span>Open Record Check</span>
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    {showRunsSection && (
+                      <button
+                        type="button"
+                        onClick={() => onSectionChange('runs')}
+                        className="min-h-11 flex-1 px-3 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+                      >
+                        <ClipboardList className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+                        <span>View Runs</span>
+                      </button>
+                    )}
+                    {onOpenRecord && (
+                      <button
+                        type="button"
+                        onClick={onOpenRecord}
+                        className="min-h-11 flex-1 px-3 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+                      >
+                        <Navigation className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                        <span>Record Run</span>
+                      </button>
+                    )}
+                  </div>
                 </article>
               )}
 
@@ -401,6 +552,227 @@ export default function RunnerYouHubPanel({
               </article>
             </div>
           </div>
+        )}
+
+        {effectiveSection === 'runs' && (
+          <section
+            aria-labelledby={`${baseId}-runs-heading`}
+            className="w-full max-w-5xl mx-auto space-y-4 pb-2"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+              <div className="min-w-0">
+                <h2
+                  id={`${baseId}-runs-heading`}
+                  className="font-display font-semibold text-lg text-[var(--text-primary)]"
+                >
+                  Recorded Runs
+                </h2>
+                <p className="text-xs font-normal text-[var(--text-secondary)] tabular-nums">
+                  {recordedRunsLoaded
+                    ? `${recordedRuns.length} ${recordedRuns.length === 1 ? 'activity' : 'activities'} saved to your RacePulsePH profile.`
+                    : 'Loading your recorded GPS activities...'}
+                </p>
+              </div>
+              {onOpenRecord && (
+                <button
+                  type="button"
+                  onClick={onOpenRecord}
+                  className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+                >
+                  <Navigation className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                  <span>Record Run</span>
+                </button>
+              )}
+            </div>
+
+            {recordedRunsError && (
+              <div
+                role="alert"
+                className="rounded-xl border border-red-600/35 bg-red-500/10 px-3 py-2.5 text-xs font-semibold text-red-800 dark:text-red-300 flex items-start gap-2"
+              >
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
+                <span>{recordedRunsError}</span>
+              </div>
+            )}
+
+            {!recordedRunsLoaded ? (
+              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] overflow-hidden">
+                <RunnerQueueSkeleton rows={4} label="Loading recorded runs" />
+              </div>
+            ) : !recordedRunsError && recordedRuns.length === 0 ? (
+              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-6 text-center space-y-3">
+                <Navigation className="w-7 h-7 text-[var(--text-secondary)] mx-auto" aria-hidden="true" />
+                <h3 className="font-display font-semibold text-base text-[var(--text-primary)]">
+                  No recorded runs yet
+                </h3>
+                <p className="text-xs font-normal text-[var(--text-secondary)] max-w-md mx-auto">
+                  Record a Free Run or follow a published Philippine race course to save splits, elevation gain, and GPX tracks.
+                </p>
+                {onOpenRecord && (
+                  <button
+                    type="button"
+                    onClick={onOpenRecord}
+                    className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+                  >
+                    <Navigation className="w-4 h-4 shrink-0" aria-hidden="true" />
+                    <span>Start Recording</span>
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {recordedRuns.map((run) => {
+                  const busyAction = busyByRunId[run.runId];
+                  const isBusy = Boolean(busyAction);
+                  const isFlagged = run.verificationStatus === 'flagged';
+                  const modeLabel =
+                    run.mode === 'course' && run.courseRef
+                      ? `${run.courseRef.raceName} (${run.courseRef.distanceLabel})`
+                      : 'Free Run';
+                  const privacyControlId = `${baseId}-run-privacy-${run.runId}`;
+
+                  return (
+                    <article
+                      key={run.runId}
+                      className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-3 sm:p-4 space-y-3"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-display font-semibold text-base text-[var(--text-primary)] break-words">
+                              {run.title}
+                            </h3>
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-xs font-semibold whitespace-nowrap ${
+                                isFlagged
+                                  ? 'border-amber-600/35 bg-amber-500/10 text-amber-900 dark:text-amber-300'
+                                  : 'border-emerald-600/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
+                              }`}
+                            >
+                              {isFlagged ? (
+                                <AlertTriangle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                              ) : (
+                                <ShieldCheck className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                              )}
+                              <span>{isFlagged ? 'Flagged / Under Review' : 'Verified'}</span>
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-secondary)]">
+                            <time dateTime={run.startedAt} className="font-mono tabular-nums">
+                              {formatManilaRunTimestamp(run.startedAt)}
+                            </time>
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-inset)] font-semibold text-[var(--text-primary)]">
+                              {modeLabel}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <dl className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                        <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-2 flex flex-col gap-0.5">
+                          <dt className="text-xs font-normal text-[var(--text-secondary)]">Distance</dt>
+                          <dd className="font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">
+                            {(run.distanceM / 1000).toFixed(2)} km
+                          </dd>
+                        </div>
+                        <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-2 flex flex-col gap-0.5">
+                          <dt className="text-xs font-normal text-[var(--text-secondary)]">Moving Time</dt>
+                          <dd className="font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">
+                            {formatDuration(run.movingTimeMs)}
+                          </dd>
+                        </div>
+                        <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-2 flex flex-col gap-0.5">
+                          <dt className="text-xs font-normal text-[var(--text-secondary)]">Avg Pace</dt>
+                          <dd className="font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">
+                            {formatPace(run.avgPaceSecPerKm)}
+                          </dd>
+                        </div>
+                        <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-2 flex flex-col gap-0.5">
+                          <dt className="text-xs font-normal text-[var(--text-secondary)]">Elev Gain</dt>
+                          <dd className="font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">
+                            +{Math.round(run.elevationGainM)} m
+                          </dd>
+                        </div>
+                        <div className="col-span-2 sm:col-span-1 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-2 flex flex-col gap-0.5">
+                          <dt className="text-xs font-normal text-[var(--text-secondary)]">Calories</dt>
+                          <dd className="font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">
+                            {(Number.isFinite(run.caloriesKcal) ? run.caloriesKcal : 0).toFixed(1)} kcal
+                          </dd>
+                        </div>
+                      </dl>
+
+                      {run.homePrivacyTrimEnabled && (
+                        <p className="text-xs font-normal text-[var(--text-secondary)] inline-flex items-center gap-1.5">
+                          <Lock className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+                          <span>
+                            200 m home privacy trim
+                            {run.pointCount === 0 ? ' (GPS track omitted under 450 m)' : ''}
+                          </span>
+                        </p>
+                      )}
+
+                      <div className="pt-2 border-t border-[var(--border-subtle)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0 sm:w-56">
+                          <label
+                            htmlFor={privacyControlId}
+                            className="text-xs font-semibold text-[var(--text-secondary)] shrink-0 cursor-pointer"
+                          >
+                            Visibility
+                          </label>
+                          <div className="flex-1 min-w-0">
+                            <Select
+                              id={privacyControlId}
+                              ariaLabel={`Visibility for ${run.title}`}
+                              value={run.privacy}
+                              options={privacySelectOptions}
+                              onChange={(nextValue) =>
+                                void handlePrivacyChange(run, nextValue as RecordedRunPrivacy)
+                              }
+                              disabled={isBusy || !onUpdateRunPrivacy}
+                              size="md"
+                              surface="inset"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void handleExportGpx(run)}
+                            disabled={isBusy || !onExportRunGpx}
+                            className="min-h-11 flex-1 sm:flex-initial px-3.5 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+                          >
+                            {busyAction === 'gpx' ? (
+                              <RefreshCw className="w-3.5 h-3.5 motion-safe:animate-spin shrink-0" aria-hidden="true" />
+                            ) : (
+                              <Download className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+                            )}
+                            <span>{busyAction === 'gpx' ? 'Exporting...' : 'Export GPX'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => void handleDelete(run)}
+                            disabled={isBusy || !onDeleteRun}
+                            aria-label={`Delete ${run.title}`}
+                            className="min-h-11 px-3.5 rounded-xl border border-red-600/30 bg-red-500/10 hover:bg-red-500/15 text-xs font-semibold text-red-800 dark:text-red-300 inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+                          >
+                            {busyAction === 'delete' ? (
+                              <RefreshCw className="w-3.5 h-3.5 motion-safe:animate-spin shrink-0" aria-hidden="true" />
+                            ) : (
+                              <Trash2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                            )}
+                            <span>{busyAction === 'delete' ? 'Deleting...' : 'Delete'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
         )}
 
         {effectiveSection === 'passes' && (
