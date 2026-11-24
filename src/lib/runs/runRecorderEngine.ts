@@ -62,6 +62,29 @@ function applyElevationHysteresis(
   return { anchorM, gainM, lossM };
 }
 
+/** Computes hysteresis-filtered cumulative elevation gain/loss while resetting anchor on segmentBreak. */
+export function computeTrackElevationTotals(points: RecordedTrackPoint[]): {
+  gainM: number;
+  lossM: number;
+} {
+  let anchorM: number | null = null;
+  let gainM = 0;
+  let lossM = 0;
+
+  for (const pt of points) {
+    if (pt.segmentBreak) {
+      anchorM = typeof pt.ele === 'number' && Number.isFinite(pt.ele) ? pt.ele : null;
+      continue;
+    }
+    const next = applyElevationHysteresis(anchorM, gainM, lossM, pt.ele);
+    anchorM = next.anchorM;
+    gainM = next.gainM;
+    lossM = next.lossM;
+  }
+
+  return { gainM, lossM };
+}
+
 export function createActiveRunSession(input: {
   sessionId: string;
   uid: string;

@@ -260,13 +260,20 @@ function sanitizeCourseRef(courseRef?: RecordedRunCourseRef): RecordedRunCourseR
   if (!raceName || !distanceLabel || !Number.isFinite(courseRef.advertisedKm) || courseRef.advertisedKm <= 0) {
     throw new CommunityRunApiError('Incomplete course reference metadata.', 400);
   }
+  const publicationId =
+    courseRef.publicationId !== undefined && courseRef.publicationId !== null
+      ? String(courseRef.publicationId).trim()
+      : '';
+  if (publicationId && !VALID_ID_RE.test(publicationId)) {
+    throw new CommunityRunApiError('Invalid publication reference ID.', 400);
+  }
   return {
     raceId,
     distanceId,
     raceName: raceName.slice(0, 150),
     distanceLabel: distanceLabel.slice(0, 50),
     advertisedKm: courseRef.advertisedKm,
-    ...(courseRef.publicationId?.trim() ? { publicationId: courseRef.publicationId.trim() } : {}),
+    ...(publicationId ? { publicationId } : {}),
     ...(courseRef.region?.trim() ? { region: courseRef.region.trim().slice(0, 80) } : {}),
   };
 }
@@ -287,6 +294,7 @@ export interface CompleteRecordedRunInput {
   courseRef?: RecordedRunCourseRef;
   trackPoints: RecordedTrackPoint[];
   trackStoragePath?: string;
+  storageUploadSettled?: boolean;
 }
 
 export interface CompleteRunRequestPayload {
@@ -490,23 +498,49 @@ async function postCommunityCommand(
   return result;
 }
 
-export async function completeRecordedRun(
+export async function prepareCompleteRecordedRunInput(
   input: CompleteRecordedRunInput,
-): Promise<RecordedRunSummary> {
+  options: {
+    uid?: string | null;
+    uploader?: typeof uploadRunTrackJsonToStorage;
+  } = {},
+): Promise<CompleteRecordedRunInput> {
   const basePayload = buildCompleteRunRequestPayload(input);
-  let trackStoragePath = basePayload.trackStoragePath;
-  const uid = auth.currentUser?.uid;
+  let resolvedPath = basePayload.trackStoragePath;
+  const uid = options.uid !== undefined ? options.uid : auth.currentUser?.uid;
+  const uploader = options.uploader ?? uploadRunTrackJsonToStorage;
 
-  if (!trackStoragePath && uid && input.trackPoints.length >= 2) {
-    trackStoragePath = await uploadRunTrackJsonToStorage(uid, basePayload.runId, input.trackPoints);
+  if (!resolvedPath && !input.storageUploadSettled && uid && basePayload.trackPoints.length >= 2) {
+    resolvedPath = await uploader(uid, basePayload.runId, input.trackPoints);
   }
 
-  const finalPayload: CompleteRunRequestPayload = {
-    ...basePayload,
-    ...(trackStoragePath ? { trackStoragePath } : {}),
+  return {
+    ...input,
+    requestId: basePayload.requestId,
+    ...(resolvedPath ? { trackStoragePath: resolvedPath } : {}),
+    storageUploadSettled: true,
   };
+}
 
-  const result = await postCommunityCommand(
+export async function completeRecordedRun(
+  input: CompleteRecordedRunInput,
+  options?: {
+    uid?: string | null;
+    uploader?: typeof uploadRunTrackJsonToStorage;
+    sender?: (
+      path: '/runs/complete',
+      payload: Record<string, unknown>,
+    ) => Promise<Record<string, unknown>>;
+  },
+): Promise<RecordedRunSummary> {
+  const prepared =
+    input.storageUploadSettled || input.trackStoragePath
+      ? input
+      : await prepareCompleteRecordedRunInput(input, options);
+  const finalPayload = buildCompleteRunRequestPayload(prepared);
+  const sender = options?.sender ?? postCommunityCommand;
+
+  const result = await sender(
     '/runs/complete',
     finalPayload as unknown as Record<string, unknown>,
   );

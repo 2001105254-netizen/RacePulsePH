@@ -1,35 +1,18 @@
-import React, {
-  Suspense,
-  lazy,
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { PluginListenerHandle } from '@capacitor/core';
 import {
   AlertTriangle,
-  Check,
-  ChevronDown,
-  ChevronUp,
   Compass,
-  Download,
   Flag,
   Info,
   LocateFixed,
   Lock,
   MapPin,
   Mountain,
-  Pause,
   Play,
   Radio,
   RefreshCw,
-  RotateCcw,
-  Save,
   Scale,
-  ShieldCheck,
   Square,
   Trash2,
   UploadCloud,
@@ -52,17 +35,12 @@ import {
   classifyRecordGnssStatus,
   filterPublishedExploreRoutes,
 } from '../../lib/runnerShell';
-import {
-  computeRunCalorieEstimate,
-  computeSegmentCaloriesKcal,
-  resolveCalorieWeightKg,
-  round1,
-} from '../../lib/runs/calorieEngine';
+import { resolveCalorieWeightKg } from '../../lib/runs/calorieEngine';
 import {
   CommunityRunApiError,
   completeRecordedRun,
-  createCommunityRequestId,
   createRecordedRunId,
+  prepareCompleteRecordedRunInput,
   type CompleteRecordedRunInput,
 } from '../../lib/runs/communityRunsClient';
 import {
@@ -79,36 +57,44 @@ import {
   savePendingRunUpload,
 } from '../../lib/runs/runCrashRecovery';
 import {
-  DEFAULT_PRIVACY_TRIM_M,
+  buildCourseKey,
+  buildDefaultRunTitle,
+  buildNotificationTitle,
+  buildSummaryComputation,
+  formatDuration,
+  formatNotificationSubtitle,
+  mergeAndFilterRunFixes,
+  MIN_SERVER_MOVING_TIME_MS,
+  slugifyFilename,
+  toGpsRawFix,
+  type SummaryComputation,
+} from '../../lib/runs/runLiveHelpers';
+import {
   buildRunGpxXml,
   computeActiveElapsedTimeMs,
   computePerKmSplits,
   createActiveRunSession,
-  detectPhilippineIslandGroups,
   enrichRunTrackElevation,
   ingestRunFix,
   pauseActiveRun,
   resumeActiveRun,
-  trimRunTrackEndpoints,
 } from '../../lib/runs/runRecorderEngine';
 import type {
   ActiveRunSession,
   PendingRunUpload,
   RecordedRunCourseRef,
-  RecordedRunMode,
   RecordedRunPrivacy,
   RecordedRunSummary,
-  RecordedTrackPoint,
-  RunCalorieEstimate,
-  RunSplitKm,
 } from '../../lib/runs/types';
 import type { UserProfile } from '../../types';
-import DialogSurface from '../ui/DialogSurface';
 import { useFeedback } from '../ui/FeedbackProvider';
 import { Select, type SelectOption } from '../ui/Select';
 import type { ExploreCourseRunTarget } from './RunnerExplorePanel';
-
-const RouteMapCanvas = lazy(() => import('../routes/RouteMapCanvas'));
+import {
+  RecordCalorieInfoDialog,
+  RecordLiveView,
+  RecordSummaryView,
+} from './RunnerRecordViews';
 
 export interface RunnerRecordPanelProps {
   profile: UserProfile;
@@ -123,183 +109,9 @@ export interface RunnerRecordPanelProps {
 
 type RecordPhase = 'setup' | 'live' | 'summary';
 
-interface SummaryComputation {
-  runId: string;
-  requestId: string;
-  mode: RecordedRunMode;
-  courseRef?: RecordedRunCourseRef;
-  startedAt: string;
-  finishedAt: string;
-  elapsedTimeMs: number;
-  movingTimeMs: number;
-  clientDistanceM: number;
-  homePrivacyTrimEnabled: boolean;
-  trimmedHeadM: number;
-  trimmedTailM: number;
-  enrichedPoints: RecordedTrackPoint[];
-  trimmedPoints: RecordedTrackPoint[];
-  elevationGainM: number;
-  elevationLossM: number;
-  elevationSource: 'dem' | 'gps' | 'mixed';
-  splits: RunSplitKm[];
-  calorieEstimate: RunCalorieEstimate;
-  islandGroups: Array<'Luzon' | 'Visayas' | 'Mindanao'>;
-}
-
-const PRIVACY_OPTIONS: ReadonlyArray<{
-  value: RecordedRunPrivacy;
-  label: string;
-  hint: string;
-}> = [
-  { value: 'private', label: 'Private', hint: 'Only visible to you' },
-  { value: 'friends', label: 'Friends', hint: 'Accepted RacePulsePH friends' },
-  { value: 'public', label: 'Public', hint: 'Visible on public runner feed' },
-];
-
-const MIN_SERVER_MOVING_TIME_MS = 10_000;
-
-function buildCourseKey(raceId: string, distanceId: string): string {
-  return `${raceId}::${distanceId}`;
-}
-
 function dispatchAppNavigate(url: string) {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent('racepulse:navigate', { detail: { url } }));
-}
-
-function formatDuration(ms: number): string {
-  const safeSec = Math.max(0, Math.floor(ms / 1000));
-  const hours = Math.floor(safeSec / 3600);
-  const mins = Math.floor((safeSec % 3600) / 60);
-  const secs = safeSec % 60;
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return hours > 0 ? `${hours}:${pad(mins)}:${pad(secs)}` : `${pad(mins)}:${pad(secs)}`;
-}
-
-function formatPace(secPerKm: number | null | undefined): string {
-  if (
-    secPerKm === null ||
-    secPerKm === undefined ||
-    !Number.isFinite(secPerKm) ||
-    secPerKm <= 0 ||
-    secPerKm > 3600
-  ) {
-    return '--:-- /km';
-  }
-  const rounded = Math.round(secPerKm);
-  const mins = Math.floor(rounded / 60);
-  const secs = rounded % 60;
-  return `${mins}:${String(secs).padStart(2, '0')} /km`;
-}
-
-function formatShortDistance(meters: number | null | undefined): string {
-  if (meters === null || meters === undefined || !Number.isFinite(meters)) return '0 m';
-  if (meters < 1000) return `${Math.round(meters)} m`;
-  return `${(meters / 1000).toFixed(2)} km`;
-}
-
-function buildDefaultRunTitle(
-  mode: RecordedRunMode,
-  courseRef?: RecordedRunCourseRef,
-  now = new Date(),
-): string {
-  if (mode === 'course' && courseRef) {
-    return `${courseRef.raceName} (${courseRef.distanceLabel})`.slice(0, 120);
-  }
-  let hour = now.getHours();
-  try {
-    const manilaHour = Number(
-      new Intl.DateTimeFormat('en-US', {
-        timeZone: 'Asia/Manila',
-        hour: 'numeric',
-        hour12: false,
-      }).format(now),
-    );
-    if (Number.isFinite(manilaHour)) {
-      hour = manilaHour % 24;
-    }
-  } catch {
-    // Fallback to device clock hour when Intl timeZone is unavailable.
-  }
-  if (hour >= 5 && hour < 12) return 'Morning Free Run';
-  if (hour >= 12 && hour < 17) return 'Afternoon Free Run';
-  if (hour >= 17 && hour < 21) return 'Evening Free Run';
-  return 'Night Free Run';
-}
-
-function slugifyFilename(title: string): string {
-  const slug = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60);
-  return slug || 'racepulse-run';
-}
-
-function deriveSummaryCalorieEstimate(
-  points: RecordedTrackPoint[],
-  distanceM: number,
-  movingTimeMs: number,
-  weightKg?: number | null,
-): RunCalorieEstimate {
-  if (points.length >= 2) {
-    return computeRunCalorieEstimate(points, weightKg);
-  }
-  const { weightKgUsed, usedReferenceWeight } = resolveCalorieWeightKg(weightKg);
-  const seg = computeSegmentCaloriesKcal({
-    distanceM,
-    deltaElevationM: 0,
-    durationSec: movingTimeMs / 1000,
-    weightKg: weightKgUsed,
-  });
-  const netKcal = round1(seg.netKcal);
-  const restingKcal = round1(seg.restingKcal);
-  return {
-    totalKcal: round1(netKcal + restingKcal),
-    netKcal,
-    restingKcal,
-    weightKgUsed,
-    usedReferenceWeight,
-    methodVersion: 'minetti2002-herrmann2024-v1',
-  };
-}
-
-function formatNotificationSubtitle(session: ActiveRunSession, elapsedMs: number): string {
-  const km = (session.distanceM / 1000).toFixed(2);
-  const time = formatDuration(elapsedMs);
-  return `${km} km · ${time} · ${Math.round(session.totalKcal)} kcal`;
-}
-
-function computeElevationGainLossFromPoints(points: RecordedTrackPoint[]): {
-  gainM: number;
-  lossM: number;
-} {
-  let anchor: number | null = null;
-  let gainM = 0;
-  let lossM = 0;
-
-  for (const pt of points) {
-    if (pt.segmentBreak) {
-      anchor = typeof pt.ele === 'number' && Number.isFinite(pt.ele) ? pt.ele : null;
-      continue;
-    }
-    if (typeof pt.ele !== 'number' || !Number.isFinite(pt.ele)) {
-      continue;
-    }
-    if (anchor === null) {
-      anchor = pt.ele;
-      continue;
-    }
-    const delta = pt.ele - anchor;
-    if (delta >= 2.5) {
-      gainM = round1(gainM + delta);
-      anchor = pt.ele;
-    } else if (delta <= -2.5) {
-      lossM = round1(lossM + Math.abs(delta));
-      anchor = pt.ele;
-    }
-  }
-  return { gainM, lossM };
 }
 
 export default function RunnerRecordPanel({
@@ -329,6 +141,7 @@ export default function RunnerRecordPanel({
   const [selectedCourseKey, setSelectedCourseKey] = useState<string>(() =>
     preselectedCourse ? buildCourseKey(preselectedCourse.raceId, preselectedCourse.distanceId) : '',
   );
+  const [recoveredCourseRef, setRecoveredCourseRef] = useState<RecordedRunCourseRef | null>(null);
   const [loadedCourse, setLoadedCourse] = useState<PublishedRaceRoute | null>(null);
   const [courseLoading, setCourseLoading] = useState(false);
   const [courseLoadError, setCourseLoadError] = useState<string | null>(null);
@@ -367,11 +180,22 @@ export default function RunnerRecordPanel({
   const listenerHandlesRef = useRef<PluginListenerHandle[]>([]);
   const trackingGenerationRef = useRef(0);
   const trackingStartedRef = useRef(false);
+  const transitionLockRef = useRef(false);
+  const enrichmentGenRef = useRef(0);
   const hasAutoCenteredRef = useRef(false);
+  const mapReadyForFreeCenterRef = useRef(false);
   const lastNotificationAtRef = useRef(0);
   const lastRawTimestampRef = useRef(0);
+  const segmentStartFloorMsRef = useRef(0);
+  const drainingBufferRef = useRef(false);
+  const queuedFixesDuringDrainRef = useRef<NativeRunFix[]>([]);
   const prevCorridorChainageRef = useRef<number | undefined>(undefined);
   const flyNonceRef = useRef(0);
+
+  // Latest-wins serialized IndexedDB writer so concurrent ticks never overwrite newer snapshots.
+  const pendingSnapshotRef = useRef<ActiveRunSession | null>(null);
+  const writingSnapshotRef = useRef(false);
+  const snapshotWritePromiseRef = useRef<Promise<void>>(Promise.resolve());
 
   phaseRef.current = phase;
   profileWeightRef.current = profile.weightKg;
@@ -390,6 +214,37 @@ export default function RunnerRecordPanel({
   const updateSession = useCallback((next: ActiveRunSession | null) => {
     sessionRef.current = next;
     setSession(next);
+  }, []);
+
+  const persistSnapshotLatest = useCallback((snapshot: ActiveRunSession): Promise<void> => {
+    pendingSnapshotRef.current = snapshot;
+    if (writingSnapshotRef.current) {
+      return snapshotWritePromiseRef.current;
+    }
+    writingSnapshotRef.current = true;
+    const writePromise = (async () => {
+      try {
+        while (pendingSnapshotRef.current) {
+          const nextToWrite = pendingSnapshotRef.current;
+          pendingSnapshotRef.current = null;
+          await saveActiveRunSnapshot(nextToWrite).catch((err) => {
+            console.warn('[RunnerRecordPanel] snapshot persist failed', err);
+          });
+        }
+      } finally {
+        writingSnapshotRef.current = false;
+      }
+    })();
+    snapshotWritePromiseRef.current = writePromise;
+    return writePromise;
+  }, []);
+
+  const clearActiveSnapshotSafely = useCallback(async (uid: string) => {
+    pendingSnapshotRef.current = null;
+    await snapshotWritePromiseRef.current;
+    await clearActiveRunSnapshot(uid).catch((err) => {
+      console.warn('[RunnerRecordPanel] clearActiveRunSnapshot failed', err);
+    });
   }, []);
 
   const stopNativeTracking = useCallback(async () => {
@@ -444,7 +299,7 @@ export default function RunnerRecordPanel({
 
     Promise.all([loadActiveRunSnapshot(profile.uid), listPendingRunUploads(profile.uid)])
       .then(([draft, pending]) => {
-        if (cancelled) return;
+        if (cancelled || phaseRef.current !== 'setup') return;
         setRecoveredDraft(draft);
         setPendingUploads(pending);
         setRecoveryLoaded(true);
@@ -484,12 +339,19 @@ export default function RunnerRecordPanel({
       return;
     }
 
+    const recoveredPubId =
+      recoveredCourseRef &&
+      recoveredCourseRef.raceId === raceId &&
+      recoveredCourseRef.distanceId === distanceId
+        ? recoveredCourseRef.publicationId
+        : undefined;
+
     const publicationId =
       selectedCatalogEntry?.currentPublicationId ??
       (preselectedCourse &&
       buildCourseKey(preselectedCourse.raceId, preselectedCourse.distanceId) === selectedCourseKey
         ? preselectedCourse.publicationId
-        : undefined);
+        : recoveredPubId);
 
     let cancelled = false;
     setCourseLoading(true);
@@ -522,7 +384,12 @@ export default function RunnerRecordPanel({
     return () => {
       cancelled = true;
     };
-  }, [selectedCourseKey, selectedCatalogEntry?.currentPublicationId, preselectedCourse]);
+  }, [
+    selectedCourseKey,
+    selectedCatalogEntry?.currentPublicationId,
+    preselectedCourse,
+    recoveredCourseRef,
+  ]);
 
   const emptyFreeRunRoute = useMemo(
     () => processCanonicalGeometry(createEmptyRouteGeometry()),
@@ -536,48 +403,31 @@ export default function RunnerRecordPanel({
 
   const courseMarkers = useMemo(() => loadedCourse?.markers ?? [], [loadedCourse]);
 
-  const handleIncomingFix = useCallback(
-    (fix: NativeRunFix, options?: { fromBuffer?: boolean }) => {
-      const current = sessionRef.current;
-      if (!current || current.status !== 'recording') return;
-
-      const fixTs =
-        typeof fix.timestamp === 'number' && Number.isFinite(fix.timestamp) && fix.timestamp > 0
-          ? fix.timestamp
-          : Date.now();
-      if (options?.fromBuffer && fixTs <= lastRawTimestampRef.current) {
-        return;
-      }
-      if (fixTs < lastRawTimestampRef.current) {
-        return;
-      }
-      lastRawTimestampRef.current = fixTs;
-
-      const nextSession = ingestRunFix(
-        current,
-        {
-          lat: fix.latitude,
-          lon: fix.longitude,
-          accuracyM: fix.accuracyM,
-          altitudeM: fix.altitudeM,
-          headingDeg: fix.headingDeg,
-          speedMps: fix.speedMps,
-          timestampMs: fixTs,
-        },
-        { weightKg: profileWeightRef.current },
+  const applyAcceptedFixBatch = useCallback(
+    (fixes: NativeRunFix[], baseSession: ActiveRunSession): ActiveRunSession | null => {
+      if (fixes.length === 0) return null;
+      const weightKg = profileWeightRef.current;
+      const nextSession = fixes.reduce(
+        (acc, fix) => ingestRunFix(acc, toGpsRawFix(fix), { weightKg }),
+        baseSession,
       );
-
-      sessionRef.current = nextSession;
-      setSession(nextSession);
+      lastRawTimestampRef.current = Math.max(
+        lastRawTimestampRef.current,
+        fixes[fixes.length - 1].timestamp,
+      );
+      updateSession(nextSession);
       setLiveTrackingError(null);
 
-      if (nextSession.points.length > current.points.length) {
-        void saveActiveRunSnapshot(nextSession).catch((err) => {
-          console.warn('[RunnerRecordPanel] snapshot persist failed', err);
-        });
+      if (nextSession.points.length > baseSession.points.length) {
+        void persistSnapshotLatest(nextSession);
       }
 
-      if (!hasAutoCenteredRef.current && nextSession.gpsFilter.current) {
+      if (
+        nextSession.mode === 'free' &&
+        mapReadyForFreeCenterRef.current &&
+        !hasAutoCenteredRef.current &&
+        nextSession.gpsFilter.current
+      ) {
         hasAutoCenteredRef.current = true;
         centerMapOn(nextSession.gpsFilter.current.lat, nextSession.gpsFilter.current.lon);
       }
@@ -585,18 +435,55 @@ export default function RunnerRecordPanel({
       const now = Date.now();
       if (now - lastNotificationAtRef.current >= 5000) {
         lastNotificationAtRef.current = now;
-        const elapsedMs = computeActiveElapsedTimeMs(nextSession, now);
-        const notifTitle =
-          nextSession.mode === 'course' && nextSession.courseRef
-            ? `${nextSession.courseRef.raceName} (${nextSession.courseRef.distanceLabel})`
-            : 'RacePulsePH Live Run';
         void RunTracking.updateNotification({
-          title: notifTitle,
-          subtitle: formatNotificationSubtitle(nextSession, elapsedMs),
-        }).catch(() => undefined);
+          title: buildNotificationTitle(nextSession.mode, nextSession.courseRef),
+          subtitle: formatNotificationSubtitle(nextSession, now),
+        }).catch((err) => {
+          console.warn('[RunnerRecordPanel] updateNotification failed', err);
+        });
       }
+      return nextSession;
     },
-    [centerMapOn],
+    [centerMapOn, persistSnapshotLatest, updateSession],
+  );
+
+  const flushQueuedFixesIntoSession = useCallback(
+    (baseSession: ActiveRunSession): ActiveRunSession => {
+      const queued = queuedFixesDuringDrainRef.current;
+      queuedFixesDuringDrainRef.current = [];
+      if (queued.length === 0) return baseSession;
+
+      const existingTimestamps = new Set(baseSession.points.map((pt) => pt.timestampMs));
+      const merged = mergeAndFilterRunFixes({
+        incomingFixes: queued,
+        minAcceptedTimestampMs: segmentStartFloorMsRef.current,
+        existingTimestamps,
+        lastProcessedTimestampMs: lastRawTimestampRef.current,
+      });
+      return applyAcceptedFixBatch(merged, baseSession) ?? baseSession;
+    },
+    [applyAcceptedFixBatch],
+  );
+
+  const handleIncomingFix = useCallback(
+    (fix: NativeRunFix) => {
+      if (phaseRef.current !== 'live' || sessionRef.current?.status !== 'recording') return;
+      if (drainingBufferRef.current) {
+        queuedFixesDuringDrainRef.current.push(fix);
+        return;
+      }
+
+      const current = sessionRef.current;
+      const fixTs =
+        typeof fix.timestamp === 'number' && Number.isFinite(fix.timestamp) && fix.timestamp > 0
+          ? fix.timestamp
+          : Date.now();
+      if (fixTs < segmentStartFloorMsRef.current || fixTs <= lastRawTimestampRef.current) {
+        return;
+      }
+      applyAcceptedFixBatch([{ ...fix, timestamp: fixTs }], current);
+    },
+    [applyAcceptedFixBatch],
   );
 
   const handleTrackingError = useCallback(
@@ -604,12 +491,12 @@ export default function RunnerRecordPanel({
       const msg = err.message || 'Waiting for stronger GPS signal.';
       setLiveTrackingError(msg);
       if (err.code === 1 && sessionRef.current?.status === 'recording') {
-        const paused = pauseActiveRun(sessionRef.current, Date.now());
-        updateSession(paused);
-        void saveActiveRunSnapshot(paused).catch((saveErr) => {
-          console.warn('[RunnerRecordPanel] snapshot persist on permission deny failed', saveErr);
-        });
         void stopNativeTracking();
+        const latest = sessionRef.current;
+        if (!latest) return;
+        const paused = pauseActiveRun(latest, Date.now());
+        updateSession(paused);
+        void persistSnapshotLatest(paused);
         notify({
           tone: 'error',
           title: 'Location permission denied',
@@ -617,16 +504,30 @@ export default function RunnerRecordPanel({
         });
       }
     },
-    [notify, stopNativeTracking, updateSession],
+    [notify, persistSnapshotLatest, stopNativeTracking, updateSession],
   );
 
   const startNativeTracking = useCallback(
     async (activeSession: ActiveRunSession) => {
       const gen = ++trackingGenerationRef.current;
       await Promise.all(
-        listenerHandlesRef.current.map((h) => h.remove().catch(() => undefined)),
+        listenerHandlesRef.current.map((h) =>
+          h.remove().catch((err) => {
+            console.warn('[RunnerRecordPanel] stale listener remove failed', err);
+          }),
+        ),
       );
       listenerHandlesRef.current = [];
+
+      const detachPendingHandles = async (handles: PluginListenerHandle[]) => {
+        await Promise.all(
+          handles.map((h) =>
+            h.remove().catch((err) => {
+              console.warn('[RunnerRecordPanel] handle cleanup failed', err);
+            }),
+          ),
+        );
+      };
 
       try {
         const fixHandle = await RunTracking.addListener('locationFix', (fix) => {
@@ -634,7 +535,7 @@ export default function RunnerRecordPanel({
           handleIncomingFix(fix);
         });
         if (trackingGenerationRef.current !== gen) {
-          void fixHandle.remove().catch(() => undefined);
+          await detachPendingHandles([fixHandle]);
           return;
         }
 
@@ -643,25 +544,35 @@ export default function RunnerRecordPanel({
           handleTrackingError(err);
         });
         if (trackingGenerationRef.current !== gen) {
-          void fixHandle.remove().catch(() => undefined);
-          void errHandle.remove().catch(() => undefined);
+          await detachPendingHandles([fixHandle, errHandle]);
           return;
         }
 
         listenerHandlesRef.current = [fixHandle, errHandle];
         trackingStartedRef.current = true;
-        const notifTitle =
-          activeSession.mode === 'course' && activeSession.courseRef
-            ? `${activeSession.courseRef.raceName} (${activeSession.courseRef.distanceLabel})`
-            : 'RacePulsePH Live Run';
         await RunTracking.startTracking({
-          title: notifTitle,
-          subtitle: formatNotificationSubtitle(
-            activeSession,
-            computeActiveElapsedTimeMs(activeSession),
-          ),
+          title: buildNotificationTitle(activeSession.mode, activeSession.courseRef),
+          subtitle: formatNotificationSubtitle(activeSession),
         });
+
+        if (
+          trackingGenerationRef.current !== gen ||
+          phaseRef.current !== 'live' ||
+          sessionRef.current?.status !== 'recording'
+        ) {
+          const activeHandles = listenerHandlesRef.current;
+          listenerHandlesRef.current = [];
+          trackingStartedRef.current = false;
+          await detachPendingHandles(activeHandles);
+          await RunTracking.stopTracking().catch((err) => {
+            console.warn('[RunnerRecordPanel] stale startTracking stop failed', err);
+          });
+        }
       } catch (err) {
+        const partialHandles = listenerHandlesRef.current;
+        listenerHandlesRef.current = [];
+        trackingStartedRef.current = false;
+        await detachPendingHandles(partialHandles);
         if (trackingGenerationRef.current !== gen) return;
         const message =
           err instanceof Error && err.message
@@ -687,34 +598,53 @@ export default function RunnerRecordPanel({
     if (phase !== 'live' || session?.status !== 'recording' || typeof document === 'undefined') {
       return;
     }
-    let draining = false;
     const handleVisibilityChange = () => {
-      if (document.visibilityState !== 'visible' || draining) return;
-      draining = true;
-      void RunTracking.getBufferedFixes()
-        .then(({ fixes }) => {
-          if (!Array.isArray(fixes) || fixes.length === 0) return;
-          const sorted = [...fixes].sort((a, b) => a.timestamp - b.timestamp);
-          for (const fix of sorted) {
-            handleIncomingFix(fix, { fromBuffer: true });
-          }
-        })
-        .catch((err) => {
+      if (document.visibilityState !== 'visible' || drainingBufferRef.current) return;
+      drainingBufferRef.current = true;
+      const preDrainLastTs = lastRawTimestampRef.current;
+
+      void (async () => {
+        let bufferedFixes: NativeRunFix[] = [];
+        try {
+          const result = await RunTracking.getBufferedFixes();
+          bufferedFixes = Array.isArray(result?.fixes) ? result.fixes : [];
+        } catch (err) {
           console.warn('[RunnerRecordPanel] buffered fix drain failed', err);
-        })
-        .finally(() => {
-          draining = false;
+        } finally {
+          drainingBufferRef.current = false;
+        }
+
+        const queued = queuedFixesDuringDrainRef.current;
+        queuedFixesDuringDrainRef.current = [];
+        const latestSession = sessionRef.current;
+        if (
+          !latestSession ||
+          latestSession.status !== 'recording' ||
+          phaseRef.current !== 'live'
+        ) {
+          return;
+        }
+
+        const existingTimestamps = new Set(latestSession.points.map((pt) => pt.timestampMs));
+        const merged = mergeAndFilterRunFixes({
+          incomingFixes: [...bufferedFixes, ...queued],
+          minAcceptedTimestampMs: segmentStartFloorMsRef.current,
+          existingTimestamps,
+          lastProcessedTimestampMs: preDrainLastTs,
         });
+        applyAcceptedFixBatch(merged, latestSession);
+      })();
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [phase, session?.status, handleIncomingFix]);
+  }, [phase, session?.status, applyAcceptedFixBatch]);
 
   const handleCourseChange = (nextKey: string) => {
     setSelectedCourseKey(nextKey);
+    setRecoveredCourseRef(null);
     if (!nextKey) {
       onSelectCourse?.(null);
       return;
@@ -733,296 +663,361 @@ export default function RunnerRecordPanel({
   };
 
   const resetToSetup = useCallback(async () => {
+    enrichmentGenRef.current += 1;
+    setEnrichingSummary(false);
     await stopNativeTracking();
+    drainingBufferRef.current = false;
+    queuedFixesDuringDrainRef.current = [];
     updateSession(null);
     setSummaryData(null);
     setSaveError(null);
     setSummaryTitleError(null);
     setLiveTrackingError(null);
     setSplitsOpen(false);
+    setRecoveredCourseRef(null);
     hasAutoCenteredRef.current = false;
+    mapReadyForFreeCenterRef.current = false;
     lastRawTimestampRef.current = 0;
+    segmentStartFloorMsRef.current = 0;
     lastNotificationAtRef.current = 0;
     prevCorridorChainageRef.current = undefined;
     setPhase('setup');
-    const latestPending = await listPendingRunUploads(profile.uid).catch(() => []);
+    const latestPending = await listPendingRunUploads(profile.uid).catch((err) => {
+      console.warn('[RunnerRecordPanel] listPendingRunUploads failed during reset', err);
+      return [];
+    });
     setPendingUploads(latestPending);
     setRecoveredDraft(null);
   }, [profile.uid, stopNativeTracking, updateSession]);
 
   const handleStartRun = async () => {
-    geo.stopTracking();
-    hasAutoCenteredRef.current = false;
-    lastRawTimestampRef.current = 0;
-    lastNotificationAtRef.current = 0;
-    prevCorridorChainageRef.current = undefined;
-    setLiveTrackingError(null);
-    setSplitsOpen(false);
+    if (transitionLockRef.current) return;
+    transitionLockRef.current = true;
+    try {
+      geo.stopTracking();
+      hasAutoCenteredRef.current = false;
+      mapReadyForFreeCenterRef.current = false;
+      lastNotificationAtRef.current = 0;
+      prevCorridorChainageRef.current = undefined;
+      queuedFixesDuringDrainRef.current = [];
+      drainingBufferRef.current = false;
+      setLiveTrackingError(null);
+      setSplitsOpen(false);
 
-    let courseRef: RecordedRunCourseRef | undefined;
-    if (selectedCourseKey) {
-      if (loadedCourse) {
-        courseRef = {
-          raceId: loadedCourse.raceId,
-          distanceId: loadedCourse.distanceId,
-          publicationId: loadedCourse.id,
-          raceName: loadedCourse.raceName,
-          distanceLabel: loadedCourse.distanceLabel,
-          advertisedKm: loadedCourse.advertisedKm,
-          ...(selectedCatalogEntry?.region ? { region: selectedCatalogEntry.region } : {}),
-        };
-      } else if (selectedCatalogEntry) {
-        courseRef = {
-          raceId: selectedCatalogEntry.raceId,
-          distanceId: selectedCatalogEntry.distanceId,
-          publicationId: selectedCatalogEntry.currentPublicationId,
-          raceName: selectedCatalogEntry.raceName,
-          distanceLabel: selectedCatalogEntry.distanceLabel,
-          advertisedKm: selectedCatalogEntry.advertisedKm,
-          region: selectedCatalogEntry.region,
-        };
+      let courseRef: RecordedRunCourseRef | undefined;
+      if (selectedCourseKey) {
+        if (loadedCourse) {
+          courseRef = {
+            raceId: loadedCourse.raceId,
+            distanceId: loadedCourse.distanceId,
+            publicationId: loadedCourse.id,
+            raceName: loadedCourse.raceName,
+            distanceLabel: loadedCourse.distanceLabel,
+            advertisedKm: loadedCourse.advertisedKm,
+            ...(selectedCatalogEntry?.region ? { region: selectedCatalogEntry.region } : {}),
+          };
+        } else if (selectedCatalogEntry && !courseLoadError) {
+          courseRef = {
+            raceId: selectedCatalogEntry.raceId,
+            distanceId: selectedCatalogEntry.distanceId,
+            publicationId: selectedCatalogEntry.currentPublicationId,
+            raceName: selectedCatalogEntry.raceName,
+            distanceLabel: selectedCatalogEntry.distanceLabel,
+            advertisedKm: selectedCatalogEntry.advertisedKm,
+            region: selectedCatalogEntry.region,
+          };
+        } else {
+          const fallbackToFree = await confirm({
+            title: 'Selected course unavailable',
+            message:
+              courseLoadError ||
+              'The selected course map could not load. Start this session as a Free Run instead?',
+            confirmLabel: 'Start Free Run',
+            cancelLabel: 'Cancel',
+          });
+          if (!fallbackToFree) return;
+        }
       }
-    }
 
-    const newSession = createActiveRunSession({
-      sessionId: createRecordedRunId(),
-      uid: profile.uid,
-      mode: courseRef ? 'course' : 'free',
-      courseRef,
-      homePrivacyTrimEnabled,
-    });
-    updateSession(newSession);
-    setNowTickMs(newSession.startedAtMs);
-    setPhase('live');
-    await saveActiveRunSnapshot(newSession).catch((err) => {
-      console.warn('[RunnerRecordPanel] initial snapshot save failed', err);
-    });
-    await startNativeTracking(newSession);
+      const newSession = createActiveRunSession({
+        sessionId: createRecordedRunId(),
+        uid: profile.uid,
+        mode: courseRef ? 'course' : 'free',
+        courseRef,
+        homePrivacyTrimEnabled,
+      });
+
+      segmentStartFloorMsRef.current = newSession.startedAtMs - 2000;
+      lastRawTimestampRef.current = 0;
+      updateSession(newSession);
+      setNowTickMs(newSession.startedAtMs);
+      setPhase('live');
+
+      await persistSnapshotLatest(newSession);
+      if (
+        sessionRef.current?.sessionId !== newSession.sessionId ||
+        sessionRef.current?.status !== 'recording' ||
+        phaseRef.current !== 'live'
+      ) {
+        return;
+      }
+      await startNativeTracking(newSession);
+    } finally {
+      transitionLockRef.current = false;
+    }
   };
 
   const handleResumeRecoveredDraft = async () => {
-    if (!recoveredDraft) return;
-    geo.stopTracking();
-    hasAutoCenteredRef.current = false;
-    lastNotificationAtRef.current = 0;
-    prevCorridorChainageRef.current = undefined;
-    lastRawTimestampRef.current = recoveredDraft.lastAcceptedAtMs || 0;
-    setLiveTrackingError(null);
-    setSplitsOpen(false);
+    if (!recoveredDraft || transitionLockRef.current) return;
+    transitionLockRef.current = true;
+    try {
+      geo.stopTracking();
+      hasAutoCenteredRef.current = false;
+      mapReadyForFreeCenterRef.current = false;
+      lastNotificationAtRef.current = 0;
+      prevCorridorChainageRef.current = undefined;
+      queuedFixesDuringDrainRef.current = [];
+      drainingBufferRef.current = false;
+      setLiveTrackingError(null);
+      setSplitsOpen(false);
 
-    // Normalize crash downtime as paused at the last recorded timestamp so dead crash hours
-    // are never counted toward active elapsed time or resting calorie expenditure.
-    const crashPausedAtMs =
-      recoveredDraft.updatedAtMs || recoveredDraft.lastAcceptedAtMs || Date.now();
-    const normalizedPaused = pauseActiveRun(recoveredDraft, crashPausedAtMs);
+      // Normalize crash downtime as paused at the last recorded timestamp so dead crash hours
+      // are never counted toward active elapsed time or resting calorie expenditure.
+      const crashPausedAtMs =
+        recoveredDraft.updatedAtMs || recoveredDraft.lastAcceptedAtMs || Date.now();
+      const normalizedPaused = pauseActiveRun(recoveredDraft, crashPausedAtMs);
+      segmentStartFloorMsRef.current = crashPausedAtMs;
+      lastRawTimestampRef.current = recoveredDraft.lastAcceptedAtMs || 0;
 
-    if (normalizedPaused.courseRef) {
-      const courseKey = buildCourseKey(
-        normalizedPaused.courseRef.raceId,
-        normalizedPaused.courseRef.distanceId,
-      );
-      setSelectedCourseKey(courseKey);
-    } else {
-      setSelectedCourseKey('');
+      if (normalizedPaused.courseRef) {
+        setRecoveredCourseRef(normalizedPaused.courseRef);
+        setSelectedCourseKey(
+          buildCourseKey(
+            normalizedPaused.courseRef.raceId,
+            normalizedPaused.courseRef.distanceId,
+          ),
+        );
+      } else {
+        setRecoveredCourseRef(null);
+        setSelectedCourseKey('');
+      }
+
+      setHomePrivacyTrimEnabled(normalizedPaused.homePrivacyTrimEnabled);
+      updateSession(normalizedPaused);
+      setRecoveredDraft(null);
+      setNowTickMs(crashPausedAtMs);
+      setPhase('live');
+      await persistSnapshotLatest(normalizedPaused);
+    } finally {
+      transitionLockRef.current = false;
     }
-
-    setHomePrivacyTrimEnabled(normalizedPaused.homePrivacyTrimEnabled);
-    updateSession(normalizedPaused);
-    setRecoveredDraft(null);
-    setNowTickMs(crashPausedAtMs);
-    setPhase('live');
-    await saveActiveRunSnapshot(normalizedPaused).catch((err) => {
-      console.warn('[RunnerRecordPanel] normalized draft save failed', err);
-    });
   };
 
   const handleDiscardRecoveredDraft = async () => {
-    const ok = await confirm({
-      title: 'Discard saved run draft?',
-      message:
-        'This permanently deletes your interrupted GPS track and distance totals from this device.',
-      confirmLabel: 'Discard draft',
-      cancelLabel: 'Keep draft',
-      destructive: true,
-    });
-    if (!ok) return;
-    await clearActiveRunSnapshot(profile.uid);
-    setRecoveredDraft(null);
-    notify({ tone: 'info', title: 'Draft discarded' });
+    if (transitionLockRef.current) return;
+    transitionLockRef.current = true;
+    try {
+      const ok = await confirm({
+        title: 'Discard saved run draft?',
+        message:
+          'This permanently deletes your interrupted GPS track and distance totals from this device.',
+        confirmLabel: 'Discard draft',
+        cancelLabel: 'Keep draft',
+        destructive: true,
+      });
+      if (!ok) return;
+      await clearActiveSnapshotSafely(profile.uid);
+      setRecoveredDraft(null);
+      notify({ tone: 'info', title: 'Draft discarded' });
+    } finally {
+      transitionLockRef.current = false;
+    }
   };
 
   const handlePauseRun = useCallback(async () => {
-    const current = sessionRef.current;
-    if (!current || current.status === 'paused') return;
-    await stopNativeTracking();
-    const paused = pauseActiveRun(current, Date.now());
-    updateSession(paused);
-    setNowTickMs(paused.pausedAtMs ?? Date.now());
-    await saveActiveRunSnapshot(paused).catch((err) => {
-      console.warn('[RunnerRecordPanel] pause snapshot save failed', err);
-    });
-  }, [stopNativeTracking, updateSession]);
+    if (transitionLockRef.current) return;
+    if (!sessionRef.current || sessionRef.current.status === 'paused') return;
+    transitionLockRef.current = true;
+    try {
+      await stopNativeTracking();
+      const latestBase = sessionRef.current;
+      if (!latestBase || latestBase.status === 'paused') return;
+      const flushed = flushQueuedFixesIntoSession(latestBase);
+      const nowMs = Date.now();
+      const paused = pauseActiveRun(flushed, nowMs);
+      updateSession(paused);
+      setNowTickMs(paused.pausedAtMs ?? nowMs);
+      await persistSnapshotLatest(paused);
+    } finally {
+      transitionLockRef.current = false;
+    }
+  }, [flushQueuedFixesIntoSession, persistSnapshotLatest, stopNativeTracking, updateSession]);
 
   const handleResumeRun = useCallback(async () => {
+    if (transitionLockRef.current) return;
     const current = sessionRef.current;
     if (!current || current.status === 'recording') return;
-    const now = Date.now();
-    const resumed = resumeActiveRun(current, now);
-    updateSession(resumed);
-    setNowTickMs(now);
-    setLiveTrackingError(null);
-    await saveActiveRunSnapshot(resumed).catch((err) => {
-      console.warn('[RunnerRecordPanel] resume snapshot save failed', err);
-    });
-    await startNativeTracking(resumed);
-  }, [startNativeTracking, updateSession]);
+    transitionLockRef.current = true;
+    try {
+      const now = Date.now();
+      const resumed = resumeActiveRun(current, now);
+      segmentStartFloorMsRef.current = Math.max(current.lastAcceptedAtMs || 0, now - 2000);
+      lastRawTimestampRef.current = Math.max(
+        lastRawTimestampRef.current,
+        current.lastAcceptedAtMs || 0,
+      );
+      queuedFixesDuringDrainRef.current = [];
+      drainingBufferRef.current = false;
+      updateSession(resumed);
+      setNowTickMs(now);
+      setLiveTrackingError(null);
+      await persistSnapshotLatest(resumed);
+      if (
+        sessionRef.current?.sessionId !== resumed.sessionId ||
+        sessionRef.current?.status !== 'recording' ||
+        phaseRef.current !== 'live'
+      ) {
+        return;
+      }
+      await startNativeTracking(resumed);
+    } finally {
+      transitionLockRef.current = false;
+    }
+  }, [persistSnapshotLatest, startNativeTracking, updateSession]);
 
   const handleDiscardLiveOrSummaryRun = useCallback(async () => {
-    const ok = await confirm({
-      title: 'Discard this recorded run?',
-      message:
-        'Your recorded distance, splits, and GPS track for this session will be deleted and cannot be recovered.',
-      confirmLabel: 'Discard run',
-      cancelLabel: 'Keep run',
-      destructive: true,
-    });
-    if (!ok) return;
-    await clearActiveRunSnapshot(profile.uid);
-    await resetToSetup();
-    notify({ tone: 'info', title: 'Run discarded' });
-  }, [confirm, notify, profile.uid, resetToSetup]);
-
-  const handleFinishRun = async () => {
-    const current = sessionRef.current;
-    if (!current) return;
-
-    if (current.movingTimeMs < MIN_SERVER_MOVING_TIME_MS) {
-      const discardShort = await confirm({
-        title: 'Run is under 10 seconds',
+    if (transitionLockRef.current) return;
+    transitionLockRef.current = true;
+    try {
+      const ok = await confirm({
+        title: 'Discard this recorded run?',
         message:
-          'Verified runs require at least 10 seconds of active moving time. Keep recording to reach 10 seconds, or discard this short session.',
-        confirmLabel: 'Discard session',
-        cancelLabel: 'Keep recording',
+          'Your recorded distance, splits, and GPS track for this session will be deleted and cannot be recovered.',
+        confirmLabel: 'Discard run',
+        cancelLabel: 'Keep run',
         destructive: true,
       });
-      if (discardShort) {
-        await clearActiveRunSnapshot(profile.uid);
-        await resetToSetup();
-        notify({ tone: 'info', title: 'Short session discarded' });
-      }
-      return;
-    }
-
-    await stopNativeTracking();
-    const nowMs = Date.now();
-    const paused = pauseActiveRun(current, nowMs);
-    updateSession(paused);
-    await saveActiveRunSnapshot(paused).catch((err) => {
-      console.warn('[RunnerRecordPanel] finish snapshot save failed', err);
-    });
-
-    const elapsedTimeMs = computeActiveElapsedTimeMs(paused, nowMs);
-    const finishedMs = Math.max(paused.startedAtMs + 1000, nowMs);
-    const startedAtIso = new Date(paused.startedAtMs).toISOString();
-    const finishedAtIso = new Date(finishedMs).toISOString();
-    const clientDistanceM = round1(paused.distanceM);
-
-    const initialTrim = paused.homePrivacyTrimEnabled
-      ? trimRunTrackEndpoints(paused.points, DEFAULT_PRIVACY_TRIM_M)
-      : { trimmedPoints: [...paused.points], trimmedHeadM: 0, trimmedTailM: 0 };
-    const initialSafeTrimmed =
-      initialTrim.trimmedPoints.length >= 2 ? initialTrim.trimmedPoints : [];
-    const initialMetricsPoints =
-      initialSafeTrimmed.length >= 2 ? initialSafeTrimmed : paused.points;
-
-    const initialSummary: SummaryComputation = {
-      runId: paused.sessionId,
-      requestId: createCommunityRequestId(),
-      mode: paused.mode,
-      courseRef: paused.courseRef,
-      startedAt: startedAtIso,
-      finishedAt: finishedAtIso,
-      elapsedTimeMs,
-      movingTimeMs: Math.round(paused.movingTimeMs),
-      clientDistanceM,
-      homePrivacyTrimEnabled: paused.homePrivacyTrimEnabled,
-      trimmedHeadM: initialTrim.trimmedHeadM,
-      trimmedTailM: initialTrim.trimmedTailM,
-      enrichedPoints: paused.points,
-      trimmedPoints: initialSafeTrimmed,
-      elevationGainM: round1(paused.elevationGainM),
-      elevationLossM: round1(paused.elevationLossM),
-      elevationSource: 'gps',
-      splits: computePerKmSplits(initialMetricsPoints, profile.weightKg),
-      calorieEstimate: deriveSummaryCalorieEstimate(
-        initialSafeTrimmed,
-        clientDistanceM,
-        paused.movingTimeMs,
-        profile.weightKg,
-      ),
-      islandGroups: detectPhilippineIslandGroups(paused.points),
-    };
-
-    setSummaryTitle(buildDefaultRunTitle(paused.mode, paused.courseRef, new Date(paused.startedAtMs)));
-    setSummaryPrivacy('private');
-    setSummaryTitleError(null);
-    setSaveError(null);
-    setSummaryData(initialSummary);
-    setEnrichingSummary(true);
-    setPhase('summary');
-
-    try {
-      const enriched = await enrichRunTrackElevation(paused.points);
-      if (phaseRef.current !== 'summary') return;
-
-      const trimmed = paused.homePrivacyTrimEnabled
-        ? trimRunTrackEndpoints(enriched.points, DEFAULT_PRIVACY_TRIM_M)
-        : { trimmedPoints: [...enriched.points], trimmedHeadM: 0, trimmedTailM: 0 };
-      const normalizedTrimmedPoints =
-        trimmed.trimmedPoints.length >= 2 ? trimmed.trimmedPoints : [];
-      const activeTrack =
-        normalizedTrimmedPoints.length >= 2 ? normalizedTrimmedPoints : enriched.points;
-      const elevTotals =
-        normalizedTrimmedPoints.length >= 2
-          ? computeElevationGainLossFromPoints(normalizedTrimmedPoints)
-          : { gainM: enriched.elevationGainM, lossM: enriched.elevationLossM };
-
-      setSummaryData((prev) =>
-        prev
-          ? {
-              ...prev,
-              enrichedPoints: enriched.points,
-              trimmedPoints: normalizedTrimmedPoints,
-              trimmedHeadM: trimmed.trimmedHeadM,
-              trimmedTailM: trimmed.trimmedTailM,
-              elevationGainM: elevTotals.gainM,
-              elevationLossM: elevTotals.lossM,
-              elevationSource: enriched.elevationSource,
-              splits: computePerKmSplits(activeTrack, profileWeightRef.current),
-              calorieEstimate: deriveSummaryCalorieEstimate(
-                normalizedTrimmedPoints,
-                prev.clientDistanceM,
-                prev.movingTimeMs,
-                profileWeightRef.current,
-              ),
-              islandGroups: detectPhilippineIslandGroups(enriched.points),
-            }
-          : prev,
-      );
-    } catch (err) {
-      console.warn('[RunnerRecordPanel] summary elevation enrichment failed', err);
+      if (!ok) return;
+      await clearActiveSnapshotSafely(profile.uid);
+      await resetToSetup();
+      notify({ tone: 'info', title: 'Run discarded' });
     } finally {
-      setEnrichingSummary(false);
+      transitionLockRef.current = false;
+    }
+  }, [clearActiveSnapshotSafely, confirm, notify, profile.uid, resetToSetup]);
+
+  const handleFinishRun = async () => {
+    if (transitionLockRef.current) return;
+    const initial = sessionRef.current;
+    if (!initial) return;
+
+    transitionLockRef.current = true;
+    try {
+      if (initial.movingTimeMs < MIN_SERVER_MOVING_TIME_MS) {
+        const discardShort = await confirm({
+          title: 'Run is under 10 seconds',
+          message:
+            'Verified runs require at least 10 seconds of active moving time. Keep recording to reach 10 seconds, or discard this short session.',
+          confirmLabel: 'Discard session',
+          cancelLabel: 'Keep recording',
+          destructive: true,
+        });
+        if (discardShort) {
+          await clearActiveSnapshotSafely(profile.uid);
+          await resetToSetup();
+          notify({ tone: 'info', title: 'Short session discarded' });
+        }
+        return;
+      }
+
+      await stopNativeTracking();
+      const postStopBase = sessionRef.current;
+      if (!postStopBase) return;
+      const flushed = flushQueuedFixesIntoSession(postStopBase);
+      const nowMs = Date.now();
+      const paused = pauseActiveRun(flushed, nowMs);
+      updateSession(paused);
+      await persistSnapshotLatest(paused);
+
+      const elapsedTimeMs = computeActiveElapsedTimeMs(paused, nowMs);
+      const initialSummary = buildSummaryComputation({
+        runId: paused.sessionId,
+        mode: paused.mode,
+        courseRef: paused.courseRef,
+        startedAtMs: paused.startedAtMs,
+        finishedAtMs: nowMs,
+        elapsedTimeMs,
+        movingTimeMs: paused.movingTimeMs,
+        clientDistanceM: paused.distanceM,
+        homePrivacyTrimEnabled: paused.homePrivacyTrimEnabled,
+        points: paused.points,
+        elevationSource: 'gps',
+        fallbackElevationGainM: paused.elevationGainM,
+        fallbackElevationLossM: paused.elevationLossM,
+        weightKg: profile.weightKg,
+      });
+
+      const myEnrichGen = ++enrichmentGenRef.current;
+      setSummaryTitle(
+        buildDefaultRunTitle(paused.mode, paused.courseRef, new Date(paused.startedAtMs)),
+      );
+      setSummaryPrivacy('private');
+      setSummaryTitleError(null);
+      setSaveError(null);
+      setSummaryData(initialSummary);
+      setEnrichingSummary(true);
+      setPhase('summary');
+
+      void (async () => {
+        try {
+          const enriched = await enrichRunTrackElevation(paused.points);
+          if (enrichmentGenRef.current !== myEnrichGen || phaseRef.current !== 'summary') return;
+
+          setSummaryData((prev) =>
+            prev
+              ? buildSummaryComputation({
+                  runId: prev.runId,
+                  requestId: prev.requestId,
+                  mode: prev.mode,
+                  courseRef: prev.courseRef,
+                  startedAtMs: Date.parse(prev.startedAt),
+                  finishedAtMs: Date.parse(prev.finishedAt),
+                  elapsedTimeMs: prev.elapsedTimeMs,
+                  movingTimeMs: prev.movingTimeMs,
+                  clientDistanceM: prev.clientDistanceM,
+                  homePrivacyTrimEnabled: prev.homePrivacyTrimEnabled,
+                  points: enriched.points,
+                  elevationSource: enriched.elevationSource,
+                  fallbackElevationGainM: enriched.elevationGainM,
+                  fallbackElevationLossM: enriched.elevationLossM,
+                  weightKg: profileWeightRef.current,
+                })
+              : prev,
+          );
+        } catch (err) {
+          console.warn('[RunnerRecordPanel] summary elevation enrichment failed', err);
+        } finally {
+          if (enrichmentGenRef.current === myEnrichGen) {
+            setEnrichingSummary(false);
+          }
+        }
+      })();
+    } finally {
+      transitionLockRef.current = false;
     }
   };
 
-  const handleResumeFromSummary = () => {
-    if (!session || savingRun) return;
+  const handleResumeFromSummary = useCallback(() => {
+    if (!sessionRef.current || savingRun) return;
+    enrichmentGenRef.current += 1;
+    setEnrichingSummary(false);
+    hasAutoCenteredRef.current = false;
+    mapReadyForFreeCenterRef.current = false;
     setSummaryData(null);
     setSaveError(null);
     setSummaryTitleError(null);
     setPhase('live');
-  };
+  }, [savingRun]);
 
   const handleExportGpx = () => {
     if (!summaryData) return;
@@ -1095,48 +1090,55 @@ export default function RunnerRecordPanel({
     };
 
     try {
-      const savedRun = await completeRecordedRun(completeInput);
-      await clearActiveRunSnapshot(profile.uid);
-      notify({
-        tone: 'success',
-        title: 'Run saved',
-        message: `${(savedRun.distanceM / 1000).toFixed(2)} km logged to your activity feed.`,
-      });
-      onRunSaved?.(savedRun);
-      await resetToSetup();
-    } catch (err) {
-      const apiErr =
-        err instanceof CommunityRunApiError
-          ? err
-          : new CommunityRunApiError(
-              err instanceof Error && err.message ? err.message : 'Unable to save run.',
-              0,
-              { retryable: true },
-            );
-
-      if (apiErr.retryable) {
-        const { trackPoints: _omitPoints, ...payloadMeta } = completeInput;
-        const pendingEntry: PendingRunUpload = {
-          requestId: summaryData.requestId,
-          runId: summaryData.runId,
-          uid: profile.uid,
-          payload: payloadMeta as Record<string, unknown>,
-          trimmedTrackPoints: summaryData.trimmedPoints,
-          createdAt: new Date().toISOString(),
-          attempts: 1,
-          lastError: apiErr.message,
-        };
-        await savePendingRunUpload(pendingEntry);
-        await clearActiveRunSnapshot(profile.uid);
+      const preparedInput = await prepareCompleteRecordedRunInput(completeInput);
+      try {
+        const savedRun = await completeRecordedRun(preparedInput);
+        await clearActiveSnapshotSafely(profile.uid);
         notify({
-          tone: 'info',
-          title: 'Saved offline to pending queue',
-          message: 'Your run is stored safely on this device and ready to sync when online.',
+          tone: 'success',
+          title: 'Run saved',
+          message: `${(savedRun.distanceM / 1000).toFixed(2)} km logged to your activity feed.`,
         });
+        onRunSaved?.(savedRun);
         await resetToSetup();
-      } else {
-        setSaveError(apiErr.message);
+      } catch (err) {
+        const apiErr =
+          err instanceof CommunityRunApiError
+            ? err
+            : new CommunityRunApiError(
+                err instanceof Error && err.message ? err.message : 'Unable to save run.',
+                0,
+                { retryable: true },
+              );
+
+        if (apiErr.retryable) {
+          const { trackPoints: _omitPoints, ...payloadMeta } = preparedInput;
+          const pendingEntry: PendingRunUpload = {
+            requestId: preparedInput.requestId ?? summaryData.requestId,
+            runId: preparedInput.runId,
+            uid: profile.uid,
+            payload: { ...payloadMeta, storageUploadSettled: true } as Record<string, unknown>,
+            trimmedTrackPoints: preparedInput.trackPoints,
+            createdAt: new Date().toISOString(),
+            attempts: 1,
+            lastError: apiErr.message,
+          };
+          await savePendingRunUpload(pendingEntry);
+          await clearActiveSnapshotSafely(profile.uid);
+          notify({
+            tone: 'info',
+            title: 'Saved offline to pending queue',
+            message: 'Your run is stored safely on this device and ready to sync when online.',
+          });
+          await resetToSetup();
+        } else {
+          setSaveError(apiErr.message);
+        }
       }
+    } catch (prepErr) {
+      setSaveError(
+        prepErr instanceof Error && prepErr.message ? prepErr.message : 'Unable to save run.',
+      );
     } finally {
       setSavingRun(false);
     }
@@ -1169,6 +1171,8 @@ export default function RunnerRecordPanel({
           trimmedTailM: Number(rawPayload.trimmedTailM ?? 0),
           homePrivacyTrimEnabled: Boolean(rawPayload.homePrivacyTrimEnabled ?? true),
           ...(rawPayload.courseRef ? { courseRef: rawPayload.courseRef } : {}),
+          ...(rawPayload.trackStoragePath ? { trackStoragePath: rawPayload.trackStoragePath } : {}),
+          storageUploadSettled: true,
           trackPoints,
         };
 
@@ -1238,6 +1242,9 @@ export default function RunnerRecordPanel({
   };
 
   useAndroidBackHandler(phase === 'live' || phase === 'summary', () => {
+    if (savingRun || enrichingSummary) {
+      return true;
+    }
     if (phase === 'live') {
       if (sessionRef.current?.status === 'recording') {
         void handlePauseRun();
@@ -1248,49 +1255,56 @@ export default function RunnerRecordPanel({
       return true;
     }
     if (phase === 'summary') {
-      if (!savingRun) {
-        handleResumeFromSummary();
-      }
+      handleResumeFromSummary();
       return true;
     }
     return false;
   });
 
-  // Live telemetry derived values
+  // Live telemetry derived values (primitive deps avoid 1 Hz GeoJSON churn)
   const liveElapsedMs = session ? computeActiveElapsedTimeMs(session, nowTickMs) : 0;
   const liveAvgPaceSecPerKm =
     session && session.distanceM >= 10 && session.movingTimeMs > 0
       ? (session.movingTimeMs / 1000 / session.distanceM) * 1000
       : null;
-  const liveCurrentSpeed = session?.gpsFilter.current?.speedMps ?? null;
+  const gpsCur = session?.gpsFilter.current;
+  const gpsCurLat = gpsCur?.lat;
+  const gpsCurLon = gpsCur?.lon;
+  const gpsCurAcc = gpsCur?.accuracyM;
+  const gpsCurHeading = gpsCur?.headingDeg;
+  const gpsCurUpdatedAt = gpsCur?.updatedAtMs ?? 0;
+  const liveCurrentSpeed = gpsCur?.speedMps ?? null;
   const liveCurrentPaceSecPerKm =
     liveCurrentSpeed !== null && liveCurrentSpeed >= 0.45 ? 1000 / liveCurrentSpeed : null;
+  const isGpsStale =
+    session?.status === 'recording' && gpsCurUpdatedAt > 0 && nowTickMs - gpsCurUpdatedAt > 15_000;
+
   const liveSplits = useMemo(
-    () => (session ? computePerKmSplits(session.points, profile.weightKg) : []),
-    [session, profile.weightKg],
+    () => (session?.points ? computePerKmSplits(session.points, profile.weightKg) : []),
+    [session?.points, profile.weightKg],
   );
   const liveBreadcrumbPoints = useMemo(
-    () => (session ? session.points.map((pt) => ({ lat: pt.lat, lon: pt.lon })) : []),
-    [session],
+    () => (session?.points ? session.points.map((pt) => ({ lat: pt.lat, lon: pt.lon })) : []),
+    [session?.points],
   );
   const liveGpsPosition = useMemo(() => {
-    const c = session?.gpsFilter.current;
-    if (!c) return null;
-    const isStale = session?.status === 'recording' && nowTickMs - c.updatedAtMs > 15_000;
+    if (gpsCurLat === undefined || gpsCurLon === undefined || gpsCurAcc === undefined) {
+      return null;
+    }
     return {
-      lat: c.lat,
-      lon: c.lon,
-      accuracyM: c.accuracyM,
-      headingDeg: c.headingDeg,
-      isStale,
+      lat: gpsCurLat,
+      lon: gpsCurLon,
+      accuracyM: gpsCurAcc,
+      headingDeg: gpsCurHeading,
+      isStale: isGpsStale,
     };
-  }, [session?.gpsFilter.current, session?.status, nowTickMs]);
+  }, [gpsCurLat, gpsCurLon, gpsCurAcc, gpsCurHeading, isGpsStale]);
 
   const liveCorridor = useMemo(() => {
     if (!session || session.mode !== 'course' || !courseRoute || !liveGpsPosition) {
       return null;
     }
-    const projection = computeRunnerLocationRelativeToRoute(
+    return computeRunnerLocationRelativeToRoute(
       courseRoute,
       liveGpsPosition.lat,
       liveGpsPosition.lon,
@@ -1302,11 +1316,11 @@ export default function RunnerRecordPanel({
         headingDeg: liveGpsPosition.headingDeg,
       },
     );
-    if (projection) {
-      prevCorridorChainageRef.current = projection.chainageM;
-    }
-    return projection;
-  }, [session, courseRoute, courseMarkers, liveGpsPosition]);
+  }, [session?.mode, courseRoute, courseMarkers, liveGpsPosition]);
+
+  useEffect(() => {
+    prevCorridorChainageRef.current = liveCorridor?.chainageM;
+  }, [liveCorridor?.chainageM]);
 
   const mapSelection = useMemo<RouteSelectionState>(() => {
     if (liveCorridor && courseRoute) {
@@ -1386,593 +1400,100 @@ export default function RunnerRecordPanel({
     return opts;
   }, [publishedRoutes, preselectedCourse]);
 
-  const hasWeight = profile.weightKg != null && Number.isFinite(profile.weightKg);
-  const weightLabel = hasWeight ? `${profile.weightKg} kg` : '65 kg reference';
+  const { weightKgUsed, usedReferenceWeight } = resolveCalorieWeightKg(profile.weightKg);
+  const hasWeight = !usedReferenceWeight;
+  const weightLabel = hasWeight ? `${weightKgUsed} kg` : '65 kg reference';
 
   if (phase === 'live' && session) {
-    const isPaused = session.status === 'paused';
-    const activeRunTitle =
-      session.mode === 'course' && session.courseRef
-        ? `${session.courseRef.raceName} (${session.courseRef.distanceLabel})`
-        : 'Free Run';
-    const liveLocateStatus = isPaused
-      ? 'idle'
-      : liveTrackingError
-        ? 'error'
-        : liveGpsPosition
-          ? 'active'
-          : 'locating';
-
     return (
-      <div className="w-full max-w-6xl mx-auto px-3 sm:px-4 py-3 pb-[max(1rem,var(--rp-safe-bottom))] space-y-3">
-        {/* Compact Active Run Status Header */}
-        <section
-          aria-label="Active run status"
-          className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2.5 flex flex-wrap items-center justify-between gap-2"
-        >
-          <div className="min-w-0 flex items-center gap-2.5">
-            <span
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-semibold shrink-0 ${
-                isPaused
-                  ? 'border-amber-600/40 bg-amber-500/15 text-amber-900 dark:text-amber-300'
-                  : 'border-red-600/40 bg-red-600/15 text-red-800 dark:text-red-300'
-              }`}
-            >
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  isPaused ? 'bg-amber-600 dark:bg-amber-400' : 'bg-red-600 dark:bg-red-400'
-                }`}
-                aria-hidden="true"
-              />
-              <span>{isPaused ? 'Paused' : 'Recording'}</span>
-            </span>
-            <h2 className="font-display font-semibold text-sm sm:text-base text-[var(--text-primary)] truncate">
-              {activeRunTitle}
-            </h2>
-          </div>
-
-          <div className="flex items-center gap-2 text-xs font-mono tabular-nums text-[var(--text-secondary)]">
-            {liveGpsPosition ? (
-              <span>
-                GPS ±{liveGpsPosition.accuracyM} m{liveGpsPosition.isStale ? ' (Stale)' : ''}
-              </span>
-            ) : (
-              <span>{isPaused ? 'GPS paused' : 'Acquiring GPS...'}</span>
-            )}
-          </div>
-        </section>
-
-        {liveTrackingError && (
-          <div
-            role="alert"
-            className="rounded-xl border border-amber-600/40 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-900 dark:text-amber-300 flex items-start gap-2"
-          >
-            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
-            <span>{liveTrackingError}</span>
-          </div>
-        )}
-
-        {session.mode === 'course' && liveCorridor && (
-          <section
-            aria-label="Course corridor tracking"
-            className={`rounded-xl border px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs ${
-              liveCorridor.onCourse
-                ? 'border-emerald-600/35 bg-emerald-500/10 text-emerald-900 dark:text-emerald-200'
-                : 'border-amber-600/40 bg-amber-500/10 text-amber-950 dark:text-amber-200'
-            }`}
-          >
-            <div className="flex items-center gap-2 font-semibold">
-              <Flag className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-              <span>
-                {liveCorridor.onCourse
-                  ? 'On Course'
-                  : `Off Course (+${Math.round(liveCorridor.offRouteMeters)} m)`}
-              </span>
-              <span className="font-mono tabular-nums">
-                {liveCorridor.progressPct.toFixed(1)}% ({formatShortDistance(liveCorridor.distanceRemainingM)} left)
-              </span>
-            </div>
-            {liveCorridor.nextMarker && (
-              <span className="font-mono tabular-nums">
-                Next: {liveCorridor.nextMarker.name} (
-                {formatShortDistance(liveCorridor.nextMarkerDistanceAlongM)})
-              </span>
-            )}
-          </section>
-        )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
-          {/* Map Canvas (60-70% mobile visual focus, split-pane left on desktop) */}
-          <div className="lg:col-span-7 min-w-0">
-            <Suspense
-              fallback={
-                <div
-                  role="status"
-                  aria-label="Loading live map"
-                  className="h-[320px] sm:h-[420px] lg:h-[480px] w-full rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)] flex items-center justify-center text-xs font-semibold text-[var(--text-secondary)]"
-                >
-                  Loading Philippine route map...
-                </div>
-              }
-            >
-              <RouteMapCanvas
-                route={session.mode === 'course' && courseRoute ? courseRoute : emptyFreeRunRoute}
-                routeIdentityKey={
-                  session.mode === 'course' && loadedCourse
-                    ? loadedCourse.id
-                    : `free-run-${session.sessionId}`
-                }
-                markers={session.mode === 'course' ? courseMarkers : []}
-                selection={mapSelection}
-                theme={theme}
-                heightClassName="h-[320px] sm:h-[420px] lg:h-[480px]"
-                editable={false}
-                cursorVisible={false}
-                hideHud={session.mode === 'free'}
-                hideBuiltInLayerToggles={false}
-                provenance={loadedCourse?.mapLayerProvenance}
-                courseScopeId={
-                  loadedCourse ? `${loadedCourse.raceId}_${loadedCourse.distanceId}` : undefined
-                }
-                gpsLivePosition={liveGpsPosition}
-                gpsBreadcrumbPoints={liveBreadcrumbPoints}
-                locateStatus={liveLocateStatus}
-                flyToTrigger={flyToTrigger}
-                onLocateMe={() => {
-                  if (liveGpsPosition) {
-                    centerMapOn(liveGpsPosition.lat, liveGpsPosition.lon);
-                  } else if (isPaused) {
-                    void handleResumeRun();
-                  }
-                }}
-                onCenterOnUser={() => {
-                  if (!liveGpsPosition) return;
-                  centerMapOn(liveGpsPosition.lat, liveGpsPosition.lon);
-                }}
-              />
-            </Suspense>
-          </div>
-
-          {/* Live Telemetry, Splits & Thumb-Zone Controls */}
-          <div className="lg:col-span-5 min-w-0 space-y-3">
-            <section
-              aria-label="Live run telemetry"
-              className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] overflow-hidden"
-            >
-              <dl className="grid grid-cols-2 divide-x divide-y divide-[var(--border-subtle)]">
-                <div className="p-3 space-y-0.5">
-                  <dt className="text-xs font-normal text-[var(--text-secondary)]">Distance</dt>
-                  <dd className="font-mono text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
-                    {(session.distanceM / 1000).toFixed(2)}{' '}
-                    <span className="text-xs font-normal text-[var(--text-secondary)]">km</span>
-                  </dd>
-                </div>
-                <div className="p-3 space-y-0.5">
-                  <dt className="text-xs font-normal text-[var(--text-secondary)]">Elapsed Time</dt>
-                  <dd className="font-mono text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
-                    {formatDuration(liveElapsedMs)}
-                  </dd>
-                  <dd className="font-mono text-xs tabular-nums text-[var(--text-secondary)]">
-                    Moving {formatDuration(session.movingTimeMs)}
-                  </dd>
-                </div>
-                <div className="p-3 space-y-0.5">
-                  <dt className="text-xs font-normal text-[var(--text-secondary)]">Avg Pace</dt>
-                  <dd className="font-mono text-lg font-semibold tabular-nums text-[var(--text-primary)]">
-                    {formatPace(liveAvgPaceSecPerKm)}
-                  </dd>
-                  <dd className="font-mono text-xs tabular-nums text-[var(--text-secondary)]">
-                    Current {formatPace(liveCurrentPaceSecPerKm)}
-                  </dd>
-                </div>
-                <div className="p-3 space-y-0.5">
-                  <dt className="text-xs font-normal text-[var(--text-secondary)]">
-                    Elev Gain &amp; Calories
-                  </dt>
-                  <dd className="font-mono text-lg font-semibold tabular-nums text-[var(--text-primary)]">
-                    +{Math.round(session.elevationGainM)} m
-                  </dd>
-                  <dd className="font-mono text-xs tabular-nums text-[var(--text-secondary)]">
-                    {session.totalKcal.toFixed(1)} kcal
-                  </dd>
-                </div>
-              </dl>
-
-              {/* Collapsible Splits Drawer */}
-              <div className="border-t border-[var(--border-subtle)]">
-                <button
-                  type="button"
-                  onClick={() => setSplitsOpen((open) => !open)}
-                  aria-expanded={splitsOpen}
-                  className="w-full min-h-11 px-3 py-2 flex items-center justify-between gap-2 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)] cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-                >
-                  <span className="font-mono tabular-nums">
-                    Kilometer Splits ({liveSplits.length})
-                  </span>
-                  {splitsOpen ? (
-                    <ChevronUp className="w-4 h-4 shrink-0" aria-hidden="true" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4 shrink-0" aria-hidden="true" />
-                  )}
-                </button>
-
-                {splitsOpen && (
-                  <div className="border-t border-[var(--border-subtle)] max-h-48 overflow-y-auto px-3 py-2">
-                    {liveSplits.length === 0 ? (
-                      <p className="text-xs text-[var(--text-secondary)] py-1">
-                        Per-kilometer splits appear after recording 50 meters of movement.
-                      </p>
-                    ) : (
-                      <table className="w-full text-left text-xs font-mono tabular-nums">
-                        <thead className="text-[var(--text-secondary)] border-b border-[var(--border-subtle)]">
-                          <tr>
-                            <th scope="col" className="py-1 pr-2 font-semibold">
-                              KM
-                            </th>
-                            <th scope="col" className="py-1 pr-2 font-semibold">
-                              Pace
-                            </th>
-                            <th scope="col" className="py-1 pr-2 font-semibold">
-                              Elev
-                            </th>
-                            <th scope="col" className="py-1 font-semibold text-right">
-                              kcal
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[var(--border-subtle)] text-[var(--text-primary)]">
-                          {liveSplits.map((split) => (
-                            <tr key={split.kmIndex}>
-                              <td className="py-1.5 pr-2">
-                                {split.kmIndex}
-                                {split.distanceM < 990 ? ` (${Math.round(split.distanceM)}m)` : ''}
-                              </td>
-                              <td className="py-1.5 pr-2">{formatPace(split.paceSecPerKm)}</td>
-                              <td className="py-1.5 pr-2">+{Math.round(split.elevationGainM)}m</td>
-                              <td className="py-1.5 text-right">{split.caloriesKcal.toFixed(1)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
-                )}
-              </div>
-            </section>
-
-            {/* Thumb-Zone Controls */}
-            <div className="grid grid-cols-2 gap-2.5">
-              {isPaused ? (
-                <button
-                  type="button"
-                  onClick={() => void handleResumeRun()}
-                  className="min-h-12 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-                >
-                  <Play className="w-4 h-4 shrink-0" aria-hidden="true" />
-                  <span>Resume</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => void handlePauseRun()}
-                  className="min-h-12 px-4 rounded-xl border border-[var(--border-button)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-                >
-                  <Pause className="w-4 h-4 shrink-0" aria-hidden="true" />
-                  <span>Pause</span>
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => void handleFinishRun()}
-                className={`min-h-12 px-4 rounded-xl text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
-                  isPaused
-                    ? 'border border-[var(--border-button)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)]'
-                    : 'bg-red-700 hover:bg-red-600 text-white'
-                }`}
-              >
-                <Square className="w-4 h-4 shrink-0" aria-hidden="true" />
-                <span>Finish Run</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void handleDiscardLiveOrSummaryRun()}
-                className="col-span-2 min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-              >
-                <Trash2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                <span>Discard Run</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <RecordLiveView
+        session={session}
+        theme={theme}
+        mapRoute={session.mode === 'course' && courseRoute ? courseRoute : emptyFreeRunRoute}
+        routeIdentityKey={
+          session.mode === 'course' && loadedCourse
+            ? loadedCourse.id
+            : `free-run-${session.sessionId}`
+        }
+        markers={session.mode === 'course' ? courseMarkers : []}
+        selection={mapSelection}
+        provenance={loadedCourse?.mapLayerProvenance}
+        courseScopeId={
+          loadedCourse ? `${loadedCourse.raceId}_${loadedCourse.distanceId}` : undefined
+        }
+        liveGpsPosition={liveGpsPosition}
+        liveBreadcrumbPoints={liveBreadcrumbPoints}
+        liveCorridor={liveCorridor}
+        liveTrackingError={liveTrackingError}
+        liveElapsedMs={liveElapsedMs}
+        liveAvgPaceSecPerKm={liveAvgPaceSecPerKm}
+        liveCurrentPaceSecPerKm={liveCurrentPaceSecPerKm}
+        liveSplits={liveSplits}
+        splitsOpen={splitsOpen}
+        onToggleSplits={() => setSplitsOpen((open) => !open)}
+        flyToTrigger={flyToTrigger}
+        onMapFirstCameraReady={() => {
+          if (!mapReadyForFreeCenterRef.current) {
+            mapReadyForFreeCenterRef.current = true;
+            const cur = sessionRef.current;
+            if (cur?.mode === 'free' && cur.gpsFilter.current && !hasAutoCenteredRef.current) {
+              hasAutoCenteredRef.current = true;
+              centerMapOn(cur.gpsFilter.current.lat, cur.gpsFilter.current.lon);
+            }
+          }
+        }}
+        onLocateMe={() => {
+          if (liveGpsPosition) {
+            centerMapOn(liveGpsPosition.lat, liveGpsPosition.lon);
+          } else if (session.status === 'paused') {
+            notify({
+              tone: 'info',
+              title: 'Run is paused',
+              message: 'Tap Resume to acquire your live GPS position.',
+            });
+          }
+        }}
+        onCenterOnUser={() => {
+          if (!liveGpsPosition) return;
+          centerMapOn(liveGpsPosition.lat, liveGpsPosition.lon);
+        }}
+        onPauseRun={() => void handlePauseRun()}
+        onResumeRun={() => void handleResumeRun()}
+        onFinishRun={() => void handleFinishRun()}
+        onDiscardRun={() => void handleDiscardLiveOrSummaryRun()}
+      />
     );
   }
 
   if (phase === 'summary' && summaryData) {
-    const avgPaceSec =
-      summaryData.clientDistanceM > 0 && summaryData.movingTimeMs > 0
-        ? (summaryData.movingTimeMs / 1000 / summaryData.clientDistanceM) * 1000
-        : null;
-
     return (
-      <div className="w-full max-w-4xl mx-auto px-3 sm:px-4 py-3 pb-[max(1.25rem,var(--rp-safe-bottom))] space-y-4">
-        <section
-          aria-labelledby={`${baseId}-summary-heading`}
-          className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-4 space-y-4"
-        >
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <h2
-                id={`${baseId}-summary-heading`}
-                className="font-display font-semibold text-lg text-[var(--text-primary)]"
-              >
-                Run Summary
-              </h2>
-              <p className="text-xs font-normal text-[var(--text-secondary)]">
-                Review your metrics, choose visibility, and save to your RacePulsePH profile.
-              </p>
-            </div>
-
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)]">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400 shrink-0" aria-hidden="true" />
-              <span>
-                {summaryData.homePrivacyTrimEnabled
-                  ? summaryData.trimmedPoints.length === 0
-                    ? 'Short run: GPS omitted'
-                    : `200m trim (${Math.round(summaryData.trimmedHeadM)}m / ${Math.round(summaryData.trimmedTailM)}m)`
-                  : 'Full track kept'}
-              </span>
-            </span>
-          </div>
-
-          {enrichingSummary && (
-            <div
-              role="status"
-              aria-live="polite"
-              className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-2 text-xs font-semibold text-[var(--text-primary)] flex items-center gap-2"
-            >
-              <RefreshCw className="w-3.5 h-3.5 motion-safe:animate-spin shrink-0" aria-hidden="true" />
-              <span>Enriching Philippine DEM elevation and kilometer splits...</span>
-            </div>
-          )}
-
-          {/* Title & Privacy Controls */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label
-                htmlFor={summaryTitleId}
-                className="block text-xs font-semibold text-[var(--text-primary)]"
-              >
-                Run Title
-              </label>
-              <input
-                id={summaryTitleId}
-                type="text"
-                maxLength={120}
-                value={summaryTitle}
-                onChange={(e) => {
-                  setSummaryTitle(e.target.value);
-                  if (summaryTitleError) setSummaryTitleError(null);
-                }}
-                aria-invalid={Boolean(summaryTitleError)}
-                aria-describedby={summaryTitleError ? summaryTitleErrorId : undefined}
-                placeholder="Morning Free Run"
-                className="w-full min-h-11 px-3 rounded-xl border border-[var(--border-control)] bg-[var(--surface-inset)] text-sm text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400"
-              />
-              {summaryTitleError && (
-                <p
-                  id={summaryTitleErrorId}
-                  role="alert"
-                  className="text-xs font-semibold text-red-700 dark:text-red-400"
-                >
-                  {summaryTitleError}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-1.5">
-              <span className="block text-xs font-semibold text-[var(--text-primary)]">
-                Visibility
-              </span>
-              <div
-                role="group"
-                aria-label="Run privacy visibility"
-                className="grid grid-cols-3 gap-1.5"
-              >
-                {PRIVACY_OPTIONS.map((opt) => {
-                  const active = summaryPrivacy === opt.value;
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setSummaryPrivacy(opt.value)}
-                      aria-pressed={active}
-                      className={`min-h-11 px-2.5 rounded-xl border text-xs font-semibold inline-flex items-center justify-center gap-1 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
-                        active
-                          ? 'border-red-600 bg-red-700 text-white'
-                          : 'border-[var(--border-control)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
-                      }`}
-                    >
-                      {active && <Check className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />}
-                      <span>{opt.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="text-xs text-[var(--text-secondary)]">
-                {PRIVACY_OPTIONS.find((opt) => opt.value === summaryPrivacy)?.hint}
-              </p>
-            </div>
-          </div>
-
-          {/* Summary Metrics */}
-          <dl className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-3">
-              <dt className="text-xs text-[var(--text-secondary)]">Distance</dt>
-              <dd className="font-mono text-lg font-semibold tabular-nums text-[var(--text-primary)]">
-                {(summaryData.clientDistanceM / 1000).toFixed(2)} km
-              </dd>
-            </div>
-            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-3">
-              <dt className="text-xs text-[var(--text-secondary)]">Moving Time</dt>
-              <dd className="font-mono text-lg font-semibold tabular-nums text-[var(--text-primary)]">
-                {formatDuration(summaryData.movingTimeMs)}
-              </dd>
-              <dd className="font-mono text-xs tabular-nums text-[var(--text-secondary)]">
-                Elapsed {formatDuration(summaryData.elapsedTimeMs)}
-              </dd>
-            </div>
-            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-3">
-              <dt className="text-xs text-[var(--text-secondary)]">Avg Pace</dt>
-              <dd className="font-mono text-lg font-semibold tabular-nums text-[var(--text-primary)]">
-                {formatPace(avgPaceSec)}
-              </dd>
-            </div>
-            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-3">
-              <dt className="text-xs text-[var(--text-secondary)]">Elevation</dt>
-              <dd className="font-mono text-base font-semibold tabular-nums text-[var(--text-primary)]">
-                +{Math.round(summaryData.elevationGainM)} m / -{Math.round(summaryData.elevationLossM)} m
-              </dd>
-              <dd className="text-xs text-[var(--text-secondary)]">
-                Source: {summaryData.elevationSource.toUpperCase()}
-              </dd>
-            </div>
-            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-3">
-              <dt className="text-xs text-[var(--text-secondary)]">Calories</dt>
-              <dd className="font-mono text-base font-semibold tabular-nums text-[var(--text-primary)]">
-                {summaryData.calorieEstimate.totalKcal.toFixed(1)} kcal
-              </dd>
-              <dd className="font-mono text-xs tabular-nums text-[var(--text-secondary)]">
-                Net {summaryData.calorieEstimate.netKcal.toFixed(1)} + Rest{' '}
-                {summaryData.calorieEstimate.restingKcal.toFixed(1)} ({summaryData.calorieEstimate.weightKgUsed} kg)
-              </dd>
-            </div>
-            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-3">
-              <dt className="text-xs text-[var(--text-secondary)]">Island Groups</dt>
-              <dd className="text-sm font-semibold text-[var(--text-primary)]">
-                {summaryData.islandGroups.length > 0
-                  ? summaryData.islandGroups.join(', ')
-                  : 'Not classified'}
-              </dd>
-            </div>
-          </dl>
-
-          {/* Kilometer Splits Table */}
-          {summaryData.splits.length > 0 && (
-            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-3 space-y-2">
-              <h3 className="font-display font-semibold text-sm text-[var(--text-primary)]">
-                Kilometer Splits
-              </h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs font-mono tabular-nums">
-                  <thead className="text-[var(--text-secondary)] border-b border-[var(--border-subtle)]">
-                    <tr>
-                      <th scope="col" className="py-1.5 pr-3 font-semibold">
-                        KM
-                      </th>
-                      <th scope="col" className="py-1.5 pr-3 font-semibold">
-                        Distance
-                      </th>
-                      <th scope="col" className="py-1.5 pr-3 font-semibold">
-                        Pace
-                      </th>
-                      <th scope="col" className="py-1.5 pr-3 font-semibold">
-                        Elev Gain
-                      </th>
-                      <th scope="col" className="py-1.5 font-semibold text-right">
-                        Calories
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[var(--border-subtle)] text-[var(--text-primary)]">
-                    {summaryData.splits.map((split) => (
-                      <tr key={split.kmIndex}>
-                        <td className="py-1.5 pr-3">{split.kmIndex}</td>
-                        <td className="py-1.5 pr-3">{Math.round(split.distanceM)} m</td>
-                        <td className="py-1.5 pr-3">{formatPace(split.paceSecPerKm)}</td>
-                        <td className="py-1.5 pr-3">+{Math.round(split.elevationGainM)} m</td>
-                        <td className="py-1.5 text-right">{split.caloriesKcal.toFixed(1)} kcal</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {saveError && (
-            <div
-              role="alert"
-              className="rounded-xl border border-red-600/35 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-800 dark:text-red-300 flex items-start gap-2"
-            >
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
-              <span>{saveError}</span>
-            </div>
-          )}
-
-          {/* Summary Actions */}
-          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-between gap-2.5 pt-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={handleExportGpx}
-                disabled={savingRun}
-                className="min-h-11 px-3.5 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-              >
-                <Download className="w-4 h-4 shrink-0" aria-hidden="true" />
-                <span>Export GPX</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleResumeFromSummary}
-                disabled={savingRun || enrichingSummary}
-                className="min-h-11 px-3.5 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-              >
-                <RotateCcw className="w-4 h-4 shrink-0" aria-hidden="true" />
-                <span>Resume Run</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void handleDiscardLiveOrSummaryRun()}
-                disabled={savingRun}
-                className="min-h-11 px-3.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-              >
-                <Trash2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                <span>Discard Run</span>
-              </button>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => void handleSaveRun()}
-              disabled={savingRun || enrichingSummary}
-              className="min-h-12 px-5 rounded-xl bg-red-700 hover:bg-red-600 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-            >
-              {savingRun ? (
-                <>
-                  <RefreshCw className="w-4 h-4 motion-safe:animate-spin shrink-0" aria-hidden="true" />
-                  <span>Saving Run...</span>
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4 shrink-0" aria-hidden="true" />
-                  <span>Save Run</span>
-                </>
-              )}
-            </button>
-          </div>
-        </section>
-      </div>
+      <RecordSummaryView
+        baseId={baseId}
+        summaryData={summaryData}
+        summaryTitleId={summaryTitleId}
+        summaryTitleErrorId={summaryTitleErrorId}
+        summaryTitle={summaryTitle}
+        summaryTitleError={summaryTitleError}
+        summaryPrivacy={summaryPrivacy}
+        enrichingSummary={enrichingSummary}
+        savingRun={savingRun}
+        saveError={saveError}
+        onChangeTitle={(next) => {
+          setSummaryTitle(next);
+          if (summaryTitleError) setSummaryTitleError(null);
+        }}
+        onChangePrivacy={setSummaryPrivacy}
+        onExportGpx={handleExportGpx}
+        onResumeRun={handleResumeFromSummary}
+        onDiscardRun={() => void handleDiscardLiveOrSummaryRun()}
+        onSaveRun={() => void handleSaveRun()}
+      />
     );
   }
 
   // Phase 1: Setup & Pre-Run Readiness
   return (
-    <div className="w-full max-w-4xl mx-auto px-3 sm:px-4 py-3 pb-[max(1.25rem,var(--rp-safe-bottom))] space-y-4">
+    <div className="w-full max-w-4xl mx-auto py-1 pb-[max(1.25rem,var(--rp-safe-bottom))] space-y-4">
       {/* Interrupted Run Recovery Banner */}
       {recoveryLoaded && recoveredDraft && (
         <section
@@ -1992,7 +1513,8 @@ export default function RunnerRecordPanel({
                   ? `${recoveredDraft.courseRef.raceName} (${recoveredDraft.courseRef.distanceLabel})`
                   : 'Free Run'}{' '}
                 · {(recoveredDraft.distanceM / 1000).toFixed(2)} km ·{' '}
-                {formatDuration(recoveredDraft.movingTimeMs)} · {recoveredDraft.points.length} GPS points
+                {formatDuration(recoveredDraft.movingTimeMs)} · {recoveredDraft.points.length} GPS
+                points
               </p>
             </div>
 
@@ -2030,7 +1552,10 @@ export default function RunnerRecordPanel({
                 id={`${baseId}-pending-heading`}
                 className="font-display font-semibold text-sm sm:text-base text-[var(--text-primary)] flex items-center gap-2"
               >
-                <UploadCloud className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+                <UploadCloud
+                  className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0"
+                  aria-hidden="true"
+                />
                 <span>
                   {pendingUploads.length === 1
                     ? '1 Offline Run Waiting to Sync'
@@ -2115,7 +1640,8 @@ export default function RunnerRecordPanel({
               </span>
             </div>
             <p className="text-xs font-normal text-[var(--text-secondary)]">
-              Run a pre-start satellite lock check before your session. Location starts only when you press Test GPS Signal or Start Run.
+              Run a pre-start satellite lock check before your session. Location starts only when
+              you press Test GPS Signal or Start Run.
             </p>
           </div>
 
@@ -2132,7 +1658,10 @@ export default function RunnerRecordPanel({
               </>
             ) : (
               <>
-                <LocateFixed className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+                <LocateFixed
+                  className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0"
+                  aria-hidden="true"
+                />
                 <span>Test GPS Signal</span>
               </>
             )}
@@ -2207,7 +1736,10 @@ export default function RunnerRecordPanel({
                 onClick={onBrowseRoutes}
                 className="min-h-11 px-3 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
               >
-                <Compass className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+                <Compass
+                  className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0"
+                  aria-hidden="true"
+                />
                 <span>Browse Routes</span>
               </button>
             )}
@@ -2249,10 +1781,14 @@ export default function RunnerRecordPanel({
                     {selectedCatalogEntry.raceName} ({selectedCatalogEntry.distanceLabel})
                   </p>
                   <p className="text-xs font-normal text-[var(--text-secondary)] flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+                    <MapPin
+                      className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0"
+                      aria-hidden="true"
+                    />
                     <span className="truncate">
-                      {selectedCatalogEntry.mapLayerProvenance?.province || selectedCatalogEntry.region} ·{' '}
-                      {selectedCatalogEntry.raceDate}
+                      {selectedCatalogEntry.mapLayerProvenance?.province ||
+                        selectedCatalogEntry.region}{' '}
+                      · {selectedCatalogEntry.raceDate}
                     </span>
                   </p>
                 </div>
@@ -2276,14 +1812,19 @@ export default function RunnerRecordPanel({
                   }}
                   className="min-h-11 px-3 rounded-xl border border-[var(--border-button)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
                 >
-                  <Flag className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+                  <Flag
+                    className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0"
+                    aria-hidden="true"
+                  />
                   <span>Open Course Map</span>
                 </a>
               </div>
 
               <dl className="grid grid-cols-3 divide-x divide-[var(--border-subtle)] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] py-2 text-center font-mono tabular-nums">
                 <div className="px-2">
-                  <dt className="font-sans text-xs font-normal text-[var(--text-secondary)]">Distance</dt>
+                  <dt className="font-sans text-xs font-normal text-[var(--text-secondary)]">
+                    Distance
+                  </dt>
                   <dd className="text-xs font-semibold text-[var(--text-primary)]">
                     {(
                       (selectedCatalogEntry.measuredDistanceM > 0
@@ -2329,7 +1870,10 @@ export default function RunnerRecordPanel({
           <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-3 flex items-start justify-between gap-3">
             <div className="min-w-0 space-y-1">
               <div className="flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+                <Lock
+                  className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0"
+                  aria-hidden="true"
+                />
                 <span
                   id={`${baseId}-privacy-trim-label`}
                   className="text-xs font-semibold text-[var(--text-primary)]"
@@ -2341,7 +1885,8 @@ export default function RunnerRecordPanel({
                 id={`${baseId}-privacy-trim-desc`}
                 className="text-xs font-normal text-[var(--text-secondary)] leading-relaxed"
               >
-                Removes points within 200 m of your start and finish locations before upload or GPX export. Runs under 450 m store summary metrics without GPS coordinates.
+                Removes points within 200 m of your start and finish locations before upload or GPX
+                export. Runs under 450 m store summary metrics without GPS coordinates.
               </p>
             </div>
 
@@ -2381,7 +1926,10 @@ export default function RunnerRecordPanel({
               Calorie Calibration
             </h2>
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)]">
-              <Scale className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+              <Scale
+                className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0"
+                aria-hidden="true"
+              />
               <span className="font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">
                 {weightLabel}
               </span>
@@ -2399,7 +1947,10 @@ export default function RunnerRecordPanel({
               onClick={onOpenProfile}
               className="min-h-11 w-full px-3 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
             >
-              <Scale className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+              <Scale
+                className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0"
+                aria-hidden="true"
+              />
               <span>Edit Weight in Profile</span>
             </button>
 
@@ -2424,7 +1975,8 @@ export default function RunnerRecordPanel({
               : 'Free Run Ready'}
           </p>
           <p className="text-xs text-[var(--text-secondary)]">
-            GPS tracking starts when you tap Start Run and saves a recovery snapshot on each accepted fix.
+            GPS tracking starts when you tap Start Run and saves a recovery snapshot on each
+            accepted fix.
           </p>
         </div>
 
@@ -2440,59 +1992,12 @@ export default function RunnerRecordPanel({
       </div>
 
       {calorieInfoOpen && (
-        <DialogSurface
-          variant="sheet"
-          maxWidthCss="34rem"
+        <RecordCalorieInfoDialog
           titleId={calorieDialogTitleId}
           descriptionId={calorieDialogDescId}
-          onRequestClose={() => setCalorieInfoOpen(false)}
-          dismissOnBackdropClick
-        >
-          <div className="p-5 space-y-4">
-            <div className="space-y-1">
-              <h2
-                id={calorieDialogTitleId}
-                className="font-display font-semibold text-lg text-[var(--text-primary)]"
-              >
-                How Calories Are Calculated
-              </h2>
-              <p id={calorieDialogDescId} className="text-xs text-[var(--text-secondary)]">
-                Both live telemetry and server verification run the exact same metabolic formula.
-              </p>
-            </div>
-
-            <div className="space-y-2.5 text-xs text-[var(--text-secondary)] leading-relaxed">
-              <p>
-                <strong className="text-[var(--text-primary)]">
-                  Net Exercise Cost (Minetti et al., 2002):
-                </strong>{' '}
-                Published in <em>J Appl Physiol 93:1039-1046</em>, this fifth-order grade polynomial models the energetic cost of running (at 1.8 m/s or faster) and walking (below 1.8 m/s) across terrain grades clamped between -45% and +45%.
-              </p>
-              <p>
-                <strong className="text-[var(--text-primary)]">
-                  Resting Baseline (Herrmann et al., 2024):
-                </strong>{' '}
-                From the 2024 Adult Compendium of Physical Activities, a resting 1-MET baseline (1.05 kcal/kg/hr) is added for active moving duration so total calories match exercise science totals.
-              </p>
-              <p>
-                <strong className="text-[var(--text-primary)]">
-                  Weight &amp; Stationary Protection:
-                </strong>{' '}
-                Calculations scale by your saved body weight ({weightLabel}). Stationary gaps longer than 180 seconds with under 10 meters of movement are excluded so forgotten pauses do not accrue ghost calories.
-              </p>
-            </div>
-
-            <div className="flex justify-end pt-1">
-              <button
-                type="button"
-                onClick={() => setCalorieInfoOpen(false)}
-                className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold cursor-pointer transition-colors"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </DialogSurface>
+          weightLabel={weightLabel}
+          onClose={() => setCalorieInfoOpen(false)}
+        />
       )}
     </div>
   );

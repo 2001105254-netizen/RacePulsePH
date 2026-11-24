@@ -27,6 +27,7 @@ import {
   pauseActiveRun,
   resumeActiveRun,
   trimRunTrackEndpoints,
+  computeTrackElevationTotals,
 } from '../src/lib/runs/runRecorderEngine';
 import {
   clearActiveRunSnapshot,
@@ -49,9 +50,15 @@ import {
   CommunityRunApiError,
   buildCompleteRunRequestPayload,
   capServerTrackPoints,
+  completeRecordedRun,
   createCommunityRequestId,
   getCommunityApiBaseUrl,
+  prepareCompleteRecordedRunInput,
 } from '../src/lib/runs/communityRunsClient';
+import {
+  buildSummaryComputation,
+  mergeAndFilterRunFixes,
+} from '../src/lib/runs/runLiveHelpers';
 import { parseGpxRoute } from '../src/lib/gpxRoute';
 
 function createMemoryStorage(): StorageLike {
@@ -1643,5 +1650,198 @@ test('communityRunsClient: buildCompleteRunRequestPayload normalizes UTC timesta
         trackPoints: track,
       }),
     (err: unknown) => err instanceof CommunityRunApiError && err.status === 400 && err.retryable === false,
+  );
+});
+
+test('runRecorderEngine: computeTrackElevationTotals uses 2.5m hysteresis and resets across segmentBreak', () => {
+  const pts: RecordedTrackPoint[] = [
+    { lat: 14.55, lon: 121.05, ele: 10, accuracyM: 5, timestampMs: 1000 },
+    { lat: 14.5502, lon: 121.05, ele: 11.5, accuracyM: 5, timestampMs: 2000 }, // < 2.5m ignored
+    { lat: 14.5504, lon: 121.05, ele: 14.0, accuracyM: 5, timestampMs: 3000 }, // +4.0m gain
+    { lat: 14.5508, lon: 121.05, ele: 90.0, accuracyM: 5, timestampMs: 50_000, segmentBreak: true }, // reset anchor
+    { lat: 14.551, lon: 121.05, ele: 86.5, accuracyM: 5, timestampMs: 55_000 }, // -3.5m loss
+  ];
+  assert.deepEqual(computeTrackElevationTotals(pts), { gainM: 4, lossM: 3.5 });
+});
+
+test('runLiveHelpers: mergeAndFilterRunFixes rejects stale pre-start fixes, deduplicates, and preserves earlier buffered fixes behind a live fix', () => {
+  const makeFix = (timestamp: number, lat = 14.55): NativeRunFix => ({
+    latitude: lat,
+    longitude: 121.05,
+    accuracyM: 5,
+    altitudeM: 12,
+    speedMps: 3,
+    headingDeg: 0,
+    timestamp,
+    provider: 'web-geolocation',
+  });
+
+  const existingTimestamps = new Set<number>([10_000, 12_000]);
+  const incomingFixes: NativeRunFix[] = [
+    makeFix(8_500, 14.50),  // stale cached pre-start/pre-resume fix (< minAcceptedTimestampMs)
+    makeFix(10_000, 14.55), // already in existingTimestamps
+    makeFix(12_000, 14.55), // pre-drain lastProcessedTimestampMs
+    makeFix(18_000, 14.58), // live fix queued DURING buffer drain
+    makeFix(15_000, 14.56), // background buffered fix older than 18_000 but newer than 12_000
+    makeFix(16_500, 14.57), // background buffered fix
+    makeFix(15_000, 14.59), // duplicate timestamp within batch
+    makeFix(0, 14.51),      // invalid timestamp
+  ];
+
+  const merged = mergeAndFilterRunFixes({
+    incomingFixes,
+    minAcceptedTimestampMs: 9_500,
+    existingTimestamps,
+    lastProcessedTimestampMs: 12_000,
+  });
+
+  assert.deepEqual(
+    merged.map((f) => f.timestamp),
+    [15_000, 16_500, 18_000],
+  );
+  assert.equal(merged[0].latitude, 14.56);
+});
+
+test('runLiveHelpers: buildSummaryComputation normalizes single-point trim and computes splits, calories, and islandGroups', () => {
+  const shortTrack = buildNorthboundTrack({ stepMeters: 20, count: 21 }); // ~400m <= 450m
+  const summary = buildSummaryComputation({
+    runId: 'run_summary_1',
+    requestId: 'req-summary-123456',
+    mode: 'free',
+    startedAtMs: shortTrack[0].timestampMs,
+    finishedAtMs: shortTrack[shortTrack.length - 1].timestampMs,
+    elapsedTimeMs: 200_000,
+    movingTimeMs: 200_000,
+    clientDistanceM: 400,
+    homePrivacyTrimEnabled: true,
+    points: shortTrack,
+    elevationSource: 'dem',
+    fallbackElevationGainM: 12,
+    fallbackElevationLossM: 5,
+    weightKg: 70,
+  });
+
+  assert.deepEqual(summary.trimmedPoints, []);
+  assert.equal(summary.elevationGainM, 12);
+  assert.equal(summary.elevationLossM, 5);
+  assert.deepEqual(summary.islandGroups, ['Luzon']);
+  assert.ok(summary.calorieEstimate.totalKcal > 20);
+  assert.equal(summary.calorieEstimate.weightKgUsed, 70);
+});
+
+test('communityRunsClient: prepareCompleteRecordedRunInput settles storage once and keeps retry payload digest identical', async () => {
+  const track = buildNorthboundTrack({ stepMeters: 30, count: 12, stepSec: 10 });
+  let uploadCalls = 0;
+  let sentPayloads: Record<string, unknown>[] = [];
+
+  const preparedOffline = await prepareCompleteRecordedRunInput(
+    {
+      requestId: 'req-retry-id-123456',
+      runId: 'run_retry_1',
+      mode: 'free',
+      privacy: 'private',
+      title: 'BGC Morning Tempo',
+      startedAt: new Date(track[0].timestampMs).toISOString(),
+      finishedAt: new Date(track[track.length - 1].timestampMs).toISOString(),
+      movingTimeMs: 110_000,
+      clientDistanceM: 330,
+      trimmedHeadM: 0,
+      trimmedTailM: 0,
+      homePrivacyTrimEnabled: false,
+      trackPoints: track,
+    },
+    {
+      uid: 'u_test',
+      uploader: async () => {
+        uploadCalls += 1;
+        return undefined; // offline Storage skip on initial save attempt
+      },
+    },
+  );
+
+  assert.equal(uploadCalls, 1);
+  assert.equal(preparedOffline.storageUploadSettled, true);
+  assert.equal(preparedOffline.trackStoragePath, undefined);
+
+  // Build payload and verify storageUploadSettled is NEVER leaked into HTTP JSON body
+  const wirePayload = buildCompleteRunRequestPayload(preparedOffline);
+  assert.equal('storageUploadSettled' in wirePayload, false);
+
+  // Subsequent retry via completeRecordedRun must NOT re-attempt Storage upload and flip trackStoragePath
+  await completeRecordedRun(preparedOffline, {
+    uid: 'u_test',
+    uploader: async () => {
+      uploadCalls += 1;
+      return 'run-tracks/u_test/run_retry_1.json';
+    },
+    sender: async (_path, payload) => {
+      sentPayloads.push(payload);
+      return { run: { runId: 'run_retry_1', distanceM: 330 } };
+    },
+  });
+
+  assert.equal(uploadCalls, 1);
+  assert.equal(sentPayloads.length, 1);
+  assert.equal('trackStoragePath' in sentPayloads[0], false);
+  assert.equal('storageUploadSettled' in sentPayloads[0], false);
+
+  // Sanitized trackPoints.length < 2 must NOT attempt Storage upload even if raw input had 2 points
+  let shortUploadCalls = 0;
+  const badTrack = [
+    track[0],
+    { lat: Number.NaN, lon: 121.05, accuracyM: 5, timestampMs: track[1].timestampMs },
+  ];
+  await prepareCompleteRecordedRunInput(
+    {
+      requestId: 'req-short-id-123456',
+      runId: 'run_short_bad',
+      mode: 'free',
+      privacy: 'private',
+      title: 'Short',
+      startedAt: '2026-11-24T00:00:00.000Z',
+      finishedAt: '2026-11-24T00:01:00.000Z',
+      movingTimeMs: 30_000,
+      clientDistanceM: 0,
+      trimmedHeadM: 0,
+      trimmedTailM: 0,
+      homePrivacyTrimEnabled: true,
+      trackPoints: badTrack,
+    },
+    {
+      uid: 'u_test',
+      uploader: async () => {
+        shortUploadCalls += 1;
+        return 'run-tracks/u_test/run_short_bad.json';
+      },
+    },
+  );
+  assert.equal(shortUploadCalls, 0);
+
+  // Invalid publicationId in courseRef is rejected
+  assert.throws(
+    () =>
+      buildCompleteRunRequestPayload({
+        runId: 'run_bad_pub',
+        mode: 'course',
+        privacy: 'private',
+        title: 'Course Run',
+        startedAt: '2026-11-24T00:00:00.000Z',
+        finishedAt: '2026-11-24T00:01:00.000Z',
+        movingTimeMs: 30_000,
+        clientDistanceM: 1000,
+        trimmedHeadM: 0,
+        trimmedTailM: 0,
+        homePrivacyTrimEnabled: false,
+        courseRef: {
+          raceId: 'baguio-2026',
+          distanceId: '21k',
+          publicationId: 'bad/pub id',
+          raceName: 'Baguio',
+          distanceLabel: '21K',
+          advertisedKm: 21,
+        },
+        trackPoints: track,
+      }),
+    (err: unknown) => err instanceof CommunityRunApiError && err.status === 400,
   );
 });
