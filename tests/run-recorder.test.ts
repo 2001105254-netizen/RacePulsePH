@@ -61,6 +61,7 @@ import {
   buildSummaryComputation,
   mergeAndFilterRunFixes,
 } from '../src/lib/runs/runLiveHelpers';
+import { BufferedFixCoordinator } from '../src/lib/runs/bufferedFixCoordinator';
 import { parseGpxRoute } from '../src/lib/gpxRoute';
 
 function createMemoryStorage(): StorageLike {
@@ -2087,4 +2088,165 @@ test('pauseActiveRun on failed startTracking stops elapsed timer drift and stays
   assert.equal(resumed.status, 'recording');
   assert.equal(resumed.accumulatedPausedMs, 64_950);
   assert.equal(computeActiveElapsedTimeMs(resumed, tStart + 70_000), 5_050);
+});
+
+test('BufferedFixCoordinator: concurrent Pause/Finish coalesces in-flight wake drain without losing screen-off fixes', async () => {
+  const t0 = 1_764_000_000_000;
+  const makeFix = (offsetMs: number): NativeRunFix => ({
+    latitude: 14.555 + offsetMs / 10_000_000,
+    longitude: 121.024,
+    accuracyM: 5,
+    altitudeM: 18,
+    speedMps: 3.5,
+    headingDeg: 10,
+    timestamp: t0 + offsetMs,
+    provider: 'native-foreground-gnss',
+  });
+
+  // Simulate Android destructive ArrayDeque drain (pollFirst empties queue on first call)
+  const nativeQueue: NativeRunFix[] = [makeFix(10_000), makeFix(20_000), makeFix(30_000)];
+  let releaseWakeFetch!: (fixes: NativeRunFix[]) => void;
+  let fetchCount = 0;
+  const fetchBuffered = () => {
+    fetchCount += 1;
+    if (fetchCount === 1) {
+      const drained = nativeQueue.splice(0);
+      return new Promise<NativeRunFix[]>((resolve) => {
+        releaseWakeFetch = resolve;
+      }).then(() => drained);
+    }
+    return Promise.resolve(nativeQueue.splice(0));
+  };
+
+  const coordinator = new BufferedFixCoordinator();
+  let lastRawTs = t0;
+
+  // 1. Visibility/focus wake starts draining natively and holds isDraining() === true
+  const wakePromise = coordinator.drainForWake(fetchBuffered, () => lastRawTs);
+  assert.equal(coordinator.isDraining(), true);
+
+  // Duplicate wake/focus fires while draining are suppressed cleanly
+  assert.equal(await coordinator.drainForWake(fetchBuffered, () => lastRawTs), null);
+
+  // 2. While wake drain is mid-flight, a trailing native fix arrives and Pause/Finish starts stop drain
+  coordinator.enqueueLiveFix(makeFix(40_000));
+  nativeQueue.push(makeFix(35_000));
+  const stopPromise = coordinator.beginStopDrain(fetchBuffered, () => lastRawTs);
+
+  // Resolve the in-flight Capacitor wake bridge call
+  releaseWakeFetch([]);
+  const wakeResult = await wakePromise;
+  assert.equal(wakeResult, null);
+  assert.equal(coordinator.isDraining(), true);
+
+  const stopDrain = await stopPromise;
+  // Live fix arriving during native stopTracking() stays buffered until completeDrainAndTakeFixes
+  coordinator.enqueueLiveFix(makeFix(45_000));
+  const combined = coordinator.completeDrainAndTakeFixes(stopDrain.bufferedFixes);
+  assert.equal(coordinator.isDraining(), false);
+
+  const merged = mergeAndFilterRunFixes({
+    incomingFixes: combined,
+    minAcceptedTimestampMs: t0,
+    existingTimestamps: new Set([t0]),
+    lastProcessedTimestampMs: stopDrain.minLastTimestampMs,
+  });
+  assert.deepEqual(
+    merged.map((f) => f.timestamp),
+    [t0 + 10_000, t0 + 20_000, t0 + 30_000, t0 + 35_000, t0 + 40_000, t0 + 45_000],
+  );
+  lastRawTs = merged[merged.length - 1].timestamp;
+  assert.equal(lastRawTs, t0 + 45_000);
+});
+
+test('BufferedFixCoordinator: Finish <10s pre-check returns to normal wake drains when user keeps recording', async () => {
+  const coordinator = new BufferedFixCoordinator();
+  const t0 = 1_764_000_000_000;
+  let lastRawTs = t0;
+  let callIdx = 0;
+
+  const stopCheck = await coordinator.beginStopDrain(
+    async () => {
+      callIdx += 1;
+      return [
+        {
+          latitude: 14.556,
+          longitude: 121.024,
+          accuracyM: 4,
+          altitudeM: 20,
+          speedMps: 3.3,
+          headingDeg: 15,
+          timestamp: t0 + callIdx * 3_000,
+          provider: 'native-foreground-gnss',
+        },
+      ];
+    },
+    () => lastRawTs,
+  );
+  const drainedBeforeConfirm = coordinator.completeDrainAndTakeFixes(stopCheck.bufferedFixes);
+  assert.equal(coordinator.isDraining(), false);
+  assert.equal(drainedBeforeConfirm.length, 1);
+
+  // User chooses "Keep recording": next screen wake drains normally again
+  const nextWake = await coordinator.drainForWake(
+    async () => [
+      {
+        latitude: 14.557,
+        longitude: 121.024,
+        accuracyM: 4,
+        altitudeM: 20,
+        speedMps: 3.3,
+        headingDeg: 15,
+        timestamp: t0 + 15_000,
+        provider: 'native-foreground-gnss',
+      },
+    ],
+    () => t0 + 3_000,
+  );
+  assert.ok(nextWake);
+  assert.equal(nextWake.incomingFixes.length, 1);
+  assert.equal(coordinator.isDraining(), false);
+});
+
+test('BufferedFixCoordinator: reset() cancels in-flight wake drain across discard or new run', async () => {
+  const coordinator = new BufferedFixCoordinator();
+  const t0 = 1_764_000_000_000;
+  let resolveSlow!: (fixes: NativeRunFix[]) => void;
+
+  const staleWake = coordinator.drainForWake(
+    () =>
+      new Promise<NativeRunFix[]>((resolve) => {
+        resolveSlow = resolve;
+      }),
+    () => t0,
+  );
+  coordinator.enqueueLiveFix({
+    latitude: 14.555,
+    longitude: 121.024,
+    accuracyM: 5,
+    altitudeM: 18,
+    speedMps: 3.5,
+    headingDeg: 0,
+    timestamp: t0 + 5_000,
+    provider: 'native-foreground-gnss',
+  });
+
+  coordinator.reset();
+  assert.equal(coordinator.isDraining(), false);
+
+  resolveSlow([
+    {
+      latitude: 14.556,
+      longitude: 121.024,
+      accuracyM: 5,
+      altitudeM: 18,
+      speedMps: 3.5,
+      headingDeg: 0,
+      timestamp: t0 + 6_000,
+      provider: 'native-foreground-gnss',
+    },
+  ]);
+
+  assert.equal(await staleWake, null);
+  assert.deepEqual(coordinator.completeDrainAndTakeFixes(), []);
 });

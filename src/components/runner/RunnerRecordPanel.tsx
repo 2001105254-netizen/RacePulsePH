@@ -56,6 +56,7 @@ import {
   saveActiveRunSnapshot,
   savePendingRunUpload,
 } from '../../lib/runs/runCrashRecovery';
+import { BufferedFixCoordinator } from '../../lib/runs/bufferedFixCoordinator';
 import {
   buildCourseKey,
   buildDefaultRunTitle,
@@ -187,9 +188,7 @@ export default function RunnerRecordPanel({
   const lastNotificationAtRef = useRef(0);
   const lastRawTimestampRef = useRef(0);
   const segmentStartFloorMsRef = useRef(0);
-  const drainGenRef = useRef(0);
-  const drainingBufferRef = useRef(false);
-  const queuedFixesDuringDrainRef = useRef<NativeRunFix[]>([]);
+  const drainCoordinatorRef = useRef(new BufferedFixCoordinator());
   const prevCorridorChainageRef = useRef<number | undefined>(undefined);
   const flyNonceRef = useRef(0);
 
@@ -250,7 +249,6 @@ export default function RunnerRecordPanel({
 
   const stopNativeTracking = useCallback(async () => {
     trackingGenerationRef.current += 1;
-    drainGenRef.current += 1;
     const handles = listenerHandlesRef.current;
     listenerHandlesRef.current = [];
     await Promise.all(
@@ -266,7 +264,6 @@ export default function RunnerRecordPanel({
         console.warn('[RunnerRecordPanel] stopTracking warning', err);
       });
     }
-    drainingBufferRef.current = false;
   }, []);
 
   useEffect(() => {
@@ -453,12 +450,9 @@ export default function RunnerRecordPanel({
   const flushQueuedFixesIntoSession = useCallback(
     (
       baseSession: ActiveRunSession,
-      extraFixes: NativeRunFix[] = [],
+      incomingFixes: NativeRunFix[],
       minLastTimestampMs?: number,
     ): ActiveRunSession => {
-      const queued = queuedFixesDuringDrainRef.current;
-      queuedFixesDuringDrainRef.current = [];
-      const incomingFixes = extraFixes.length > 0 ? [...extraFixes, ...queued] : queued;
       if (incomingFixes.length === 0) return baseSession;
 
       const existingTimestamps = new Set(baseSession.points.map((pt) => pt.timestampMs));
@@ -473,35 +467,36 @@ export default function RunnerRecordPanel({
     [applyAcceptedFixBatch],
   );
 
-  const drainNativeBufferedFixesForStop = useCallback(async (): Promise<NativeRunFix[]> => {
-    drainGenRef.current += 1;
-    drainingBufferRef.current = true;
-    try {
-      const result = await RunTracking.getBufferedFixes();
-      return Array.isArray(result?.fixes) ? result.fixes : [];
-    } catch (err) {
-      console.warn('[RunnerRecordPanel] pre-stop buffered fix drain failed', err);
-      return [];
-    }
+  const fetchNativeBufferedFixes = useCallback(async (): Promise<NativeRunFix[]> => {
+    const result = await RunTracking.getBufferedFixes();
+    return Array.isArray(result?.fixes) ? result.fixes : [];
   }, []);
 
   const stopAndFlushActiveSession = useCallback(async (): Promise<ActiveRunSession | null> => {
     const current = sessionRef.current;
     if (!current) return null;
-    const preDrainLastTs = lastRawTimestampRef.current;
-    const preStopBuffered =
-      current.status === 'recording' ? await drainNativeBufferedFixesForStop() : [];
+    const stopDrain =
+      current.status === 'recording'
+        ? await drainCoordinatorRef.current.beginStopDrain(
+            fetchNativeBufferedFixes,
+            () => lastRawTimestampRef.current,
+            (err) => console.warn('[RunnerRecordPanel] pre-stop buffered fix drain failed', err),
+          )
+        : { bufferedFixes: [], minLastTimestampMs: lastRawTimestampRef.current };
     await stopNativeTracking();
+    const combinedFixes = drainCoordinatorRef.current.completeDrainAndTakeFixes(
+      stopDrain.bufferedFixes,
+    );
     const latestBase = sessionRef.current;
     if (!latestBase) return null;
-    return flushQueuedFixesIntoSession(latestBase, preStopBuffered, preDrainLastTs);
-  }, [drainNativeBufferedFixesForStop, flushQueuedFixesIntoSession, stopNativeTracking]);
+    return flushQueuedFixesIntoSession(latestBase, combinedFixes, stopDrain.minLastTimestampMs);
+  }, [fetchNativeBufferedFixes, flushQueuedFixesIntoSession, stopNativeTracking]);
 
   const handleIncomingFix = useCallback(
     (fix: NativeRunFix) => {
       if (phaseRef.current !== 'live' || sessionRef.current?.status !== 'recording') return;
-      if (drainingBufferRef.current) {
-        queuedFixesDuringDrainRef.current.push(fix);
+      if (drainCoordinatorRef.current.isDraining()) {
+        drainCoordinatorRef.current.enqueueLiveFix(fix);
         return;
       }
 
@@ -652,48 +647,31 @@ export default function RunnerRecordPanel({
       return;
     }
     const handleVisibilityChange = () => {
-      if (document.visibilityState !== 'visible' || drainingBufferRef.current) return;
-      const myDrainGen = ++drainGenRef.current;
-      drainingBufferRef.current = true;
-      const preDrainLastTs = lastRawTimestampRef.current;
-
-      void (async () => {
-        let bufferedFixes: NativeRunFix[] = [];
-        try {
-          const result = await RunTracking.getBufferedFixes();
-          bufferedFixes = Array.isArray(result?.fixes) ? result.fixes : [];
-        } catch (err) {
-          console.warn('[RunnerRecordPanel] buffered fix drain failed', err);
-        } finally {
-          if (drainGenRef.current === myDrainGen) {
-            drainingBufferRef.current = false;
+      if (document.visibilityState !== 'visible' || drainCoordinatorRef.current.isDraining()) {
+        return;
+      }
+      void drainCoordinatorRef.current
+        .drainForWake(
+          fetchNativeBufferedFixes,
+          () => lastRawTimestampRef.current,
+          (err) => console.warn('[RunnerRecordPanel] buffered fix drain failed', err),
+        )
+        .then((batch) => {
+          if (!batch || batch.incomingFixes.length === 0) return;
+          const latestSession = sessionRef.current;
+          if (
+            !latestSession ||
+            latestSession.status !== 'recording' ||
+            phaseRef.current !== 'live'
+          ) {
+            return;
           }
-        }
-
-        if (drainGenRef.current !== myDrainGen) {
-          return;
-        }
-
-        const queued = queuedFixesDuringDrainRef.current;
-        queuedFixesDuringDrainRef.current = [];
-        const latestSession = sessionRef.current;
-        if (
-          !latestSession ||
-          latestSession.status !== 'recording' ||
-          phaseRef.current !== 'live'
-        ) {
-          return;
-        }
-
-        const existingTimestamps = new Set(latestSession.points.map((pt) => pt.timestampMs));
-        const merged = mergeAndFilterRunFixes({
-          incomingFixes: [...bufferedFixes, ...queued],
-          minAcceptedTimestampMs: segmentStartFloorMsRef.current,
-          existingTimestamps,
-          lastProcessedTimestampMs: preDrainLastTs,
+          flushQueuedFixesIntoSession(
+            latestSession,
+            batch.incomingFixes,
+            batch.minLastTimestampMs,
+          );
         });
-        applyAcceptedFixBatch(merged, latestSession);
-      })();
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -706,7 +684,7 @@ export default function RunnerRecordPanel({
         window.removeEventListener('focus', handleVisibilityChange);
       }
     };
-  }, [phase, session?.status, applyAcceptedFixBatch]);
+  }, [phase, session?.status, fetchNativeBufferedFixes, flushQueuedFixesIntoSession]);
 
   const handleCourseChange = (nextKey: string) => {
     setSelectedCourseKey(nextKey);
@@ -730,12 +708,10 @@ export default function RunnerRecordPanel({
 
   const resetToSetup = useCallback(async () => {
     enrichmentGenRef.current += 1;
-    drainGenRef.current += 1;
+    drainCoordinatorRef.current.reset();
     setEnrichingSummary(false);
     await stopNativeTracking();
-    drainGenRef.current += 1;
-    drainingBufferRef.current = false;
-    queuedFixesDuringDrainRef.current = [];
+    drainCoordinatorRef.current.reset();
     updateSession(null);
     setSummaryData(null);
     setSaveError(null);
@@ -767,9 +743,7 @@ export default function RunnerRecordPanel({
       mapReadyForFreeCenterRef.current = false;
       lastNotificationAtRef.current = 0;
       prevCorridorChainageRef.current = undefined;
-      drainGenRef.current += 1;
-      queuedFixesDuringDrainRef.current = [];
-      drainingBufferRef.current = false;
+      drainCoordinatorRef.current.reset();
       setLiveTrackingError(null);
       setSplitsOpen(false);
 
@@ -845,9 +819,7 @@ export default function RunnerRecordPanel({
       mapReadyForFreeCenterRef.current = false;
       lastNotificationAtRef.current = 0;
       prevCorridorChainageRef.current = undefined;
-      drainGenRef.current += 1;
-      queuedFixesDuringDrainRef.current = [];
-      drainingBufferRef.current = false;
+      drainCoordinatorRef.current.reset();
       setLiveTrackingError(null);
       setSplitsOpen(false);
 
@@ -943,9 +915,7 @@ export default function RunnerRecordPanel({
         lastRawTimestampRef.current,
         current.lastAcceptedAtMs || 0,
       );
-      drainGenRef.current += 1;
-      queuedFixesDuringDrainRef.current = [];
-      drainingBufferRef.current = false;
+      drainCoordinatorRef.current.reset();
       updateSession(resumed);
       setNowTickMs(now);
       setLiveTrackingError(null);
@@ -992,16 +962,29 @@ export default function RunnerRecordPanel({
     transitionLockRef.current = true;
     try {
       if (initial.status === 'recording' && initial.movingTimeMs < MIN_SERVER_MOVING_TIME_MS) {
-        const preDrainLastTs = lastRawTimestampRef.current;
-        let preCheckBuffered: NativeRunFix[] = [];
+        let preCheck: { bufferedFixes: NativeRunFix[]; minLastTimestampMs: number } = {
+          bufferedFixes: [],
+          minLastTimestampMs: lastRawTimestampRef.current,
+        };
+        let preCheckFixes: NativeRunFix[] = [];
         try {
-          preCheckBuffered = await drainNativeBufferedFixesForStop();
+          preCheck = await drainCoordinatorRef.current.beginStopDrain(
+            fetchNativeBufferedFixes,
+            () => lastRawTimestampRef.current,
+            (err) => console.warn('[RunnerRecordPanel] pre-finish buffered fix drain failed', err),
+          );
         } finally {
-          drainingBufferRef.current = false;
+          preCheckFixes = drainCoordinatorRef.current.completeDrainAndTakeFixes(
+            preCheck.bufferedFixes,
+          );
         }
         const refreshed = sessionRef.current;
         if (refreshed) {
-          initial = flushQueuedFixesIntoSession(refreshed, preCheckBuffered, preDrainLastTs);
+          initial = flushQueuedFixesIntoSession(
+            refreshed,
+            preCheckFixes,
+            preCheck.minLastTimestampMs,
+          );
         }
       }
 
