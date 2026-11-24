@@ -810,3 +810,26 @@ test('computeRunnerPortfolioCounts computes exact pass, upcoming, completed, and
     openRaces: 1,
   });
 });
+
+test('PERSONAL_CAPABILITY_KEYS and hasAnyPersonalCapability authorize milestone personal permissions', () => {
+  assert.deepEqual(runnerShell.PERSONAL_CAPABILITY_KEYS, [
+    'personal.register',
+    'personal.results',
+    'personal.bibs',
+    'personal.certificates',
+    'personal.engraving',
+    'personal.friends',
+    'personal.record',
+    'personal.social',
+    'personal.clubs',
+    'personal.inbox',
+  ]);
+
+  assert.equal(runnerShell.hasAnyPersonalCapability(makeCan([])), false);
+  assert.equal(runnerShell.hasAnyPersonalCapability(makeCan(['race.view', 'timing.view'])), false);
+  assert.equal(runnerShell.hasAnyPersonalCapability(makeCan(['personal.record'])), true);
+  assert.equal(runnerShell.hasAnyPersonalCapability(makeCan(['personal.social'])), true);
+  assert.equal(runnerShell.hasAnyPersonalCapability(makeCan(['personal.clubs'])), true);
+  assert.equal(runnerShell.hasAnyPersonalCapability(makeCan(['personal.inbox'])), true);
+  assert.equal(runnerShell.hasAnyPersonalCapability(makeCan(['personal.register'])), true);
+});

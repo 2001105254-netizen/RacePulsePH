@@ -216,20 +216,20 @@ export default function RunnerRecordPreviewPanel({
         )}
 
         {geo.position && (
-          <dl className="grid grid-cols-2 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[var(--border-subtle)] rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] overflow-hidden">
-            <div className="px-3 py-2 flex flex-col gap-0.5 border-r sm:border-r-0 border-[var(--border-subtle)]">
+          <dl className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-2 flex flex-col gap-0.5">
               <dt className="text-xs font-normal text-[var(--text-secondary)]">Accuracy</dt>
               <dd className="font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">
                 ±{geo.position.accuracyM} m
               </dd>
             </div>
-            <div className="px-3 py-2 flex flex-col gap-0.5">
+            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-2 flex flex-col gap-0.5">
               <dt className="text-xs font-normal text-[var(--text-secondary)]">Coordinates</dt>
               <dd className="font-mono text-xs font-semibold tabular-nums text-[var(--text-primary)] truncate">
                 {geo.position.lat.toFixed(5)}, {geo.position.lon.toFixed(5)}
               </dd>
             </div>
-            <div className="col-span-2 sm:col-span-1 px-3 py-2 flex flex-col gap-0.5">
+            <div className="col-span-2 sm:col-span-1 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-2 flex flex-col gap-0.5">
               <dt className="text-xs font-normal text-[var(--text-secondary)]">Signal Region</dt>
               <dd className="text-xs font-semibold text-[var(--text-primary)]">
                 {geo.position.insidePhilippines === false ? 'Outside Philippines' : 'Philippines bounds OK'}

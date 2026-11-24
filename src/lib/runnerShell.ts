@@ -23,6 +23,23 @@ export interface ClubRequestMailtoOptions {
 
 export const RUNNER_TAB_ORDER: readonly RunnerTab[] = ['home', 'explore', 'record', 'inbox', 'you'];
 
+export const PERSONAL_CAPABILITY_KEYS = [
+  'personal.register',
+  'personal.results',
+  'personal.bibs',
+  'personal.certificates',
+  'personal.engraving',
+  'personal.friends',
+  'personal.record',
+  'personal.social',
+  'personal.clubs',
+  'personal.inbox',
+] as const;
+
+export function hasAnyPersonalCapability(can: (action: string) => boolean): boolean {
+  return PERSONAL_CAPABILITY_KEYS.some((key) => can(key));
+}
+
 const MS_PER_DAY = 86_400_000;
 const STRICT_NUMBER_PATTERN = /^[+-]?\d+(?:\.\d+)?$/;
 

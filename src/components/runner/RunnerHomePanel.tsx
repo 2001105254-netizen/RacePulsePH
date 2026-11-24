@@ -35,10 +35,10 @@ export interface RunnerHomePanelProps {
   racesLoaded: boolean;
   friendsCount: number;
   friendFeed: HomeFriendFeedItem[];
-  onOpenPass: (raceId: string) => void;
-  onOpenExplore: (section?: ExploreSection, filter?: ExploreRacesFilter, raceId?: string) => void;
-  onOpenRecord: () => void;
-  onOpenFriends: () => void;
+  onOpenPass?: (raceId: string) => void;
+  onOpenExplore?: (section?: ExploreSection, filter?: ExploreRacesFilter, raceId?: string) => void;
+  onOpenRecord?: () => void;
+  onOpenFriends?: () => void;
 }
 
 type FeedTab = 'discover' | 'following';
@@ -111,8 +111,8 @@ export default function RunnerHomePanel({
     try {
       const validSteps = normalizeOnboardingStepIds(profile.onboardingSteps, trailProgress.completed);
       await updateDoc(doc(db, 'users', profile.uid), { onboardingSteps: validSteps });
-    } catch {
-      // Offline or restricted updates retain the local dismissal without blocking the feed.
+    } catch (error) {
+      console.warn('[RunnerHomePanel] Failed to persist onboarding steps:', error);
     }
   };
 
@@ -135,31 +135,48 @@ export default function RunnerHomePanel({
     feedTabRefs.current[nextTab]?.focus();
   };
 
-  const starterSteps = [
+  const starterSteps: Array<{
+    id: 'welcome' | 'first_run' | 'explore_community' | 'connect_friend';
+    label: string;
+    done: boolean;
+    onClick?: () => void;
+  }> = [
     {
-      id: 'welcome' as const,
+      id: 'welcome',
       label: 'Welcome to RacePulsePH',
       done: trailProgress.completed.includes('welcome'),
       onClick: undefined,
     },
-    {
-      id: 'first_run' as const,
-      label: 'Check GPS / Record',
-      done: trailProgress.completed.includes('first_run'),
-      onClick: onOpenRecord,
-    },
-    {
-      id: 'explore_community' as const,
-      label: 'Explore Races & Clubs',
-      done: trailProgress.completed.includes('explore_community'),
-      onClick: () => onOpenExplore('races', 'open'),
-    },
-    {
-      id: 'connect_friend' as const,
-      label: 'Add a Runner Friend',
-      done: trailProgress.completed.includes('connect_friend'),
-      onClick: onOpenFriends,
-    },
+    ...(onOpenRecord
+      ? [
+          {
+            id: 'first_run' as const,
+            label: 'Check GPS / Record',
+            done: trailProgress.completed.includes('first_run'),
+            onClick: onOpenRecord,
+          },
+        ]
+      : []),
+    ...(onOpenExplore
+      ? [
+          {
+            id: 'explore_community' as const,
+            label: 'Explore Races & Clubs',
+            done: trailProgress.completed.includes('explore_community'),
+            onClick: () => onOpenExplore('races', 'open'),
+          },
+        ]
+      : []),
+    ...(onOpenFriends
+      ? [
+          {
+            id: 'connect_friend' as const,
+            label: 'Add a Runner Friend',
+            done: trailProgress.completed.includes('connect_friend'),
+            onClick: onOpenFriends,
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -294,38 +311,40 @@ export default function RunnerHomePanel({
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => onOpenPass(raceWeekMatch.race.id)}
-            className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-          >
-            <QrCode className="w-4 h-4 shrink-0" aria-hidden="true" />
-            <span>Open Race Pass</span>
-          </button>
+          {onOpenPass && (
+            <button
+              type="button"
+              onClick={() => onOpenPass(raceWeekMatch.race.id)}
+              className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+            >
+              <QrCode className="w-4 h-4 shrink-0" aria-hidden="true" />
+              <span>Open Race Pass</span>
+            </button>
+          )}
         </section>
       )}
 
       <section aria-label="Weekly activity snapshot">
-        <dl className="grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-[var(--border-subtle)] rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] overflow-hidden">
-          <div className="px-3 py-2.5 flex flex-col gap-0.5 border-r sm:border-r-0 border-[var(--border-subtle)]">
+        <dl className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2.5 flex flex-col gap-0.5">
             <dt className="text-xs font-normal text-[var(--text-secondary)]">My Passes</dt>
             <dd className="font-mono text-lg font-semibold tabular-nums text-[var(--text-primary)]">
               {portfolioCounts.totalPasses}
             </dd>
           </div>
-          <div className="px-3 py-2.5 flex flex-col gap-0.5">
+          <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2.5 flex flex-col gap-0.5">
             <dt className="text-xs font-normal text-[var(--text-secondary)]">Upcoming</dt>
             <dd className="font-mono text-lg font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
               {portfolioCounts.upcomingPasses}
             </dd>
           </div>
-          <div className="px-3 py-2.5 flex flex-col gap-0.5 border-r sm:border-r-0 border-[var(--border-subtle)]">
+          <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2.5 flex flex-col gap-0.5">
             <dt className="text-xs font-normal text-[var(--text-secondary)]">Friends</dt>
             <dd className="font-mono text-lg font-semibold tabular-nums text-[var(--text-primary)]">
               {friendsCount}
             </dd>
           </div>
-          <div className="px-3 py-2.5 flex flex-col gap-0.5">
+          <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2.5 flex flex-col gap-0.5">
             <dt className="text-xs font-normal text-[var(--text-secondary)]">Open Races</dt>
             <dd className="font-mono text-lg font-semibold tabular-nums text-red-700 dark:text-red-400">
               {racesLoaded ? portfolioCounts.openRaces : '...'}
@@ -386,30 +405,32 @@ export default function RunnerHomePanel({
         >
           {feedTab === 'discover' ? (
             <>
-              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div className="flex items-start gap-3 min-w-0">
-                  <span className="w-10 h-10 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] flex items-center justify-center shrink-0 text-red-700 dark:text-red-400">
-                    <Navigation className="w-4 h-4" aria-hidden="true" />
-                  </span>
-                  <div className="min-w-0 space-y-0.5">
-                    <h3 className="font-display font-semibold text-sm sm:text-base text-[var(--text-primary)]">
-                      Check GPS for a Run
-                    </h3>
-                    <p className="text-xs font-normal text-[var(--text-secondary)]">
-                      Verify live GNSS signal accuracy and pick a published Philippine course before heading out.
-                    </p>
+              {onOpenRecord && (
+                <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <span className="w-10 h-10 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] flex items-center justify-center shrink-0 text-red-700 dark:text-red-400">
+                      <Navigation className="w-4 h-4" aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0 space-y-0.5">
+                      <h3 className="font-display font-semibold text-sm sm:text-base text-[var(--text-primary)]">
+                        Check GPS for a Run
+                      </h3>
+                      <p className="text-xs font-normal text-[var(--text-secondary)]">
+                        Verify live GNSS signal accuracy and pick a published Philippine course before heading out.
+                      </p>
+                    </div>
                   </div>
-                </div>
 
-                <button
-                  type="button"
-                  onClick={onOpenRecord}
-                  className="min-h-11 px-4 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-                >
-                  <Navigation className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
-                  <span>Open GPS Check</span>
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={onOpenRecord}
+                    className="min-h-11 px-4 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+                  >
+                    <Navigation className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+                    <span>Open GPS Check</span>
+                  </button>
+                </div>
+              )}
 
               {!racesLoaded ? (
                 <RunnerQueueSkeleton rows={4} label="Loading Philippine races" />
@@ -422,70 +443,89 @@ export default function RunnerHomePanel({
                   <p className="text-xs font-normal text-[var(--text-secondary)] max-w-md mx-auto">
                     Browse all published events and past results in Explore while new Philippine race calendars open.
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => onOpenExplore('races', 'all')}
-                    className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 cursor-pointer transition-colors"
-                  >
-                    <Compass className="w-4 h-4" aria-hidden="true" />
-                    <span>Browse Explore Catalog</span>
-                  </button>
+                  {onOpenExplore && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenExplore('races', 'all')}
+                      className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                    >
+                      <Compass className="w-4 h-4" aria-hidden="true" />
+                      <span>Browse Explore Catalog</span>
+                    </button>
+                  )}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {discoverRaces.slice(0, 12).map((race) => {
-                    const isOpen = isRaceRegistrationOpen(race, todayStr);
-                    const distances = sortedRaceDistances(race);
-                    const distanceSummary = distances.map((d) => d.label).join(' / ') || 'Open Category';
-                    return (
-                      <article
-                        key={race.id}
-                        style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 164px' }}
-                        className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-3 sm:p-4 flex flex-col justify-between gap-3"
-                      >
-                        <div className="space-y-1.5 min-w-0">
-                          <h3 className="font-display font-semibold text-base text-[var(--text-primary)] leading-snug">
-                            {race.name}
-                          </h3>
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {discoverRaces.slice(0, 12).map((race) => {
+                      const isOpen = isRaceRegistrationOpen(race, todayStr);
+                      const distances = sortedRaceDistances(race);
+                      const distanceSummary = distances.map((d) => d.label).join(' / ') || 'Open Category';
+                      return (
+                        <article
+                          key={race.id}
+                          style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 164px' }}
+                          className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-3 sm:p-4 flex flex-col justify-between gap-3"
+                        >
+                          <div className="space-y-1.5 min-w-0">
+                            <h3 className="font-display font-semibold text-base text-[var(--text-primary)] leading-snug">
+                              {race.name}
+                            </h3>
 
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span
-                              className={`inline-flex items-center px-2 py-0.5 rounded-md border text-xs font-semibold ${
-                                isOpen
-                                  ? 'bg-emerald-500/10 border-emerald-600/30 text-emerald-800 dark:text-emerald-300'
-                                  : 'bg-[var(--surface-inset)] border-[var(--border-default)] text-[var(--text-secondary)]'
-                              }`}
-                            >
-                              {isOpen ? 'Open Now' : 'Upcoming'}
-                            </span>
-                            <span className="font-mono text-xs font-normal tabular-nums text-[var(--text-secondary)] inline-flex items-center gap-1">
-                              <Calendar className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                              <span>{race.date}</span>
-                            </span>
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span
+                                className={`inline-flex items-center px-2 py-0.5 rounded-md border text-xs font-semibold ${
+                                  isOpen
+                                    ? 'bg-emerald-500/10 border-emerald-600/30 text-emerald-800 dark:text-emerald-300'
+                                    : 'bg-[var(--surface-inset)] border-[var(--border-default)] text-[var(--text-secondary)]'
+                                }`}
+                              >
+                                {isOpen ? 'Open Now' : 'Upcoming'}
+                              </span>
+                              <span className="font-mono text-xs font-normal tabular-nums text-[var(--text-secondary)] inline-flex items-center gap-1">
+                                <Calendar className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                                <span>{race.date}</span>
+                              </span>
+                            </div>
+
+                            <p className="text-xs font-normal text-[var(--text-secondary)] truncate tabular-nums">
+                              {distanceSummary} · {formatFeeRangePH(race.distances)}
+                            </p>
                           </div>
 
-                          <p className="text-xs font-normal text-[var(--text-secondary)] truncate tabular-nums">
-                            {distanceSummary} · {formatFeeRangePH(race.distances)}
-                          </p>
-                        </div>
+                          <div className="flex items-center justify-between gap-2 pt-1">
+                            <span className="text-xs font-mono text-[var(--text-secondary)] truncate">
+                              {race.onlinePaymentEnabled || race.manualPaymentEnabled ? 'Online checkout ready' : 'Standard entry'}
+                            </span>
+                            {onOpenExplore && (
+                              <button
+                                type="button"
+                                onClick={() => onOpenExplore('races', 'open', race.id)}
+                                className="min-h-11 px-3.5 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+                              >
+                                <Flag className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                                <span>View in Explore</span>
+                              </button>
+                            )}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
 
-                        <div className="flex items-center justify-between gap-2 pt-1">
-                          <span className="text-xs font-mono text-[var(--text-secondary)] truncate">
-                            {race.onlinePaymentEnabled || race.manualPaymentEnabled ? 'Online checkout ready' : 'Standard entry'}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => onOpenExplore('races', 'open', race.id)}
-                            className="min-h-11 px-3.5 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-                          >
-                            <Flag className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                            <span>View in Explore</span>
-                          </button>
-                        </div>
-                      </article>
-                    );
-                  })}
-                </div>
+                  {discoverRaces.length > 12 && onOpenExplore && (
+                    <div className="pt-1 flex justify-center">
+                      <button
+                        type="button"
+                        onClick={() => onOpenExplore('races', 'open')}
+                        className="min-h-11 px-4 rounded-xl border border-[var(--border-button)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+                      >
+                        <Compass className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+                        <span className="tabular-nums">View all {discoverRaces.length} races in Explore</span>
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
             </>
           ) : friendFeed.length === 0 ? (
@@ -499,14 +539,16 @@ export default function RunnerHomePanel({
                   ? 'Connected friends appear here as soon as they join or complete shared RacePulsePH events.'
                   : 'Add friends by @username to follow their upcoming starts and completed Philippine races.'}
               </p>
-              <button
-                type="button"
-                onClick={onOpenFriends}
-                className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-              >
-                <Users2 className="w-4 h-4 shrink-0" aria-hidden="true" />
-                <span>Find Runner Friends</span>
-              </button>
+              {onOpenFriends && (
+                <button
+                  type="button"
+                  onClick={onOpenFriends}
+                  className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+                >
+                  <Users2 className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <span>Find Runner Friends</span>
+                </button>
+              )}
             </div>
           ) : (
             <div className="space-y-3">
@@ -557,13 +599,15 @@ export default function RunnerHomePanel({
                             </p>
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() => onOpenExplore('races', 'all', raceItem.raceId)}
-                            className="min-h-11 px-3 rounded-xl border border-[var(--border-button)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-                          >
-                            <span>Open Event</span>
-                          </button>
+                          {onOpenExplore && (
+                            <button
+                              type="button"
+                              onClick={() => onOpenExplore('races', 'all', raceItem.raceId)}
+                              className="min-h-11 px-3 rounded-xl border border-[var(--border-button)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+                            >
+                              <span>Open Event</span>
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>

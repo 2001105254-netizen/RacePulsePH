@@ -32,7 +32,7 @@ export interface RunnerYouHubPanelProps {
   onOpenExploreRace: (raceId: string) => void;
   onScanQr: () => void;
   onOpenProfile: () => void;
-  onOpenRecord: () => void;
+  onOpenRecord?: () => void;
   myPassesSearch: string;
   onMyPassesSearchChange: (value: string) => void;
   myPassesFilter: MyPassesFilter;
@@ -276,26 +276,26 @@ export default function RunnerYouHubPanel({
                 </div>
               </div>
 
-              <dl className="grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-[var(--border-subtle)] rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] overflow-hidden">
-                <div className="px-3 py-2.5 flex flex-col gap-0.5 border-r sm:border-r-0 border-[var(--border-subtle)]">
+              <dl className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-2.5 flex flex-col gap-0.5">
                   <dt className="text-xs font-normal text-[var(--text-secondary)]">Passes</dt>
                   <dd className="font-mono text-base font-semibold tabular-nums text-[var(--text-primary)]">
                     {portfolioCounts.totalPasses}
                   </dd>
                 </div>
-                <div className="px-3 py-2.5 flex flex-col gap-0.5">
+                <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-2.5 flex flex-col gap-0.5">
                   <dt className="text-xs font-normal text-[var(--text-secondary)]">Upcoming</dt>
                   <dd className="font-mono text-base font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
                     {portfolioCounts.upcomingPasses}
                   </dd>
                 </div>
-                <div className="px-3 py-2.5 flex flex-col gap-0.5 border-r sm:border-r-0 border-[var(--border-subtle)]">
+                <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-2.5 flex flex-col gap-0.5">
                   <dt className="text-xs font-normal text-[var(--text-secondary)]">Completed</dt>
                   <dd className="font-mono text-base font-semibold tabular-nums text-[var(--text-primary)]">
                     {portfolioCounts.completedPasses}
                   </dd>
                 </div>
-                <div className="px-3 py-2.5 flex flex-col gap-0.5">
+                <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-2.5 flex flex-col gap-0.5">
                   <dt className="text-xs font-normal text-[var(--text-secondary)]">Friends</dt>
                   <dd className="font-mono text-base font-semibold tabular-nums text-[var(--text-primary)]">
                     {friendsCount}
@@ -304,7 +304,7 @@ export default function RunnerYouHubPanel({
               </dl>
             </section>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-3">
               <article className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-4 flex flex-col justify-between gap-3">
                 <div className="space-y-1.5">
                   <div className="w-9 h-9 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] flex items-center justify-center text-red-700 dark:text-red-400">
@@ -338,28 +338,30 @@ export default function RunnerYouHubPanel({
                 </div>
               </article>
 
-              <article className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-4 flex flex-col justify-between gap-3">
-                <div className="space-y-1.5">
-                  <div className="w-9 h-9 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] flex items-center justify-center text-red-700 dark:text-red-400">
-                    <Navigation className="w-4 h-4" aria-hidden="true" />
+              {onOpenRecord && (
+                <article className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-4 flex flex-col justify-between gap-3">
+                  <div className="space-y-1.5">
+                    <div className="w-9 h-9 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] flex items-center justify-center text-red-700 dark:text-red-400">
+                      <Navigation className="w-4 h-4" aria-hidden="true" />
+                    </div>
+                    <h3 className="font-display font-semibold text-base text-[var(--text-primary)]">
+                      GPS Run Check
+                    </h3>
+                    <p className="text-xs font-normal text-[var(--text-secondary)] leading-relaxed">
+                      Check live satellite accuracy, calibrate body weight for calorie estimates, and select a published course.
+                    </p>
                   </div>
-                  <h3 className="font-display font-semibold text-base text-[var(--text-primary)]">
-                    GPS Run Check
-                  </h3>
-                  <p className="text-xs font-normal text-[var(--text-secondary)] leading-relaxed">
-                    Check live satellite accuracy, calibrate body weight for calorie estimates, and select a published course.
-                  </p>
-                </div>
 
-                <button
-                  type="button"
-                  onClick={onOpenRecord}
-                  className="min-h-11 w-full px-3 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
-                >
-                  <Navigation className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
-                  <span>Open Record Check</span>
-                </button>
-              </article>
+                  <button
+                    type="button"
+                    onClick={onOpenRecord}
+                    className="min-h-11 w-full px-3 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <Navigation className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+                    <span>Open Record Check</span>
+                  </button>
+                </article>
+              )}
 
               <article className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-4 flex flex-col justify-between gap-3">
                 <div className="space-y-1.5">

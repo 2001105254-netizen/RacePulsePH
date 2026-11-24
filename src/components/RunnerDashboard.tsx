@@ -286,7 +286,10 @@ export default function RunnerDashboard({
         items.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
         setIncomingRequests(items);
       },
-      () => setIncomingRequests([]),
+      (error) => {
+        console.warn('[RunnerDashboard] friendRequests listener failed:', error);
+        setIncomingRequests([]);
+      },
     );
   }, [canFriends, profile.uid]);
 
@@ -317,7 +320,10 @@ export default function RunnerDashboard({
         items.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
         setRaceInvites(items);
       },
-      () => setRaceInvites([]),
+      (error) => {
+        console.warn('[RunnerDashboard] raceInvites listener failed:', error);
+        setRaceInvites([]);
+      },
     );
   }, [canInvites, profile.uid]);
 
@@ -394,7 +400,9 @@ export default function RunnerDashboard({
                 return { ...prev, [friendUid]: profileSnap.data() as FriendProfile };
               });
             },
-            () => undefined,
+            (error) => {
+              console.warn('[RunnerDashboard] friendProfiles listener failed:', error);
+            },
           );
           const unsubActivity = onSnapshot(
             doc(db, 'friendActivities', friendUid),
@@ -409,7 +417,9 @@ export default function RunnerDashboard({
                 return { ...prev, [friendUid]: activitySnap.data() as FriendActivity };
               });
             },
-            () => undefined,
+            (error) => {
+              console.warn('[RunnerDashboard] friendActivities listener failed:', error);
+            },
           );
           perFriendUnsubs.set(friendUid, () => {
             unsubProfile();
@@ -417,7 +427,8 @@ export default function RunnerDashboard({
           });
         }
       },
-      () => {
+      (error) => {
+        console.warn('[RunnerDashboard] friendships listener failed:', error);
         setFriendsCount(0);
       },
     );
@@ -743,15 +754,16 @@ export default function RunnerDashboard({
         await updateDoc(doc(db, 'raceInvites', `${invite.fromUid}_${invite.toUid}_${invite.raceId}`), {
           status: 'opened',
         });
-      } catch {
-        // Safe fallback when opening the invited race.
+      } catch (error) {
+        console.warn('[RunnerDashboard] Failed to update raceInvite status:', error);
       }
+      if (!allowedTabs.includes('explore')) return;
       setPendingDeepLinkRaceId(invite.raceId);
       setExploreSection('races');
       setExploreRacesFilter('open');
       selectTab('explore');
     },
-    [selectTab],
+    [allowedTabs, selectTab],
   );
 
   const navItems: WorkspaceNavItem[] = useMemo(
@@ -1031,11 +1043,13 @@ export default function RunnerDashboard({
       value: portfolioCounts.totalPasses,
       loading: telemetryLoading,
       active: tab === 'you' && youSection === 'passes' && myPassesFilter === 'all',
-      onClick: () => {
-        setMyPassesFilter('all');
-        setYouSection('passes');
-        selectTab('you');
-      },
+      onClick: allowedTabs.includes('you')
+        ? () => {
+            setMyPassesFilter('all');
+            setYouSection('passes');
+            selectTab('you');
+          }
+        : undefined,
     },
     {
       key: 'upcoming',
@@ -1044,13 +1058,15 @@ export default function RunnerDashboard({
       loading: telemetryLoading,
       accent: 'emerald',
       active: tab === 'you' && youSection === 'passes' && myPassesFilter === 'upcoming',
-      onClick: () => {
-        setMyPassesFilter('upcoming');
-        setYouSection('passes');
-        selectTab('you');
-      },
+      onClick: allowedTabs.includes('you')
+        ? () => {
+            setMyPassesFilter('upcoming');
+            setYouSection('passes');
+            selectTab('you');
+          }
+        : undefined,
     },
-    ...(canRegister
+    ...(canRegister && allowedTabs.includes('explore')
       ? [
           {
             key: 'events',
@@ -1067,7 +1083,7 @@ export default function RunnerDashboard({
           },
         ]
       : []),
-    ...(canFriends
+    ...(canFriends && allowedTabs.includes('you')
       ? [
           {
             key: 'friends',
@@ -1392,29 +1408,37 @@ export default function RunnerDashboard({
               racesLoaded={racesLoaded}
               friendsCount={friendsCount}
               friendFeed={friendFeed}
-              onOpenPass={(raceId) => {
-                setMyPassesFilter('all');
-                setRequestedPassRaceId(raceId);
-                setYouSection('passes');
-                selectTab('you');
-              }}
-              onOpenExplore={(section = 'races', filter = 'open', raceId) => {
-                setExploreSection(section);
-                setExploreRacesFilter(filter);
-                if (raceId) {
-                  setPendingDeepLinkRaceId(raceId);
-                }
-                selectTab('explore');
-              }}
-              onOpenRecord={() => {
-                if (allowedTabs.includes('record')) {
-                  selectTab('record');
-                }
-              }}
-              onOpenFriends={() => {
-                setYouSection(canFriends ? 'friends' : 'overview');
-                selectTab('you');
-              }}
+              onOpenPass={
+                allowedTabs.includes('you')
+                  ? (raceId) => {
+                      setMyPassesFilter('all');
+                      setRequestedPassRaceId(raceId);
+                      setYouSection('passes');
+                      selectTab('you');
+                    }
+                  : undefined
+              }
+              onOpenExplore={
+                allowedTabs.includes('explore')
+                  ? (section = 'races', filter = 'open', raceId) => {
+                      setExploreSection(section);
+                      setExploreRacesFilter(filter);
+                      if (raceId) {
+                        setPendingDeepLinkRaceId(raceId);
+                      }
+                      selectTab('explore');
+                    }
+                  : undefined
+              }
+              onOpenRecord={allowedTabs.includes('record') ? () => selectTab('record') : undefined}
+              onOpenFriends={
+                canFriends && allowedTabs.includes('you')
+                  ? () => {
+                      setYouSection('friends');
+                      selectTab('you');
+                    }
+                  : undefined
+              }
             />
           )}
 
@@ -1486,24 +1510,33 @@ export default function RunnerDashboard({
               raceInvites={raceInvites}
               reminders={reminders}
               canFriends={canFriends}
+              canInvites={canInvites}
               onAcceptRequest={handleAcceptFriendRequest}
               onDeclineRequest={handleDeclineFriendRequest}
               onOpenInvite={handleOpenRaceInvite}
-              onOpenPass={(raceId) => {
-                setMyPassesFilter('all');
-                setRequestedPassRaceId(raceId);
-                setYouSection('passes');
-                selectTab('you');
-              }}
+              onOpenPass={
+                allowedTabs.includes('you')
+                  ? (raceId) => {
+                      setMyPassesFilter('all');
+                      setRequestedPassRaceId(raceId);
+                      setYouSection('passes');
+                      selectTab('you');
+                    }
+                  : undefined
+              }
               onDismissReminder={dismiss}
-              onOpenFriends={() => {
-                setYouSection(canFriends ? 'friends' : 'overview');
-                selectTab('you');
-              }}
+              onOpenFriends={
+                canFriends && allowedTabs.includes('you')
+                  ? () => {
+                      setYouSection('friends');
+                      selectTab('you');
+                    }
+                  : undefined
+              }
             />
           )}
 
-          {tab === 'you' && (
+          {tab === 'you' && allowedTabs.includes('you') && (
             <RunnerYouHubPanel
               section={youSection}
               onSectionChange={setYouSection}
@@ -1517,11 +1550,13 @@ export default function RunnerDashboard({
               requestedPassRaceId={requestedPassRaceId}
               onRequestedPassHandled={handlePassDeepLinkHandled}
               onBrowseEvents={() => {
+                if (!allowedTabs.includes('explore')) return;
                 setExploreSection('races');
                 setExploreRacesFilter('open');
                 selectTab('explore');
               }}
               onOpenExploreRace={(raceId) => {
+                if (!allowedTabs.includes('explore')) return;
                 setScannedRaceId(raceId);
                 setExploreSection('races');
                 setExploreRacesFilter('open');
@@ -1529,11 +1564,7 @@ export default function RunnerDashboard({
               }}
               onScanQr={openQrScanner}
               onOpenProfile={() => setShowProfile(true)}
-              onOpenRecord={() => {
-                if (allowedTabs.includes('record')) {
-                  selectTab('record');
-                }
-              }}
+              onOpenRecord={allowedTabs.includes('record') ? () => selectTab('record') : undefined}
               myPassesSearch={myPassesSearch}
               onMyPassesSearchChange={setMyPassesSearch}
               myPassesFilter={myPassesFilter}

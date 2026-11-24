@@ -37,12 +37,13 @@ export interface RunnerInboxPreviewPanelProps {
   raceInvites: InboxRaceInviteItem[];
   reminders: RunnerReminder[];
   canFriends: boolean;
+  canInvites: boolean;
   onAcceptRequest: (req: InboxFriendRequestItem) => Promise<void>;
   onDeclineRequest: (req: InboxFriendRequestItem) => Promise<void>;
   onOpenInvite: (invite: InboxRaceInviteItem) => Promise<void>;
-  onOpenPass: (raceId: string) => void;
+  onOpenPass?: (raceId: string) => void;
   onDismissReminder: (id: string) => void;
-  onOpenFriends: () => void;
+  onOpenFriends?: () => void;
 }
 
 function formatShortDate(iso: string): string {
@@ -55,6 +56,7 @@ export default function RunnerInboxPreviewPanel({
   raceInvites,
   reminders,
   canFriends,
+  canInvites,
   onAcceptRequest,
   onDeclineRequest,
   onOpenInvite,
@@ -106,7 +108,7 @@ export default function RunnerInboxPreviewPanel({
           </p>
         </div>
 
-        {canFriends && (
+        {canFriends && onOpenFriends && (
           <button
             type="button"
             onClick={onOpenFriends}
@@ -139,7 +141,7 @@ export default function RunnerInboxPreviewPanel({
           <p className="text-xs font-normal text-[var(--text-secondary)] max-w-md mx-auto leading-relaxed">
             New friend requests, event invitations from friends, and race-day or kit reminders will appear here automatically.
           </p>
-          {canFriends && (
+          {canFriends && onOpenFriends && (
             <button
               type="button"
               onClick={onOpenFriends}
@@ -178,7 +180,7 @@ export default function RunnerInboxPreviewPanel({
                   <p className="text-xs font-normal text-[var(--text-secondary)]">
                     No pending friend requests right now.
                   </p>
-                  {canFriends && (
+                  {canFriends && onOpenFriends && (
                     <button
                       type="button"
                       onClick={onOpenFriends}
@@ -193,7 +195,6 @@ export default function RunnerInboxPreviewPanel({
                 <ul className="divide-y divide-[var(--border-subtle)]">
                   {incomingRequests.map((req) => {
                     const reqId = `${req.fromUid}_${req.toUid}`;
-                    const isBusy = busyKey === `accept_${reqId}` || busyKey === `decline_${reqId}`;
                     return (
                       <li
                         key={reqId}
@@ -249,68 +250,70 @@ export default function RunnerInboxPreviewPanel({
           )}
 
           {/* Group 2: Race Invites */}
-          <section
-            aria-labelledby={`${baseId}-invites-heading`}
-            className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] overflow-hidden"
-          >
-            <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <Flag className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
-                <h2
-                  id={`${baseId}-invites-heading`}
-                  className="font-display font-semibold text-sm sm:text-base text-[var(--text-primary)] truncate"
-                >
-                  Race Invites
-                </h2>
+          {(canInvites || raceInvites.length > 0) && (
+            <section
+              aria-labelledby={`${baseId}-invites-heading`}
+              className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] overflow-hidden"
+            >
+              <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Flag className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+                  <h2
+                    id={`${baseId}-invites-heading`}
+                    className="font-display font-semibold text-sm sm:text-base text-[var(--text-primary)] truncate"
+                  >
+                    Race Invites
+                  </h2>
+                </div>
+                <span className="font-mono text-xs font-semibold tabular-nums text-[var(--text-secondary)]">
+                  {raceInvites.length}
+                </span>
               </div>
-              <span className="font-mono text-xs font-semibold tabular-nums text-[var(--text-secondary)]">
-                {raceInvites.length}
-              </span>
-            </div>
 
-            {raceInvites.length === 0 ? (
-              <p className="px-4 py-3 text-xs font-normal text-[var(--text-secondary)]">
-                No pending race invitations right now.
-              </p>
-            ) : (
-              <ul className="divide-y divide-[var(--border-subtle)]">
-                {raceInvites.map((invite) => {
-                  const inviteId = `${invite.fromUid}_${invite.toUid}_${invite.raceId}`;
-                  return (
-                    <li
-                      key={inviteId}
-                      className="px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
-                    >
-                      <div className="min-w-0 space-y-0.5">
-                        <p className="text-sm font-semibold text-[var(--text-primary)] truncate">
-                          {invite.raceName}
-                        </p>
-                        <p className="text-xs font-normal text-[var(--text-secondary)] tabular-nums truncate">
-                          Invited by {invite.fromDisplayName} · {invite.raceDate}
-                        </p>
-                      </div>
-
-                      <button
-                        type="button"
-                        disabled={busyKey !== null}
-                        onClick={() =>
-                          void runAsyncAction(
-                            `invite_${inviteId}`,
-                            () => onOpenInvite(invite),
-                            'Could not open race invitation.',
-                          )
-                        }
-                        className="min-h-11 px-3.5 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 disabled:opacity-60 cursor-pointer transition-colors"
+              {raceInvites.length === 0 ? (
+                <p className="px-4 py-3 text-xs font-normal text-[var(--text-secondary)]">
+                  No pending race invitations right now.
+                </p>
+              ) : (
+                <ul className="divide-y divide-[var(--border-subtle)]">
+                  {raceInvites.map((invite) => {
+                    const inviteId = `${invite.fromUid}_${invite.toUid}_${invite.raceId}`;
+                    return (
+                      <li
+                        key={inviteId}
+                        className="px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
                       >
-                        <Flag className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                        <span>{busyKey === `invite_${inviteId}` ? 'Opening...' : 'Open Event'}</span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
+                        <div className="min-w-0 space-y-0.5">
+                          <p className="text-sm font-semibold text-[var(--text-primary)] truncate">
+                            {invite.raceName}
+                          </p>
+                          <p className="text-xs font-normal text-[var(--text-secondary)] tabular-nums truncate">
+                            Invited by {invite.fromDisplayName} · {invite.raceDate}
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={busyKey !== null}
+                          onClick={() =>
+                            void runAsyncAction(
+                              `invite_${inviteId}`,
+                              () => onOpenInvite(invite),
+                              'Could not open race invitation.',
+                            )
+                          }
+                          className="min-h-11 px-3.5 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 disabled:opacity-60 cursor-pointer transition-colors"
+                        >
+                          <Flag className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                          <span>{busyKey === `invite_${inviteId}` ? 'Opening...' : 'Open Event'}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+          )}
 
           {/* Group 3: Race & Kit Activity */}
           <section
@@ -370,13 +373,15 @@ export default function RunnerInboxPreviewPanel({
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => onOpenPass(reminder.raceId)}
-                          className="min-h-11 flex-1 sm:flex-initial px-3 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] whitespace-nowrap cursor-pointer transition-colors"
-                        >
-                          Open Pass
-                        </button>
+                        {onOpenPass && (
+                          <button
+                            type="button"
+                            onClick={() => onOpenPass(reminder.raceId)}
+                            className="min-h-11 flex-1 sm:flex-initial px-3 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] whitespace-nowrap cursor-pointer transition-colors"
+                          >
+                            Open Pass
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => onDismissReminder(reminder.id)}

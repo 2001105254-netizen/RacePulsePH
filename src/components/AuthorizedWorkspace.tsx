@@ -2,6 +2,7 @@ import { lazy, Suspense, useState } from 'react';
 import { signOutUser } from '../firebase';
 import { UserProfile } from '../types';
 import { useAccess } from '../lib/access';
+import { hasAnyPersonalCapability } from '../lib/runnerShell';
 import type { WorkspaceSwitchProps } from './DesktopSidebar';
 import { AnimatedTabView, ViewLoadingSkeleton, type NavDirection } from './ui/MotionPrimitives';
 
@@ -11,7 +12,7 @@ const RunnerDashboard = lazy(() => import('./RunnerDashboard'));
 export default function AuthorizedWorkspace({ profile, raceId, onRaceHandled }: { profile: UserProfile; raceId: string | null; onRaceHandled: () => void }) {
   const access = useAccess();
   const operations = access.authority || ['race.view','race.create','routes.view','bibs.studio','timing.view','roster.view','engraving.view','users.view','hub.manage','hub.publish','highlights.view'].some(access.can);
-  const personal = ['personal.register','personal.results','personal.bibs','personal.certificates','personal.engraving','personal.friends'].some(access.can);
+  const personal = hasAnyPersonalCapability(access.can);
   const [selected, setSelected] = useState<'operations' | 'personal'>(operations ? 'operations' : 'personal');
   const [workspaceDirection, setWorkspaceDirection] = useState<NavDirection>('forward');
   const workspace: 'operations' | 'personal' = selected === 'operations' && operations || !personal ? 'operations' : 'personal';
