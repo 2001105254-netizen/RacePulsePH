@@ -38,6 +38,13 @@ import {
   type StorageLike,
 } from '../src/lib/runs/runCrashRecovery';
 import type { PendingRunUpload, RecordedTrackPoint } from '../src/lib/runs/types';
+import {
+  RunTracking,
+  RunTrackingWeb,
+  type NativeRunFix,
+  type NativeRunTrackingStatus,
+  type RunTrackingPluginInterface,
+} from '../src/lib/runs/nativeRunTracking';
 import { parseGpxRoute } from '../src/lib/gpxRoute';
 
 function createMemoryStorage(): StorageLike {
@@ -965,4 +972,267 @@ test('runRecorderEngine & runCrashRecovery: handle invalid timestamps, malformed
   const validOnly = await listPendingRunUploads('u_filter', storage);
   assert.equal(validOnly.length, 1);
   assert.equal(validOnly[0].requestId, 'ok_1');
+});
+
+test('RunTrackingWeb: exposes status, acquires/re-acquires screen wake lock, emits locationFix, and cleans up on stopTracking', async () => {
+  const g = globalThis as Record<string, unknown>;
+  const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const origDocDesc = Object.getOwnPropertyDescriptor(globalThis, 'document');
+
+  type WatchSuccess = (pos: {
+    timestamp: number;
+    coords: {
+      latitude: number;
+      longitude: number;
+      accuracy: number;
+      altitude: number | null;
+      speed: number | null;
+      heading: number | null;
+    };
+  }) => void;
+
+  let watchCallback = null as WatchSuccess | null;
+  let watchOptionsSeen = null as { enableHighAccuracy?: boolean; maximumAge?: number } | null;
+  const clearedWatchIds: number[] = [];
+  let nextWatchId = 77;
+
+  let wakeLockRequests = 0;
+  const sentinels: Array<{ released: boolean; listeners: Map<string, Set<() => void>> }> = [];
+
+  const docListeners = new Map<string, Set<() => void>>();
+  const mockDoc = {
+    visibilityState: 'visible' as 'visible' | 'hidden',
+    addEventListener: (event: string, fn: () => void) => {
+      let set = docListeners.get(event);
+      if (!set) {
+        set = new Set();
+        docListeners.set(event, set);
+      }
+      set.add(fn);
+    },
+    removeEventListener: (event: string, fn: () => void) => {
+      docListeners.get(event)?.delete(fn);
+    },
+  };
+
+  const mockNav = {
+    geolocation: {
+      getCurrentPosition: () => undefined,
+      watchPosition: (
+        onSuccess: WatchSuccess,
+        _onError: (err: { code: number; message: string }) => void,
+        opts: { enableHighAccuracy?: boolean; maximumAge?: number },
+      ) => {
+        watchCallback = onSuccess;
+        watchOptionsSeen = opts;
+        nextWatchId += 1;
+        return nextWatchId;
+      },
+      clearWatch: (id: number) => {
+        clearedWatchIds.push(id);
+      },
+    },
+    wakeLock: {
+      request: async (type: string) => {
+        assert.equal(type, 'screen');
+        wakeLockRequests += 1;
+        const sentinelRecord = { released: false, listeners: new Map<string, Set<() => void>>() };
+        sentinels.push(sentinelRecord);
+        return {
+          get released() {
+            return sentinelRecord.released;
+          },
+          addEventListener: (event: string, fn: () => void) => {
+            let set = sentinelRecord.listeners.get(event);
+            if (!set) {
+              set = new Set();
+              sentinelRecord.listeners.set(event, set);
+            }
+            set.add(fn);
+          },
+          removeEventListener: (event: string, fn: () => void) => {
+            sentinelRecord.listeners.get(event)?.delete(fn);
+          },
+          release: async () => {
+            sentinelRecord.released = true;
+            sentinelRecord.listeners.get('release')?.forEach((fn) => fn());
+          },
+        };
+      },
+    },
+  };
+
+  Object.defineProperty(globalThis, 'navigator', { value: mockNav, configurable: true, writable: true });
+  Object.defineProperty(globalThis, 'document', { value: mockDoc, configurable: true, writable: true });
+
+  try {
+    // Registered plugin proxy matches RunTrackingPluginInterface contract
+    const registered: RunTrackingPluginInterface = RunTracking;
+    assert.equal(typeof registered.startTracking, 'function');
+    assert.equal(typeof registered.stopTracking, 'function');
+    assert.equal(typeof registered.updateNotification, 'function');
+    assert.equal(typeof registered.getBufferedFixes, 'function');
+    assert.equal(typeof registered.getStatus, 'function');
+
+    const plugin = new RunTrackingWeb();
+    const initialStatus: NativeRunTrackingStatus = await plugin.getStatus();
+    assert.deepEqual(initialStatus, {
+      active: false,
+      bufferedCount: 0,
+      mode: 'web-wake-lock',
+    });
+
+    const received: NativeRunFix[] = [];
+    const listener = await plugin.addListener('locationFix', (fix) => {
+      received.push(fix);
+    });
+
+    const startRes = await plugin.startTracking({ title: 'BGC Tempo', subtitle: '0.00 km' });
+    assert.deepEqual(startRes, { active: true, mode: 'web-wake-lock' });
+    assert.deepEqual(await plugin.getStatus(), {
+      active: true,
+      bufferedCount: 0,
+      mode: 'web-wake-lock',
+    });
+    assert.equal(wakeLockRequests, 1);
+    assert.equal(watchOptionsSeen?.enableHighAccuracy, true);
+    assert.equal(watchOptionsSeen?.maximumAge, 0);
+
+    // Trigger fix with null altitude and verify exact NativeRunFix payload
+    assert.ok(watchCallback);
+    (watchCallback as WatchSuccess)({
+      timestamp: 1_764_000_010_000,
+      coords: {
+        latitude: 14.5501,
+        longitude: 121.0502,
+        accuracy: 4.5,
+        altitude: null,
+        speed: 3.2,
+        heading: 90,
+      },
+    });
+    assert.equal(received.length, 1);
+    assert.deepEqual(received[0], {
+      latitude: 14.5501,
+      longitude: 121.0502,
+      accuracyM: 4.5,
+      altitudeM: null,
+      speedMps: 3.2,
+      headingDeg: 90,
+      timestamp: 1_764_000_010_000,
+      provider: 'web-geolocation',
+    });
+
+    // OS releases wake lock while tab goes hidden -> must NOT re-acquire while hidden
+    sentinels[0].released = true;
+    sentinels[0].listeners.get('release')?.forEach((fn) => fn());
+    mockDoc.visibilityState = 'hidden';
+    docListeners.get('visibilitychange')?.forEach((fn) => fn());
+    await Promise.resolve();
+    assert.equal(wakeLockRequests, 1);
+
+    // Tab returns visible -> must re-acquire screen wake lock cleanly
+    mockDoc.visibilityState = 'visible';
+    docListeners.get('visibilitychange')?.forEach((fn) => fn());
+    await Promise.resolve();
+    assert.equal(wakeLockRequests, 2);
+
+    assert.equal(await plugin.updateNotification({ title: 'BGC Tempo', subtitle: '1.00 km' }), undefined);
+    assert.deepEqual(await plugin.getBufferedFixes(), { fixes: [] });
+
+    const stopRes = await plugin.stopTracking();
+    assert.deepEqual(stopRes, { active: false });
+    assert.deepEqual(await plugin.getStatus(), {
+      active: false,
+      bufferedCount: 0,
+      mode: 'web-wake-lock',
+    });
+    assert.deepEqual(clearedWatchIds, [78]);
+    assert.equal(sentinels[1].released, true);
+    assert.equal(docListeners.get('visibilitychange')?.size ?? 0, 0);
+
+    // Post-stop fixes and visibility events are ignored
+    (watchCallback as WatchSuccess)({
+      timestamp: 1_764_000_020_000,
+      coords: {
+        latitude: 14.551,
+        longitude: 121.051,
+        accuracy: 5,
+        altitude: 12,
+        speed: 3,
+        heading: 0,
+      },
+    });
+    assert.equal(received.length, 1);
+    assert.equal(wakeLockRequests, 2);
+
+    await listener.remove();
+  } finally {
+    if (origNavDesc) Object.defineProperty(globalThis, 'navigator', origNavDesc);
+    else delete g.navigator;
+    if (origDocDesc) Object.defineProperty(globalThis, 'document', origDocDesc);
+    else delete g.document;
+  }
+});
+
+test('RunTrackingWeb: handles unsupported wakeLock and releases late sentinel if stopped mid-acquire', async () => {
+  const g = globalThis as Record<string, unknown>;
+  const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const origDocDesc = Object.getOwnPropertyDescriptor(globalThis, 'document');
+
+  let resolvePendingSentinel!: (sentinel: { released: boolean; release: () => Promise<void> }) => void;
+  let lateReleased = false;
+  let watchId = 10;
+
+  const mockDoc = {
+    visibilityState: 'visible',
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  };
+  const mockNav: Record<string, unknown> = {
+    geolocation: {
+      getCurrentPosition: () => undefined,
+      watchPosition: () => {
+        watchId += 1;
+        return watchId;
+      },
+      clearWatch: () => undefined,
+    },
+  };
+
+  Object.defineProperty(globalThis, 'navigator', { value: mockNav, configurable: true, writable: true });
+  Object.defineProperty(globalThis, 'document', { value: mockDoc, configurable: true, writable: true });
+
+  try {
+    // Missing wakeLock still tracks cleanly
+    const pluginNoWake = new RunTrackingWeb();
+    assert.deepEqual(await pluginNoWake.startTracking(), { active: true, mode: 'web-wake-lock' });
+    assert.deepEqual(await pluginNoWake.stopTracking(), { active: false });
+
+    // Pending wakeLock request resolves after stopTracking -> releases immediately
+    mockNav.wakeLock = {
+      request: () =>
+        new Promise((resolve) => {
+          resolvePendingSentinel = resolve;
+        }),
+    };
+    const pluginRace = new RunTrackingWeb();
+    const startPromise = pluginRace.startTracking();
+    await pluginRace.stopTracking();
+    resolvePendingSentinel({
+      released: false,
+      release: async () => {
+        lateReleased = true;
+      },
+    });
+    await startPromise;
+    await Promise.resolve();
+    assert.equal(lateReleased, true);
+    assert.equal((await pluginRace.getStatus()).active, false);
+  } finally {
+    if (origNavDesc) Object.defineProperty(globalThis, 'navigator', origNavDesc);
+    else delete g.navigator;
+    if (origDocDesc) Object.defineProperty(globalThis, 'document', origDocDesc);
+    else delete g.document;
+  }
 });
