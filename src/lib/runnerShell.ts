@@ -231,7 +231,7 @@ const VISAYAS_REGION_PATTERN =
   /\b(visayas|cebu|busay|bohol|negros|bacolod|dumaguete|panay|iloilo|guimaras|aklan|boracay|antique|capiz|leyte|tacloban|ormoc|samar|siquijor|biliran)\b/i;
 
 const MINDANAO_REGION_PATTERN =
-  /\b(mindanao|bukidnon|kitanglad|impasugong|malaybalay|valencia|davao|cagayan de oro|misamis|iligan|lanao|camiguin|siargao|surigao|agusan|caraga|zamboanga|general santos|gensan|sarangani|cotabato|kidapawan|apo|butuan|tagum|mati|dipolog|pagadian|tawi|sulu|basilan)\b/i;
+  /\b(mindanao|bukidnon|kitanglad|impasugong|malaybalay|valencia|davao|cagayan de oro|misamis|iligan|lanao|camiguin|siargao|surigao|agusan|caraga|zamboanga|general santos|gensan|sarangani|cotabato|kidapawan|mt\.?\s*apo|mount apo|butuan|tagum|mati|dipolog|pagadian|tawi|sulu|basilan)\b/i;
 
 const LUZON_REGION_PATTERN =
   /\b(luzon|cordillera|baguio|benguet|ncr|manila|quezon city|makati|bgc|taguig|pasig|marikina|rizal|antipolo|laguna|cavite|tagaytay|batangas|bulacan|pampanga|clark|angeles|subic|zambales|tarlac|pangasinan|ilocos|la union|sagada|mountain province|ifugao|kalinga|apayao|abra|bicol|albay|mayon|camarines|sorsogon|catanduanes|marinduque|masbate|mindoro|palawan|sierra madre|batanes|cagayan|isabela|nueva ecija|nueva vizcaya|quirino|aurora)\b/i;
@@ -263,9 +263,9 @@ export function filterPublishedExploreRoutes(
   return entries.filter((entry) => {
     if (entry.status !== 'published') return false;
 
-    if (islandGroup !== 'all') {
-      const resolvedGroup = resolveExploreCatalogIslandGroup(entry);
-      if (resolvedGroup !== islandGroup) return false;
+    const resolvedGroup = resolveExploreCatalogIslandGroup(entry);
+    if (islandGroup !== 'all' && resolvedGroup !== islandGroup) {
+      return false;
     }
 
     if (tokens.length > 0) {
@@ -276,6 +276,7 @@ export function filterPublishedExploreRoutes(
         entry.raceDate,
         entry.mapLayerProvenance?.province || '',
         entry.mapLayerProvenance?.islandGroup || '',
+        resolvedGroup || '',
       ]
         .join(' ')
         .toLowerCase();

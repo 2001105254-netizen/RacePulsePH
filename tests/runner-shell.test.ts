@@ -533,6 +533,30 @@ test('filterPublishedExploreRoutes enforces published-only status, island group 
     distanceLabel: '10K',
     status: 'published',
   });
+  const apoReefMindoro = makeRouteCatalogEntry({
+    id: 'apo_reef_10k',
+    raceId: 'apo_reef',
+    raceName: 'Apo Reef Coastal Run',
+    region: 'Apo Reef, Mindoro',
+    distanceLabel: '10K',
+    status: 'published',
+  });
+  const mtApoMindanao = makeRouteCatalogEntry({
+    id: 'mt_apo_32k',
+    raceId: 'mt_apo',
+    raceName: 'Mt. Apo Skyrace',
+    region: 'Mt. Apo, Davao',
+    distanceLabel: '32K',
+    status: 'published',
+  });
+  const cebuTextOnlyVisayas = makeRouteCatalogEntry({
+    id: 'cebu_city_10k',
+    raceId: 'cebu_city',
+    raceName: 'Cebu City Coastal 10K',
+    region: 'Cebu',
+    distanceLabel: '10K',
+    status: 'published',
+  });
   const unknownRegion = makeRouteCatalogEntry({
     id: 'unknown_10k',
     raceId: 'unknown',
@@ -568,6 +592,9 @@ test('filterPublishedExploreRoutes enforces published-only status, island group 
     cebuVisayasProv,
     bukidnonMindanao,
     cdoMindanao,
+    apoReefMindoro,
+    mtApoMindanao,
+    cebuTextOnlyVisayas,
     unknownRegion,
     withdrawnRoute,
     unpublishedRoute,
@@ -577,31 +604,35 @@ test('filterPublishedExploreRoutes enforces published-only status, island group 
   // Published-only baseline
   assert.deepEqual(
     runnerShell.filterPublishedExploreRoutes(allEntries).map((e) => e.id),
-    ['baguio_21k', 'cebu_21k', 'bukidnon_32k', 'cdo_10k', 'unknown_10k'],
+    ['baguio_21k', 'cebu_21k', 'bukidnon_32k', 'cdo_10k', 'apo_reef_10k', 'mt_apo_32k', 'cebu_city_10k', 'unknown_10k'],
   );
 
   // Island group via mapLayerProvenance.islandGroup + region text fallback
   assert.deepEqual(
     runnerShell.filterPublishedExploreRoutes(allEntries, { islandGroup: 'Luzon' }).map((e) => e.id),
-    ['baguio_21k'],
+    ['baguio_21k', 'apo_reef_10k'],
   );
   assert.deepEqual(
     runnerShell.filterPublishedExploreRoutes(allEntries, { islandGroup: 'Visayas' }).map((e) => e.id),
-    ['cebu_21k'],
+    ['cebu_21k', 'cebu_city_10k'],
   );
   assert.deepEqual(
     runnerShell.filterPublishedExploreRoutes(allEntries, { islandGroup: 'Mindanao' }).map((e) => e.id),
-    ['bukidnon_32k', 'cdo_10k'],
+    ['bukidnon_32k', 'cdo_10k', 'mt_apo_32k'],
   );
 
-  // Search query filtering combined with island group and whitespace/case normalization
+  // Search query filtering combined with island group, inferred island text, and whitespace/case normalization
   assert.deepEqual(
     runnerShell.filterPublishedExploreRoutes(allEntries, { searchQuery: '  bukidnon 32k ' }).map((e) => e.id),
     ['bukidnon_32k'],
   );
   assert.deepEqual(
+    runnerShell.filterPublishedExploreRoutes(allEntries, { searchQuery: 'visayas' }).map((e) => e.id),
+    ['cebu_21k', 'cebu_city_10k'],
+  );
+  assert.deepEqual(
     runnerShell.filterPublishedExploreRoutes(allEntries, { islandGroup: 'Visayas', searchQuery: 'cebu' }).map((e) => e.id),
-    ['cebu_21k'],
+    ['cebu_21k', 'cebu_city_10k'],
   );
   assert.deepEqual(
     runnerShell.filterPublishedExploreRoutes(allEntries, { islandGroup: 'Luzon', searchQuery: 'cebu' }),

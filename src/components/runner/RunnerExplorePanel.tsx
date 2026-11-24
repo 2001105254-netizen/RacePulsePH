@@ -178,6 +178,7 @@ export default function RunnerExplorePanel({
 
   const [mobileCanvasActive, setMobileCanvasActive] = useState(false);
   const [eventsInFormFlow, setEventsInFormFlow] = useState(false);
+  const [eventsSubFilter, setEventsSubFilter] = useState<'all' | 'unjoined'>('all');
   const [catalogRegisterRaceId, setCatalogRegisterRaceId] = useState<string | null>(null);
 
   const [eventsLiveMetrics, setEventsLiveMetrics] = useState<{
@@ -199,6 +200,7 @@ export default function RunnerExplorePanel({
 
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'fallback'>('idle');
   const copyTimerRef = useRef<number | undefined>(undefined);
+  const lastRequestedRaceIdRef = useRef<string | null>(null);
   const tabButtonRefs = useRef<Record<ExploreSection, HTMLButtonElement | null>>({
     races: null,
     routes: null,
@@ -227,10 +229,24 @@ export default function RunnerExplorePanel({
   }, []);
 
   useEffect(() => {
-    if (!requestedRaceId) return;
+    if (!requestedRaceId) {
+      lastRequestedRaceIdRef.current = null;
+      return;
+    }
+    if (lastRequestedRaceIdRef.current === requestedRaceId) {
+      return;
+    }
+    lastRequestedRaceIdRef.current = requestedRaceId;
+    setEventsSubFilter('all');
     onSectionChange('races');
     onRacesFilterChange('open');
   }, [requestedRaceId, onSectionChange, onRacesFilterChange]);
+
+  useEffect(() => {
+    if (racesFilter !== 'open') {
+      setEventsSubFilter('all');
+    }
+  }, [racesFilter]);
 
   const mode = mapExploreRacesMode(racesFilter);
 
@@ -275,7 +291,13 @@ export default function RunnerExplorePanel({
 
   const handleEventsStatusFilterChange = useCallback(
     (next: OpenEventsFilter) => {
-      onRacesFilterChange(next === 'registered' ? 'joined' : 'open');
+      if (next === 'registered') {
+        setEventsSubFilter('all');
+        onRacesFilterChange('joined');
+        return;
+      }
+      setEventsSubFilter(next);
+      onRacesFilterChange('open');
     },
     [onRacesFilterChange],
   );
@@ -290,6 +312,7 @@ export default function RunnerExplorePanel({
   const handleCatalogRegister = useCallback(
     (raceId: string) => {
       setCatalogRegisterRaceId(raceId);
+      setEventsSubFilter('all');
       onSectionChange('races');
       onRacesFilterChange('open');
     },
@@ -382,7 +405,12 @@ export default function RunnerExplorePanel({
     const showing =
       section === 'races'
         ? mode.mode === 'events'
-          ? (eventsLiveMetrics?.showing ?? baselineCounts.total)
+          ? (eventsLiveMetrics?.showing ??
+            (racesFilter === 'joined'
+              ? baselineCounts.registered
+              : eventsSubFilter === 'unjoined'
+                ? baselineCounts.unjoined
+                : baselineCounts.total))
           : (catalogLiveMetrics?.showing ?? baselineCounts.catalogAll)
         : section === 'routes'
           ? filteredRoutes.length
@@ -403,6 +431,8 @@ export default function RunnerExplorePanel({
   }, [
     section,
     mode.mode,
+    racesFilter,
+    eventsSubFilter,
     eventsLiveMetrics?.showing,
     catalogLiveMetrics?.showing,
     baselineCounts,
@@ -497,6 +527,8 @@ export default function RunnerExplorePanel({
   };
 
   const activeTabId = `${baseId}-tab-${section}`;
+  const activeTabLabel =
+    EXPLORE_SECTIONS.find((item) => item.key === section)?.label ?? 'Explore';
 
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[var(--surface-page)]">
@@ -572,7 +604,7 @@ export default function RunnerExplorePanel({
                       type="button"
                       onClick={() => onRacesFilterChange(opt.key)}
                       aria-pressed={active}
-                      className={`min-h-11 min-[600px]:min-h-9 px-3 rounded-lg border text-xs font-semibold inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
+                      className={`min-h-11 lg:min-h-9 min-w-11 lg:min-w-0 px-3 rounded-lg border text-xs font-semibold inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
                         active
                           ? 'border-red-600 bg-red-700 text-white'
                           : 'border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] hover:border-red-600/60 hover:bg-[var(--surface-hover)]'
@@ -599,7 +631,8 @@ export default function RunnerExplorePanel({
 
       <div
         role="tabpanel"
-        aria-labelledby={activeTabId}
+        aria-labelledby={hideTopSwitcher ? undefined : activeTabId}
+        aria-label={hideTopSwitcher ? activeTabLabel : undefined}
         className="flex-1 min-h-0 flex flex-col overflow-hidden"
       >
         {section === 'races' &&
@@ -625,7 +658,7 @@ export default function RunnerExplorePanel({
               onCanvasModeChange={handleCanvasModeChange}
               searchQuery={searchQuery}
               onSearchQueryChange={onSearchQueryChange}
-              statusFilter={mode.eventsFilter}
+              statusFilter={racesFilter === 'open' ? eventsSubFilter : mode.eventsFilter}
               onStatusFilterChange={handleEventsStatusFilterChange}
               onMetricsChange={handleEventsMetricsChange}
               onFormViewChange={handleFormViewChange}
@@ -698,7 +731,7 @@ export default function RunnerExplorePanel({
                         type="button"
                         onClick={() => setIslandGroup(opt.key)}
                         aria-pressed={active}
-                        className={`min-h-11 min-[600px]:min-h-9 px-3 rounded-lg border text-xs font-semibold inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
+                        className={`min-h-11 lg:min-h-9 min-w-11 lg:min-w-0 px-3 rounded-lg border text-xs font-semibold inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
                           active
                             ? 'border-red-600 bg-red-700 text-white'
                             : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:border-red-600/60 hover:bg-[var(--surface-hover)]'
@@ -727,7 +760,7 @@ export default function RunnerExplorePanel({
                       dispatchAppNavigate('/routes');
                     }
                   }}
-                  className="min-h-11 min-[600px]:min-h-9 px-3 rounded-lg border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+                  className="min-h-11 lg:min-h-9 px-3 rounded-lg border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
                 >
                   <Compass className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
                   <span>Browse National Route Explorer</span>
