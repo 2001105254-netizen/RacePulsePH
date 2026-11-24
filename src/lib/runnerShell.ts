@@ -1,10 +1,24 @@
+import type { PhilippineIslandGroup, RaceRouteCatalogEntry } from './routes/types';
 import type { Race, RunnerProfile } from '../types';
 
 export type RunnerTab = 'home' | 'explore' | 'record' | 'inbox' | 'you';
 export type ExploreSection = 'races' | 'routes' | 'clubs';
 export type ExploreRacesFilter = 'open' | 'upcoming' | 'completed' | 'all' | 'joined';
+export type ExploreIslandGroupFilter = 'all' | PhilippineIslandGroup;
 export type YouSection = 'overview' | 'passes' | 'friends' | 'engraving';
 export type OnboardingStepId = 'welcome' | 'first_run' | 'explore_community' | 'connect_friend';
+
+export interface FilterExploreRoutesOptions {
+  islandGroup?: ExploreIslandGroupFilter;
+  searchQuery?: string;
+}
+
+export interface ClubRequestMailtoOptions {
+  supportEmail?: string;
+  runnerDisplayName?: string;
+  runnerUsername?: string;
+  currentRunClub?: string;
+}
 
 export const RUNNER_TAB_ORDER: readonly RunnerTab[] = ['home', 'explore', 'record', 'inbox', 'you'];
 
@@ -211,4 +225,100 @@ export function resolveBackNavigationTarget(state: {
     return { tab: state.homeTab };
   }
   return null;
+}
+
+const VISAYAS_REGION_PATTERN =
+  /\b(visayas|cebu|busay|bohol|negros|bacolod|dumaguete|panay|iloilo|guimaras|aklan|boracay|antique|capiz|leyte|tacloban|ormoc|samar|siquijor|biliran)\b/i;
+
+const MINDANAO_REGION_PATTERN =
+  /\b(mindanao|bukidnon|kitanglad|impasugong|malaybalay|valencia|davao|cagayan de oro|misamis|iligan|lanao|camiguin|siargao|surigao|agusan|caraga|zamboanga|general santos|gensan|sarangani|cotabato|kidapawan|apo|butuan|tagum|mati|dipolog|pagadian|tawi|sulu|basilan)\b/i;
+
+const LUZON_REGION_PATTERN =
+  /\b(luzon|cordillera|baguio|benguet|ncr|manila|quezon city|makati|bgc|taguig|pasig|marikina|rizal|antipolo|laguna|cavite|tagaytay|batangas|bulacan|pampanga|clark|angeles|subic|zambales|tarlac|pangasinan|ilocos|la union|sagada|mountain province|ifugao|kalinga|apayao|abra|bicol|albay|mayon|camarines|sorsogon|catanduanes|marinduque|masbate|mindoro|palawan|sierra madre|batanes|cagayan|isabela|nueva ecija|nueva vizcaya|quirino|aurora)\b/i;
+
+export function resolveExploreCatalogIslandGroup(
+  entry: Pick<RaceRouteCatalogEntry, 'region' | 'mapLayerProvenance'>,
+): PhilippineIslandGroup | null {
+  const explicitGroup = entry.mapLayerProvenance?.islandGroup;
+  if (explicitGroup === 'Luzon' || explicitGroup === 'Visayas' || explicitGroup === 'Mindanao') {
+    return explicitGroup;
+  }
+
+  const locationText = `${entry.region || ''} ${entry.mapLayerProvenance?.province || ''}`.trim();
+  if (!locationText) return null;
+  if (VISAYAS_REGION_PATTERN.test(locationText)) return 'Visayas';
+  if (MINDANAO_REGION_PATTERN.test(locationText)) return 'Mindanao';
+  if (LUZON_REGION_PATTERN.test(locationText)) return 'Luzon';
+  return null;
+}
+
+export function filterPublishedExploreRoutes(
+  entries: readonly RaceRouteCatalogEntry[],
+  options: FilterExploreRoutesOptions = {},
+): RaceRouteCatalogEntry[] {
+  const islandGroup = options.islandGroup ?? 'all';
+  const normalizedQuery = (options.searchQuery || '').trim().toLowerCase();
+  const tokens = normalizedQuery ? normalizedQuery.split(/\s+/).filter(Boolean) : [];
+
+  return entries.filter((entry) => {
+    if (entry.status !== 'published') return false;
+
+    if (islandGroup !== 'all') {
+      const resolvedGroup = resolveExploreCatalogIslandGroup(entry);
+      if (resolvedGroup !== islandGroup) return false;
+    }
+
+    if (tokens.length > 0) {
+      const haystack = [
+        entry.raceName,
+        entry.distanceLabel,
+        entry.region,
+        entry.raceDate,
+        entry.mapLayerProvenance?.province || '',
+        entry.mapLayerProvenance?.islandGroup || '',
+      ]
+        .join(' ')
+        .toLowerCase();
+      if (!tokens.every((token) => haystack.includes(token))) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+}
+
+function sanitizeSingleLineText(raw: string | undefined): string {
+  return (raw || '').replace(/[\r\n]+/g, ' ').trim();
+}
+
+export function buildClubRequestMailtoHref(options: ClubRequestMailtoOptions = {}): string {
+  const cleanedEmail = (options.supportEmail || '').replace(/[\r\n\s?&]+/g, '').trim();
+  const email = cleanedEmail && cleanedEmail.includes('@') ? cleanedEmail : 'events@racepulseph.com';
+
+  const currentClub = sanitizeSingleLineText(options.currentRunClub);
+  const displayName = sanitizeSingleLineText(options.runnerDisplayName);
+  const username = sanitizeSingleLineText(options.runnerUsername).replace(/^@+/, '');
+
+  const runnerLine =
+    displayName && username
+      ? `${displayName} (@${username})`
+      : displayName || (username ? `@${username}` : '[Your name or @username]');
+
+  const subject = currentClub
+    ? `Run Club Request on RacePulsePH: ${currentClub}`
+    : 'Run Club Request on RacePulsePH';
+
+  const body = [
+    'Hello RacePulsePH Admin Team,',
+    '',
+    'I would like to request an Admin-curated Run Club page on RacePulsePH.',
+    '',
+    `Club Name: ${currentClub || '[Enter club or team name]'}`,
+    'City / Region: [Enter city or province]',
+    `Requested By: ${runnerLine}`,
+    'Club Description / Meetup Schedule: [Share weekly run schedule or community link]',
+  ].join('\n');
+
+  return `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }

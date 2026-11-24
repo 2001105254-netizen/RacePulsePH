@@ -8,7 +8,31 @@ import {
   readDismissedOnboardingHints,
   supportsNativePopover,
 } from '../src/components/runner/RunnerOnboardingHint.tsx';
+import type { RaceRouteCatalogEntry } from '../src/lib/routes/types.ts';
 import type { Race, RunnerProfile } from '../src/types.ts';
+
+function makeRouteCatalogEntry(overrides: Partial<RaceRouteCatalogEntry> = {}): RaceRouteCatalogEntry {
+  return {
+    id: 'race_baguio_21k',
+    raceId: 'race_baguio',
+    raceName: 'Baguio Cordillera Ridge Run',
+    raceDate: '2026-12-13',
+    region: 'Baguio / Cordillera',
+    distanceId: '21k',
+    distanceLabel: '21K',
+    advertisedKm: 21,
+    measuredDistanceM: 21150,
+    elevationGainM: 420,
+    elevationStatus: 'complete',
+    landmarkCount: 4,
+    checkpointCount: 5,
+    currentPublicationId: 'pub_baguio_21k_v1',
+    versionNumber: 1,
+    status: 'published',
+    publishedAt: '2026-11-10T08:00:00.000Z',
+    ...overrides,
+  };
+}
 
 function makeRace(overrides: Partial<Race> = {}): Race {
   return {
@@ -434,4 +458,187 @@ test('RunnerOnboardingHint persistence helpers safely read, persist, and integra
   assert.equal(mergedWithBroken.has('rp_hint_session_only'), true);
   assert.equal(mergedWithBroken.has('rp_hint_explore_v1'), true);
   assert.equal(mergedWithBroken.has('rp_hint_other'), false);
+});
+
+test('filterPublishedExploreRoutes enforces published-only status, island group fallback, and search query', () => {
+  const baguioLuzon = makeRouteCatalogEntry({
+    id: 'baguio_21k',
+    raceId: 'baguio',
+    raceName: 'Baguio Cordillera Ridge Run',
+    region: 'Baguio / Cordillera',
+    distanceLabel: '21K',
+    status: 'published',
+  });
+  const cebuVisayasProv = makeRouteCatalogEntry({
+    id: 'cebu_21k',
+    raceId: 'cebu',
+    raceName: 'Cebu Highlands Trail',
+    region: 'Philippines',
+    distanceLabel: '21K',
+    status: 'published',
+    mapLayerProvenance: {
+      islandGroup: 'Visayas',
+      province: 'Cebu',
+      imagerySource: 'RacePulsePH Satellite Imagery',
+      imageryPeriod: '2026-Q3',
+      imageryDate: '2026-10-01',
+      quarterlyMosaicId: 'RP-PH-2026-Q3',
+      terrainRelease: 'RacePulsePH 3D Relief (30 m)',
+      terrainEncoding: 'terrarium',
+      terrainSpacingM: 30,
+      imageryResolutionM: 10,
+      cdnTileTemplateImagery: 'https://tiles.example/{z}/{x}/{y}.png',
+      cdnTileTemplateDem: 'https://dem.example/{z}/{x}/{y}.png',
+      attribution: 'RacePulsePH',
+      copernicusTerrainDocUrl: '',
+      copernicusImageryDocUrl: '',
+      cloudMaskCheck: {
+        sceneId: 'sc1',
+        sceneCapturedAt: '2026-10-01',
+        sceneCloudCoverPct: 4,
+        routeCorridorCloudPct: 1,
+        patchedFromMosaicQuarter: '2026-Q3',
+        patchedSegmentsCount: 0,
+        clearCoverageAfterFillPct: 99,
+      },
+      validation: {
+        passed: true,
+        checkedAt: '2026-10-02',
+        withinPhilippineBounds: true,
+        nationalTileCount: 1,
+        courseDetailTileCount: 4,
+        estimatedImageryBytes: 1024,
+        estimatedDemBytes: 1024,
+        demNodataVoidsCount: 0,
+        cloudFreeCoveragePct: 99,
+        issues: [],
+      },
+      lastWeeklyCheckAt: '2026-11-01',
+      nextQuarterlyRefreshAt: '2027-01-01',
+    },
+  });
+  const bukidnonMindanao = makeRouteCatalogEntry({
+    id: 'bukidnon_32k',
+    raceId: 'bukidnon',
+    raceName: 'Bukidnon Kitanglad Ultra',
+    region: 'Mindanao · Bukidnon',
+    distanceLabel: '32K',
+    status: 'published',
+  });
+  const cdoMindanao = makeRouteCatalogEntry({
+    id: 'cdo_10k',
+    raceId: 'cdo',
+    raceName: 'Cagayan de Oro Riverfront 10K',
+    region: 'Cagayan de Oro, Misamis Oriental',
+    distanceLabel: '10K',
+    status: 'published',
+  });
+  const unknownRegion = makeRouteCatalogEntry({
+    id: 'unknown_10k',
+    raceId: 'unknown',
+    raceName: 'Archipelago Open 10K',
+    region: 'Philippines',
+    distanceLabel: '10K',
+    status: 'published',
+  });
+  const withdrawnRoute = makeRouteCatalogEntry({
+    id: 'withdrawn_5k',
+    raceId: 'withdrawn',
+    raceName: 'Withdrawn Baguio 5K',
+    region: 'Baguio / Cordillera',
+    status: 'withdrawn',
+  });
+  const unpublishedRoute = makeRouteCatalogEntry({
+    id: 'draft_10k',
+    raceId: 'draft',
+    raceName: 'Draft Davao 10K',
+    region: 'Davao del Sur',
+    status: 'unpublished',
+  });
+  const supersededRoute = makeRouteCatalogEntry({
+    id: 'old_21k',
+    raceId: 'old',
+    raceName: 'Superseded Iloilo 21K',
+    region: 'Iloilo · Panay',
+    status: 'superseded',
+  });
+
+  const allEntries = [
+    baguioLuzon,
+    cebuVisayasProv,
+    bukidnonMindanao,
+    cdoMindanao,
+    unknownRegion,
+    withdrawnRoute,
+    unpublishedRoute,
+    supersededRoute,
+  ];
+
+  // Published-only baseline
+  assert.deepEqual(
+    runnerShell.filterPublishedExploreRoutes(allEntries).map((e) => e.id),
+    ['baguio_21k', 'cebu_21k', 'bukidnon_32k', 'cdo_10k', 'unknown_10k'],
+  );
+
+  // Island group via mapLayerProvenance.islandGroup + region text fallback
+  assert.deepEqual(
+    runnerShell.filterPublishedExploreRoutes(allEntries, { islandGroup: 'Luzon' }).map((e) => e.id),
+    ['baguio_21k'],
+  );
+  assert.deepEqual(
+    runnerShell.filterPublishedExploreRoutes(allEntries, { islandGroup: 'Visayas' }).map((e) => e.id),
+    ['cebu_21k'],
+  );
+  assert.deepEqual(
+    runnerShell.filterPublishedExploreRoutes(allEntries, { islandGroup: 'Mindanao' }).map((e) => e.id),
+    ['bukidnon_32k', 'cdo_10k'],
+  );
+
+  // Search query filtering combined with island group and whitespace/case normalization
+  assert.deepEqual(
+    runnerShell.filterPublishedExploreRoutes(allEntries, { searchQuery: '  bukidnon 32k ' }).map((e) => e.id),
+    ['bukidnon_32k'],
+  );
+  assert.deepEqual(
+    runnerShell.filterPublishedExploreRoutes(allEntries, { islandGroup: 'Visayas', searchQuery: 'cebu' }).map((e) => e.id),
+    ['cebu_21k'],
+  );
+  assert.deepEqual(
+    runnerShell.filterPublishedExploreRoutes(allEntries, { islandGroup: 'Luzon', searchQuery: 'cebu' }),
+    [],
+  );
+  assert.deepEqual(
+    runnerShell.filterPublishedExploreRoutes(allEntries, { searchQuery: 'withdrawn' }),
+    [],
+  );
+});
+
+test('buildClubRequestMailtoHref builds safe mailto URL with subject, body, and fallback email', () => {
+  const defaultHref = runnerShell.buildClubRequestMailtoHref();
+  assert.ok(defaultHref.startsWith('mailto:events@racepulseph.com?'));
+  assert.doesNotMatch(defaultHref, /\u2014/);
+  assert.equal(defaultHref.includes('+'), false);
+  const parsedDefault = new URL(defaultHref);
+  assert.equal(parsedDefault.searchParams.get('subject'), 'Run Club Request on RacePulsePH');
+  assert.match(parsedDefault.searchParams.get('body') || '', /Club Name:/);
+
+  const customHref = runnerShell.buildClubRequestMailtoHref({
+    supportEmail: '  clubs@racepulseph.com\r\n ',
+    runnerDisplayName: 'Maria Santos',
+    runnerUsername: 'mariaruns',
+    currentRunClub: 'Bukidnon Ridge Pacers',
+  });
+  assert.ok(customHref.startsWith('mailto:clubs@racepulseph.com?'));
+  assert.doesNotMatch(customHref, /\u2014/);
+  const parsedCustom = new URL(customHref);
+  assert.equal(
+    parsedCustom.searchParams.get('subject'),
+    'Run Club Request on RacePulsePH: Bukidnon Ridge Pacers',
+  );
+  const body = parsedCustom.searchParams.get('body') || '';
+  assert.match(body, /Bukidnon Ridge Pacers/);
+  assert.match(body, /Maria Santos \(@mariaruns\)/);
+
+  const invalidEmailHref = runnerShell.buildClubRequestMailtoHref({ supportEmail: '   ' });
+  assert.ok(invalidEmailHref.startsWith('mailto:events@racepulseph.com?'));
 });
