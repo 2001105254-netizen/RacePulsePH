@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 import * as presets from '../src/lib/badges/presets.ts';
+import * as badgeClient from '../src/lib/badges/client.ts';
+import * as studioDraft from '../src/lib/badges/studioDraft.ts';
+import * as e2eFixtures from '../src/lib/badges/e2eFixtures.ts';
+import type { CompleteRecordedRunResponse } from '../src/lib/runs/communityRunsClient.ts';
 import type {
   AthleteProgression,
   BadgeDefinition,
@@ -233,4 +237,364 @@ test('selectNextToastBadge prioritizes unseen highest tier, then xpReward, then 
   };
   assert.equal(sampleXp.source, 'run');
   assert.equal(sampleProgression.badgesCount, 2);
+});
+
+test('validateBadgeAssetUploadFile accepts raster PNG/JPEG/WebP/AVIF under 2 MB and rejects SVG, 0 bytes, >= 2 MB, and unknown MIME', () => {
+  const validPng = badgeClient.validateBadgeAssetUploadFile({
+    name: 'sunrise-crest.png',
+    type: 'image/png',
+    size: 1024,
+  });
+  assert.equal(validPng.ok, true);
+  if (validPng.ok) {
+    assert.equal(validPng.safeFilename, 'sunrise-crest.png');
+    assert.equal(validPng.contentType, 'image/png');
+  }
+
+  const validWebp = badgeClient.validateBadgeAssetUploadFile({
+    name: '..My Crest (1).webp',
+    type: 'image/webp',
+    size: badgeClient.MAX_BADGE_ASSET_BYTES - 1,
+  });
+  assert.equal(validWebp.ok, true);
+  if (validWebp.ok) {
+    assert.match(validWebp.safeFilename, /^[a-zA-Z0-9_-][a-zA-Z0-9._-]{0,127}\.webp$/);
+    assert.equal(validWebp.safeFilename.includes('..'), false);
+    assert.equal(validWebp.contentType, 'image/webp');
+  }
+
+  const validJpg = badgeClient.validateBadgeAssetUploadFile({
+    name: 'medal.JPEG',
+    type: 'image/jpeg',
+    size: 4096,
+  });
+  assert.equal(validJpg.ok, true);
+
+  const validAvif = badgeClient.validateBadgeAssetUploadFile({
+    name: 'crest.avif',
+    type: 'image/avif',
+    size: 2048,
+  });
+  assert.equal(validAvif.ok, true);
+
+  // Explicit SVG rejections
+  assert.equal(
+    badgeClient.validateBadgeAssetUploadFile({ name: 'icon.svg', type: 'image/svg+xml', size: 512 }).ok,
+    false,
+  );
+  assert.equal(
+    badgeClient.validateBadgeAssetUploadFile({ name: 'icon.svg', type: 'image/png', size: 512 }).ok,
+    false,
+  );
+  assert.equal(
+    badgeClient.validateBadgeAssetUploadFile({ name: 'icon.png', type: 'image/svg+xml', size: 512 }).ok,
+    false,
+  );
+
+  // Size boundaries: 0 bytes, negative, exact 2 MB, > 2 MB
+  assert.equal(
+    badgeClient.validateBadgeAssetUploadFile({ name: 'empty.png', type: 'image/png', size: 0 }).ok,
+    false,
+  );
+  assert.equal(
+    badgeClient.validateBadgeAssetUploadFile({ name: 'neg.png', type: 'image/png', size: -10 }).ok,
+    false,
+  );
+  assert.equal(
+    badgeClient.validateBadgeAssetUploadFile({
+      name: 'exact2mb.png',
+      type: 'image/png',
+      size: badgeClient.MAX_BADGE_ASSET_BYTES,
+    }).ok,
+    false,
+  );
+  assert.equal(
+    badgeClient.validateBadgeAssetUploadFile({
+      name: 'over2mb.webp',
+      type: 'image/webp',
+      size: badgeClient.MAX_BADGE_ASSET_BYTES + 1024,
+    }).ok,
+    false,
+  );
+
+  // Unknown / disallowed MIME & mismatched extension
+  assert.equal(
+    badgeClient.validateBadgeAssetUploadFile({ name: 'file.bin', type: 'application/octet-stream', size: 1024 }).ok,
+    false,
+  );
+  assert.equal(
+    badgeClient.validateBadgeAssetUploadFile({ name: 'anim.gif', type: 'image/gif', size: 1024 }).ok,
+    false,
+  );
+  assert.equal(
+    badgeClient.validateBadgeAssetUploadFile({ name: 'mismatch.jpg', type: 'image/png', size: 1024 }).ok,
+    false,
+  );
+});
+
+test('badge client path and artwork URL helpers enforce backend storage and HTTPS rules', () => {
+  const storagePath = badgeClient.buildBadgeAssetStoragePath('admin_1', 'sunrise_badge', 'crest.webp');
+  assert.equal(storagePath, 'badge-assets/admin_1/sunrise_badge/crest.webp');
+  assert.equal(badgeClient.isValidBadgeAssetStoragePath(storagePath, 'sunrise_badge'), true);
+  assert.equal(engine.ALLOWED_BADGE_ASSET_PATH_RE.test(storagePath), true);
+
+  // Path edge cases
+  assert.equal(badgeClient.isValidBadgeAssetStoragePath(storagePath, 'other_badge'), false);
+  assert.equal(badgeClient.isValidBadgeAssetStoragePath('badge-assets/admin_1/sunrise_badge/.dot.png'), false);
+  assert.equal(badgeClient.isValidBadgeAssetStoragePath('badge-assets/admin_1/sunrise_badge/icon.svg'), false);
+  assert.equal(badgeClient.isValidBadgeAssetStoragePath('badge-assets/../admin_1/sunrise_badge/icon.png'), false);
+  assert.throws(() => badgeClient.buildBadgeAssetStoragePath('../bad', 'sunrise_badge', 'crest.png'));
+  assert.throws(() => badgeClient.buildBadgeAssetStoragePath('admin_1', 'bad/id', 'crest.png'));
+
+  // Safe URL validation
+  const fbUrl =
+    'https://firebasestorage.googleapis.com/v0/b/racepulseph.firebasestorage.app/o/badge-assets%2Fadmin_1%2Fsunrise_badge%2Fcrest.webp?alt=media&token=abc';
+  const gcsUrl = 'https://storage.googleapis.com/racepulseph-assets/badge-assets/admin_1/sunrise_badge/crest.webp';
+  const fbAppUrl =
+    'https://racepulseph.firebasestorage.app/v0/b/racepulseph.firebasestorage.app/o/badge-assets%2Fadmin_1%2Fsunrise_badge%2Fcrest.webp?alt=media';
+
+  assert.equal(badgeClient.isSafeBadgeArtworkUrl(fbUrl, storagePath), true);
+  assert.equal(badgeClient.isSafeBadgeArtworkUrl(gcsUrl, storagePath), true);
+  assert.equal(badgeClient.isSafeBadgeArtworkUrl(fbAppUrl, storagePath), true);
+
+  assert.equal(
+    badgeClient.isSafeBadgeArtworkUrl(
+      'http://firebasestorage.googleapis.com/v0/b/racepulseph.firebasestorage.app/o/badge-assets%2Fadmin_1%2Fsunrise_badge%2Fcrest.webp',
+      storagePath,
+    ),
+    false,
+  );
+  assert.equal(
+    badgeClient.isSafeBadgeArtworkUrl('https://evil.example.com/badge-assets/admin_1/sunrise_badge/crest.webp'),
+    false,
+  );
+  assert.equal(
+    badgeClient.isSafeBadgeArtworkUrl(
+      'https://firebasestorage.googleapis.com/v0/b/racepulseph.firebasestorage.app/o/badge-assets%2Fadmin_1%2Fsunrise_badge%2Ficon.svg',
+    ),
+    false,
+  );
+  assert.equal(
+    badgeClient.isSafeBadgeArtworkUrl(fbUrl, 'badge-assets/admin_1/other_badge/crest.webp'),
+    false,
+  );
+});
+
+test('athlete progression normalization, empty ack-seen fast path, and CompleteRecordedRunResponse typing', async () => {
+  const def = badgeClient.createDefaultAthleteProgression('u_runner');
+  assert.equal(def.uid, 'u_runner');
+  assert.equal(def.totalXp, 0);
+  assert.equal(def.level, 1);
+  assert.equal(def.badgesCount, 0);
+  assert.equal(def.runStreakWeeks, 0);
+  assert.equal(def.runStreakGraceRemaining, 0);
+
+  const normalized = badgeClient.normalizeAthleteProgression('u_runner', {
+    totalXp: 350,
+    badgesCount: 3,
+    runStreakWeeks: 4,
+    runStreakGraceRemaining: 1,
+  });
+  assert.equal(normalized.level, 3);
+  assert.equal(normalized.rankTitle, 'Road Runner');
+  assert.equal(normalized.badgesCount, 3);
+  assert.equal(normalized.runStreakWeeks, 4);
+  assert.equal(normalized.runStreakGraceRemaining, 1);
+
+  const emptyAck = await badgeClient.acknowledgeSeenBadges([]);
+  assert.deepEqual(emptyAck, { acknowledgedIds: [] });
+
+  const sampleCompleteResponse: CompleteRecordedRunResponse = {
+    run: {
+      runId: 'run_1',
+      uid: 'u_runner',
+      mode: 'free',
+      privacy: 'public',
+      title: 'Morning 5K',
+      startedAt: '2026-11-25T00:00:00.000Z',
+      finishedAt: '2026-11-25T00:30:00.000Z',
+      elapsedTimeMs: 1_800_000,
+      movingTimeMs: 1_800_000,
+      distanceM: 5000,
+      elevationGainM: 20,
+      elevationLossM: 20,
+      caloriesKcal: 340,
+      calorieEstimate: {
+        totalKcal: 340,
+        netKcal: 300,
+        restingKcal: 40,
+        weightKgUsed: 65,
+        usedReferenceWeight: false,
+        methodVersion: 'minetti2002-herrmann2024-v1',
+      },
+      avgPaceSecPerKm: 360,
+      avgSpeedMps: 2.78,
+      maxSpeedMps: 3.4,
+      splits: [],
+      previewPolyline: [],
+      islandGroups: ['Luzon'],
+      homePrivacyTrimEnabled: false,
+      trimmedHeadM: 0,
+      trimmedTailM: 0,
+      pointCount: 10,
+      verificationStatus: 'verified',
+      verificationFlags: [],
+      createdAt: '2026-11-25T00:30:01.000Z',
+    },
+    xpEarned: 152,
+    newlyAwardedBadges: [],
+    progression: normalized,
+  };
+  assert.equal(sampleCompleteResponse.xpEarned, 152);
+});
+
+test('studioDraft slugifies badge IDs, builds all 17 rules, and enforces client validation bounds', () => {
+  assert.equal(studioDraft.slugifyBadgeId('Dawn Patrol PH!'), 'dawn_patrol_ph');
+  assert.equal(studioDraft.slugifyBadgeId('  10K   Club -- 2026  '), '10k_club_2026');
+
+  const blank = studioDraft.createBlankBadgeDraft(20);
+  assert.equal(blank.sortOrder, '20');
+  assert.equal(blank.ruleType, 'run_count');
+
+  // Validates all 17 rule types cleanly
+  for (const ruleType of presets.BADGE_RULE_TYPES) {
+    const draft = {
+      ...blank,
+      badgeId: `rule_${ruleType}`,
+      name: `Test ${ruleType}`,
+      description: 'Valid description for testing.',
+      ruleType,
+      threshold: ruleType === 'run_single_distance_km' ? '21.1' : '2',
+      startHourPht: '22',
+      endHourPht: '4',
+      targetRegions: ruleType === 'regions_explored' ? ['Luzon', 'Visayas'] : [],
+      raceId: ruleType === 'race_joined' ? 'race_manila_2026' : '',
+    };
+    const result = studioDraft.validateAndBuildSavePayload(draft);
+    assert.equal(result.ok, true, `Expected rule ${ruleType} to validate cleanly`);
+    if (result.ok) {
+      assert.equal(result.payload.rule.type, ruleType);
+    }
+  }
+
+  // Rejects invalid fields
+  const badId = studioDraft.validateAndBuildSavePayload({
+    ...blank,
+    badgeId: '../bad',
+    name: 'Valid Name',
+    description: 'Valid desc',
+  });
+  assert.equal(badId.ok, false);
+
+  const badSchedule = studioDraft.validateAndBuildSavePayload({
+    ...blank,
+    badgeId: 'sched_test',
+    name: 'Sched',
+    description: 'Sched desc',
+    activeFrom: '2026-12-01',
+    activeUntil: '2026-11-01',
+  });
+  assert.equal(badSchedule.ok, false);
+
+  const missingUpload = studioDraft.validateAndBuildSavePayload({
+    ...blank,
+    badgeId: 'upload_missing',
+    name: 'Upload Test',
+    description: 'Needs upload url',
+    artworkType: 'upload',
+    artworkUrl: '',
+    artworkStoragePath: '',
+  });
+  assert.equal(missingUpload.ok, false);
+
+  const overTierLabel = studioDraft.validateAndBuildSavePayload({
+    ...blank,
+    badgeId: 'tier_test',
+    name: 'Tier Test',
+    description: 'Too long tier label',
+    customTierLabel: 'x'.repeat(25),
+  });
+  assert.equal(overTierLabel.ok, false);
+
+  const dedupRegions = studioDraft.buildBadgeRuleFromDraft({
+    ...blank,
+    ruleType: 'regions_explored',
+    targetRegions: ['Luzon', 'luzon', '  Visayas ', 'visayas', 'LUZON'],
+    threshold: '2',
+  });
+  assert.equal(dedupRegions.ok, true);
+  if (dedupRegions.ok) {
+    assert.deepEqual(dedupRegions.rule.targetRegions, ['Luzon', 'Visayas']);
+  }
+});
+
+test('e2eFixtures performs deterministic offline catalog, artwork, grant, and sync mutations', () => {
+  const seeded = e2eFixtures.seedDevBadgesFixture([], 'e2e-admin');
+  assert.equal(seeded.seededCount, 8);
+  assert.equal(seeded.catalog.length, 8);
+
+  const reseeded = e2eFixtures.seedDevBadgesFixture(seeded.catalog, 'e2e-admin');
+  assert.equal(reseeded.seededCount, 0);
+  assert.equal(reseeded.catalog.length, 8);
+
+  const pngFile = new File([new Uint8Array([137, 80, 78, 71])], 'crest.png', {
+    type: 'image/png',
+  });
+  const uploadResult = e2eFixtures.uploadDevBadgeArtworkFixture(
+    'e2e-admin',
+    'custom_e2e',
+    pngFile,
+  );
+  assert.equal(
+    badgeClient.isValidBadgeAssetStoragePath(uploadResult.artworkStoragePath, 'custom_e2e'),
+    true,
+  );
+  assert.equal(
+    badgeClient.isSafeBadgeArtworkUrl(uploadResult.artworkUrl, uploadResult.artworkStoragePath),
+    true,
+  );
+
+  const blank = studioDraft.createBlankBadgeDraft(15);
+  const built = studioDraft.validateAndBuildSavePayload({
+    ...blank,
+    badgeId: 'custom_e2e',
+    name: 'Custom E2E',
+    description: 'Offline E2E badge.',
+    artworkType: 'upload',
+    artworkUrl: uploadResult.artworkUrl,
+    artworkStoragePath: uploadResult.artworkStoragePath,
+  });
+  assert.equal(built.ok, true);
+  if (built.ok) {
+    const saved = e2eFixtures.saveDevBadgeFixture(seeded.catalog, built.payload, 'e2e-admin');
+    assert.equal(saved.catalog.length, 9);
+    const archived = e2eFixtures.archiveDevBadgeFixture(
+      saved.catalog,
+      'custom_e2e',
+      'archived',
+      'e2e-admin',
+    );
+    assert.equal(archived.updated.status, 'archived');
+    const deleted = e2eFixtures.deleteDevBadgeFixture(archived.catalog, 'custom_e2e');
+    assert.equal(deleted.length, 8);
+  }
+
+  const grantRes = e2eFixtures.grantDevBadgeFixture(seeded.catalog[0], 'runner_1', []);
+  assert.equal(grantRes.userBadge.source, 'manual');
+  assert.equal(grantRes.userBadge.uid, 'runner_1');
+  assert.equal(grantRes.xpAwarded, seeded.catalog[0].xpReward);
+  assert.equal(grantRes.progression.totalXp, seeded.catalog[0].xpReward);
+  assert.throws(() =>
+    e2eFixtures.grantDevBadgeFixture(seeded.catalog[0], 'runner_1', [
+      { uid: 'runner_1', badgeId: seeded.catalog[0].badgeId },
+    ]),
+  );
+
+  const syncRes = e2eFixtures.evaluateDevRetroactiveFixture(seeded.catalog, [
+    { uid: 'runner_1' },
+    { uid: 'runner_removed', accessRemoved: true },
+  ]);
+  assert.equal(syncRes.processedUsers, 1);
+  assert.equal(syncRes.hasMore, false);
+  assert.equal(syncRes.nextAfterUid, null);
 });

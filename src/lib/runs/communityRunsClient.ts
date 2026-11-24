@@ -11,6 +11,7 @@ import { auth, db, storage } from '../../firebase';
 import { authenticatedFetch } from '../access';
 import { CircuitOpenError, parseRetryAfterSeconds } from '../resilientFetch';
 import { round1 } from './calorieEngine';
+import type { AthleteProgression, UserBadgeAward } from '../badges/types';
 import type {
   RecordedRunCourseRef,
   RecordedRunMode,
@@ -479,9 +480,17 @@ function normalizeThrownError(err: unknown): CommunityRunApiError {
   });
 }
 
-async function postCommunityCommand(
-  path: '/runs/complete' | '/runs/update' | '/runs/delete',
+export interface CompleteRecordedRunResponse {
+  run: RecordedRunSummary;
+  xpEarned?: number;
+  newlyAwardedBadges?: UserBadgeAward[];
+  progression?: AthleteProgression;
+}
+
+export async function postCommunityApiJson(
+  path: `/${string}`,
   payload: Record<string, unknown>,
+  fallbackLabel = 'Community command',
 ): Promise<Record<string, unknown>> {
   const url = `${getCommunityApiBaseUrl()}${path}`;
   let response: Response;
@@ -503,10 +512,17 @@ async function postCommunityCommand(
     const message =
       response.status === 429 && retryAfter > 0
         ? serverError || `Too many requests. Wait ${retryAfter}s and try again.`
-        : serverError || `Community command failed (HTTP ${response.status}).`;
+        : serverError || `${fallbackLabel} failed (HTTP ${response.status}).`;
     throw new CommunityRunApiError(message, response.status, { retryAfter });
   }
   return result;
+}
+
+async function postCommunityCommand(
+  path: '/runs/complete' | '/runs/update' | '/runs/delete',
+  payload: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  return postCommunityApiJson(path, payload, 'Community command');
 }
 
 export async function prepareCompleteRecordedRunInput(
@@ -533,7 +549,7 @@ export async function prepareCompleteRecordedRunInput(
   };
 }
 
-export async function completeRecordedRun(
+export async function completeRecordedRunWithOutcome(
   input: CompleteRecordedRunInput,
   options?: {
     uid?: string | null;
@@ -543,7 +559,7 @@ export async function completeRecordedRun(
       payload: Record<string, unknown>,
     ) => Promise<Record<string, unknown>>;
   },
-): Promise<RecordedRunSummary> {
+): Promise<CompleteRecordedRunResponse> {
   const prepared =
     input.storageUploadSettled || input.trackStoragePath
       ? input
@@ -560,7 +576,31 @@ export async function completeRecordedRun(
       retryable: true,
     });
   }
-  return result.run as RecordedRunSummary;
+  return {
+    run: result.run as RecordedRunSummary,
+    ...(typeof result.xpEarned === 'number' ? { xpEarned: result.xpEarned } : {}),
+    ...(Array.isArray(result.newlyAwardedBadges)
+      ? { newlyAwardedBadges: result.newlyAwardedBadges as UserBadgeAward[] }
+      : {}),
+    ...(result.progression && typeof result.progression === 'object'
+      ? { progression: result.progression as AthleteProgression }
+      : {}),
+  };
+}
+
+export async function completeRecordedRun(
+  input: CompleteRecordedRunInput,
+  options?: {
+    uid?: string | null;
+    uploader?: typeof uploadRunTrackJsonToStorage;
+    sender?: (
+      path: '/runs/complete',
+      payload: Record<string, unknown>,
+    ) => Promise<Record<string, unknown>>;
+  },
+): Promise<RecordedRunSummary> {
+  const outcome = await completeRecordedRunWithOutcome(input, options);
+  return outcome.run;
 }
 
 export async function updateRecordedRun(input: {
