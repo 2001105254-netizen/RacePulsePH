@@ -1,42 +1,62 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { collection, doc, onSnapshot, query, setDoc, where } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import {
-  Award,
   BellRing,
   Camera,
-  ClipboardList,
-  Flag,
+  CircleDot,
+  Compass,
+  Home,
+  Inbox,
   Search,
-  Trophy,
-  Users2,
+  User,
   X,
 } from 'lucide-react';
 import { db } from '../firebase';
 import { useAccess } from '../lib/access';
 import { useAndroidBackHandler } from '../lib/capacitorAndroid';
-import { claimRaceBib, claimableEntryLabel, parseRaceBibQr, previewRaceBibClaim, RaceBibClaimPreview } from '../lib/raceBibClaim';
-import { isRaceRegistrationOpen } from '../lib/raceRegistration';
 import { subscribeSharedLiveResults } from '../lib/liveResultsStore';
+import { claimRaceBib, claimableEntryLabel, parseRaceBibQr, previewRaceBibClaim, RaceBibClaimPreview } from '../lib/raceBibClaim';
 import { subscribeSharedRaces } from '../lib/racesStore';
+import {
+  buildHomeFriendFeed,
+  computeRunnerPortfolioCounts,
+  countInboxUnreadTotal,
+  mapExploreRacesMode,
+  resolveAllowedRunnerTabs,
+  resolveBackNavigationTarget,
+  resolveDefaultRunnerTab,
+  RUNNER_TAB_ORDER,
+  type ExploreRacesFilter,
+  type ExploreSection,
+  type RunnerTab,
+  type YouSection,
+} from '../lib/runnerShell';
 import { useWorkspaceHeader } from '../lib/workspaceHeader';
-import { FriendActivity, PublicLiveResults, Race, RunnerProfile, UserProfile } from '../types';
+import { FriendActivity, FriendProfile, PublicLiveResults, Race, RunnerProfile, UserProfile } from '../types';
 import AccountPrivacyModal from './AccountPrivacyModal';
+import type { WorkspaceNavItem } from './BottomNav';
 import CustomerForm, { type EngravingRacePrefill } from './CustomerForm';
 import type { WorkspaceSwitchProps } from './DesktopSidebar';
 import QrScannerModal from './QrScannerModal';
 import { RunnerRemindersPanel, useRunnerReminders } from './RunnerReminderCenter';
 import WorkspaceShell from './WorkspaceShell';
-import RunnerAllRacesPanel, { type CatalogStatusFilter } from './runner/RunnerAllRacesPanel';
-import RunnerEventsPanel, { type OpenEventsFilter } from './runner/RunnerEventsPanel';
-import RunnerFriendsPanel from './runner/RunnerFriendsPanel';
+import RunnerExplorePanel, { type ExploreCourseRunTarget, type ExploreMetrics } from './runner/RunnerExplorePanel';
+import RunnerHomePanel from './runner/RunnerHomePanel';
+import RunnerInboxPreviewPanel, {
+  type InboxFriendRequestItem,
+  type InboxRaceInviteItem,
+} from './runner/RunnerInboxPreviewPanel';
 import {
   RunnerOfflineBanner,
   RunnerQueueSkeleton,
   RunnerTelemetryStrip,
   type RunnerTelemetryItem,
 } from './runner/RunnerMobilePrimitives';
-import RunnerMyRacesPanel, { type MyPassesFilter } from './runner/RunnerMyRacesPanel';
+import type { MyPassesFilter } from './runner/RunnerMyRacesPanel';
+import RunnerOnboardingHint from './runner/RunnerOnboardingHint';
+import RunnerRecordPreviewPanel from './runner/RunnerRecordPreviewPanel';
+import RunnerYouHubPanel from './runner/RunnerYouHubPanel';
 import {
   philippineTodayStr,
   useNetworkSyncStatus,
@@ -58,9 +78,12 @@ interface RunnerDashboardProps {
   pendingApprovalNotice?: boolean;
 }
 
-type RunnerTab = 'events' | 'allraces' | 'myraces' | 'friends' | 'engraving';
-
-const RUNNER_TAB_ORDER: readonly RunnerTab[] = ['events', 'allraces', 'myraces', 'friends', 'engraving'];
+interface FriendshipDoc {
+  fromUid: string;
+  toUid: string;
+  members: string[];
+  createdAt: string;
+}
 
 export default function RunnerDashboard({
   profile,
@@ -81,18 +104,34 @@ export default function RunnerDashboard({
   const [racesError, setRacesError] = useState<string | null>(null);
   const [friendsCount, setFriendsCount] = useState(0);
 
+  const [incomingRequests, setIncomingRequests] = useState<InboxFriendRequestItem[]>([]);
+  const [raceInvites, setRaceInvites] = useState<InboxRaceInviteItem[]>([]);
+  const [friendProfilesByUid, setFriendProfilesByUid] = useState<Record<string, FriendProfile>>({});
+  const [friendActivitiesByUid, setFriendActivitiesByUid] = useState<Record<string, FriendActivity>>({});
+
+  const canFriends = can('personal.friends');
+  const canInvites = can('personal.invites');
+  const canSocial = can('personal.social');
+  const canEngraving = can('personal.engraving');
+  const canRegister = can('personal.register');
+  const canAnyRunnerData =
+    can('personal.register') ||
+    can('personal.results') ||
+    can('personal.bibs') ||
+    can('personal.certificates');
+
   const hasPaymentParam =
     typeof window !== 'undefined' && Boolean(new URLSearchParams(window.location.search).get('payment'));
 
-  const homeTab: RunnerTab = can('personal.register')
-    ? 'events'
-    : can('personal.results') || can('personal.bibs')
-    ? 'myraces'
-    : can('personal.friends')
-    ? 'friends'
-    : 'engraving';
+  const allowedTabs = useMemo(() => resolveAllowedRunnerTabs(can), [can]);
+  const homeTab = useMemo(() => resolveDefaultRunnerTab(can, false), [can]);
 
-  const [tab, setTab] = useState<RunnerTab>(() => (hasPaymentParam && can('personal.register') ? 'events' : homeTab));
+  const [tab, setTab] = useState<RunnerTab>(() => {
+    if (initialRaceId && allowedTabs.includes('explore')) {
+      return 'explore';
+    }
+    return resolveDefaultRunnerTab(can, hasPaymentParam);
+  });
   const [tabDirection, setTabDirection] = useState<NavDirection>('forward');
   const [showProfile, setShowProfile] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
@@ -110,49 +149,46 @@ export default function RunnerDashboard({
   const [claimingBib, setClaimingBib] = useState(false);
   const [bibClaimError, setBibClaimError] = useState('');
 
-  // Per-tab search + status filters synced into desktop top header & telemetry ribbon
-  const [eventsSearch, setEventsSearch] = useState('');
-  const [eventsFilter, setEventsFilter] = useState<OpenEventsFilter>('all');
-  const [eventsMetrics, setEventsMetrics] = useState({ total: 0, unjoined: 0, registered: 0, showing: 0 });
+  // Explore hub state
+  const [exploreSection, setExploreSection] = useState<ExploreSection>('races');
+  const [exploreRacesFilter, setExploreRacesFilter] = useState<ExploreRacesFilter>('open');
+  const [exploreSearch, setExploreSearch] = useState('');
+  const [exploreMetrics, setExploreMetrics] = useState<ExploreMetrics>({
+    total: 0,
+    unjoined: 0,
+    registered: 0,
+    catalogAll: 0,
+    catalogUpcoming: 0,
+    catalogCompleted: 0,
+    showing: 0,
+    routesCount: 0,
+  });
   const [eventsInFormFlow, setEventsInFormFlow] = useState(false);
 
-  const [catalogSearch, setCatalogSearch] = useState('');
-  const [catalogFilter, setCatalogFilter] = useState<CatalogStatusFilter>('all');
-  const [catalogMetrics, setCatalogMetrics] = useState({ all: 0, upcoming: 0, completed: 0, showing: 0 });
-
+  // You hub state
+  const [youSection, setYouSection] = useState<YouSection>('overview');
   const [myPassesSearch, setMyPassesSearch] = useState('');
   const [myPassesFilter, setMyPassesFilter] = useState<MyPassesFilter>('all');
   const [myPassesMetrics, setMyPassesMetrics] = useState({ all: 0, upcoming: 0, completed: 0, showing: 0 });
-
   const [friendsSearch, setFriendsSearch] = useState('');
 
-  const handleEventsMetricsChange = useCallback(
-    (next: { total: number; unjoined: number; registered: number; showing: number }) => {
-      setEventsMetrics((prev) =>
-        prev.total === next.total &&
-        prev.unjoined === next.unjoined &&
-        prev.registered === next.registered &&
-        prev.showing === next.showing
-          ? prev
-          : next,
-      );
-    },
-    [],
-  );
+  // Record preview preselected course
+  const [preselectedCourse, setPreselectedCourse] = useState<ExploreCourseRunTarget | null>(null);
 
-  const handleCatalogMetricsChange = useCallback(
-    (next: { all: number; upcoming: number; completed: number; showing: number }) => {
-      setCatalogMetrics((prev) =>
-        prev.all === next.all &&
-        prev.upcoming === next.upcoming &&
-        prev.completed === next.completed &&
-        prev.showing === next.showing
-          ? prev
-          : next,
-      );
-    },
-    [],
-  );
+  const handleExploreMetricsChange = useCallback((next: ExploreMetrics) => {
+    setExploreMetrics((prev) =>
+      prev.total === next.total &&
+      prev.unjoined === next.unjoined &&
+      prev.registered === next.registered &&
+      prev.catalogAll === next.catalogAll &&
+      prev.catalogUpcoming === next.catalogUpcoming &&
+      prev.catalogCompleted === next.catalogCompleted &&
+      prev.showing === next.showing &&
+      prev.routesCount === next.routesCount
+        ? prev
+        : next,
+    );
+  }, []);
 
   const handleMyPassesMetricsChange = useCallback(
     (next: { all: number; upcoming: number; completed: number; showing: number }) => {
@@ -182,8 +218,32 @@ export default function RunnerDashboard({
   tabRef.current = tab;
   const homeTabRef = useRef<RunnerTab>(homeTab);
   homeTabRef.current = homeTab;
+  const exploreSectionRef = useRef<ExploreSection>(exploreSection);
+  exploreSectionRef.current = exploreSection;
+  const youSectionRef = useRef<YouSection>(youSection);
+  youSectionRef.current = youSection;
   const showProfileRef = useRef(showProfile);
   showProfileRef.current = showProfile;
+  const alertsOpenRef = useRef(alertsOpen);
+  alertsOpenRef.current = alertsOpen;
+
+  const selectTab = useCallback((nextTab: RunnerTab, explicitDirection?: NavDirection) => {
+    const currentTab = tabRef.current;
+    if (nextTab === currentTab) return;
+    setMobileCanvasActive(false);
+    setEventsInFormFlow(false);
+    setTabDirection(explicitDirection ?? resolveTabDirection(RUNNER_TAB_ORDER, currentTab, nextTab));
+    setTab(nextTab);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!allowedTabs.includes(tab)) {
+      selectTab(homeTab, 'back');
+    }
+  }, [allowedTabs, tab, homeTab, selectTab]);
 
   useEffect(() => {
     return subscribeSharedRaces((rawList, loaded, err) => {
@@ -201,28 +261,175 @@ export default function RunnerDashboard({
     });
   }, []);
 
+  // Incoming pending friend requests listener
   useEffect(() => {
-    if (!can('personal.friends')) {
-      setFriendsCount(0);
+    if (!canFriends) {
+      setIncomingRequests([]);
       return;
     }
     return onSnapshot(
-      query(collection(db, 'friendships'), where('members', 'array-contains', profile.uid)),
-      (snapshot) => setFriendsCount(snapshot.size),
-      () => setFriendsCount(0),
+      query(collection(db, 'friendRequests'), where('toUid', '==', profile.uid)),
+      (snapshot) => {
+        const items: InboxFriendRequestItem[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data() as InboxFriendRequestItem & { status?: string };
+          if (data.status === 'pending') {
+            items.push({
+              fromUid: data.fromUid,
+              toUid: data.toUid,
+              fromUsername: data.fromUsername,
+              fromDisplayName: data.fromDisplayName,
+              createdAt: data.createdAt,
+            });
+          }
+        });
+        items.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+        setIncomingRequests(items);
+      },
+      () => setIncomingRequests([]),
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile.uid]);
+  }, [canFriends, profile.uid]);
 
-  const selectTab = useCallback((nextTab: RunnerTab, explicitDirection?: NavDirection) => {
-    const currentTab = tabRef.current;
-    if (nextTab === currentTab) return;
-    setTabDirection(explicitDirection ?? resolveTabDirection(RUNNER_TAB_ORDER, currentTab, nextTab));
-    setTab(nextTab);
-    if (typeof window !== 'undefined') {
-      window.scrollTo({ top: 0, behavior: 'auto' });
+  // Incoming pending race invites listener
+  useEffect(() => {
+    if (!canInvites) {
+      setRaceInvites([]);
+      return;
     }
-  }, []);
+    return onSnapshot(
+      query(collection(db, 'raceInvites'), where('toUid', '==', profile.uid)),
+      (snapshot) => {
+        const items: InboxRaceInviteItem[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data() as InboxRaceInviteItem & { status?: string };
+          if (data.status === 'pending') {
+            items.push({
+              fromUid: data.fromUid,
+              toUid: data.toUid,
+              raceId: data.raceId,
+              raceName: data.raceName,
+              raceDate: data.raceDate,
+              fromDisplayName: data.fromDisplayName,
+              createdAt: data.createdAt,
+            });
+          }
+        });
+        items.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+        setRaceInvites(items);
+      },
+      () => setRaceInvites([]),
+    );
+  }, [canInvites, profile.uid]);
+
+  // Accepted friendships + per-friend profile/activity doc listeners (cleanly diffed with zero leaks)
+  useEffect(() => {
+    if (!canFriends) {
+      setFriendsCount(0);
+      setFriendProfilesByUid({});
+      setFriendActivitiesByUid({});
+      return;
+    }
+
+    const perFriendUnsubs = new Map<string, () => void>();
+
+    const cleanupFriendListener = (friendUid: string) => {
+      const unsub = perFriendUnsubs.get(friendUid);
+      if (unsub) {
+        unsub();
+        perFriendUnsubs.delete(friendUid);
+      }
+      setFriendProfilesByUid((prev) => {
+        if (!(friendUid in prev)) return prev;
+        const next = { ...prev };
+        delete next[friendUid];
+        return next;
+      });
+      setFriendActivitiesByUid((prev) => {
+        if (!(friendUid in prev)) return prev;
+        const next = { ...prev };
+        delete next[friendUid];
+        return next;
+      });
+    };
+
+    const unsubFriendships = onSnapshot(
+      query(collection(db, 'friendships'), where('members', 'array-contains', profile.uid)),
+      (snapshot) => {
+        setFriendsCount(snapshot.size);
+
+        if (!canSocial) {
+          for (const friendUid of Array.from(perFriendUnsubs.keys())) {
+            cleanupFriendListener(friendUid);
+          }
+          return;
+        }
+
+        const activeFriendUids = new Set<string>();
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data() as FriendshipDoc;
+          const friendUid = data.fromUid === profile.uid ? data.toUid : data.fromUid;
+          if (friendUid && friendUid !== profile.uid) {
+            activeFriendUids.add(friendUid);
+          }
+        });
+
+        for (const existingUid of Array.from(perFriendUnsubs.keys())) {
+          if (!activeFriendUids.has(existingUid)) {
+            cleanupFriendListener(existingUid);
+          }
+        }
+
+        for (const friendUid of activeFriendUids) {
+          if (perFriendUnsubs.has(friendUid)) continue;
+          const unsubProfile = onSnapshot(
+            doc(db, 'friendProfiles', friendUid),
+            (profileSnap) => {
+              setFriendProfilesByUid((prev) => {
+                if (!profileSnap.exists()) {
+                  if (!(friendUid in prev)) return prev;
+                  const next = { ...prev };
+                  delete next[friendUid];
+                  return next;
+                }
+                return { ...prev, [friendUid]: profileSnap.data() as FriendProfile };
+              });
+            },
+            () => undefined,
+          );
+          const unsubActivity = onSnapshot(
+            doc(db, 'friendActivities', friendUid),
+            (activitySnap) => {
+              setFriendActivitiesByUid((prev) => {
+                if (!activitySnap.exists()) {
+                  if (!(friendUid in prev)) return prev;
+                  const next = { ...prev };
+                  delete next[friendUid];
+                  return next;
+                }
+                return { ...prev, [friendUid]: activitySnap.data() as FriendActivity };
+              });
+            },
+            () => undefined,
+          );
+          perFriendUnsubs.set(friendUid, () => {
+            unsubProfile();
+            unsubActivity();
+          });
+        }
+      },
+      () => {
+        setFriendsCount(0);
+      },
+    );
+
+    return () => {
+      unsubFriendships();
+      for (const unsub of perFriendUnsubs.values()) {
+        unsub();
+      }
+      perFriendUnsubs.clear();
+    };
+  }, [canFriends, canSocial, profile.uid]);
 
   useAndroidBackHandler(showProfile, () => setShowProfile(false));
   useAndroidBackHandler(alertsOpen, () => setAlertsOpen(false));
@@ -231,38 +438,60 @@ export default function RunnerDashboard({
   });
 
   useEffect(() => {
-    const goHome = (event: Event) => {
+    const handleBack = (event: Event) => {
       const hardware = event instanceof CustomEvent && Boolean(event.detail?.hardware);
       if (hardware) {
-        if (event.defaultPrevented || (tabRef.current === homeTabRef.current && !showProfileRef.current)) return;
+        if (event.defaultPrevented) return;
+        if (showProfileRef.current || alertsOpenRef.current) {
+          event.preventDefault();
+          setShowProfile(false);
+          setAlertsOpen(false);
+          return;
+        }
+        const target = resolveBackNavigationTarget({
+          tab: tabRef.current,
+          homeTab: homeTabRef.current,
+          exploreSection: exploreSectionRef.current,
+          youSection: youSectionRef.current,
+        });
+        if (!target) return;
         event.preventDefault();
+        if (target.exploreSection) setExploreSection(target.exploreSection);
+        if (target.youSection) setYouSection(target.youSection);
+        selectTab(target.tab, 'back');
+        return;
       }
+
       setShowProfile(false);
       setAlertsOpen(false);
-      selectTab(hardware ? homeTabRef.current : 'events', 'back');
+      setExploreSection('races');
+      setYouSection('overview');
+      selectTab(homeTabRef.current, 'back');
     };
-    window.addEventListener('racepulse:back', goHome);
-    return () => window.removeEventListener('racepulse:back', goHome);
+    window.addEventListener('racepulse:back', handleBack);
+    return () => window.removeEventListener('racepulse:back', handleBack);
   }, [selectTab]);
 
   useEffect(() => {
     if (!initialRaceId) return;
     setPendingDeepLinkRaceId(initialRaceId);
-    setTab('events');
+    setExploreSection('races');
+    setExploreRacesFilter('open');
+    if (allowedTabs.includes('explore')) {
+      selectTab('explore');
+    }
     onInitialRaceHandled?.();
-  }, [initialRaceId, onInitialRaceHandled]);
+  }, [initialRaceId, allowedTabs, onInitialRaceHandled, selectTab]);
 
   useEffect(() => {
-    if (!['personal.register', 'personal.results', 'personal.bibs', 'personal.certificates'].some(can)) {
+    if (!canAnyRunnerData) {
       setRunnerProfiles([]);
       return;
     }
     let directProfiles: RunnerProfile[] = [];
     let claimedProfiles: RunnerProfile[] = [];
     const publish = () => {
-      // A normal in-app registration always wins over a QR claim for the
-      // same event. QR claims are for Google Form/imported rosters, where the
-      // registration was made before the runner had a RacePulse account.
+      // In-app registrations win over QR claims for the same event.
       const directRaceIds = new Set(directProfiles.map((item) => item.raceId));
       setRunnerProfiles([...directProfiles, ...claimedProfiles.filter((item) => !directRaceIds.has(item.raceId))]);
     };
@@ -287,8 +516,6 @@ export default function RunnerDashboard({
         publish();
       },
       (err) => {
-        // Older deployments have no runnerClaims rule yet. The normal runner
-        // list still works while the rules/function deployment is completed.
         console.warn('Runner bib claims listener failed:', err.message);
         claimedProfiles = [];
         publish();
@@ -298,10 +525,9 @@ export default function RunnerDashboard({
       unsubscribeProfiles();
       unsubscribeClaims();
     };
-  }, [profile.uid]);
+  }, [profile.uid, canAnyRunnerData]);
 
-  // Legacy accounts get their safe friend card automatically once they open
-  // the Runner Portal. No email or private medical/payment fields are copied.
+  // Publish safe public friend card without private account/medical fields
   useEffect(() => {
     const username = profile.username?.trim().toLowerCase();
     if (!username) return;
@@ -319,8 +545,7 @@ export default function RunnerDashboard({
     ]).catch((err) => console.warn('Failed to update friend profile:', err));
   }, [profile.uid, profile.username, profile.displayName, profile.nickname, profile.photoURL]);
 
-  // Publish only a short race summary for accepted friends. Raw registrations,
-  // bibs, results, payment state, and medical/emergency data stay private.
+  // Publish short race activity summary for accepted friends
   useEffect(() => {
     if (!runnerProfiles || !racesLoaded) return;
     let cancelled = false;
@@ -352,9 +577,21 @@ export default function RunnerDashboard({
 
   const { reminders, dismiss, notificationPermission, requestAlerts } = useRunnerReminders(runnerProfiles);
 
-  // Viewport lock: list and split tabs lock 100dvh on all viewports, while registration form & engraving scroll freely
+  const inboxUnreadCount = countInboxUnreadTotal({
+    pendingRequestsCount: incomingRequests.length,
+    pendingInvitesCount: raceInvites.length,
+    remindersCount: reminders.length,
+  });
+
+  const friendFeed = useMemo(
+    () => buildHomeFriendFeed(Object.values(friendProfilesByUid), friendActivitiesByUid),
+    [friendProfilesByUid, friendActivitiesByUid],
+  );
+
+  // Viewport lock: Explore & You (passes/friends) lock 100dvh; Home, Record, Inbox, You Overview/Engraving, and Forms scroll cleanly
   const isLockedTab =
-    tab === 'allraces' || tab === 'myraces' || tab === 'friends' || (tab === 'events' && !eventsInFormFlow);
+    (tab === 'explore' && (exploreSection !== 'races' || !eventsInFormFlow)) ||
+    (tab === 'you' && (youSection === 'passes' || youSection === 'friends'));
   const isLocked = isDesktop && isLockedTab;
   const isSplitLocked = isLockedTab;
   const imeOpen = useSoftKeyboardOpen(
@@ -409,7 +646,7 @@ export default function RunnerDashboard({
         const preview = await previewRaceBibClaim(bibPayload);
         setPendingBibClaim({ ...preview, payload: bibPayload });
         setEventQrMessage(
-          preview.alreadyLinked ? 'This race is already in My Races.' : 'Race bib found: review the details to add it.',
+          preview.alreadyLinked ? 'This race is already in My Passes.' : 'Race bib found: review the details to add it.',
         );
         window.setTimeout(() => setShowEventQrScanner(false), 300);
         return true;
@@ -436,7 +673,9 @@ export default function RunnerDashboard({
       setEventQrError('');
       setEventQrMessage('Event found: opening its registration form...');
       setScannedRaceId(raceId);
-      selectTab('events');
+      setExploreSection('races');
+      setExploreRacesFilter('open');
+      selectTab('explore');
       window.setTimeout(() => setShowEventQrScanner(false), 450);
       return true;
     } catch {
@@ -451,7 +690,8 @@ export default function RunnerDashboard({
         setRequestedPassRaceId(pendingBibClaim.race.id);
       }
       setPendingBibClaim(null);
-      selectTab('myraces');
+      setYouSection('passes');
+      selectTab('you');
       return;
     }
     setClaimingBib(true);
@@ -460,7 +700,8 @@ export default function RunnerDashboard({
       await claimRaceBib(pendingBibClaim.payload);
       setRequestedPassRaceId(pendingBibClaim.race.id);
       setPendingBibClaim(null);
-      selectTab('myraces');
+      setYouSection('passes');
+      selectTab('you');
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : 'Unable to add this race to your account.';
       setBibClaimError(msg);
@@ -476,122 +717,151 @@ export default function RunnerDashboard({
     setShowEventQrScanner(true);
   };
 
-  const navItems = [
-    {
-      key: 'events',
-      icon: <Flag className="w-4 h-4" />,
-      label: 'Events',
-      shortLabel: 'Events',
-      active: tab === 'events',
-      onClick: () => selectTab('events'),
+  const handleAcceptFriendRequest = useCallback(async (req: InboxFriendRequestItem) => {
+    const requestRef = doc(db, 'friendRequests', `${req.fromUid}_${req.toUid}`);
+    const batch = writeBatch(db);
+    batch.update(requestRef, { status: 'accepted', respondedAt: new Date().toISOString() });
+    batch.set(doc(db, 'friendships', `${req.fromUid}_${req.toUid}`), {
+      fromUid: req.fromUid,
+      toUid: req.toUid,
+      members: [req.fromUid, req.toUid],
+      createdAt: new Date().toISOString(),
+    } satisfies FriendshipDoc);
+    await batch.commit();
+  }, []);
+
+  const handleDeclineFriendRequest = useCallback(async (req: InboxFriendRequestItem) => {
+    await updateDoc(doc(db, 'friendRequests', `${req.fromUid}_${req.toUid}`), {
+      status: 'declined',
+      respondedAt: new Date().toISOString(),
+    });
+  }, []);
+
+  const handleOpenRaceInvite = useCallback(
+    async (invite: InboxRaceInviteItem) => {
+      try {
+        await updateDoc(doc(db, 'raceInvites', `${invite.fromUid}_${invite.toUid}_${invite.raceId}`), {
+          status: 'opened',
+        });
+      } catch {
+        // Safe fallback when opening the invited race.
+      }
+      setPendingDeepLinkRaceId(invite.raceId);
+      setExploreSection('races');
+      setExploreRacesFilter('open');
+      selectTab('explore');
     },
-    {
-      key: 'allraces',
-      icon: <Trophy className="w-4 h-4" />,
-      label: 'All Races',
-      shortLabel: 'Catalog',
-      active: tab === 'allraces',
-      onClick: () => selectTab('allraces'),
-    },
-    {
-      key: 'myraces',
-      icon: <ClipboardList className="w-4 h-4" />,
-      label: 'My Races',
-      shortLabel: 'Passes',
-      active: tab === 'myraces',
-      onClick: () => selectTab('myraces'),
-    },
-    {
-      key: 'friends',
-      icon: <Users2 className="w-4 h-4" />,
-      label: 'Friends',
-      shortLabel: 'Friends',
-      active: tab === 'friends',
-      onClick: () => selectTab('friends'),
-    },
-    {
-      key: 'engraving',
-      icon: <Award className="w-4 h-4" />,
-      label: 'Engraving',
-      shortLabel: 'Engrave',
-      active: tab === 'engraving',
-      onClick: () => selectTab('engraving'),
-    },
-  ].filter((item) => {
-    if (item.key === 'myraces') {
-      return can('personal.results') || can('personal.bibs') || can('personal.certificates') || can('personal.register');
-    }
-    if (item.key === 'allraces') {
-      return can('personal.results') || can('personal.register');
-    }
-    return can({ events: 'personal.register', friends: 'personal.friends', engraving: 'personal.engraving' }[item.key]!);
-  });
+    [selectTab],
+  );
+
+  const navItems: WorkspaceNavItem[] = useMemo(
+    () =>
+      allowedTabs.map((key) => {
+        switch (key) {
+          case 'home':
+            return {
+              key: 'home',
+              icon: <Home className="w-4 h-4" />,
+              label: 'Home',
+              shortLabel: 'Home',
+              active: tab === 'home',
+              onClick: () => selectTab('home'),
+            };
+          case 'explore':
+            return {
+              key: 'explore',
+              icon: <Compass className="w-4 h-4" />,
+              label: 'Explore',
+              shortLabel: 'Explore',
+              active: tab === 'explore',
+              onClick: () => selectTab('explore'),
+            };
+          case 'record':
+            return {
+              key: 'record',
+              icon: <CircleDot className="w-4 h-4" />,
+              label: 'Record',
+              shortLabel: 'Record',
+              emphasis: 'primary-record',
+              active: tab === 'record',
+              onClick: () => selectTab('record'),
+            };
+          case 'inbox':
+            return {
+              key: 'inbox',
+              icon: <Inbox className="w-4 h-4" />,
+              label: 'Inbox',
+              shortLabel: 'Inbox',
+              badgeCount: inboxUnreadCount,
+              active: tab === 'inbox',
+              onClick: () => selectTab('inbox'),
+            };
+          case 'you':
+            return {
+              key: 'you',
+              icon: <User className="w-4 h-4" />,
+              label: 'You',
+              shortLabel: 'You',
+              active: tab === 'you',
+              onClick: () => selectTab('you'),
+            };
+        }
+      }),
+    [allowedTabs, tab, inboxUnreadCount, selectTab],
+  );
 
   const registeredRaceIds = useMemo(
     () => new Set((runnerProfiles || []).map((rp) => rp.raceId)),
     [runnerProfiles],
   );
-  const sharedRaceById = useMemo(() => new Map(sharedRaces.map((r) => [r.id, r])), [sharedRaces]);
   const todayStr = philippineTodayStr();
 
-  const totalPassesCount = runnerProfiles?.length ?? 0;
-  const upcomingPassesCount = useMemo(
-    () =>
-      (runnerProfiles || []).filter((rp) => {
-        const race = sharedRaceById.get(rp.raceId);
-        return !race?.completedAt && (race?.date || '9999') >= todayStr;
-      }).length,
-    [runnerProfiles, sharedRaceById, todayStr],
-  );
-  const completedPassesCount = Math.max(0, totalPassesCount - upcomingPassesCount);
-  const openEventsCount = useMemo(
-    () => sharedRaces.filter((race) => isRaceRegistrationOpen(race)).length,
-    [sharedRaces],
+  const portfolioCounts = useMemo(
+    () => computeRunnerPortfolioCounts(runnerProfiles || [], sharedRaces, todayStr),
+    [runnerProfiles, sharedRaces, todayStr],
   );
 
   const activeTabMeta: Record<RunnerTab, { title: string; icon: React.ReactNode }> = {
-    events: {
-      title: eventsInFormFlow ? 'Event Registration' : 'Open Events',
-      icon: <Flag className="w-4 h-4 text-red-400 shrink-0" aria-hidden="true" />,
+    home: {
+      title: 'Home',
+      icon: <Home className="w-4 h-4 text-red-400 shrink-0" aria-hidden="true" />,
     },
-    allraces: {
-      title: 'All Race Events',
-      icon: <Trophy className="w-4 h-4 text-red-400 shrink-0" aria-hidden="true" />,
+    explore: {
+      title: 'Explore',
+      icon: <Compass className="w-4 h-4 text-red-400 shrink-0" aria-hidden="true" />,
     },
-    myraces: {
-      title: 'My Race Passes',
-      icon: <ClipboardList className="w-4 h-4 text-red-400 shrink-0" aria-hidden="true" />,
+    record: {
+      title: 'Record',
+      icon: <CircleDot className="w-4 h-4 text-red-400 shrink-0" aria-hidden="true" />,
     },
-    friends: {
-      title: 'Runner Friends',
-      icon: <Users2 className="w-4 h-4 text-red-400 shrink-0" aria-hidden="true" />,
+    inbox: {
+      title: 'Inbox',
+      icon: <Inbox className="w-4 h-4 text-red-400 shrink-0" aria-hidden="true" />,
     },
-    engraving: {
-      title: 'Medal Engraving',
-      icon: <Award className="w-4 h-4 text-red-400 shrink-0" aria-hidden="true" />,
+    you: {
+      title: 'You',
+      icon: <User className="w-4 h-4 text-red-400 shrink-0" aria-hidden="true" />,
     },
   };
   const currentMeta = activeTabMeta[tab];
 
-  // Active header search config per tab
+  // Active header search config per tab/sub-section
   const activeSearchConfig =
-    tab === 'events' && !eventsInFormFlow
+    tab === 'explore' && (exploreSection === 'races' || exploreSection === 'routes') && !eventsInFormFlow
       ? {
-          id: 'runner_events_header_search',
-          value: eventsSearch,
-          onChange: setEventsSearch,
-          label: 'Search open races by name, date, or distance',
-          placeholder: 'Search event, date, or distance... (/)',
+          id: 'runner_explore_header_search',
+          value: exploreSearch,
+          onChange: setExploreSearch,
+          label:
+            exploreSection === 'routes'
+              ? 'Search published Philippine courses by race, region, or distance'
+              : 'Search races by name, date, or distance',
+          placeholder:
+            exploreSection === 'routes'
+              ? 'Search route, province, or distance... (/)'
+              : 'Search race, date, or distance... (/)',
         }
-      : tab === 'allraces'
-      ? {
-          id: 'runner_catalog_header_search',
-          value: catalogSearch,
-          onChange: setCatalogSearch,
-          label: 'Search all races by name, date, or distance',
-          placeholder: 'Search race, date, or distance... (/)',
-        }
-      : tab === 'myraces'
+      : tab === 'you' && youSection === 'passes'
       ? {
           id: 'runner_passes_header_search',
           value: myPassesSearch,
@@ -599,7 +869,7 @@ export default function RunnerDashboard({
           label: 'Search your registered race passes',
           placeholder: 'Search race, bib #, or distance... (/)',
         }
-      : tab === 'friends'
+      : tab === 'you' && youSection === 'friends'
       ? {
           id: 'runner_friends_header_search',
           value: friendsSearch,
@@ -609,7 +879,6 @@ export default function RunnerDashboard({
         }
       : null;
 
-  // Admin-consistent Desktop Header Left Cluster: vertical rule + module title + inline search
   const headerLeftMarkup = (
     <div className="flex items-center gap-3 flex-1 min-w-0">
       <span className="h-5 w-px bg-white/15 shrink-0" aria-hidden="true" />
@@ -653,7 +922,6 @@ export default function RunnerDashboard({
     </div>
   );
 
-  // Admin-consistent Desktop Header Right Cluster: view-specific status segmented pills + primary CTA
   const renderSegmentedHeaderFilter = <T extends string>(
     ariaLabel: string,
     options: { key: T; label: string; count: number }[],
@@ -689,32 +957,24 @@ export default function RunnerDashboard({
 
   const headerRightMarkup = (
     <div className="flex items-center gap-2" role="toolbar" aria-label="Runner view controls">
-      {tab === 'events' &&
+      {tab === 'explore' &&
+        exploreSection === 'races' &&
         !eventsInFormFlow &&
-        renderSegmentedHeaderFilter<OpenEventsFilter>(
-          'Filter open races by registration status',
+        renderSegmentedHeaderFilter<ExploreRacesFilter>(
+          'Filter explore races by status',
           [
-            { key: 'all', label: 'All Open', count: eventsMetrics.total },
-            { key: 'unjoined', label: 'Available', count: eventsMetrics.unjoined },
-            { key: 'registered', label: 'Joined', count: eventsMetrics.registered },
+            { key: 'open', label: 'Open Now', count: exploreMetrics.total },
+            { key: 'upcoming', label: 'Upcoming', count: exploreMetrics.catalogUpcoming },
+            { key: 'completed', label: 'Completed', count: exploreMetrics.catalogCompleted },
+            { key: 'all', label: 'All', count: exploreMetrics.catalogAll },
+            { key: 'joined', label: 'Joined', count: exploreMetrics.registered },
           ],
-          eventsFilter,
-          setEventsFilter,
+          exploreRacesFilter,
+          setExploreRacesFilter,
         )}
 
-      {tab === 'allraces' &&
-        renderSegmentedHeaderFilter<CatalogStatusFilter>(
-          'Filter race catalog by status',
-          [
-            { key: 'all', label: 'All', count: catalogMetrics.all },
-            { key: 'upcoming', label: 'Upcoming', count: catalogMetrics.upcoming },
-            { key: 'completed', label: 'Completed', count: catalogMetrics.completed },
-          ],
-          catalogFilter,
-          setCatalogFilter,
-        )}
-
-      {tab === 'myraces' &&
+      {tab === 'you' &&
+        youSection === 'passes' &&
         renderSegmentedHeaderFilter<MyPassesFilter>(
           'Filter my passes by status',
           [
@@ -738,69 +998,93 @@ export default function RunnerDashboard({
   );
 
   const telemetryLoading = runnerProfiles === undefined;
+  const exploreRacesMode = mapExploreRacesMode(exploreRacesFilter);
   const telemetryContextSummary =
-    tab === 'events'
-      ? `${eventsMetrics.showing}/${eventsMetrics.total}`
-      : tab === 'allraces'
-        ? `${catalogMetrics.showing}/${catalogMetrics.all}`
-        : tab === 'myraces'
-          ? `${myPassesMetrics.showing}/${myPassesMetrics.all}`
-          : tab === 'friends'
-            ? `${friendsCount}`
-            : `${totalPassesCount}`;
+    tab === 'home'
+      ? `${portfolioCounts.openRaces}`
+      : tab === 'explore'
+        ? exploreSection === 'routes'
+          ? `${exploreMetrics.showing}/${exploreMetrics.routesCount}`
+          : exploreSection === 'clubs'
+            ? profile.runClub?.trim()
+              ? '1'
+              : '0'
+            : exploreRacesMode.mode === 'events'
+              ? `${exploreMetrics.showing}/${exploreMetrics.total}`
+              : `${exploreMetrics.showing}/${exploreMetrics.catalogAll}`
+        : tab === 'record'
+          ? profile.weightKg
+            ? `${profile.weightKg}kg`
+            : 'GNSS'
+          : tab === 'inbox'
+            ? `${inboxUnreadCount}`
+            : youSection === 'passes'
+              ? `${myPassesMetrics.showing}/${myPassesMetrics.all}`
+              : youSection === 'friends'
+                ? `${friendsCount}`
+                : `${portfolioCounts.totalPasses}`;
 
   const telemetryItems: RunnerTelemetryItem[] = [
     {
       key: 'passes',
       label: 'Passes',
-      value: totalPassesCount,
+      value: portfolioCounts.totalPasses,
       loading: telemetryLoading,
-      active: tab === 'myraces' && myPassesFilter === 'all',
+      active: tab === 'you' && youSection === 'passes' && myPassesFilter === 'all',
       onClick: () => {
         setMyPassesFilter('all');
-        selectTab('myraces');
+        setYouSection('passes');
+        selectTab('you');
       },
     },
     {
       key: 'upcoming',
       label: 'Upcoming',
-      value: upcomingPassesCount,
+      value: portfolioCounts.upcomingPasses,
       loading: telemetryLoading,
       accent: 'emerald',
-      active: tab === 'myraces' && myPassesFilter === 'upcoming',
+      active: tab === 'you' && youSection === 'passes' && myPassesFilter === 'upcoming',
       onClick: () => {
         setMyPassesFilter('upcoming');
-        selectTab('myraces');
+        setYouSection('passes');
+        selectTab('you');
       },
     },
-    ...(can('personal.register')
+    ...(canRegister
       ? [
           {
             key: 'events',
             label: 'Open',
-            value: openEventsCount,
+            value: portfolioCounts.openRaces,
             loading: !racesLoaded,
             accent: 'red' as const,
-            active: tab === 'events',
-            onClick: () => selectTab('events'),
+            active: tab === 'explore' && exploreSection === 'races' && exploreRacesFilter === 'open',
+            onClick: () => {
+              setExploreSection('races');
+              setExploreRacesFilter('open');
+              selectTab('explore');
+            },
           },
         ]
       : []),
-    ...(can('personal.friends')
+    ...(canFriends
       ? [
           {
             key: 'friends',
             label: 'Friends',
             value: friendsCount,
-            active: tab === 'friends',
-            onClick: () => selectTab('friends'),
+            active: tab === 'you' && youSection === 'friends',
+            onClick: () => {
+              setYouSection('friends');
+              selectTab('you');
+            },
           },
         ]
       : []),
   ];
 
   const showCompactHeader = !isDesktop && !(isCompact && mobileCanvasActive);
-  const showTelemetryBar = !(isCompact && (mobileCanvasActive || eventsInFormFlow));
+  const showTelemetryBar = !(isCompact && (mobileCanvasActive || eventsInFormFlow || tab === 'record'));
 
   const mobileHeaderLeftMarkup = (
     <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -808,7 +1092,7 @@ export default function RunnerDashboard({
       <h1 className="font-display font-semibold text-sm sm:text-base text-white truncate">
         {currentMeta.title}
       </h1>
-      {!(tab === 'events' && eventsInFormFlow) && (
+      {!(tab === 'explore' && eventsInFormFlow) && (
         <span className="font-mono text-xs font-semibold tabular-nums text-zinc-300 shrink-0">
           {telemetryContextSummary}
         </span>
@@ -857,6 +1141,15 @@ export default function RunnerDashboard({
       </button>
     </div>
   );
+
+  const hintSuppressed =
+    showProfile ||
+    alertsOpen ||
+    showEventQrScanner ||
+    Boolean(pendingBibClaim) ||
+    imeOpen ||
+    (isCompact && mobileCanvasActive) ||
+    eventsInFormFlow;
 
   return (
     <WorkspaceShell
@@ -963,7 +1256,8 @@ export default function RunnerDashboard({
                 setAlertsOpen(false);
                 setMyPassesFilter('all');
                 setRequestedPassRaceId(raceId);
-                selectTab('myraces');
+                setYouSection('passes');
+                selectTab('you');
               }}
               onClose={() => setAlertsOpen(false)}
             />
@@ -979,7 +1273,8 @@ export default function RunnerDashboard({
                 setAlertsOpen(false);
                 setMyPassesFilter('all');
                 setRequestedPassRaceId(raceId);
-                selectTab('myraces');
+                setYouSection('passes');
+                selectTab('you');
               }}
               onClose={() => setAlertsOpen(false)}
             />
@@ -1008,7 +1303,7 @@ export default function RunnerDashboard({
                 id="pending-bib-claim-title"
                 className="text-lg font-semibold font-display text-[var(--text-primary)]"
               >
-                {pendingBibClaim.alreadyLinked ? 'Already in My Races' : 'Add this race bib?'}
+                {pendingBibClaim.alreadyLinked ? 'Already in My Passes' : 'Add this race bib?'}
               </h2>
               <p className="text-xs text-[var(--text-secondary)] mt-0.5 tabular-nums">
                 {pendingBibClaim.race.name} · {pendingBibClaim.race.date}
@@ -1058,7 +1353,7 @@ export default function RunnerDashboard({
             </p>
           )}
           <p className="text-xs text-[var(--text-secondary)]">
-            Only confirm if this is your official race bib. Splits and published results appear under My Races.
+            Only confirm if this is your official race bib. Splits and published results appear under My Passes.
           </p>
           <div className="grid grid-cols-2 gap-2 pt-1">
             <button
@@ -1075,7 +1370,7 @@ export default function RunnerDashboard({
               disabled={claimingBib}
               className="min-h-11 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold disabled:opacity-60"
             >
-              {claimingBib ? 'Adding...' : pendingBibClaim.alreadyLinked ? 'Open My Races' : 'Confirm & Add Race'}
+              {claimingBib ? 'Adding...' : pendingBibClaim.alreadyLinked ? 'Open My Passes' : 'Confirm & Add Race'}
             </button>
           </div>
         </DialogSurface>
@@ -1089,21 +1384,71 @@ export default function RunnerDashboard({
           direction={tabDirection}
           className="flex-1 min-h-0 flex flex-col"
         >
-          {tab === 'events' && can('personal.register') && (
-            <RunnerEventsPanel
+          {tab === 'home' && allowedTabs.includes('home') && (
+            <RunnerHomePanel
+              profile={profile}
+              runnerProfiles={runnerProfiles}
+              races={sharedRaces}
+              racesLoaded={racesLoaded}
+              friendsCount={friendsCount}
+              friendFeed={friendFeed}
+              onOpenPass={(raceId) => {
+                setMyPassesFilter('all');
+                setRequestedPassRaceId(raceId);
+                setYouSection('passes');
+                selectTab('you');
+              }}
+              onOpenExplore={(section = 'races', filter = 'open', raceId) => {
+                setExploreSection(section);
+                setExploreRacesFilter(filter);
+                if (raceId) {
+                  setPendingDeepLinkRaceId(raceId);
+                }
+                selectTab('explore');
+              }}
+              onOpenRecord={() => {
+                if (allowedTabs.includes('record')) {
+                  selectTab('record');
+                }
+              }}
+              onOpenFriends={() => {
+                setYouSection(canFriends ? 'friends' : 'overview');
+                selectTab('you');
+              }}
+            />
+          )}
+
+          {tab === 'explore' && allowedTabs.includes('explore') && (
+            <RunnerExplorePanel
+              section={exploreSection}
+              onSectionChange={setExploreSection}
+              racesFilter={exploreRacesFilter}
+              onRacesFilterChange={setExploreRacesFilter}
+              searchQuery={exploreSearch}
+              onSearchQueryChange={setExploreSearch}
               uid={profile.uid}
               friendIdentity={{ username: profile.username, displayName: profile.nickname || profile.displayName }}
               runnerProfiles={runnerProfiles}
               registeredRaceIds={registeredRaceIds}
               initialShirtSize={profile.shirtSize}
+              profileRunClub={profile.runClub}
               requestedRaceId={scannedRaceId || pendingDeepLinkRaceId}
               onRequestedRaceHandled={handleEventsDeepLinkHandled}
-              onBrowseAllRaces={() => selectTab('allraces')}
               onScanQr={openQrScanner}
               onSaved={() => {
                 setMyPassesFilter('all');
-                selectTab('myraces');
+                setYouSection('passes');
+                selectTab('you');
               }}
+              onOpenProfile={() => setShowProfile(true)}
+              onStartCourseRun={
+                allowedTabs.includes('record')
+                  ? (course) => {
+                      setPreselectedCourse(course);
+                      selectTab('record');
+                    }
+                  : undefined
+              }
               races={sharedRaces}
               racesLoaded={racesLoaded}
               racesError={racesError}
@@ -1112,87 +1457,128 @@ export default function RunnerDashboard({
               isCompact={isCompact}
               imeOpen={imeOpen}
               onCanvasModeChange={setMobileCanvasActive}
-              searchQuery={eventsSearch}
-              onSearchQueryChange={setEventsSearch}
-              statusFilter={eventsFilter}
-              onStatusFilterChange={setEventsFilter}
-              onMetricsChange={handleEventsMetricsChange}
+              onMetricsChange={handleExploreMetricsChange}
               onFormViewChange={setEventsInFormFlow}
               desktopSearchRef={headerSearchRef}
             />
           )}
 
-          {tab === 'allraces' && (can('personal.results') || can('personal.register')) && (
-            <RunnerAllRacesPanel
-              races={sharedRaces}
-              racesLoaded={racesLoaded}
-              racesError={racesError}
-              registeredRaceIds={registeredRaceIds}
-              onRegister={(raceId) => {
-                setScannedRaceId(raceId);
-                selectTab('events');
-              }}
-              isDesktop={isDesktop}
-              isSplitPane={isSplitPane}
-              isCompact={isCompact}
-              onCanvasModeChange={setMobileCanvasActive}
-              searchQuery={catalogSearch}
-              onSearchQueryChange={setCatalogSearch}
-              statusFilter={catalogFilter}
-              onStatusFilterChange={setCatalogFilter}
-              onMetricsChange={handleCatalogMetricsChange}
-              desktopSearchRef={headerSearchRef}
-            />
-          )}
-
-          {tab === 'myraces' && (
-            <RunnerMyRacesPanel
-              runnerProfiles={runnerProfiles}
-              races={sharedRaces}
-              racesLoaded={racesLoaded}
-              onBrowseEvents={() => selectTab('events')}
-              onScanQr={openQrScanner}
-              onOpenEngraving={can('personal.engraving') ? () => selectTab('engraving') : undefined}
-              requestedRaceId={requestedPassRaceId}
-              onRequestedRaceHandled={handlePassDeepLinkHandled}
-              isDesktop={isDesktop}
-              isSplitPane={isSplitPane}
-              isCompact={isCompact}
-              onCanvasModeChange={setMobileCanvasActive}
-              searchQuery={myPassesSearch}
-              onSearchQueryChange={setMyPassesSearch}
-              statusFilter={myPassesFilter}
-              onStatusFilterChange={setMyPassesFilter}
-              onMetricsChange={handleMyPassesMetricsChange}
-              desktopSearchRef={headerSearchRef}
-            />
-          )}
-
-          {tab === 'friends' && can('personal.friends') && (
-            <RunnerFriendsPanel
+          {tab === 'record' && allowedTabs.includes('record') && (
+            <RunnerRecordPreviewPanel
               profile={profile}
-              onOpenRace={(raceId) => {
-                setScannedRaceId(raceId);
-                selectTab('events');
-              }}
+              preselectedCourse={preselectedCourse}
+              onSelectCourse={setPreselectedCourse}
               onOpenProfile={() => setShowProfile(true)}
-              searchQuery={friendsSearch}
-              onSearchQueryChange={setFriendsSearch}
-              isDesktop={isDesktop}
-              isSplitPane={isSplitPane}
-              desktopSearchRef={headerSearchRef}
+              onBrowseRoutes={
+                allowedTabs.includes('explore')
+                  ? () => {
+                      setExploreSection('routes');
+                      selectTab('explore');
+                    }
+                  : undefined
+              }
             />
           )}
 
-          {tab === 'engraving' && can('personal.engraving') && (
-            <RunnerEngravingView
+          {tab === 'inbox' && allowedTabs.includes('inbox') && (
+            <RunnerInboxPreviewPanel
+              incomingRequests={incomingRequests}
+              raceInvites={raceInvites}
+              reminders={reminders}
+              canFriends={canFriends}
+              onAcceptRequest={handleAcceptFriendRequest}
+              onDeclineRequest={handleDeclineFriendRequest}
+              onOpenInvite={handleOpenRaceInvite}
+              onOpenPass={(raceId) => {
+                setMyPassesFilter('all');
+                setRequestedPassRaceId(raceId);
+                setYouSection('passes');
+                selectTab('you');
+              }}
+              onDismissReminder={dismiss}
+              onOpenFriends={() => {
+                setYouSection(canFriends ? 'friends' : 'overview');
+                selectTab('you');
+              }}
+            />
+          )}
+
+          {tab === 'you' && (
+            <RunnerYouHubPanel
+              section={youSection}
+              onSectionChange={setYouSection}
               profile={profile}
               runnerProfiles={runnerProfiles}
               races={sharedRaces}
-              onBackToMyRaces={() => selectTab('myraces')}
+              racesLoaded={racesLoaded}
+              friendsCount={friendsCount}
+              canFriends={canFriends}
+              canEngraving={canEngraving}
+              requestedPassRaceId={requestedPassRaceId}
+              onRequestedPassHandled={handlePassDeepLinkHandled}
+              onBrowseEvents={() => {
+                setExploreSection('races');
+                setExploreRacesFilter('open');
+                selectTab('explore');
+              }}
+              onOpenExploreRace={(raceId) => {
+                setScannedRaceId(raceId);
+                setExploreSection('races');
+                setExploreRacesFilter('open');
+                selectTab('explore');
+              }}
+              onScanQr={openQrScanner}
+              onOpenProfile={() => setShowProfile(true)}
+              onOpenRecord={() => {
+                if (allowedTabs.includes('record')) {
+                  selectTab('record');
+                }
+              }}
+              myPassesSearch={myPassesSearch}
+              onMyPassesSearchChange={setMyPassesSearch}
+              myPassesFilter={myPassesFilter}
+              onMyPassesFilterChange={setMyPassesFilter}
+              onMyPassesMetricsChange={handleMyPassesMetricsChange}
+              friendsSearch={friendsSearch}
+              onFriendsSearchChange={setFriendsSearch}
+              isDesktop={isDesktop}
+              isSplitPane={isSplitPane}
+              isCompact={isCompact}
+              onCanvasModeChange={setMobileCanvasActive}
+              desktopSearchRef={headerSearchRef}
+              engravingNode={
+                canEngraving ? (
+                  <RunnerEngravingView
+                    profile={profile}
+                    runnerProfiles={runnerProfiles}
+                    races={sharedRaces}
+                    onBackToMyRaces={() => setYouSection('passes')}
+                  />
+                ) : undefined
+              }
             />
           )}
         </AnimatedTabView>
+      )}
+
+      {tab === 'explore' && (
+        <RunnerOnboardingHint
+          id="runner-explore-hint"
+          storageKey="racepulse_hint_explore_v1"
+          title="Events, Routes & Clubs"
+          body="Switch between Races, Philippine Course Maps, and Clubs from the Explore bar."
+          suppress={hintSuppressed}
+        />
+      )}
+
+      {tab === 'record' && (
+        <RunnerOnboardingHint
+          id="runner-record-hint"
+          storageKey="racepulse_hint_record_v1"
+          title="GPS Readiness Check"
+          body="Test your satellite lock and pick an optional race course before heading out."
+          suppress={hintSuppressed}
+        />
       )}
 
       {showEventQrScanner && (
@@ -1203,7 +1589,7 @@ export default function RunnerDashboard({
           errorMessage={eventQrError}
           title="Scan Race or Bib QR"
           subtitle="OPEN EVENT OR ADD MY RACE"
-          instructions="Scan an organizer event QR to open registration, or scan the QR printed on your race bib to add that event and its result to My Races."
+          instructions="Scan an organizer event QR to open registration, or scan the QR printed on your race bib to add that event and its result to My Passes."
         />
       )}
     </WorkspaceShell>
@@ -1280,7 +1666,7 @@ function RunnerEngravingView({
     <CustomerForm
       embedded
       onBackToRoleSelection={onBackToMyRaces}
-      backLabel="← Back to My Races"
+      backLabel="← Back to My Passes"
       ownerUid={profile.uid}
       initialRunnerName={fallbackProfile?.fullName || profile.displayName || ''}
       initialBibNumber={fallbackProfile?.bibNumber || ''}

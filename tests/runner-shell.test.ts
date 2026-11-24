@@ -673,3 +673,140 @@ test('buildClubRequestMailtoHref builds safe mailto URL with subject, body, and 
   const invalidEmailHref = runnerShell.buildClubRequestMailtoHref({ supportEmail: '   ' });
   assert.ok(invalidEmailHref.startsWith('mailto:events@racepulseph.com?'));
 });
+
+test('countInboxUnreadTotal aggregates pending requests, invites, and reminders safely', () => {
+  assert.equal(
+    runnerShell.countInboxUnreadTotal({
+      pendingRequestsCount: 2,
+      pendingInvitesCount: 1,
+      remindersCount: 3,
+    }),
+    6,
+  );
+  assert.equal(
+    runnerShell.countInboxUnreadTotal({
+      pendingRequestsCount: 0,
+      pendingInvitesCount: 0,
+      remindersCount: 0,
+    }),
+    0,
+  );
+  assert.equal(
+    runnerShell.countInboxUnreadTotal({
+      pendingRequestsCount: -4,
+      pendingInvitesCount: Number.NaN,
+      remindersCount: 2.9,
+    }),
+    2,
+  );
+});
+
+test('buildHomeFriendFeed joins friends with non-empty activities and sorts newest first', () => {
+  const friends = [
+    { uid: 'f1', username: 'ana', displayName: 'Ana Reyes', nickname: 'Coach Ana', updatedAt: '2026-11-20T01:00:00Z' },
+    { uid: 'f2', username: 'ben', displayName: 'Ben Cruz', updatedAt: '2026-11-22T01:00:00Z' },
+    { uid: 'f3', username: 'cara', displayName: 'Cara Lim', updatedAt: '2026-11-18T01:00:00Z' },
+  ];
+  const activities = {
+    f1: {
+      uid: 'f1',
+      updatedAt: '2026-11-20T05:00:00Z',
+      recentRaces: [
+        { raceId: 'r1', raceName: 'Manila 10K', date: '2026-11-10', distance: '10K' },
+        { raceId: 'r2', raceName: 'Baguio 21K', date: '2026-12-13', distance: '21K' },
+      ],
+    },
+    f2: {
+      uid: 'f2',
+      updatedAt: '2026-11-23T08:00:00Z',
+      recentRaces: [],
+    },
+    f3: {
+      uid: 'f3',
+      updatedAt: '2026-11-24T06:00:00Z',
+      recentRaces: [{ raceId: 'r3', raceName: 'Cebu Trail 21K', date: '2026-11-29', distance: '21K' }],
+    },
+  };
+
+  const feed = runnerShell.buildHomeFriendFeed(friends, activities);
+  assert.equal(feed.length, 2);
+  assert.equal(feed[0].uid, 'f3');
+  assert.equal(feed[0].displayName, 'Cara Lim');
+  assert.equal(feed[1].uid, 'f1');
+  assert.equal(feed[1].displayName, 'Coach Ana');
+  assert.deepEqual(
+    feed[1].recentRaces.map((r: { raceId: string }) => r.raceId),
+    ['r2', 'r1'],
+  );
+});
+
+test('normalizeOnboardingStepIds keeps only canonical valid step IDs and deduplicates', () => {
+  assert.deepEqual(
+    runnerShell.normalizeOnboardingStepIds(
+      ['connect_friend', 'bogus_step', 'welcome', 'connect_friend', 'dismissed'],
+      ['explore_community'],
+    ),
+    ['welcome', 'explore_community', 'connect_friend'],
+  );
+  assert.deepEqual(runnerShell.normalizeOnboardingStepIds(undefined, ['welcome']), ['welcome']);
+});
+
+test('sortHomeDiscoverRaces prioritizes open registrations, excludes completed races, and sorts by date', () => {
+  const today = '2026-11-24';
+  const races: Race[] = [
+    makeRace({ id: 'done', name: 'Finished Race', date: '2026-11-15', completedAt: '2026-11-15T10:00:00Z' }),
+    makeRace({ id: 'past', name: 'Past Closed', date: '2026-11-20', registrationOpen: false }),
+    makeRace({ id: 'upcoming_closed', name: 'Closed Upcoming', date: '2026-11-26', registrationOpen: false }),
+    makeRace({ id: 'open_later', name: 'Open Later', date: '2026-12-20', registrationOpen: true }),
+    makeRace({ id: 'open_soon', name: 'Open Soon', date: '2026-12-01', registrationOpen: true }),
+  ];
+
+  const sorted = runnerShell.sortHomeDiscoverRaces(races, today);
+  assert.deepEqual(
+    sorted.map((r: Race) => r.id),
+    ['open_soon', 'open_later', 'upcoming_closed'],
+  );
+});
+
+test('classifyRecordGnssStatus maps geolocation status and quality to exact pill labels', () => {
+  assert.deepEqual(runnerShell.classifyRecordGnssStatus('idle', null), { label: 'Idle', tone: 'neutral' });
+  assert.deepEqual(runnerShell.classifyRecordGnssStatus('locating', null), { label: 'Locating...', tone: 'amber' });
+  assert.deepEqual(runnerShell.classifyRecordGnssStatus('denied', null), { label: 'Denied', tone: 'red' });
+  assert.deepEqual(runnerShell.classifyRecordGnssStatus('unavailable', null), { label: 'Unavailable', tone: 'red' });
+  assert.deepEqual(runnerShell.classifyRecordGnssStatus('error', null), { label: 'Error', tone: 'red' });
+  assert.deepEqual(
+    runnerShell.classifyRecordGnssStatus('active', { quality: 'high', isStale: false, accuracyM: 8 }),
+    { label: 'High (<=15m)', tone: 'emerald' },
+  );
+  assert.deepEqual(
+    runnerShell.classifyRecordGnssStatus('active', { quality: 'good', isStale: false, accuracyM: 28 }),
+    { label: 'Good (<=35m)', tone: 'emerald' },
+  );
+  assert.deepEqual(
+    runnerShell.classifyRecordGnssStatus('active', { quality: 'coarse', isStale: false, accuracyM: 52 }),
+    { label: 'Canopy', tone: 'amber' },
+  );
+  assert.deepEqual(
+    runnerShell.classifyRecordGnssStatus('active', { quality: 'high', isStale: true, accuracyM: 10 }),
+    { label: 'Canopy', tone: 'amber' },
+  );
+});
+
+test('computeRunnerPortfolioCounts computes exact pass, upcoming, completed, and open counts', () => {
+  const today = '2026-11-24';
+  const races: Race[] = [
+    makeRace({ id: 'r_open', date: '2026-12-01', registrationOpen: true }),
+    makeRace({ id: 'r_done', date: '2026-11-10', completedAt: '2026-11-10T09:00:00Z', registrationOpen: false }),
+    makeRace({ id: 'r_closed_upcoming', date: '2026-12-10', registrationOpen: false }),
+  ];
+  const profiles: RunnerProfile[] = [
+    makeRunnerProfile({ raceId: 'r_open', bibNumber: '101' }),
+    makeRunnerProfile({ raceId: 'r_done', bibNumber: '102' }),
+  ];
+  assert.deepEqual(runnerShell.computeRunnerPortfolioCounts(profiles, races, today), {
+    totalPasses: 2,
+    upcomingPasses: 1,
+    completedPasses: 1,
+    openRaces: 1,
+  });
+});

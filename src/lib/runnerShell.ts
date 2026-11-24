@@ -1,5 +1,6 @@
 import type { PhilippineIslandGroup, RaceRouteCatalogEntry } from './routes/types';
-import type { Race, RunnerProfile } from '../types';
+import { isRaceRegistrationOpen } from './raceRegistration';
+import type { FriendActivity, FriendProfile, Race, RunnerProfile } from '../types';
 
 export type RunnerTab = 'home' | 'explore' | 'record' | 'inbox' | 'you';
 export type ExploreSection = 'races' | 'routes' | 'clubs';
@@ -322,4 +323,182 @@ export function buildClubRequestMailtoHref(options: ClubRequestMailtoOptions = {
   ].join('\n');
 
   return `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+const CANONICAL_ONBOARDING_STEPS: readonly OnboardingStepId[] = [
+  'welcome',
+  'first_run',
+  'explore_community',
+  'connect_friend',
+];
+const VALID_ONBOARDING_STEP_SET = new Set<string>(CANONICAL_ONBOARDING_STEPS);
+
+function toNonNegativeWhole(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value) || value <= 0) {
+    return 0;
+  }
+  return Math.floor(value);
+}
+
+export function countInboxUnreadTotal(counts: {
+  pendingRequestsCount?: number;
+  pendingInvitesCount?: number;
+  remindersCount?: number;
+}): number {
+  return (
+    toNonNegativeWhole(counts.pendingRequestsCount) +
+    toNonNegativeWhole(counts.pendingInvitesCount) +
+    toNonNegativeWhole(counts.remindersCount)
+  );
+}
+
+export interface HomeFriendFeedItem {
+  uid: string;
+  displayName: string;
+  username?: string;
+  photoURL?: string;
+  recentRaces: FriendActivity['recentRaces'];
+  updatedAt: string;
+}
+
+export function buildHomeFriendFeed(
+  friends: readonly FriendProfile[],
+  activitiesByUid: Readonly<Record<string, FriendActivity | undefined>>,
+): HomeFriendFeedItem[] {
+  const seenUids = new Set<string>();
+  const items: HomeFriendFeedItem[] = [];
+
+  for (const friend of friends) {
+    if (!friend.uid || seenUids.has(friend.uid)) continue;
+    seenUids.add(friend.uid);
+
+    const activity = activitiesByUid[friend.uid];
+    const recentRaces = [...(activity?.recentRaces ?? [])]
+      .filter((race) => Boolean(race?.raceId && race?.raceName))
+      .sort((a, b) => (b.date || '').localeCompare(a.date || '') || a.raceName.localeCompare(b.raceName));
+
+    if (recentRaces.length === 0) continue;
+
+    const displayName = (friend.nickname || friend.displayName || friend.username || 'Runner').trim();
+    items.push({
+      uid: friend.uid,
+      displayName,
+      ...(friend.username ? { username: friend.username } : {}),
+      ...(friend.photoURL ? { photoURL: friend.photoURL } : {}),
+      recentRaces,
+      updatedAt: activity?.updatedAt || friend.updatedAt || '',
+    });
+  }
+
+  return items.sort((a, b) => {
+    const updatedCmp = (b.updatedAt || '').localeCompare(a.updatedAt || '');
+    if (updatedCmp !== 0) return updatedCmp;
+    const latestRaceCmp = (b.recentRaces[0]?.date || '').localeCompare(a.recentRaces[0]?.date || '');
+    if (latestRaceCmp !== 0) return latestRaceCmp;
+    return a.displayName.localeCompare(b.displayName);
+  });
+}
+
+export function normalizeOnboardingStepIds(
+  steps: readonly string[] | undefined,
+  extraSteps: readonly OnboardingStepId[] = [],
+): OnboardingStepId[] {
+  const present = new Set<OnboardingStepId>();
+  for (const step of steps ?? []) {
+    if (VALID_ONBOARDING_STEP_SET.has(step)) {
+      present.add(step as OnboardingStepId);
+    }
+  }
+  for (const step of extraSteps) {
+    if (VALID_ONBOARDING_STEP_SET.has(step)) {
+      present.add(step);
+    }
+  }
+  return CANONICAL_ONBOARDING_STEPS.filter((step) => present.has(step));
+}
+
+export function sortHomeDiscoverRaces(races: readonly Race[], todayIso: string): Race[] {
+  return races
+    .filter((race) => !race.completedAt && (isRaceRegistrationOpen(race, todayIso) || race.date >= todayIso))
+    .sort((a, b) => {
+      const aOpen = isRaceRegistrationOpen(a, todayIso) ? 1 : 0;
+      const bOpen = isRaceRegistrationOpen(b, todayIso) ? 1 : 0;
+      if (aOpen !== bOpen) return bOpen - aOpen;
+      const dateCmp = a.date.localeCompare(b.date);
+      if (dateCmp !== 0) return dateCmp;
+      return a.name.localeCompare(b.name);
+    });
+}
+
+export type RecordGnssStatusInput = 'idle' | 'locating' | 'active' | 'denied' | 'unavailable' | 'error';
+
+export interface RecordGnssPositionInput {
+  quality?: 'high' | 'good' | 'coarse' | 'stale';
+  isStale?: boolean;
+  accuracyM?: number;
+}
+
+export interface RecordGnssBadge {
+  label: string;
+  tone: 'neutral' | 'amber' | 'emerald' | 'red';
+}
+
+export function classifyRecordGnssStatus(
+  status: RecordGnssStatusInput,
+  position: RecordGnssPositionInput | null,
+): RecordGnssBadge {
+  if (status === 'idle') return { label: 'Idle', tone: 'neutral' };
+  if (status === 'locating') return { label: 'Locating...', tone: 'amber' };
+  if (status === 'denied') return { label: 'Denied', tone: 'red' };
+  if (status === 'unavailable') return { label: 'Unavailable', tone: 'red' };
+  if (status === 'error') return { label: 'Error', tone: 'red' };
+
+  if (!position) return { label: 'Locating...', tone: 'amber' };
+  if (position.isStale || position.quality === 'stale' || position.quality === 'coarse') {
+    return { label: 'Canopy', tone: 'amber' };
+  }
+  if (position.quality === 'high') {
+    return { label: 'High (<=15m)', tone: 'emerald' };
+  }
+  if (position.quality === 'good') {
+    return { label: 'Good (<=35m)', tone: 'emerald' };
+  }
+
+  const acc = position.accuracyM;
+  if (typeof acc === 'number' && Number.isFinite(acc)) {
+    if (acc <= 15) return { label: 'High (<=15m)', tone: 'emerald' };
+    if (acc <= 35) return { label: 'Good (<=35m)', tone: 'emerald' };
+  }
+  return { label: 'Canopy', tone: 'amber' };
+}
+
+export function computeRunnerPortfolioCounts(
+  runnerProfiles: readonly RunnerProfile[],
+  races: readonly Race[],
+  todayIso: string,
+): { totalPasses: number; upcomingPasses: number; completedPasses: number; openRaces: number } {
+  const raceById = new Map(races.map((race) => [race.id, race]));
+  let upcomingPasses = 0;
+
+  for (const rp of runnerProfiles) {
+    const race = raceById.get(rp.raceId);
+    if (!race?.completedAt && (race?.date || '9999') >= todayIso) {
+      upcomingPasses += 1;
+    }
+  }
+
+  let openRaces = 0;
+  for (const race of races) {
+    if (isRaceRegistrationOpen(race, todayIso)) {
+      openRaces += 1;
+    }
+  }
+
+  const totalPasses = runnerProfiles.length;
+  return {
+    totalPasses,
+    upcomingPasses,
+    completedPasses: Math.max(0, totalPasses - upcomingPasses),
+    openRaces,
+  };
 }
