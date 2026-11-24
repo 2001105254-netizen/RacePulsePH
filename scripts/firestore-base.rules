@@ -885,5 +885,59 @@ service cloud.firestore {
       );
       allow create, update, delete: if false;
     }
+
+    // ========== BADGE STUDIO & XP PROGRESSION ==========
+    //
+    // Assumed Data Models (all client writes denied; mutations run exclusively
+    // through communityApi via Firebase Admin SDK):
+    // - badges/{badgeId}: BadgeDefinition catalog (badgeId, name, description,
+    //   tier, customTierLabel, category, artworkType, emblemId, artworkUrl,
+    //   artworkStoragePath, borderStyle, primaryColor, secondaryColor,
+    //   animationEffect, xpReward, rule, activeFrom, activeUntil,
+    //   hiddenUntilEarned, status, sortOrder, createdAt, createdBy, updatedAt,
+    //   updatedBy).
+    // - userBadges/{docId}: UserBadgeAward ({uid}_{badgeId}; id, uid, badgeId,
+    //   earnedAt, seenByUser, source, xpAwarded, grantedBy, note, runId,
+    //   badgeName, tier, category).
+    // - xpEvents/{eventId}: XpEventRecord (id, uid, source, refId, xp,
+    //   createdAt, label). Private XP audit ledger (owner or Super Admin).
+    // - athleteProgression/{uid}: AthleteProgression (uid, totalXp, level,
+    //   currentLevelXp, nextLevelXp, rankTitle, badgesCount, runStreakWeeks,
+    //   runStreakGraceRemaining, updatedAt).
+
+    match /badges/{badgeId} {
+      allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid);
+      allow create, update, delete: if false;
+    }
+
+    // Keep resource.data.uid == request.auth.uid first so owner list queries short-circuit cleanly.
+    match /userBadges/{docId} {
+      allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid) && (
+        resource.data.uid == request.auth.uid
+        || isSuperAdmin()
+        || permission('badges.view')
+        || isFriendOf(resource.data.uid)
+      );
+      allow create, update, delete: if false;
+    }
+
+    // Keep resource.data.uid == request.auth.uid first so owner list queries short-circuit cleanly.
+    match /xpEvents/{eventId} {
+      allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid) && (
+        resource.data.uid == request.auth.uid
+        || isSuperAdmin()
+      );
+      allow create, update, delete: if false;
+    }
+
+    match /athleteProgression/{uid} {
+      allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid) && (
+        request.auth.uid == uid
+        || isSuperAdmin()
+        || permission('badges.view')
+        || isFriendOf(uid)
+      );
+      allow create, update, delete: if false;
+    }
   }
 }

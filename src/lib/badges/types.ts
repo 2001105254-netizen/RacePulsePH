@@ -77,8 +77,8 @@ export type BadgeRuleType =
 
 export type BadgeArtworkType = 'emblem' | 'upload';
 export type BadgeStatus = 'active' | 'archived';
-export type BadgeAwardSource = 'auto' | 'manual' | 'retroactive';
-export type XpEventSourceType = 'badge_unlock' | 'run_complete' | 'manual_adjustment';
+export type BadgeAwardSource = 'auto' | 'manual' | 'retroactive' | 'run';
+export type XpEventSourceType = 'run' | 'badge';
 export type AthleteRankTitle =
   | 'Pacer'
   | 'Road Runner'
@@ -128,24 +128,26 @@ export interface UserBadgeAward {
   id: string;
   uid: string;
   badgeId: string;
+  earnedAt: string;
+  seenByUser: boolean;
+  source: BadgeAwardSource;
+  xpAwarded: number;
+  grantedBy?: string;
+  note?: string;
+  runId?: string;
   badgeName?: string;
   tier?: BadgeTier;
-  xpAwarded: number;
-  awardedAt: string;
-  awardedBy: string;
-  source: BadgeAwardSource;
-  reason?: string;
-  seenAt?: string | null;
+  category?: BadgeCategory;
 }
 
 export interface XpEventRecord {
   id: string;
   uid: string;
-  sourceType: XpEventSourceType;
-  sourceId: string;
-  amount: number;
-  description?: string;
+  source: XpEventSourceType;
+  refId: string;
+  xp: number;
   createdAt: string;
+  label?: string;
 }
 
 export interface LevelProgressSummary {
@@ -158,7 +160,7 @@ export interface LevelProgressSummary {
 
 export interface AthleteProgression extends LevelProgressSummary {
   uid: string;
-  badgesEarnedCount: number;
+  badgesCount: number;
   runStreakWeeks: number;
   runStreakGraceRemaining: number;
   inboxStreakDays?: number;

@@ -184,5 +184,36 @@ service firebase.storage {
         && request.resource.contentType == 'application/json'
         && request.resource.size < 5 * 1024 * 1024;
     }
+    function canBadge(action) {
+      let role = profile().role;
+      let fallback = role in ['admin', 'superadmin'];
+      return request.auth != null && (isPlatformOwner() || (
+        firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && profile().get('accessRemoved', false) != true
+        && access().status == 'active'
+        && (role == 'superadmin' || (
+          (role != 'organizer' || profile().approved)
+          && hasStoredPermission(action, fallback)
+          && hasStoredPermission('badges.view', fallback)
+        ))
+      ));
+    }
+    match /badge-assets/{ownerUid}/{badgeId}/{file} {
+      allow read: if true;
+      allow create, update: if request.auth != null
+        && request.auth.uid == ownerUid
+        && canBadge('badges.manage')
+        && badgeId.matches('^[a-zA-Z0-9_-]{1,64}$')
+        && file.matches('^[a-zA-Z0-9_-][a-zA-Z0-9._-]{0,127}\\.(png|jpg|jpeg|webp|avif|PNG|JPG|JPEG|WEBP|AVIF)$')
+        && request.resource.contentType != null
+        && request.resource.contentType.matches('image/(png|jpeg|jpg|webp|avif)')
+        && request.resource.size < 2 * 1024 * 1024;
+      allow delete: if request.auth != null
+        && canBadge('badges.manage')
+        && (request.auth.uid == ownerUid
+          || isPlatformOwner()
+          || (firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+            && profile().role == 'superadmin'));
+    }
   }
 }

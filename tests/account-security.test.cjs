@@ -460,3 +460,55 @@ test('purgeAndAnonymizeUserAccount deletes recordedRuns and triggers run-tracks 
   assert.equal(docs.has('recordedRuns/run_other'), true);
   assert.ok(deletedPrefixes.includes('run-tracks/u-runs/'));
 });
+
+test('purgeAndAnonymizeUserAccount deletes userBadges, xpEvents, and athleteProgression for target uid only', async () => {
+  const { purgeAndAnonymizeUserAccount } = require('../functions/auth-api');
+  const docs = new Map([
+    ['users/u-badges', { uid: 'u-badges', username: 'runner_badges', role: 'runner' }],
+    ['userBadges/u-badges_welcome_ka_racepulse', { id: 'u-badges_welcome_ka_racepulse', uid: 'u-badges', badgeId: 'welcome_ka_racepulse' }],
+    ['userBadges/u-other_welcome_ka_racepulse', { id: 'u-other_welcome_ka_racepulse', uid: 'u-other', badgeId: 'welcome_ka_racepulse' }],
+    ['xpEvents/run_u-badges_run_1', { id: 'run_u-badges_run_1', uid: 'u-badges', xp: 50 }],
+    ['xpEvents/badge_u-badges_welcome_ka_racepulse', { id: 'badge_u-badges_welcome_ka_racepulse', uid: 'u-badges', xp: 50 }],
+    ['xpEvents/run_u-other_run_2', { id: 'run_u-other_run_2', uid: 'u-other', xp: 75 }],
+    ['athleteProgression/u-badges', { uid: 'u-badges', totalXp: 100, level: 2 }],
+    ['athleteProgression/u-other', { uid: 'u-other', totalXp: 75, level: 1 }],
+  ]);
+  const makeSnap = (key) => ({
+    exists: docs.has(key),
+    id: key.split('/').pop(),
+    ref: { path: key },
+    data: () => (docs.has(key) ? structuredClone(docs.get(key)) : undefined),
+  });
+  const db = {
+    doc: (key) => ({ path: key, get: async () => makeSnap(key) }),
+    collection: (name) => ({
+      where: (field, op, val) => ({
+        get: async () => {
+          const matched = [...docs.entries()]
+            .filter(([k, v]) => k.startsWith(`${name}/`) && op === '==' && v[field] === val)
+            .map(([k]) => makeSnap(k));
+          return { docs: matched, empty: matched.length === 0, forEach: (fn) => matched.forEach(fn) };
+        },
+      }),
+    }),
+    batch: () => {
+      const ops = [];
+      return {
+        delete: (ref) => ops.push(() => docs.delete(ref.path)),
+        update: (ref, patch) => ops.push(() => docs.set(ref.path, { ...docs.get(ref.path), ...structuredClone(patch) })),
+        commit: async () => ops.forEach((o) => o()),
+      };
+    },
+  };
+  const auth = {
+    deleteUser: async () => {},
+  };
+  await purgeAndAnonymizeUserAccount({ db, auth, uid: 'u-badges' });
+  assert.equal(docs.has('userBadges/u-badges_welcome_ka_racepulse'), false);
+  assert.equal(docs.has('xpEvents/run_u-badges_run_1'), false);
+  assert.equal(docs.has('xpEvents/badge_u-badges_welcome_ka_racepulse'), false);
+  assert.equal(docs.has('athleteProgression/u-badges'), false);
+  assert.equal(docs.has('userBadges/u-other_welcome_ka_racepulse'), true);
+  assert.equal(docs.has('xpEvents/run_u-other_run_2'), true);
+  assert.equal(docs.has('athleteProgression/u-other'), true);
+});

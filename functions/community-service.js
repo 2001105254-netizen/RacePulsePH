@@ -3,6 +3,12 @@
 const crypto = require('node:crypto');
 const policy = require('./access-policy');
 const { validateAndVerifyRecordedRun } = require('./run-math');
+const {
+  applyRunProgressionInTx,
+  createBadgeService,
+  getRunProgressionRefs,
+  prepareRunProgressionContext,
+} = require('./badge-service');
 
 const VALID_ID_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const VALID_REQUEST_ID_RE = /^[a-zA-Z0-9-]{16,64}$/;
@@ -66,9 +72,12 @@ function buildUpdatedOnboardingSteps(userData) {
   return [...existing, 'first_run'];
 }
 
-function createCommunityService(db, storage = null) {
+function createCommunityService(db, storage = null, options = {}) {
   const userRef = (uid) => db.doc(`users/${uid}`);
   const accessRef = (uid) => db.doc(`userAccess/${uid}`);
+  const badgeService = createBadgeService(db, storage, options);
+  const getNowIso = () =>
+    typeof options?.now === 'function' ? options.now() : new Date().toISOString();
 
   async function deleteStorageTrackBestEffort(actorUid, trackStoragePath) {
     if (!trackStoragePath || !storage || typeof storage.bucket !== 'function') return;
@@ -91,21 +100,42 @@ function createCommunityService(db, storage = null) {
       accessRef(actorUid).get(),
     ]);
     const actor = actorDoc.exists ? { ...actorDoc.data(), uid: actorUid } : null;
-    if (!actor) fail('Your app account is unavailable.', 403);
+    if (!actor || actor.accessRemoved === true) fail('Your app account is unavailable.', 403);
     const actorAccess = policy.accessFor(actor, actorState.data());
     if (actorAccess.status !== 'active') fail('Your account access is suspended.', 403);
+
+    const requestId = input?.requestId;
+    const now = getNowIso();
+
+    if (typeof path === 'string' && path.startsWith('/badges/')) {
+      const hasValidRequestId =
+        typeof requestId === 'string' && VALID_REQUEST_ID_RE.test(requestId);
+      return badgeService.execute({
+        db,
+        storage,
+        actor,
+        actorAccess,
+        actorUid,
+        path,
+        input,
+        idempRef: hasValidRequestId
+          ? db.doc(`communityIdempotency/${actorUid}_${requestId}`)
+          : null,
+        reqDigest: computeHash({ path, input }),
+        now,
+      });
+    }
+
     if (!policy.can(actor, actorAccess, 'personal.record')) {
       fail('Run recording is not enabled for this account.', 403);
     }
 
-    const requestId = input?.requestId;
     if (typeof requestId !== 'string' || !VALID_REQUEST_ID_RE.test(requestId)) {
       fail('Valid requestId is required.', 400);
     }
 
     const reqDigest = computeHash({ path, input });
     const idempRef = db.doc(`communityIdempotency/${actorUid}_${requestId}`);
-    const now = new Date().toISOString();
 
     if (path === '/runs/complete') {
       const summary = validateAndVerifyRecordedRun({
@@ -115,18 +145,45 @@ function createCommunityService(db, storage = null) {
         nowIso: now,
       });
       const runRef = db.doc(`recordedRuns/${summary.runId}`);
+      const progContext = await prepareRunProgressionContext({
+        db,
+        actor,
+        actorUid,
+        summary,
+        nowIso: now,
+      });
+      const progRefs = getRunProgressionRefs(db, actorUid, summary, progContext);
 
       return db.runTransaction(async (tx) => {
-        const [idempSnap, userSnap, runSnap] = await Promise.all([
-          tx.get(idempRef),
-          tx.get(userRef(actorUid)),
-          tx.get(runRef),
-        ]);
+        const readRefs = [
+          idempRef,
+          userRef(actorUid),
+          runRef,
+          progRefs.progressionRef,
+          ...(progRefs.runXpRef ? [progRefs.runXpRef] : []),
+          ...progRefs.candidateRefs.flatMap((c) => [c.userBadgeRef, c.badgeXpRef]),
+        ];
+        const snaps = await Promise.all(readRefs.map((ref) => tx.get(ref)));
+        let idx = 0;
+        const idempSnap = snaps[idx++];
+        const userSnap = snaps[idx++];
+        const runSnap = snaps[idx++];
+        const progressionSnap = snaps[idx++];
+        const runXpSnap = progRefs.runXpRef ? snaps[idx++] : null;
+        const candidateSnaps = progRefs.candidateRefs.map((c) => ({
+          ...c,
+          userBadgeSnap: snaps[idx++],
+          badgeXpSnap: snaps[idx++],
+        }));
+
         const replayed = checkIdempotentReplay(idempSnap, reqDigest);
         if (replayed) return replayed;
-        if (!userSnap.exists) fail('Your app account is unavailable.', 403);
+        if (!userSnap.exists || userSnap.data()?.accessRemoved === true) {
+          fail('Your app account is unavailable.', 403);
+        }
 
         let storedRun = summary;
+        const isNewlyCreatedRun = !runSnap.exists;
         if (runSnap.exists) {
           const existing = runSnap.data();
           if (existing.uid !== actorUid || !hasSameRunContent(existing, summary)) {
@@ -137,12 +194,30 @@ function createCommunityService(db, storage = null) {
           tx.create(runRef, summary);
         }
 
+        const progressionOutcome = applyRunProgressionInTx({
+          tx,
+          actorUid,
+          storedRun,
+          isNewlyCreatedRun,
+          nowIso: now,
+          context: progContext,
+          refs: progRefs,
+          progressionSnap,
+          runXpSnap,
+          candidateSnaps,
+        });
+
         const nextOnboarding = buildUpdatedOnboardingSteps(userSnap.data());
         if (nextOnboarding) {
           tx.update(userRef(actorUid), { onboardingSteps: nextOnboarding });
         }
 
-        const response = { run: storedRun };
+        const response = {
+          run: storedRun,
+          xpEarned: progressionOutcome.xpEarned,
+          newlyAwardedBadges: progressionOutcome.newlyAwardedBadges,
+          progression: progressionOutcome.progression,
+        };
         tx.create(idempRef, { digest: reqDigest, response, createdAt: now });
         return response;
       });

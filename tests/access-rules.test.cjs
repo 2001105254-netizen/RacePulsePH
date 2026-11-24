@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const policy = require('../functions/access-policy');
 const { initializeTestEnvironment, assertSucceeds, assertFails } = require('@firebase/rules-unit-testing');
-const { doc, setDoc, getDoc, updateDoc, deleteDoc, collection, query, where, getDocs, runTransaction } = require('firebase/firestore');
+const { doc, setDoc, getDoc, updateDoc, deleteDoc, collection, query, where, orderBy, getDocs, runTransaction } = require('firebase/firestore');
 let env;
 before(async () => {
   env = await initializeTestEnvironment({ projectId: 'demo-racepulse-rbac', firestore: { host: '127.0.0.1', port: 8080, rules: fs.readFileSync('firestore.rules','utf8') } });
@@ -705,3 +705,319 @@ test('recordedRuns and communityIdempotency enforce owner, friend, public, super
   await assertFails(setDoc(doc(db('run_owner'), 'communityIdempotency', 'run_owner_req2'), { digest: 'x' }));
   await assertFails(setDoc(doc(db('superadmin'), 'communityIdempotency', 'run_owner_req2'), { digest: 'x' }));
 });
+
+test('badges, userBadges, xpEvents, and athleteProgression enforce RBAC read scopes and server-only writes', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const root = ctx.firestore();
+    const makeAccess = (user, overrides = {}, extra = {}) => {
+      const state = policy.accessFor(user, { overrides, ...extra });
+      state.permissions = Object.fromEntries(policy.keys.map((key) => [key, policy.can(user, state, key)]));
+      return state;
+    };
+
+    const fixtures = [
+      { uid: 'badge_owner', role: 'runner', approved: true },
+      { uid: 'badge_owner_removed', role: 'runner', approved: true },
+      { uid: 'badge_friend_fwd', role: 'runner', approved: true },
+      { uid: 'badge_friend_rev', role: 'runner', approved: true },
+      { uid: 'badge_stranger', role: 'runner', approved: true },
+      { uid: 'badge_org_default', role: 'organizer', approved: true },
+      { uid: 'badge_org_granted', role: 'organizer', approved: true, overrides: { 'badges.view': true } },
+      { uid: 'badge_org_pending_granted', role: 'organizer', approved: false, overrides: { 'badges.view': true } },
+      { uid: 'badge_admin_default', role: 'admin', approved: true },
+      { uid: 'badge_admin_revoked', role: 'admin', approved: true, overrides: { 'badges.view': false } },
+      { uid: 'badge_admin_suspended', role: 'admin', approved: true, extra: { status: 'suspended' } },
+      { uid: 'badge_sa_active', role: 'superadmin', approved: true },
+      { uid: 'badge_sa_suspended', role: 'superadmin', approved: true, extra: { status: 'suspended' } },
+      { uid: 'badge_sa_removed', role: 'superadmin', approved: true },
+    ];
+
+    for (const entry of fixtures) {
+      const user = {
+        uid: entry.uid,
+        role: entry.role,
+        approved: entry.approved,
+        email: `${entry.uid}@example.com`,
+        displayName: entry.uid,
+        createdAt: '2026-11-25',
+      };
+      await setDoc(doc(root, 'users', entry.uid), user);
+      await setDoc(doc(root, 'userAccess', entry.uid), makeAccess(user, entry.overrides, entry.extra));
+    }
+
+    // Legacy admin omitting badges.view in permissions and admin with no userAccess document
+    await setDoc(doc(root, 'users', 'badge_admin_legacy'), {
+      uid: 'badge_admin_legacy',
+      role: 'admin',
+      approved: true,
+      email: 'badge_admin_legacy@example.com',
+      displayName: 'Legacy Admin',
+      createdAt: '2026-11-25',
+    });
+    await setDoc(doc(root, 'userAccess', 'badge_admin_legacy'), {
+      status: 'active',
+      scope: 'all',
+      raceIds: [],
+      overrides: {},
+      permissions: { 'race.view': true },
+    });
+    await setDoc(doc(root, 'users', 'badge_admin_no_access'), {
+      uid: 'badge_admin_no_access',
+      role: 'admin',
+      approved: true,
+      email: 'badge_admin_no_access@example.com',
+      displayName: 'No Access Doc Admin',
+      createdAt: '2026-11-25',
+    });
+
+    // Removed account tombstones
+    await setDoc(doc(root, 'removedAccounts', 'badge_owner_removed'), {
+      uid: 'badge_owner_removed',
+      removedAt: '2026-11-25T00:00:00Z',
+    });
+    await setDoc(doc(root, 'removedAccounts', 'badge_sa_removed'), {
+      uid: 'badge_sa_removed',
+      removedAt: '2026-11-25T00:00:00Z',
+    });
+
+    // Friendships in both directions
+    await setDoc(doc(root, 'friendships', 'badge_friend_fwd_badge_owner'), {
+      fromUid: 'badge_friend_fwd',
+      toUid: 'badge_owner',
+      members: ['badge_friend_fwd', 'badge_owner'],
+      createdAt: '2026-11-25',
+    });
+    await setDoc(doc(root, 'friendships', 'badge_owner_badge_friend_rev'), {
+      fromUid: 'badge_owner',
+      toUid: 'badge_friend_rev',
+      members: ['badge_owner', 'badge_friend_rev'],
+      createdAt: '2026-11-25',
+    });
+
+    // Badge Studio & XP Progression documents
+    await setDoc(doc(root, 'badges', 'welcome_pacer'), {
+      badgeId: 'welcome_pacer',
+      name: 'First Stride',
+      description: 'Welcome to RacePulsePH.',
+      tier: 'common',
+      category: 'onboarding',
+      artworkType: 'emblem',
+      emblemId: 'sunrise-burst',
+      artworkUrl: '',
+      borderStyle: 'solid-ring',
+      primaryColor: '#DC2626',
+      secondaryColor: '#F59E0B',
+      animationEffect: 'none',
+      xpReward: 100,
+      rule: { type: 'welcome' },
+      hiddenUntilEarned: false,
+      status: 'active',
+      sortOrder: 10,
+      createdAt: '2026-11-25T00:00:00Z',
+      createdBy: 'badge_sa_active',
+      updatedAt: '2026-11-25T00:00:00Z',
+      updatedBy: 'badge_sa_active',
+    });
+
+    await setDoc(doc(root, 'userBadges', 'badge_owner_welcome_pacer'), {
+      id: 'badge_owner_welcome_pacer',
+      uid: 'badge_owner',
+      badgeId: 'welcome_pacer',
+      badgeName: 'First Stride',
+      tier: 'common',
+      xpAwarded: 100,
+      awardedAt: '2026-11-25T00:00:00Z',
+      awardedBy: 'system',
+      source: 'auto',
+      seenAt: null,
+    });
+    await setDoc(doc(root, 'userBadges', 'badge_owner_removed_welcome_pacer'), {
+      id: 'badge_owner_removed_welcome_pacer',
+      uid: 'badge_owner_removed',
+      badgeId: 'welcome_pacer',
+      badgeName: 'First Stride',
+      tier: 'common',
+      xpAwarded: 100,
+      awardedAt: '2026-11-25T00:00:00Z',
+      awardedBy: 'system',
+      source: 'auto',
+      seenAt: null,
+    });
+
+    await setDoc(doc(root, 'xpEvents', 'xp_owner_1'), {
+      id: 'xp_owner_1',
+      uid: 'badge_owner',
+      sourceType: 'badge_unlock',
+      sourceId: 'welcome_pacer',
+      amount: 100,
+      description: 'Unlocked First Stride',
+      createdAt: '2026-11-25T00:00:00Z',
+    });
+    await setDoc(doc(root, 'xpEvents', 'xp_removed_1'), {
+      id: 'xp_removed_1',
+      uid: 'badge_owner_removed',
+      sourceType: 'badge_unlock',
+      sourceId: 'welcome_pacer',
+      amount: 100,
+      description: 'Unlocked First Stride',
+      createdAt: '2026-11-25T00:00:00Z',
+    });
+
+    await setDoc(doc(root, 'athleteProgression', 'badge_owner'), {
+      uid: 'badge_owner',
+      totalXp: 100,
+      level: 2,
+      currentLevelXp: 100,
+      nextLevelXp: 300,
+      rankTitle: 'Pacer',
+      badgesEarnedCount: 1,
+      runStreakWeeks: 1,
+      runStreakGraceRemaining: 0,
+      updatedAt: '2026-11-25T00:00:00Z',
+    });
+    await setDoc(doc(root, 'athleteProgression', 'badge_owner_removed'), {
+      uid: 'badge_owner_removed',
+      totalXp: 100,
+      level: 2,
+      currentLevelXp: 100,
+      nextLevelXp: 300,
+      rankTitle: 'Pacer',
+      badgesEarnedCount: 1,
+      runStreakWeeks: 1,
+      runStreakGraceRemaining: 0,
+      updatedAt: '2026-11-25T00:00:00Z',
+    });
+  });
+
+  const anonDb = env.unauthenticatedContext().firestore();
+  const unverifiedNoDocDb = env.authenticatedContext('unverified_no_doc', { email: 'unv@example.com', email_verified: false }).firestore();
+  const unverifiedFriendRevDb = env.authenticatedContext('badge_friend_rev', { email: 'badge_friend_rev@example.com', email_verified: false }).firestore();
+
+  // 1. badges/{badgeId}: active signed-in users can get/list; unauthenticated, unverified-without-doc, and removed denied; writes denied for all
+  await assertFails(getDoc(doc(anonDb, 'badges', 'welcome_pacer')));
+  await assertFails(getDocs(collection(anonDb, 'badges')));
+  await assertFails(getDoc(doc(unverifiedNoDocDb, 'badges', 'welcome_pacer')));
+  await assertFails(getDocs(collection(unverifiedNoDocDb, 'badges')));
+  await assertFails(getDoc(doc(db('badge_owner_removed'), 'badges', 'welcome_pacer')));
+  await assertFails(getDocs(collection(db('badge_owner_removed'), 'badges')));
+  await assertFails(getDoc(doc(db('badge_sa_removed'), 'badges', 'welcome_pacer')));
+
+  for (const uid of ['badge_owner', 'badge_stranger', 'badge_org_default', 'badge_admin_default', 'badge_sa_active']) {
+    await assertSucceeds(getDoc(doc(db(uid), 'badges', 'welcome_pacer')));
+    await assertSucceeds(getDocs(collection(db(uid), 'badges')));
+    await assertSucceeds(getDocs(query(collection(db(uid), 'badges'), where('status', '==', 'active'))));
+    await assertSucceeds(getDocs(query(collection(db(uid), 'badges'), orderBy('sortOrder', 'asc'))));
+  }
+  for (const uid of ['badge_owner', 'badge_org_default', 'badge_admin_default', 'badge_sa_active']) {
+    await assertFails(setDoc(doc(db(uid), 'badges', 'forged_badge'), { badgeId: 'forged_badge', name: 'Forged' }));
+    await assertFails(updateDoc(doc(db(uid), 'badges', 'welcome_pacer'), { xpReward: 999999 }));
+    await assertFails(deleteDoc(doc(db(uid), 'badges', 'welcome_pacer')));
+  }
+
+  // 2. userBadges/{docId}: owner, friend, admin (badges.view), superadmin can read; non-friend, default organizer, unauth, removed denied; writes denied
+  await assertFails(getDoc(doc(anonDb, 'userBadges', 'badge_owner_welcome_pacer')));
+  await assertFails(getDocs(collection(anonDb, 'userBadges')));
+  await assertFails(getDoc(doc(unverifiedNoDocDb, 'userBadges', 'badge_owner_welcome_pacer')));
+  await assertFails(getDoc(doc(db('badge_owner_removed'), 'userBadges', 'badge_owner_removed_welcome_pacer')));
+  await assertFails(getDoc(doc(db('badge_sa_removed'), 'userBadges', 'badge_owner_welcome_pacer')));
+  await assertFails(getDoc(doc(db('badge_stranger'), 'userBadges', 'badge_owner_welcome_pacer')));
+  await assertFails(getDoc(doc(db('runner'), 'userBadges', 'badge_owner_welcome_pacer')));
+  await assertFails(getDocs(query(collection(db('badge_stranger'), 'userBadges'), where('uid', '==', 'badge_owner'))));
+  await assertFails(getDoc(doc(db('badge_org_default'), 'userBadges', 'badge_owner_welcome_pacer')));
+  await assertFails(getDoc(doc(db('organizer'), 'userBadges', 'badge_owner_welcome_pacer')));
+  await assertFails(getDocs(collection(db('badge_org_default'), 'userBadges')));
+  await assertFails(getDoc(doc(db('badge_org_pending_granted'), 'userBadges', 'badge_owner_welcome_pacer')));
+  await assertFails(getDoc(doc(db('badge_admin_revoked'), 'userBadges', 'badge_owner_welcome_pacer')));
+  await assertFails(getDocs(collection(db('badge_admin_revoked'), 'userBadges')));
+  await assertFails(getDoc(doc(db('badge_admin_suspended'), 'userBadges', 'badge_owner_welcome_pacer')));
+  await assertFails(getDoc(doc(db('badge_sa_suspended'), 'userBadges', 'badge_owner_welcome_pacer')));
+  await assertFails(getDocs(collection(db('badge_owner'), 'userBadges')));
+  await assertFails(getDocs(collection(db('badge_friend_fwd'), 'userBadges')));
+
+  await assertSucceeds(getDoc(doc(db('badge_owner'), 'userBadges', 'badge_owner_welcome_pacer')));
+  await assertSucceeds(getDocs(query(collection(db('badge_owner'), 'userBadges'), where('uid', '==', 'badge_owner'))));
+  await assertSucceeds(getDoc(doc(db('badge_friend_fwd'), 'userBadges', 'badge_owner_welcome_pacer')));
+  await assertSucceeds(getDoc(doc(db('badge_friend_rev'), 'userBadges', 'badge_owner_welcome_pacer')));
+  await assertSucceeds(getDoc(doc(unverifiedFriendRevDb, 'userBadges', 'badge_owner_welcome_pacer')));
+  await assertSucceeds(getDocs(query(collection(db('badge_friend_fwd'), 'userBadges'), where('uid', '==', 'badge_owner'))));
+  await assertSucceeds(getDocs(query(collection(db('badge_friend_rev'), 'userBadges'), where('uid', '==', 'badge_owner'))));
+  await assertSucceeds(getDoc(doc(db('badge_org_granted'), 'userBadges', 'badge_owner_welcome_pacer')));
+  for (const adminUid of ['badge_admin_default', 'badge_admin_legacy', 'badge_admin_no_access', 'badge_sa_active']) {
+    await assertSucceeds(getDoc(doc(db(adminUid), 'userBadges', 'badge_owner_welcome_pacer')));
+    await assertSucceeds(getDocs(collection(db(adminUid), 'userBadges')));
+    await assertSucceeds(getDocs(query(collection(db(adminUid), 'userBadges'), where('uid', '==', 'badge_owner'))));
+  }
+  for (const uid of ['badge_owner', 'badge_friend_fwd', 'badge_admin_default', 'badge_sa_active']) {
+    await assertFails(setDoc(doc(db(uid), 'userBadges', 'badge_owner_forged'), { id: 'badge_owner_forged', uid: 'badge_owner', badgeId: 'welcome_pacer' }));
+    await assertFails(updateDoc(doc(db(uid), 'userBadges', 'badge_owner_welcome_pacer'), { seenAt: '2026-11-25T01:00:00Z' }));
+    await assertFails(deleteDoc(doc(db(uid), 'userBadges', 'badge_owner_welcome_pacer')));
+  }
+
+  // 3. xpEvents/{eventId}: ONLY owner or isSuperAdmin() can read; friends, organizers, admins, strangers, removed denied; writes denied
+  await assertFails(getDoc(doc(anonDb, 'xpEvents', 'xp_owner_1')));
+  await assertFails(getDocs(collection(anonDb, 'xpEvents')));
+  await assertFails(getDoc(doc(unverifiedNoDocDb, 'xpEvents', 'xp_owner_1')));
+  await assertFails(getDoc(doc(db('badge_owner_removed'), 'xpEvents', 'xp_removed_1')));
+  await assertFails(getDoc(doc(db('badge_sa_removed'), 'xpEvents', 'xp_owner_1')));
+  await assertFails(getDoc(doc(db('badge_sa_suspended'), 'xpEvents', 'xp_owner_1')));
+  await assertFails(getDoc(doc(db('badge_friend_fwd'), 'xpEvents', 'xp_owner_1')));
+  await assertFails(getDoc(doc(db('badge_friend_rev'), 'xpEvents', 'xp_owner_1')));
+  await assertFails(getDocs(query(collection(db('badge_friend_fwd'), 'xpEvents'), where('uid', '==', 'badge_owner'))));
+  await assertFails(getDoc(doc(db('badge_stranger'), 'xpEvents', 'xp_owner_1')));
+  await assertFails(getDoc(doc(db('runner'), 'xpEvents', 'xp_owner_1')));
+  await assertFails(getDoc(doc(db('badge_org_default'), 'xpEvents', 'xp_owner_1')));
+  await assertFails(getDoc(doc(db('organizer'), 'xpEvents', 'xp_owner_1')));
+  await assertFails(getDoc(doc(db('badge_org_granted'), 'xpEvents', 'xp_owner_1')));
+  await assertFails(getDoc(doc(db('badge_admin_default'), 'xpEvents', 'xp_owner_1')));
+  await assertFails(getDocs(collection(db('badge_admin_default'), 'xpEvents')));
+  await assertFails(getDocs(query(collection(db('badge_admin_default'), 'xpEvents'), where('uid', '==', 'badge_owner'))));
+  await assertFails(getDocs(collection(db('badge_owner'), 'xpEvents')));
+
+  await assertSucceeds(getDoc(doc(db('badge_owner'), 'xpEvents', 'xp_owner_1')));
+  await assertSucceeds(getDocs(query(collection(db('badge_owner'), 'xpEvents'), where('uid', '==', 'badge_owner'))));
+  await assertSucceeds(getDoc(doc(db('badge_sa_active'), 'xpEvents', 'xp_owner_1')));
+  await assertSucceeds(getDocs(collection(db('badge_sa_active'), 'xpEvents')));
+
+  for (const uid of ['badge_owner', 'badge_admin_default', 'badge_sa_active']) {
+    await assertFails(setDoc(doc(db(uid), 'xpEvents', 'xp_forged'), { id: 'xp_forged', uid: 'badge_owner', amount: 50000 }));
+    await assertFails(updateDoc(doc(db(uid), 'xpEvents', 'xp_owner_1'), { amount: 99999 }));
+    await assertFails(deleteDoc(doc(db(uid), 'xpEvents', 'xp_owner_1')));
+  }
+
+  // 4. athleteProgression/{uid}: owner, friend, admin (badges.view), superadmin can read; non-friend, default organizer, unauth, removed denied; writes denied
+  await assertFails(getDoc(doc(anonDb, 'athleteProgression', 'badge_owner')));
+  await assertFails(getDocs(collection(anonDb, 'athleteProgression')));
+  await assertFails(getDoc(doc(unverifiedNoDocDb, 'athleteProgression', 'badge_owner')));
+  await assertFails(getDoc(doc(db('badge_owner_removed'), 'athleteProgression', 'badge_owner_removed')));
+  await assertFails(getDoc(doc(db('badge_sa_removed'), 'athleteProgression', 'badge_owner')));
+  await assertFails(getDoc(doc(db('badge_stranger'), 'athleteProgression', 'badge_owner')));
+  await assertFails(getDoc(doc(db('runner'), 'athleteProgression', 'badge_owner')));
+  await assertFails(getDocs(collection(db('badge_stranger'), 'athleteProgression')));
+  await assertFails(getDoc(doc(db('badge_org_default'), 'athleteProgression', 'badge_owner')));
+  await assertFails(getDoc(doc(db('organizer'), 'athleteProgression', 'badge_owner')));
+  await assertFails(getDocs(collection(db('badge_org_default'), 'athleteProgression')));
+  await assertFails(getDoc(doc(db('badge_org_pending_granted'), 'athleteProgression', 'badge_owner')));
+  await assertFails(getDoc(doc(db('badge_admin_revoked'), 'athleteProgression', 'badge_owner')));
+  await assertFails(getDocs(collection(db('badge_admin_revoked'), 'athleteProgression')));
+  await assertFails(getDoc(doc(db('badge_admin_suspended'), 'athleteProgression', 'badge_owner')));
+  await assertFails(getDoc(doc(db('badge_sa_suspended'), 'athleteProgression', 'badge_owner')));
+  await assertFails(getDocs(collection(db('badge_owner'), 'athleteProgression')));
+  await assertFails(getDocs(collection(db('badge_friend_fwd'), 'athleteProgression')));
+
+  await assertSucceeds(getDoc(doc(db('badge_owner'), 'athleteProgression', 'badge_owner')));
+  await assertSucceeds(getDoc(doc(db('badge_stranger'), 'athleteProgression', 'badge_stranger')));
+  await assertSucceeds(getDoc(doc(db('badge_friend_fwd'), 'athleteProgression', 'badge_owner')));
+  await assertSucceeds(getDoc(doc(db('badge_friend_rev'), 'athleteProgression', 'badge_owner')));
+  await assertSucceeds(getDoc(doc(unverifiedFriendRevDb, 'athleteProgression', 'badge_owner')));
+  await assertSucceeds(getDoc(doc(db('badge_org_granted'), 'athleteProgression', 'badge_owner')));
+  for (const adminUid of ['badge_admin_default', 'badge_admin_legacy', 'badge_admin_no_access', 'badge_sa_active']) {
+    await assertSucceeds(getDoc(doc(db(adminUid), 'athleteProgression', 'badge_owner')));
+    await assertSucceeds(getDocs(collection(db(adminUid), 'athleteProgression')));
+  }
+  for (const uid of ['badge_owner', 'badge_friend_fwd', 'badge_admin_default', 'badge_sa_active']) {
+    await assertFails(setDoc(doc(db(uid), 'athleteProgression', 'badge_owner'), { uid: 'badge_owner', totalXp: 999999, level: 99 }));
+    await assertFails(updateDoc(doc(db(uid), 'athleteProgression', 'badge_owner'), { totalXp: 999999 }));
+    await assertFails(deleteDoc(doc(db(uid), 'athleteProgression', 'badge_owner')));
+  }
+});
+

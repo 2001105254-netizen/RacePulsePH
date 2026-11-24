@@ -18,6 +18,14 @@ const COMMUNITY_MUTATION_PATHS = new Set([
   '/runs/complete',
   '/runs/update',
   '/runs/delete',
+  '/badges/save',
+  '/badges/seed-defaults',
+  '/badges/archive',
+  '/badges/delete',
+  '/badges/grant',
+  '/badges/evaluate-retroactive',
+  '/badges/sync-my',
+  '/badges/ack-seen',
 ]);
 
 function exceedsMaxJsonBytes(req, maxBytes = MAX_COMMUNITY_BODY_BYTES) {

@@ -812,12 +812,12 @@ export function selectNextToastBadge(
   }> = [];
 
   for (const award of awards) {
-    if (!award || award.seenAt) continue;
+    if (!award || award.seenByUser) continue;
     const badge = lookupBadge(badgesById, award.badgeId);
     if (!badge || badge.status === 'archived') continue;
     const tierOrder = BADGE_TIER_META[badge.tier]?.rankOrder ?? 0;
     const xp = Number.isFinite(badge.xpReward) ? badge.xpReward : award.xpAwarded;
-    const parsedMs = Date.parse(award.awardedAt);
+    const parsedMs = Date.parse(award.earnedAt);
     candidates.push({
       award,
       badge,

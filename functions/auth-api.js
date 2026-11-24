@@ -92,6 +92,8 @@ async function purgeAndAnonymizeUserAccount({ db, auth, storage = null, uid }) {
     friendDirSnap,
     bibClaimLocksSnap,
     recordedRunsSnap,
+    userBadgesSnap,
+    xpEventsSnap,
   ] = await Promise.all([
     db.collection('runners').where('uid', '==', uid).get(),
     db.collection('runnerClaims').where('uid', '==', uid).get(),
@@ -107,6 +109,8 @@ async function purgeAndAnonymizeUserAccount({ db, auth, storage = null, uid }) {
     db.collection('friendDirectory').where('uid', '==', uid).get(),
     db.collection('bibClaimLocks').where('uid', '==', uid).get(),
     db.collection('recordedRuns').where('uid', '==', uid).get(),
+    db.collection('userBadges').where('uid', '==', uid).get(),
+    db.collection('xpEvents').where('uid', '==', uid).get(),
   ]);
 
   const deleteByPath = new Map();
@@ -129,11 +133,14 @@ async function purgeAndAnonymizeUserAccount({ db, auth, storage = null, uid }) {
     ...friendDirSnap.docs,
     ...bibClaimLocksSnap.docs,
     ...recordedRunsSnap.docs,
+    ...userBadgesSnap.docs,
+    ...xpEventsSnap.docs,
   ].forEach((d) => enqueueDelete(d.ref));
 
   [
     db.doc(`friendProfiles/${uid}`),
     db.doc(`friendActivities/${uid}`),
+    db.doc(`athleteProgression/${uid}`),
     db.doc(`userAccess/${uid}`),
     db.doc(`users/${uid}`),
   ].forEach(enqueueDelete);

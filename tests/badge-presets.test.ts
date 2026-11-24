@@ -3,7 +3,13 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 import * as presets from '../src/lib/badges/presets.ts';
-import type { BadgeDefinition, BadgeRuleConfig, UserBadgeAward } from '../src/lib/badges/types.ts';
+import type {
+  AthleteProgression,
+  BadgeDefinition,
+  BadgeRuleConfig,
+  UserBadgeAward,
+  XpEventRecord,
+} from '../src/lib/badges/types.ts';
 
 const require = createRequire(import.meta.url);
 const engine = require('../functions/badge-engine.js');
@@ -131,7 +137,7 @@ test('formatBadgeRuleSummary formats all 17 rules cleanly without em dashes', ()
   );
 });
 
-test('selectNextToastBadge prioritizes unseen highest tier, then xpReward, then latest awardedAt', () => {
+test('selectNextToastBadge prioritizes unseen highest tier, then xpReward, then latest earnedAt', () => {
   const badgesById = new Map<string, BadgeDefinition>([
     ['b_common', makeBadge({ badgeId: 'b_common', tier: 'common', xpReward: 50, sortOrder: 10 })],
     ['b_rare_low', makeBadge({ badgeId: 'b_rare_low', tier: 'rare', xpReward: 150, sortOrder: 20 })],
@@ -146,50 +152,47 @@ test('selectNextToastBadge prioritizes unseen highest tier, then xpReward, then 
       uid: 'u1',
       badgeId: 'b_alamat_seen',
       xpAwarded: 1500,
-      awardedAt: '2026-11-25T05:00:00.000Z',
-      awardedBy: 'admin_1',
+      earnedAt: '2026-11-25T05:00:00.000Z',
+      grantedBy: 'admin_1',
       source: 'manual',
-      seenAt: '2026-11-25T05:01:00.000Z',
+      seenByUser: true,
     },
     {
       id: 'u1_b_archived',
       uid: 'u1',
       badgeId: 'b_archived',
       xpAwarded: 1000,
-      awardedAt: '2026-11-25T05:00:00.000Z',
-      awardedBy: 'system',
+      earnedAt: '2026-11-25T05:00:00.000Z',
       source: 'auto',
-      seenAt: null,
+      seenByUser: false,
     },
     {
       id: 'u1_b_common',
       uid: 'u1',
       badgeId: 'b_common',
       xpAwarded: 50,
-      awardedAt: '2026-11-25T05:00:00.000Z',
-      awardedBy: 'system',
+      earnedAt: '2026-11-25T05:00:00.000Z',
       source: 'auto',
-      seenAt: null,
+      seenByUser: false,
     },
     {
       id: 'u1_b_rare_low',
       uid: 'u1',
       badgeId: 'b_rare_low',
       xpAwarded: 150,
-      awardedAt: '2026-11-25T06:00:00.000Z',
-      awardedBy: 'system',
-      source: 'auto',
-      seenAt: null,
+      earnedAt: '2026-11-25T06:00:00.000Z',
+      source: 'run',
+      runId: 'run_1',
+      seenByUser: false,
     },
     {
       id: 'u1_b_rare_high',
       uid: 'u1',
       badgeId: 'b_rare_high',
       xpAwarded: 300,
-      awardedAt: '2026-11-25T04:00:00.000Z',
-      awardedBy: 'system',
-      source: 'auto',
-      seenAt: null,
+      earnedAt: '2026-11-25T04:00:00.000Z',
+      source: 'retroactive',
+      seenByUser: false,
     },
   ];
 
@@ -204,6 +207,30 @@ test('selectNextToastBadge prioritizes unseen highest tier, then xpReward, then 
   );
   assert.equal(pickedFromRecord?.badge.badgeId, 'b_rare_high');
 
-  const allSeen = awards.map((a) => ({ ...a, seenAt: '2026-11-25T07:00:00.000Z' }));
+  const allSeen = awards.map((a) => ({ ...a, seenByUser: true }));
   assert.equal(presets.selectNextToastBadge(allSeen, badgesById), null);
+
+  const sampleXp: XpEventRecord = {
+    id: 'run_u1_run_1',
+    uid: 'u1',
+    source: 'run',
+    refId: 'run_1',
+    xp: 50,
+    createdAt: '2026-11-25T06:00:00.000Z',
+    label: 'Morning 5K',
+  };
+  const sampleProgression: AthleteProgression = {
+    uid: 'u1',
+    totalXp: 350,
+    level: 3,
+    currentLevelXp: 300,
+    nextLevelXp: 600,
+    rankTitle: 'Road Runner',
+    badgesCount: 2,
+    runStreakWeeks: 1,
+    runStreakGraceRemaining: 0,
+    updatedAt: '2026-11-25T06:00:00.000Z',
+  };
+  assert.equal(sampleXp.source, 'run');
+  assert.equal(sampleProgression.badgesCount, 2);
 });
