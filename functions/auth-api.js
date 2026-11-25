@@ -94,6 +94,21 @@ async function purgeAndAnonymizeUserAccount({ db, auth, storage = null, uid }) {
     recordedRunsSnap,
     userBadgesSnap,
     xpEventsSnap,
+    clubMembersSnap,
+    clubRequestsSnap,
+    socialPostsSnap,
+    socialCommentsSnap,
+    socialKudosSnap,
+    routeSnapsSnap,
+    cfOwnerSnap,
+    cfTargetSnap,
+    blocksOutSnap,
+    blocksInSnap,
+    reportsSnap,
+    friendStreaksSnap,
+    notificationsSnap,
+    pushTokensSnap,
+    conversationsSnap,
   ] = await Promise.all([
     db.collection('runners').where('uid', '==', uid).get(),
     db.collection('runnerClaims').where('uid', '==', uid).get(),
@@ -111,6 +126,21 @@ async function purgeAndAnonymizeUserAccount({ db, auth, storage = null, uid }) {
     db.collection('recordedRuns').where('uid', '==', uid).get(),
     db.collection('userBadges').where('uid', '==', uid).get(),
     db.collection('xpEvents').where('uid', '==', uid).get(),
+    db.collection('clubMembers').where('uid', '==', uid).get(),
+    db.collection('clubRequests').where('requesterUid', '==', uid).get(),
+    db.collection('socialPosts').where('uid', '==', uid).get(),
+    db.collection('socialComments').where('uid', '==', uid).get(),
+    db.collection('socialKudos').where('uid', '==', uid).get(),
+    db.collection('routeSnaps').where('uid', '==', uid).get(),
+    db.collection('closeFriendEdges').where('ownerUid', '==', uid).get(),
+    db.collection('closeFriendEdges').where('targetUid', '==', uid).get(),
+    db.collection('userBlocks').where('blockerUid', '==', uid).get(),
+    db.collection('userBlocks').where('blockedUid', '==', uid).get(),
+    db.collection('contentReports').where('reporterUid', '==', uid).get(),
+    db.collection('friendStreaks').where('members', 'array-contains', uid).get(),
+    db.collection('activityNotifications').where('uid', '==', uid).get(),
+    db.collection('userPushTokens').where('uid', '==', uid).get(),
+    db.collection('conversations').where('members', 'array-contains', uid).get(),
   ]);
 
   const deleteByPath = new Map();
@@ -135,11 +165,26 @@ async function purgeAndAnonymizeUserAccount({ db, auth, storage = null, uid }) {
     ...recordedRunsSnap.docs,
     ...userBadgesSnap.docs,
     ...xpEventsSnap.docs,
+    ...clubMembersSnap.docs,
+    ...clubRequestsSnap.docs,
+    ...socialPostsSnap.docs,
+    ...socialCommentsSnap.docs,
+    ...socialKudosSnap.docs,
+    ...routeSnapsSnap.docs,
+    ...cfOwnerSnap.docs,
+    ...cfTargetSnap.docs,
+    ...blocksOutSnap.docs,
+    ...blocksInSnap.docs,
+    ...reportsSnap.docs,
+    ...friendStreaksSnap.docs,
+    ...notificationsSnap.docs,
+    ...pushTokensSnap.docs,
   ].forEach((d) => enqueueDelete(d.ref));
 
   [
     db.doc(`friendProfiles/${uid}`),
     db.doc(`friendActivities/${uid}`),
+    db.doc(`publicProfiles/${uid}`),
     db.doc(`athleteProgression/${uid}`),
     db.doc(`userAccess/${uid}`),
     db.doc(`users/${uid}`),
@@ -197,12 +242,18 @@ async function purgeAndAnonymizeUserAccount({ db, auth, storage = null, uid }) {
     try {
       const bucket = storage.bucket();
       if (bucket && typeof bucket.deleteFiles === 'function') {
+        const chatPrefixes = conversationsSnap.docs
+          .map((d) => String(d.data()?.conversationId || d.id || '').trim())
+          .filter(Boolean)
+          .map((convId) => `chat-media/${convId}/${uid}/`);
         const prefixes = [
           `race-assets/${uid}/`,
           `route-private/${uid}/`,
           `highlight-assets/${uid}/`,
           `race-bib-fonts/${uid}/`,
           `run-tracks/${uid}/`,
+          `social-media/${uid}/`,
+          ...chatPrefixes,
         ];
         await Promise.allSettled(
           prefixes.map((prefix) => bucket.deleteFiles({ prefix, force: true }).catch(() => {})),

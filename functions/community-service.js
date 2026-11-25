@@ -9,6 +9,9 @@ const {
   getRunProgressionRefs,
   prepareRunProgressionContext,
 } = require('./badge-service');
+const { createClubService } = require('./club-service');
+const { createSocialService } = require('./social-service');
+const { createInboxService } = require('./inbox-service');
 
 const VALID_ID_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const VALID_REQUEST_ID_RE = /^[a-zA-Z0-9-]{16,64}$/;
@@ -76,6 +79,9 @@ function createCommunityService(db, storage = null, options = {}) {
   const userRef = (uid) => db.doc(`users/${uid}`);
   const accessRef = (uid) => db.doc(`userAccess/${uid}`);
   const badgeService = createBadgeService(db, storage, options);
+  const clubService = createClubService(db, storage, options);
+  const socialService = createSocialService(db, storage, options);
+  const inboxService = createInboxService(db);
   const getNowIso = () =>
     typeof options?.now === 'function' ? options.now() : new Date().toISOString();
 
@@ -106,24 +112,39 @@ function createCommunityService(db, storage = null, options = {}) {
 
     const requestId = input?.requestId;
     const now = getNowIso();
+    const hasValidRequestId =
+      typeof requestId === 'string' && VALID_REQUEST_ID_RE.test(requestId);
+    const sharedArgs = {
+      db,
+      storage,
+      actor,
+      actorAccess,
+      actorUid,
+      path,
+      input,
+      idempRef: hasValidRequestId
+        ? db.doc(`communityIdempotency/${actorUid}_${requestId}`)
+        : null,
+      reqDigest: computeHash({ path, input }),
+      now,
+    };
 
     if (typeof path === 'string' && path.startsWith('/badges/')) {
-      const hasValidRequestId =
-        typeof requestId === 'string' && VALID_REQUEST_ID_RE.test(requestId);
-      return badgeService.execute({
-        db,
-        storage,
-        actor,
-        actorAccess,
-        actorUid,
-        path,
-        input,
-        idempRef: hasValidRequestId
-          ? db.doc(`communityIdempotency/${actorUid}_${requestId}`)
-          : null,
-        reqDigest: computeHash({ path, input }),
-        now,
-      });
+      return badgeService.execute(sharedArgs);
+    }
+    if (typeof path === 'string' && path.startsWith('/clubs/')) {
+      return clubService.execute(sharedArgs);
+    }
+    if (
+      typeof path === 'string' &&
+      (path.startsWith('/social/') ||
+        path.startsWith('/moderation/') ||
+        path === '/media/sign')
+    ) {
+      return socialService.execute(sharedArgs);
+    }
+    if (typeof path === 'string' && path.startsWith('/inbox/')) {
+      return inboxService.execute(sharedArgs);
     }
 
     if (!policy.can(actor, actorAccess, 'personal.record')) {

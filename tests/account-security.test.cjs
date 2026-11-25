@@ -512,3 +512,96 @@ test('purgeAndAnonymizeUserAccount deletes userBadges, xpEvents, and athleteProg
   assert.equal(docs.has('xpEvents/run_u-other_run_2'), true);
   assert.equal(docs.has('athleteProgression/u-other'), true);
 });
+
+test('purgeAndAnonymizeUserAccount deletes M4 clubs/social/inbox docs and triggers social-media and chat-media cleanup', async () => {
+  const { purgeAndAnonymizeUserAccount } = require('../functions/auth-api');
+  const docs = new Map([
+    ['users/u-m4', { uid: 'u-m4', username: 'runner_m4', role: 'runner' }],
+    ['publicProfiles/u-m4', { uid: 'u-m4', displayName: 'M4 Runner' }],
+    ['publicProfiles/u-other', { uid: 'u-other', displayName: 'Other Runner' }],
+    ['clubMembers/manila_u-m4', { id: 'manila_u-m4', clubId: 'manila', uid: 'u-m4', status: 'active' }],
+    ['clubMembers/manila_u-other', { id: 'manila_u-other', clubId: 'manila', uid: 'u-other', status: 'active' }],
+    ['clubRequests/cr_1', { requestId: 'cr_1', requesterUid: 'u-m4', status: 'pending' }],
+    ['socialPosts/post_1', { postId: 'post_1', uid: 'u-m4', text: 'hi' }],
+    ['socialPosts/post_other', { postId: 'post_other', uid: 'u-other', text: 'keep' }],
+    ['socialComments/cmt_1', { commentId: 'cmt_1', postId: 'post_other', uid: 'u-m4', text: 'yo' }],
+    ['socialKudos/post_other_u-m4', { id: 'post_other_u-m4', postId: 'post_other', uid: 'u-m4', recipientUid: 'u-other' }],
+    ['routeSnaps/post_1', { snapId: 'post_1', postId: 'post_1', uid: 'u-m4' }],
+    ['closeFriendEdges/u-m4_u-other', { id: 'u-m4_u-other', ownerUid: 'u-m4', targetUid: 'u-other' }],
+    ['closeFriendEdges/u-other_u-m4', { id: 'u-other_u-m4', ownerUid: 'u-other', targetUid: 'u-m4' }],
+    ['userBlocks/u-m4_u-third', { id: 'u-m4_u-third', blockerUid: 'u-m4', blockedUid: 'u-third' }],
+    ['userBlocks/u-third_u-m4', { id: 'u-third_u-m4', blockerUid: 'u-third', blockedUid: 'u-m4' }],
+    ['contentReports/rep_1', { reportId: 'rep_1', reporterUid: 'u-m4', status: 'open' }],
+    ['friendStreaks/dm_u-m4_u-other', { id: 'dm_u-m4_u-other', members: ['u-m4', 'u-other'], streakDays: 5 }],
+    ['activityNotifications/noti_1', { id: 'noti_1', uid: 'u-m4', kind: 'kudos', read: false }],
+    ['userPushTokens/u-m4_tok1', { id: 'u-m4_tok1', uid: 'u-m4', platform: 'android' }],
+    ['conversations/dm_u-m4_u-other', { conversationId: 'dm_u-m4_u-other', type: 'dm', members: ['u-m4', 'u-other'], status: 'active' }],
+  ]);
+  const makeSnap = (key) => ({
+    exists: docs.has(key),
+    id: key.split('/').pop(),
+    ref: { path: key },
+    data: () => (docs.has(key) ? structuredClone(docs.get(key)) : undefined),
+  });
+  const db = {
+    doc: (key) => ({ path: key, get: async () => makeSnap(key) }),
+    collection: (name) => ({
+      where: (field, op, val) => ({
+        get: async () => {
+          const matched = [...docs.entries()]
+            .filter(([k, v]) => {
+              if (!k.startsWith(`${name}/`)) return false;
+              if (op === '==') return v[field] === val;
+              if (op === 'array-contains') return Array.isArray(v[field]) && v[field].includes(val);
+              return false;
+            })
+            .map(([k]) => makeSnap(k));
+          return { docs: matched, empty: matched.length === 0, forEach: (fn) => matched.forEach(fn) };
+        },
+      }),
+    }),
+    batch: () => {
+      const ops = [];
+      return {
+        delete: (ref) => ops.push(() => docs.delete(ref.path)),
+        update: (ref, patch) => ops.push(() => docs.set(ref.path, { ...docs.get(ref.path), ...structuredClone(patch) })),
+        commit: async () => ops.forEach((o) => o()),
+      };
+    },
+  };
+  const deletedPrefixes = [];
+  const storage = {
+    bucket: () => ({
+      deleteFiles: async ({ prefix }) => {
+        deletedPrefixes.push(prefix);
+      },
+    }),
+  };
+  const auth = { deleteUser: async () => {} };
+  await purgeAndAnonymizeUserAccount({ db, auth, storage, uid: 'u-m4' });
+  for (const gone of [
+    'publicProfiles/u-m4',
+    'clubMembers/manila_u-m4',
+    'clubRequests/cr_1',
+    'socialPosts/post_1',
+    'socialComments/cmt_1',
+    'socialKudos/post_other_u-m4',
+    'routeSnaps/post_1',
+    'closeFriendEdges/u-m4_u-other',
+    'closeFriendEdges/u-other_u-m4',
+    'userBlocks/u-m4_u-third',
+    'userBlocks/u-third_u-m4',
+    'contentReports/rep_1',
+    'friendStreaks/dm_u-m4_u-other',
+    'activityNotifications/noti_1',
+    'userPushTokens/u-m4_tok1',
+  ]) {
+    assert.equal(docs.has(gone), false, `${gone} should be deleted`);
+  }
+  assert.equal(docs.has('publicProfiles/u-other'), true);
+  assert.equal(docs.has('clubMembers/manila_u-other'), true);
+  assert.equal(docs.has('socialPosts/post_other'), true);
+  assert.equal(docs.has('conversations/dm_u-m4_u-other'), true);
+  assert.ok(deletedPrefixes.includes('social-media/u-m4/'));
+  assert.ok(deletedPrefixes.includes('chat-media/dm_u-m4_u-other/u-m4/'));
+});

@@ -1021,3 +1021,823 @@ test('badges, userBadges, xpEvents, and athleteProgression enforce RBAC read sco
   }
 });
 
+test('Milestone 4 clubs, social, inbox, moderation, and notifications enforce least-privilege reads and deny all client writes', async () => {
+  const longDmA = 'm4_long_uid_aaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const longDmB = 'm4_long_uid_bbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  const longDmConvId = `dm_${longDmA}_${longDmB}`;
+
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const root = ctx.firestore();
+    const makeAccess = (user, overrides = {}, extra = {}) => {
+      const state = policy.accessFor(user, { overrides, ...extra });
+      state.permissions = Object.fromEntries(policy.keys.map((key) => [key, policy.can(user, state, key)]));
+      return state;
+    };
+
+    const fixtures = [
+      { uid: 'm4_author', role: 'runner', approved: true },
+      { uid: 'm4_friend', role: 'runner', approved: true },
+      { uid: 'm4_close_friend', role: 'runner', approved: true },
+      { uid: 'm4_commenter', role: 'runner', approved: true },
+      { uid: 'm4_stranger', role: 'runner', approved: true },
+      { uid: 'm4_blocked_out', role: 'runner', approved: true },
+      { uid: 'm4_blocked_in', role: 'runner', approved: true },
+      { uid: 'm4_captain', role: 'runner', approved: true },
+      { uid: 'm4_club_member', role: 'runner', approved: true },
+      { uid: 'm4_club_pending', role: 'runner', approved: true },
+      { uid: 'm4_removed_user', role: 'runner', approved: true },
+      { uid: 'm4_org_default', role: 'organizer', approved: true },
+      { uid: 'm4_org_clubs', role: 'organizer', approved: true, overrides: { 'clubs.view': true } },
+      { uid: 'm4_org_mod', role: 'organizer', approved: true, overrides: { 'moderation.manage': true } },
+      { uid: 'm4_org_unapproved_granted', role: 'organizer', approved: false, overrides: { 'clubs.view': true, 'moderation.manage': true } },
+      { uid: 'm4_admin_default', role: 'admin', approved: true },
+      { uid: 'm4_admin_revoked', role: 'admin', approved: true, overrides: { 'clubs.view': false, 'moderation.manage': false } },
+      { uid: 'm4_admin_suspended', role: 'admin', approved: true, extra: { status: 'suspended' } },
+      { uid: 'm4_sa_active', role: 'superadmin', approved: true },
+      { uid: 'm4_sa_suspended', role: 'superadmin', approved: true, extra: { status: 'suspended' } },
+      { uid: 'm4_sa_removed', role: 'superadmin', approved: true },
+      { uid: longDmA, role: 'runner', approved: true },
+      { uid: longDmB, role: 'runner', approved: true },
+    ];
+
+    for (const entry of fixtures) {
+      const user = {
+        uid: entry.uid,
+        role: entry.role,
+        approved: entry.approved,
+        email: `${entry.uid}@example.com`,
+        displayName: entry.uid,
+        createdAt: '2026-11-25',
+      };
+      await setDoc(doc(root, 'users', entry.uid), user);
+      await setDoc(doc(root, 'userAccess', entry.uid), makeAccess(user, entry.overrides, entry.extra));
+    }
+
+    // Legacy admin omitting M4 permission keys in permissions map, and admin with no userAccess doc
+    await setDoc(doc(root, 'users', 'm4_admin_legacy'), {
+      uid: 'm4_admin_legacy',
+      role: 'admin',
+      approved: true,
+      email: 'm4_admin_legacy@example.com',
+      displayName: 'Legacy Admin',
+      createdAt: '2026-11-25',
+    });
+    await setDoc(doc(root, 'userAccess', 'm4_admin_legacy'), {
+      status: 'active',
+      scope: 'all',
+      raceIds: [],
+      overrides: {},
+      permissions: { 'race.view': true },
+    });
+    await setDoc(doc(root, 'users', 'm4_admin_no_access'), {
+      uid: 'm4_admin_no_access',
+      role: 'admin',
+      approved: true,
+      email: 'm4_admin_no_access@example.com',
+      displayName: 'No Access Doc Admin',
+      createdAt: '2026-11-25',
+    });
+
+    // Removed accounts
+    for (const removedUid of ['m4_removed_user', 'm4_sa_removed']) {
+      await setDoc(doc(root, 'removedAccounts', removedUid), { uid: removedUid, removedAt: '2026-11-25T00:00:00Z' });
+    }
+
+    // Friendships (forward + reverse directions) & close friends & blocks
+    await setDoc(doc(root, 'friendships', 'm4_author_m4_friend'), {
+      fromUid: 'm4_author',
+      toUid: 'm4_friend',
+      members: ['m4_author', 'm4_friend'],
+      createdAt: '2026-11-25',
+    });
+    await setDoc(doc(root, 'friendships', 'm4_author_m4_close_friend'), {
+      fromUid: 'm4_author',
+      toUid: 'm4_close_friend',
+      members: ['m4_author', 'm4_close_friend'],
+      createdAt: '2026-11-25',
+    });
+    await setDoc(doc(root, 'friendships', 'm4_commenter_m4_author'), {
+      fromUid: 'm4_commenter',
+      toUid: 'm4_author',
+      members: ['m4_commenter', 'm4_author'],
+      createdAt: '2026-11-25',
+    });
+
+    await setDoc(doc(root, 'closeFriendEdges', 'm4_author_m4_close_friend'), {
+      id: 'm4_author_m4_close_friend',
+      ownerUid: 'm4_author',
+      targetUid: 'm4_close_friend',
+      createdAt: '2026-11-25T00:00:00Z',
+    });
+    // Orphan close-friend edge (no friendship!) must NOT grant close_friends access
+    await setDoc(doc(root, 'closeFriendEdges', 'm4_author_m4_stranger'), {
+      id: 'm4_author_m4_stranger',
+      ownerUid: 'm4_author',
+      targetUid: 'm4_stranger',
+      createdAt: '2026-11-25T00:00:00Z',
+    });
+
+    // Bidirectional blocks (author blocks + commenter blocks)
+    await setDoc(doc(root, 'userBlocks', 'm4_author_m4_blocked_out'), {
+      id: 'm4_author_m4_blocked_out',
+      blockerUid: 'm4_author',
+      blockedUid: 'm4_blocked_out',
+      createdAt: '2026-11-25T00:00:00Z',
+    });
+    await setDoc(doc(root, 'userBlocks', 'm4_blocked_in_m4_author'), {
+      id: 'm4_blocked_in_m4_author',
+      blockerUid: 'm4_blocked_in',
+      blockedUid: 'm4_author',
+      createdAt: '2026-11-25T00:00:00Z',
+    });
+    await setDoc(doc(root, 'userBlocks', 'm4_commenter_m4_friend'), {
+      id: 'm4_commenter_m4_friend',
+      blockerUid: 'm4_commenter',
+      blockedUid: 'm4_friend',
+      createdAt: '2026-11-25T00:00:00Z',
+    });
+
+    // 1. publicProfiles
+    await setDoc(doc(root, 'publicProfiles', 'm4_author'), {
+      uid: 'm4_author',
+      displayName: 'M4 Author',
+      username: 'm4author',
+      primaryClubId: 'club_open',
+      primaryClubName: 'Open Run Club',
+      updatedAt: '2026-11-25T00:00:00Z',
+    });
+
+    // 2. clubs + 3. clubMembers + 4. clubRequests + 5-7. meetups/announcements/spotlights
+    await setDoc(doc(root, 'clubs', 'club_open'), {
+      clubId: 'club_open',
+      name: 'Open Run Club',
+      status: 'active',
+      joinPolicy: 'open',
+      captainUids: ['m4_captain'],
+      memberCount: 2,
+    });
+    await setDoc(doc(root, 'clubs', 'club_invite'), {
+      clubId: 'club_invite',
+      name: 'Invite Only Club',
+      status: 'active',
+      joinPolicy: 'invite_only',
+      captainUids: ['m4_captain'],
+      memberCount: 2,
+    });
+    await setDoc(doc(root, 'clubs', 'club_archived'), {
+      clubId: 'club_archived',
+      name: 'Archived Club',
+      status: 'archived',
+      joinPolicy: 'open',
+      captainUids: ['m4_captain'],
+      memberCount: 1,
+    });
+    await setDoc(doc(root, 'clubs', 'club_other'), {
+      clubId: 'club_other',
+      name: 'Other Club',
+      status: 'active',
+      joinPolicy: 'approval',
+      captainUids: ['m4_author'],
+      memberCount: 1,
+    });
+    await setDoc(doc(root, 'clubs', 'club_open_empty'), {
+      clubId: 'club_open_empty',
+      name: 'Open Club No Spotlight',
+      status: 'active',
+      joinPolicy: 'open',
+      captainUids: ['m4_captain'],
+      memberCount: 1,
+    });
+    await setDoc(doc(root, 'clubs', 'club_invite_empty'), {
+      clubId: 'club_invite_empty',
+      name: 'Invite Club No Spotlight',
+      status: 'active',
+      joinPolicy: 'invite_only',
+      captainUids: ['m4_captain'],
+      memberCount: 1,
+    });
+
+    await setDoc(doc(root, 'clubMembers', 'club_other_m4_club_pending'), {
+      id: 'club_other_m4_club_pending',
+      clubId: 'club_other',
+      uid: 'm4_club_pending',
+      role: 'member',
+      status: 'pending',
+      displayName: 'Pending Other',
+      joinedAt: '2026-11-25T00:00:00Z',
+    });
+
+    await setDoc(doc(root, 'clubMembers', 'club_open_m4_captain'), {
+      id: 'club_open_m4_captain',
+      clubId: 'club_open',
+      uid: 'm4_captain',
+      role: 'captain',
+      status: 'active',
+      displayName: 'Captain',
+      joinedAt: '2026-11-25T00:00:00Z',
+    });
+    await setDoc(doc(root, 'clubMembers', 'club_open_m4_club_member'), {
+      id: 'club_open_m4_club_member',
+      clubId: 'club_open',
+      uid: 'm4_club_member',
+      role: 'member',
+      status: 'active',
+      displayName: 'Member',
+      joinedAt: '2026-11-25T00:00:00Z',
+    });
+    await setDoc(doc(root, 'clubMembers', 'club_open_m4_club_pending'), {
+      id: 'club_open_m4_club_pending',
+      clubId: 'club_open',
+      uid: 'm4_club_pending',
+      role: 'member',
+      status: 'pending',
+      displayName: 'Pending',
+      joinedAt: '2026-11-25T00:00:00Z',
+    });
+    await setDoc(doc(root, 'clubMembers', 'club_invite_m4_club_member'), {
+      id: 'club_invite_m4_club_member',
+      clubId: 'club_invite',
+      uid: 'm4_club_member',
+      role: 'member',
+      status: 'active',
+      displayName: 'Member',
+      joinedAt: '2026-11-25T00:00:00Z',
+    });
+    await setDoc(doc(root, 'clubMembers', 'club_invite_m4_club_pending'), {
+      id: 'club_invite_m4_club_pending',
+      clubId: 'club_invite',
+      uid: 'm4_club_pending',
+      role: 'member',
+      status: 'pending',
+      displayName: 'Pending Invite',
+      joinedAt: '2026-11-25T00:00:00Z',
+    });
+
+    await setDoc(doc(root, 'clubRequests', 'creq_1'), {
+      requestId: 'creq_1',
+      requesterUid: 'm4_stranger',
+      clubName: 'Makati Pacers',
+      status: 'pending',
+      createdAt: '2026-11-25T00:00:00Z',
+    });
+
+    for (const cid of ['club_open', 'club_invite', 'club_archived']) {
+      await setDoc(doc(root, 'clubMeetups', `meetup_${cid}`), {
+        meetupId: `meetup_${cid}`,
+        clubId: cid,
+        title: `Meetup ${cid}`,
+        status: 'scheduled',
+        startAtIso: '2026-12-01T05:30:00Z',
+      });
+      await setDoc(doc(root, 'clubAnnouncements', `ann_${cid}`), {
+        announcementId: `ann_${cid}`,
+        clubId: cid,
+        title: `Notice ${cid}`,
+        pinned: true,
+        createdAt: '2026-11-25T00:00:00Z',
+      });
+      await setDoc(doc(root, 'clubSpotlights', cid), {
+        clubId: cid,
+        targetUid: 'm4_club_member',
+        headline: `Star ${cid}`,
+        featuredAt: '2026-11-25T00:00:00Z',
+      });
+    }
+
+    // 8. socialPosts + 9. routeSnaps
+    await setDoc(doc(root, 'socialPosts', 'post_public'), {
+      postId: 'post_public',
+      uid: 'm4_author',
+      visibility: 'public',
+      text: 'Morning tempo!',
+      deletedAt: null,
+      hiddenByModeration: false,
+      createdAt: '2026-11-25T01:00:00Z',
+    });
+    await setDoc(doc(root, 'socialPosts', 'post_friends'), {
+      postId: 'post_friends',
+      uid: 'm4_author',
+      visibility: 'friends',
+      text: 'Friends pace run',
+      deletedAt: null,
+      hiddenByModeration: false,
+      createdAt: '2026-11-25T02:00:00Z',
+    });
+    await setDoc(doc(root, 'socialPosts', 'post_cf'), {
+      postId: 'post_cf',
+      uid: 'm4_author',
+      visibility: 'close_friends',
+      text: 'Close circle secret route',
+      deletedAt: null,
+      hiddenByModeration: false,
+      createdAt: '2026-11-25T03:00:00Z',
+    });
+    await setDoc(doc(root, 'socialPosts', 'post_hidden'), {
+      postId: 'post_hidden',
+      uid: 'm4_author',
+      visibility: 'public',
+      text: 'Flagged post',
+      deletedAt: null,
+      hiddenByModeration: true,
+      createdAt: '2026-11-25T04:00:00Z',
+    });
+    await setDoc(doc(root, 'socialPosts', 'post_deleted'), {
+      postId: 'post_deleted',
+      uid: 'm4_author',
+      visibility: 'public',
+      text: 'Deleted post',
+      deletedAt: '2026-11-25T05:00:00Z',
+      hiddenByModeration: false,
+      createdAt: '2026-11-25T05:00:00Z',
+    });
+
+    await setDoc(doc(root, 'routeSnaps', 'post_public'), {
+      snapId: 'post_public',
+      postId: 'post_public',
+      uid: 'm4_author',
+      visibility: 'public',
+      deletedAt: null,
+      hiddenByModeration: false,
+      createdAt: '2026-11-25T01:00:00Z',
+    });
+    await setDoc(doc(root, 'routeSnaps', 'post_cf'), {
+      snapId: 'post_cf',
+      postId: 'post_cf',
+      uid: 'm4_author',
+      visibility: 'close_friends',
+      deletedAt: null,
+      hiddenByModeration: false,
+      createdAt: '2026-11-25T03:00:00Z',
+    });
+    await setDoc(doc(root, 'routeSnaps', 'post_hidden'), {
+      snapId: 'post_hidden',
+      postId: 'post_hidden',
+      uid: 'm4_author',
+      visibility: 'public',
+      deletedAt: null,
+      hiddenByModeration: true,
+      createdAt: '2026-11-25T04:00:00Z',
+    });
+
+    // 10. socialComments (including cross-author comment on close_friends post + multi-author comments on public post)
+    await setDoc(doc(root, 'socialComments', 'cmt_pub_commenter'), {
+      commentId: 'cmt_pub_commenter',
+      postId: 'post_public',
+      uid: 'm4_commenter',
+      text: 'Nice pace!',
+      deletedAt: null,
+      hiddenByModeration: false,
+      createdAt: '2026-11-25T01:10:00Z',
+    });
+    await setDoc(doc(root, 'socialComments', 'cmt_pub_friend'), {
+      commentId: 'cmt_pub_friend',
+      postId: 'post_public',
+      uid: 'm4_friend',
+      text: 'Strong finish!',
+      deletedAt: null,
+      hiddenByModeration: false,
+      createdAt: '2026-11-25T01:15:00Z',
+    });
+    await setDoc(doc(root, 'socialComments', 'cmt_cf_commenter'), {
+      commentId: 'cmt_cf_commenter',
+      postId: 'post_cf',
+      uid: 'm4_commenter',
+      text: 'See you at 5am!',
+      deletedAt: null,
+      hiddenByModeration: false,
+      createdAt: '2026-11-25T03:10:00Z',
+    });
+    await setDoc(doc(root, 'socialComments', 'cmt_hidden'), {
+      commentId: 'cmt_hidden',
+      postId: 'post_public',
+      uid: 'm4_commenter',
+      text: 'Hidden comment',
+      deletedAt: null,
+      hiddenByModeration: true,
+      createdAt: '2026-11-25T01:20:00Z',
+    });
+    await setDoc(doc(root, 'socialComments', 'cmt_deleted'), {
+      commentId: 'cmt_deleted',
+      postId: 'post_public',
+      uid: 'm4_commenter',
+      text: 'Deleted comment',
+      deletedAt: '2026-11-25T01:25:00Z',
+      hiddenByModeration: false,
+      createdAt: '2026-11-25T01:25:00Z',
+    });
+    await setDoc(doc(root, 'socialComments', 'cmt_orphan'), {
+      commentId: 'cmt_orphan',
+      postId: 'post_missing',
+      uid: 'm4_commenter',
+      text: 'Orphaned comment',
+      deletedAt: null,
+      hiddenByModeration: false,
+      createdAt: '2026-11-25T01:30:00Z',
+    });
+
+    // 11. socialKudos
+    await setDoc(doc(root, 'socialKudos', 'post_public_m4_friend'), {
+      id: 'post_public_m4_friend',
+      postId: 'post_public',
+      uid: 'm4_friend',
+      recipientUid: 'm4_author',
+      createdAt: '2026-11-25T01:05:00Z',
+    });
+
+    // 14. contentReports
+    await setDoc(doc(root, 'contentReports', 'rep_1'), {
+      reportId: 'rep_1',
+      reporterUid: 'm4_friend',
+      targetType: 'post',
+      targetId: 'post_public',
+      targetUid: 'm4_author',
+      reason: 'spam',
+      status: 'open',
+      createdAt: '2026-11-25T01:40:00Z',
+    });
+
+    // 15. conversations + 16. messages + 17. friendStreaks
+    await setDoc(doc(root, 'conversations', 'dm_m4_author_m4_friend'), {
+      conversationId: 'dm_m4_author_m4_friend',
+      type: 'dm',
+      members: ['m4_author', 'm4_friend'],
+      status: 'active',
+      updatedAt: '2026-11-25T02:00:00Z',
+    });
+    await setDoc(doc(root, 'conversations', longDmConvId), {
+      conversationId: longDmConvId,
+      type: 'dm',
+      members: [longDmA, longDmB],
+      status: 'active',
+      updatedAt: '2026-11-25T02:00:00Z',
+    });
+    await setDoc(doc(root, 'conversations', 'club_club_open'), {
+      conversationId: 'club_club_open',
+      type: 'club',
+      clubId: 'club_open',
+      members: [],
+      status: 'active',
+      updatedAt: '2026-11-25T02:00:00Z',
+    });
+
+    await setDoc(doc(root, 'conversations', 'dm_m4_author_m4_friend', 'messages', 'msg_1'), {
+      messageId: 'msg_1',
+      conversationId: 'dm_m4_author_m4_friend',
+      senderUid: 'm4_author',
+      text: 'Morning!',
+      deletedAt: null,
+      hiddenByModeration: false,
+      createdAt: '2026-11-25T02:00:00Z',
+    });
+    await setDoc(doc(root, 'conversations', 'dm_m4_author_m4_friend', 'messages', 'msg_2_del'), {
+      messageId: 'msg_2_del',
+      conversationId: 'dm_m4_author_m4_friend',
+      senderUid: 'm4_friend',
+      text: 'Removed msg',
+      deletedAt: '2026-11-25T02:05:00Z',
+      hiddenByModeration: true,
+      createdAt: '2026-11-25T02:05:00Z',
+    });
+    await setDoc(doc(root, 'conversations', longDmConvId, 'messages', 'msg_long'), {
+      messageId: 'msg_long',
+      conversationId: longDmConvId,
+      senderUid: longDmA,
+      text: 'Long conv ID message',
+      deletedAt: null,
+      hiddenByModeration: false,
+      createdAt: '2026-11-25T02:00:00Z',
+    });
+    await setDoc(doc(root, 'conversations', 'club_club_open', 'messages', 'msg_club_1'), {
+      messageId: 'msg_club_1',
+      conversationId: 'club_club_open',
+      senderUid: 'm4_club_member',
+      text: 'Long run Sunday!',
+      deletedAt: null,
+      hiddenByModeration: false,
+      createdAt: '2026-11-25T02:00:00Z',
+    });
+    await setDoc(doc(root, 'conversations', 'dm_missing_conv', 'messages', 'msg_orphan'), {
+      messageId: 'msg_orphan',
+      conversationId: 'dm_missing_conv',
+      senderUid: 'm4_author',
+      text: 'Orphan',
+      deletedAt: null,
+      hiddenByModeration: false,
+      createdAt: '2026-11-25T02:00:00Z',
+    });
+
+    await setDoc(doc(root, 'friendStreaks', 'dm_m4_author_m4_friend'), {
+      id: 'dm_m4_author_m4_friend',
+      members: ['m4_author', 'm4_friend'],
+      streakDays: 4,
+      updatedAt: '2026-11-25T02:00:00Z',
+    });
+
+    // 18. activityNotifications
+    await setDoc(doc(root, 'activityNotifications', 'noti_1'), {
+      id: 'noti_1',
+      uid: 'm4_author',
+      kind: 'kudos',
+      actorUid: 'm4_friend',
+      targetId: 'post_public',
+      summary: 'Friend gave kudos.',
+      read: false,
+      createdAt: '2026-11-25T02:00:00Z',
+    });
+
+    // 19. userPushTokens
+    await setDoc(doc(root, 'userPushTokens', 'm4_author_tok1'), {
+      id: 'm4_author_tok1',
+      uid: 'm4_author',
+      token: 'fcm_secret_token_123456',
+      platform: 'android',
+      updatedAt: '2026-11-25T02:00:00Z',
+    });
+  });
+
+  const anonDb = env.unauthenticatedContext().firestore();
+  const unverifiedNoDocDb = env.authenticatedContext('m4_unverified_no_doc', { email: 'unv@example.com', email_verified: false }).firestore();
+  const unverifiedCloseFriendDb = env.authenticatedContext('m4_close_friend', { email: 'm4_close_friend@example.com', email_verified: false }).firestore();
+
+  // Baseline auth & removed account barriers across M4 collections
+  for (const [colName, docId] of [
+    ['publicProfiles', 'm4_author'],
+    ['clubs', 'club_open'],
+    ['clubMembers', 'club_open_m4_club_member'],
+    ['clubRequests', 'creq_1'],
+    ['clubMeetups', 'meetup_club_open'],
+    ['clubAnnouncements', 'ann_club_open'],
+    ['clubSpotlights', 'club_open'],
+    ['socialPosts', 'post_public'],
+    ['routeSnaps', 'post_public'],
+    ['socialComments', 'cmt_pub_commenter'],
+    ['socialKudos', 'post_public_m4_friend'],
+    ['closeFriendEdges', 'm4_author_m4_close_friend'],
+    ['userBlocks', 'm4_author_m4_blocked_out'],
+    ['contentReports', 'rep_1'],
+    ['conversations', 'dm_m4_author_m4_friend'],
+    ['friendStreaks', 'dm_m4_author_m4_friend'],
+    ['activityNotifications', 'noti_1'],
+    ['userPushTokens', 'm4_author_tok1'],
+  ]) {
+    await assertFails(getDoc(doc(anonDb, colName, docId)));
+    await assertFails(getDoc(doc(unverifiedNoDocDb, colName, docId)));
+    await assertFails(getDoc(doc(db('m4_removed_user'), colName, docId)));
+    await assertFails(getDoc(doc(db('m4_sa_removed'), colName, docId)));
+  }
+  await assertFails(getDoc(doc(anonDb, 'conversations', 'dm_m4_author_m4_friend', 'messages', 'msg_1')));
+  await assertFails(getDoc(doc(db('m4_removed_user'), 'conversations', 'dm_m4_author_m4_friend', 'messages', 'msg_1')));
+  await assertFails(getDoc(doc(db('m4_sa_removed'), 'conversations', 'dm_m4_author_m4_friend', 'messages', 'msg_1')));
+
+  // 1. publicProfiles
+  await assertSucceeds(getDoc(doc(db('m4_stranger'), 'publicProfiles', 'm4_author')));
+  await assertSucceeds(getDocs(collection(db('m4_stranger'), 'publicProfiles')));
+
+  // 2. clubs
+  await assertSucceeds(getDoc(doc(db('m4_stranger'), 'clubs', 'club_open')));
+  await assertSucceeds(getDocs(query(collection(db('m4_stranger'), 'clubs'), where('status', '==', 'active'), orderBy('memberCount', 'desc'))));
+  await assertFails(getDoc(doc(db('m4_stranger'), 'clubs', 'club_archived')));
+  await assertFails(getDoc(doc(db('m4_org_default'), 'clubs', 'club_archived')));
+  await assertFails(getDoc(doc(db('m4_org_unapproved_granted'), 'clubs', 'club_archived')));
+  await assertFails(getDoc(doc(db('m4_admin_revoked'), 'clubs', 'club_archived')));
+  await assertFails(getDoc(doc(db('m4_admin_suspended'), 'clubs', 'club_archived')));
+  await assertFails(getDoc(doc(db('m4_sa_suspended'), 'clubs', 'club_archived')));
+  for (const uid of ['m4_org_clubs', 'm4_admin_default', 'm4_admin_legacy', 'm4_admin_no_access', 'm4_sa_active']) {
+    await assertSucceeds(getDoc(doc(db(uid), 'clubs', 'club_archived')));
+    await assertSucceeds(getDocs(collection(db(uid), 'clubs')));
+  }
+
+  // 3. clubMembers (self pending/active, active directory, pending restricted to captain/clubs.view/superadmin)
+  await assertSucceeds(getDoc(doc(db('m4_club_pending'), 'clubMembers', 'club_open_m4_club_pending')));
+  await assertSucceeds(getDocs(query(collection(db('m4_club_pending'), 'clubMembers'), where('uid', '==', 'm4_club_pending'))));
+  await assertSucceeds(getDocs(query(collection(db('m4_stranger'), 'clubMembers'), where('clubId', '==', 'club_open'), where('status', '==', 'active'), orderBy('joinedAt', 'desc'))));
+  await assertSucceeds(getDoc(doc(db('m4_stranger'), 'clubMembers', 'club_open_m4_club_member')));
+  await assertFails(getDoc(doc(db('m4_stranger'), 'clubMembers', 'club_open_m4_club_pending')));
+  await assertFails(getDoc(doc(db('m4_club_member'), 'clubMembers', 'club_open_m4_club_pending')));
+  await assertFails(getDoc(doc(db('m4_org_default'), 'clubMembers', 'club_open_m4_club_pending')));
+  await assertFails(getDoc(doc(db('m4_admin_revoked'), 'clubMembers', 'club_open_m4_club_pending')));
+  await assertFails(getDoc(doc(db('m4_captain'), 'clubMembers', 'club_other_m4_club_pending')));
+  await assertSucceeds(getDoc(doc(db('m4_captain'), 'clubMembers', 'club_open_m4_club_pending')));
+  await assertSucceeds(getDoc(doc(db('m4_org_clubs'), 'clubMembers', 'club_open_m4_club_pending')));
+  await assertSucceeds(getDoc(doc(db('m4_admin_default'), 'clubMembers', 'club_open_m4_club_pending')));
+  await assertSucceeds(getDoc(doc(db('m4_admin_no_access'), 'clubMembers', 'club_open_m4_club_pending')));
+  await assertSucceeds(getDoc(doc(db('m4_sa_active'), 'clubMembers', 'club_open_m4_club_pending')));
+
+  // 4. clubRequests
+  await assertSucceeds(getDoc(doc(db('m4_stranger'), 'clubRequests', 'creq_1')));
+  await assertSucceeds(getDocs(query(collection(db('m4_stranger'), 'clubRequests'), where('requesterUid', '==', 'm4_stranger'), where('status', '==', 'pending'))));
+  await assertFails(getDoc(doc(db('m4_author'), 'clubRequests', 'creq_1')));
+  await assertFails(getDoc(doc(db('m4_captain'), 'clubRequests', 'creq_1')));
+  await assertFails(getDoc(doc(db('m4_org_default'), 'clubRequests', 'creq_1')));
+  await assertFails(getDoc(doc(db('m4_admin_revoked'), 'clubRequests', 'creq_1')));
+  await assertFails(getDoc(doc(db('m4_admin_suspended'), 'clubRequests', 'creq_1')));
+  await assertSucceeds(getDoc(doc(db('m4_org_clubs'), 'clubRequests', 'creq_1')));
+  await assertSucceeds(getDocs(query(collection(db('m4_admin_default'), 'clubRequests'), where('status', '==', 'pending'), orderBy('createdAt', 'desc'))));
+  await assertSucceeds(getDoc(doc(db('m4_sa_active'), 'clubRequests', 'creq_1')));
+
+  // 5-7. clubMeetups, clubAnnouncements, clubSpotlights
+  for (const [colName, openId, inviteId, archivedId] of [
+    ['clubMeetups', 'meetup_club_open', 'meetup_club_invite', 'meetup_club_archived'],
+    ['clubAnnouncements', 'ann_club_open', 'ann_club_invite', 'ann_club_archived'],
+    ['clubSpotlights', 'club_open', 'club_invite', 'club_archived'],
+  ]) {
+    await assertSucceeds(getDoc(doc(db('m4_stranger'), colName, openId)));
+    await assertSucceeds(getDocs(query(collection(db('m4_stranger'), colName), where('clubId', '==', 'club_open'))));
+    await assertFails(getDoc(doc(db('m4_stranger'), colName, inviteId)));
+    await assertFails(getDoc(doc(db('m4_club_pending'), colName, inviteId)));
+    await assertSucceeds(getDoc(doc(db('m4_club_member'), colName, inviteId)));
+    await assertFails(getDoc(doc(db('m4_stranger'), colName, archivedId)));
+    await assertFails(getDoc(doc(db('m4_admin_revoked'), colName, archivedId)));
+    await assertSucceeds(getDoc(doc(db('m4_org_clubs'), colName, archivedId)));
+    await assertSucceeds(getDoc(doc(db('m4_admin_default'), colName, archivedId)));
+    await assertSucceeds(getDoc(doc(db('m4_sa_active'), colName, archivedId)));
+  }
+  // Missing clubSpotlights doc returns cleanly on open club but rejects invite-only club
+  await assertSucceeds(getDoc(doc(db('m4_stranger'), 'clubSpotlights', 'club_open_empty')));
+  await assertFails(getDoc(doc(db('m4_stranger'), 'clubSpotlights', 'club_invite_empty')));
+
+  // 8-9. socialPosts & routeSnaps
+  await assertSucceeds(getDocs(query(collection(db('m4_author'), 'socialPosts'), where('uid', '==', 'm4_author'), orderBy('createdAt', 'desc'))));
+  for (const colName of ['socialPosts', 'routeSnaps']) {
+    await assertSucceeds(getDoc(doc(db('m4_author'), colName, 'post_public')));
+    await assertSucceeds(getDoc(doc(db('m4_author'), colName, 'post_cf')));
+    await assertSucceeds(getDoc(doc(db('m4_author'), colName, 'post_hidden')));
+
+    await assertSucceeds(getDoc(doc(db('m4_stranger'), colName, 'post_public')));
+    await assertFails(getDoc(doc(db('m4_stranger'), colName, 'post_cf'))); // orphan closeFriendEdge without friendship must fail
+    await assertFails(getDoc(doc(db('m4_stranger'), colName, 'post_hidden')));
+
+    await assertSucceeds(getDoc(doc(db('m4_friend'), colName, 'post_public')));
+    await assertFails(getDoc(doc(db('m4_friend'), colName, 'post_cf')));
+
+    await assertSucceeds(getDoc(doc(db('m4_close_friend'), colName, 'post_cf')));
+
+    // Bidirectional blocks hide even public posts
+    await assertFails(getDoc(doc(db('m4_blocked_out'), colName, 'post_public')));
+    await assertFails(getDoc(doc(db('m4_blocked_in'), colName, 'post_public')));
+
+    // Moderation & SuperAdmin visibility
+    await assertFails(getDoc(doc(db('m4_admin_revoked'), colName, 'post_hidden')));
+    await assertFails(getDoc(doc(db('m4_admin_suspended'), colName, 'post_hidden')));
+    await assertFails(getDoc(doc(db('m4_sa_suspended'), colName, 'post_hidden')));
+    await assertFails(getDoc(doc(db('m4_org_unapproved_granted'), colName, 'post_hidden')));
+    await assertSucceeds(getDoc(doc(db('m4_org_mod'), colName, 'post_hidden')));
+    await assertSucceeds(getDoc(doc(db('m4_admin_default'), colName, 'post_cf')));
+    await assertSucceeds(getDoc(doc(db('m4_admin_legacy'), colName, 'post_hidden')));
+    await assertSucceeds(getDoc(doc(db('m4_sa_active'), colName, 'post_hidden')));
+  }
+  await assertSucceeds(getDoc(doc(db('m4_friend'), 'socialPosts', 'post_friends')));
+  await assertFails(getDoc(doc(db('m4_stranger'), 'socialPosts', 'post_friends')));
+  await assertFails(getDoc(doc(db('m4_friend'), 'socialPosts', 'post_deleted')));
+  await assertSucceeds(getDoc(doc(db('m4_author'), 'socialPosts', 'post_deleted')));
+  await assertSucceeds(getDoc(doc(db('m4_sa_active'), 'socialPosts', 'post_deleted')));
+
+  // 10. socialComments (including 3-party close_friends comment & block isolation & list queries)
+  await assertSucceeds(getDoc(doc(db('m4_commenter'), 'socialComments', 'cmt_hidden')));
+  await assertSucceeds(getDocs(query(collection(db('m4_commenter'), 'socialComments'), where('uid', '==', 'm4_commenter'))));
+  await assertSucceeds(getDoc(doc(db('m4_stranger'), 'socialComments', 'cmt_pub_commenter')));
+  await assertSucceeds(getDoc(doc(db('m4_author'), 'socialComments', 'cmt_cf_commenter')));
+  await assertSucceeds(getDoc(doc(db('m4_close_friend'), 'socialComments', 'cmt_cf_commenter')));
+  await assertSucceeds(getDoc(doc(unverifiedCloseFriendDb, 'socialComments', 'cmt_cf_commenter')));
+  await assertFails(getDoc(doc(db('m4_friend'), 'socialComments', 'cmt_cf_commenter')));
+  await assertFails(getDoc(doc(db('m4_friend'), 'socialComments', 'cmt_pub_commenter'))); // blocked by commenter m4_commenter
+  await assertFails(getDoc(doc(db('m4_stranger'), 'socialComments', 'cmt_cf_commenter')));
+  await assertFails(getDoc(doc(db('m4_stranger'), 'socialComments', 'cmt_hidden')));
+  await assertFails(getDoc(doc(db('m4_stranger'), 'socialComments', 'cmt_deleted')));
+  await assertFails(getDoc(doc(db('m4_stranger'), 'socialComments', 'cmt_orphan')));
+  await assertFails(getDoc(doc(db('m4_blocked_out'), 'socialComments', 'cmt_pub_commenter')));
+  await assertFails(getDoc(doc(db('m4_blocked_in'), 'socialComments', 'cmt_pub_commenter')));
+  await assertFails(getDoc(doc(db('m4_admin_revoked'), 'socialComments', 'cmt_hidden')));
+  await assertFails(getDoc(doc(db('m4_sa_suspended'), 'socialComments', 'cmt_hidden')));
+  await assertSucceeds(getDoc(doc(db('m4_org_mod'), 'socialComments', 'cmt_hidden')));
+  await assertSucceeds(getDoc(doc(db('m4_admin_default'), 'socialComments', 'cmt_hidden')));
+  await assertSucceeds(getDoc(doc(db('m4_admin_default'), 'socialComments', 'cmt_cf_commenter')));
+  await assertSucceeds(getDoc(doc(db('m4_admin_no_access'), 'socialComments', 'cmt_hidden')));
+  await assertSucceeds(getDoc(doc(db('m4_sa_active'), 'socialComments', 'cmt_deleted')));
+  await assertSucceeds(getDocs(query(collection(db('m4_sa_active'), 'socialComments'), where('postId', '==', 'post_public'), orderBy('createdAt', 'asc'))));
+
+  // 11. socialKudos
+  await assertSucceeds(getDoc(doc(db('m4_friend'), 'socialKudos', 'post_public_m4_friend')));
+  await assertSucceeds(getDoc(doc(db('m4_author'), 'socialKudos', 'post_public_m4_friend')));
+  await assertSucceeds(getDocs(query(collection(db('m4_author'), 'socialKudos'), where('recipientUid', '==', 'm4_author'))));
+  await assertFails(getDoc(doc(db('m4_stranger'), 'socialKudos', 'post_public_m4_friend')));
+  await assertFails(getDoc(doc(db('m4_admin_revoked'), 'socialKudos', 'post_public_m4_friend')));
+  await assertSucceeds(getDoc(doc(db('m4_org_mod'), 'socialKudos', 'post_public_m4_friend')));
+  await assertSucceeds(getDoc(doc(db('m4_sa_active'), 'socialKudos', 'post_public_m4_friend')));
+
+  // 12. closeFriendEdges (owner + active superadmin ONLY; targetUid & non-SA admins denied!)
+  await assertSucceeds(getDoc(doc(db('m4_author'), 'closeFriendEdges', 'm4_author_m4_close_friend')));
+  await assertSucceeds(getDocs(query(collection(db('m4_author'), 'closeFriendEdges'), where('ownerUid', '==', 'm4_author'))));
+  await assertFails(getDoc(doc(db('m4_close_friend'), 'closeFriendEdges', 'm4_author_m4_close_friend')));
+  await assertFails(getDoc(doc(db('m4_stranger'), 'closeFriendEdges', 'm4_author_m4_close_friend')));
+  await assertFails(getDoc(doc(db('m4_org_default'), 'closeFriendEdges', 'm4_author_m4_close_friend')));
+  await assertFails(getDoc(doc(db('m4_admin_default'), 'closeFriendEdges', 'm4_author_m4_close_friend')));
+  await assertFails(getDoc(doc(db('m4_org_mod'), 'closeFriendEdges', 'm4_author_m4_close_friend')));
+  await assertFails(getDoc(doc(db('m4_sa_suspended'), 'closeFriendEdges', 'm4_author_m4_close_friend')));
+  await assertSucceeds(getDoc(doc(db('m4_sa_active'), 'closeFriendEdges', 'm4_author_m4_close_friend')));
+
+  // 13. userBlocks (blocker + moderation.manage + active superadmin ONLY; blockedUid denied!)
+  await assertSucceeds(getDoc(doc(db('m4_author'), 'userBlocks', 'm4_author_m4_blocked_out')));
+  await assertSucceeds(getDocs(query(collection(db('m4_author'), 'userBlocks'), where('blockerUid', '==', 'm4_author'))));
+  await assertFails(getDoc(doc(db('m4_blocked_out'), 'userBlocks', 'm4_author_m4_blocked_out')));
+  await assertFails(getDoc(doc(db('m4_stranger'), 'userBlocks', 'm4_author_m4_blocked_out')));
+  await assertFails(getDoc(doc(db('m4_admin_revoked'), 'userBlocks', 'm4_author_m4_blocked_out')));
+  await assertFails(getDoc(doc(db('m4_sa_suspended'), 'userBlocks', 'm4_author_m4_blocked_out')));
+  await assertSucceeds(getDoc(doc(db('m4_org_mod'), 'userBlocks', 'm4_author_m4_blocked_out')));
+  await assertSucceeds(getDoc(doc(db('m4_sa_active'), 'userBlocks', 'm4_author_m4_blocked_out')));
+
+  // 14. contentReports (reporter + moderation.manage + active superadmin ONLY; targetUid denied!)
+  await assertSucceeds(getDoc(doc(db('m4_friend'), 'contentReports', 'rep_1')));
+  await assertSucceeds(getDocs(query(collection(db('m4_friend'), 'contentReports'), where('reporterUid', '==', 'm4_friend'))));
+  await assertFails(getDoc(doc(db('m4_author'), 'contentReports', 'rep_1')));
+  await assertFails(getDoc(doc(db('m4_stranger'), 'contentReports', 'rep_1')));
+  await assertFails(getDoc(doc(db('m4_admin_revoked'), 'contentReports', 'rep_1')));
+  await assertSucceeds(getDoc(doc(db('m4_org_mod'), 'contentReports', 'rep_1')));
+  await assertSucceeds(getDocs(query(collection(db('m4_admin_default'), 'contentReports'), where('status', '==', 'open'), orderBy('createdAt', 'desc'))));
+  await assertSucceeds(getDoc(doc(db('m4_sa_active'), 'contentReports', 'rep_1')));
+
+  // 15. conversations + 16. messages
+  await assertSucceeds(getDoc(doc(db('m4_author'), 'conversations', 'dm_m4_author_m4_friend')));
+  await assertSucceeds(getDocs(query(collection(db('m4_author'), 'conversations'), where('members', 'array-contains', 'm4_author'), orderBy('updatedAt', 'desc'))));
+  await assertFails(getDoc(doc(db('m4_stranger'), 'conversations', 'dm_m4_author_m4_friend')));
+  await assertSucceeds(getDoc(doc(db('m4_club_member'), 'conversations', 'club_club_open')));
+  await assertFails(getDoc(doc(db('m4_club_pending'), 'conversations', 'club_club_open')));
+  await assertFails(getDoc(doc(db('m4_stranger'), 'conversations', 'club_club_open')));
+  await assertSucceeds(getDoc(doc(db('m4_org_mod'), 'conversations', 'dm_m4_author_m4_friend')));
+  await assertSucceeds(getDoc(doc(db('m4_sa_active'), 'conversations', 'club_club_open')));
+
+  await assertSucceeds(getDoc(doc(db('m4_author'), 'conversations', 'dm_m4_author_m4_friend', 'messages', 'msg_1')));
+  await assertSucceeds(getDocs(collection(db('m4_friend'), 'conversations', 'dm_m4_author_m4_friend', 'messages')));
+  await assertSucceeds(getDoc(doc(db(longDmA), 'conversations', longDmConvId, 'messages', 'msg_long')));
+  await assertFails(getDoc(doc(db('m4_stranger'), 'conversations', 'dm_m4_author_m4_friend', 'messages', 'msg_1')));
+  await assertFails(getDocs(collection(db('m4_stranger'), 'conversations', 'dm_m4_author_m4_friend', 'messages')));
+  await assertSucceeds(getDoc(doc(db('m4_club_member'), 'conversations', 'club_club_open', 'messages', 'msg_club_1')));
+  await assertSucceeds(getDocs(collection(db('m4_club_member'), 'conversations', 'club_club_open', 'messages')));
+  await assertFails(getDoc(doc(db('m4_club_pending'), 'conversations', 'club_club_open', 'messages', 'msg_club_1')));
+  await assertFails(getDoc(doc(db('m4_stranger'), 'conversations', 'club_club_open', 'messages', 'msg_club_1')));
+  await assertFails(getDoc(doc(db('m4_author'), 'conversations', 'dm_missing_conv', 'messages', 'msg_orphan')));
+  await assertFails(getDoc(doc(db('m4_admin_revoked'), 'conversations', 'dm_m4_author_m4_friend', 'messages', 'msg_1')));
+  await assertSucceeds(getDoc(doc(db('m4_org_mod'), 'conversations', 'dm_m4_author_m4_friend', 'messages', 'msg_2_del')));
+  await assertSucceeds(getDoc(doc(db('m4_sa_active'), 'conversations', 'club_club_open', 'messages', 'msg_club_1')));
+
+  // 17. friendStreaks (members + active superadmin ONLY)
+  await assertSucceeds(getDoc(doc(db('m4_author'), 'friendStreaks', 'dm_m4_author_m4_friend')));
+  await assertSucceeds(getDocs(query(collection(db('m4_friend'), 'friendStreaks'), where('members', 'array-contains', 'm4_friend'))));
+  await assertFails(getDoc(doc(db('m4_stranger'), 'friendStreaks', 'dm_m4_author_m4_friend')));
+  await assertFails(getDoc(doc(db('m4_org_default'), 'friendStreaks', 'dm_m4_author_m4_friend')));
+  await assertFails(getDoc(doc(db('m4_admin_default'), 'friendStreaks', 'dm_m4_author_m4_friend')));
+  await assertFails(getDoc(doc(db('m4_sa_suspended'), 'friendStreaks', 'dm_m4_author_m4_friend')));
+  await assertSucceeds(getDoc(doc(db('m4_sa_active'), 'friendStreaks', 'dm_m4_author_m4_friend')));
+
+  // 18. activityNotifications (recipient + active superadmin ONLY)
+  await assertSucceeds(getDoc(doc(db('m4_author'), 'activityNotifications', 'noti_1')));
+  await assertSucceeds(getDocs(query(collection(db('m4_author'), 'activityNotifications'), where('uid', '==', 'm4_author'), orderBy('createdAt', 'desc'))));
+  await assertFails(getDoc(doc(db('m4_friend'), 'activityNotifications', 'noti_1')));
+  await assertFails(getDoc(doc(db('m4_org_default'), 'activityNotifications', 'noti_1')));
+  await assertFails(getDoc(doc(db('m4_admin_default'), 'activityNotifications', 'noti_1')));
+  await assertFails(getDoc(doc(db('m4_sa_suspended'), 'activityNotifications', 'noti_1')));
+  await assertSucceeds(getDoc(doc(db('m4_sa_active'), 'activityNotifications', 'noti_1')));
+
+  // 19. userPushTokens (owner + active superadmin ONLY)
+  await assertSucceeds(getDoc(doc(db('m4_author'), 'userPushTokens', 'm4_author_tok1')));
+  await assertSucceeds(getDocs(query(collection(db('m4_author'), 'userPushTokens'), where('uid', '==', 'm4_author'))));
+  await assertFails(getDoc(doc(db('m4_stranger'), 'userPushTokens', 'm4_author_tok1')));
+  await assertFails(getDoc(doc(db('m4_org_default'), 'userPushTokens', 'm4_author_tok1')));
+  await assertFails(getDoc(doc(db('m4_admin_default'), 'userPushTokens', 'm4_author_tok1')));
+  await assertFails(getDoc(doc(db('m4_sa_suspended'), 'userPushTokens', 'm4_author_tok1')));
+  await assertSucceeds(getDoc(doc(db('m4_sa_active'), 'userPushTokens', 'm4_author_tok1')));
+
+  // Client writes MUST be denied across ALL 19 M4 collections/subcollections (even for owner & active Super Admin)
+  const writePayloads = [
+    ['publicProfiles', 'm4_author', { uid: 'm4_author', displayName: 'Tampered' }],
+    ['clubs', 'club_forged', { clubId: 'club_forged', name: 'Forged', status: 'active' }],
+    ['clubMembers', 'club_open_m4_stranger', { clubId: 'club_open', uid: 'm4_stranger', status: 'active' }],
+    ['clubRequests', 'creq_forged', { requestId: 'creq_forged', requesterUid: 'm4_stranger', status: 'approved' }],
+    ['clubMeetups', 'meetup_forged', { meetupId: 'meetup_forged', clubId: 'club_open', title: 'Forged' }],
+    ['clubAnnouncements', 'ann_forged', { announcementId: 'ann_forged', clubId: 'club_open', title: 'Forged' }],
+    ['clubSpotlights', 'club_open', { clubId: 'club_open', targetUid: 'm4_stranger', headline: 'Forged' }],
+    ['socialPosts', 'post_forged', { postId: 'post_forged', uid: 'm4_author', visibility: 'public', text: 'Forged' }],
+    ['routeSnaps', 'snap_forged', { snapId: 'snap_forged', uid: 'm4_author', visibility: 'public' }],
+    ['socialComments', 'cmt_forged', { commentId: 'cmt_forged', postId: 'post_public', uid: 'm4_author', text: 'Forged' }],
+    ['socialKudos', 'post_public_m4_author', { id: 'post_public_m4_author', postId: 'post_public', uid: 'm4_author' }],
+    ['closeFriendEdges', 'm4_author_m4_stranger_forged', { ownerUid: 'm4_author', targetUid: 'm4_stranger' }],
+    ['userBlocks', 'm4_author_m4_stranger_forged', { blockerUid: 'm4_author', blockedUid: 'm4_stranger' }],
+    ['contentReports', 'rep_forged', { reportId: 'rep_forged', reporterUid: 'm4_author', status: 'dismissed' }],
+    ['conversations', 'dm_m4_author_m4_stranger', { conversationId: 'dm_m4_author_m4_stranger', type: 'dm', members: ['m4_author', 'm4_stranger'] }],
+    ['friendStreaks', 'dm_m4_author_m4_friend', { id: 'dm_m4_author_m4_friend', members: ['m4_author', 'm4_friend'], streakDays: 999 }],
+    ['activityNotifications', 'noti_forged', { id: 'noti_forged', uid: 'm4_author', read: true }],
+    ['userPushTokens', 'm4_author_tok_forged', { id: 'm4_author_tok_forged', uid: 'm4_author', token: 'forged' }],
+  ];
+  for (const writerUid of ['m4_author', 'm4_captain', 'm4_admin_default', 'm4_sa_active']) {
+    for (const [colName, docId, payload] of writePayloads) {
+      await assertFails(setDoc(doc(db(writerUid), colName, docId), payload));
+    }
+    await assertFails(updateDoc(doc(db(writerUid), 'clubs', 'club_open'), { name: 'Hijacked' }));
+    await assertFails(deleteDoc(doc(db(writerUid), 'socialPosts', 'post_public')));
+    await assertFails(updateDoc(doc(db(writerUid), 'activityNotifications', 'noti_1'), { read: true }));
+    await assertFails(setDoc(doc(db(writerUid), 'conversations', 'dm_m4_author_m4_friend', 'messages', 'msg_forged'), { messageId: 'msg_forged', senderUid: writerUid, text: 'Forged' }));
+    await assertFails(updateDoc(doc(db(writerUid), 'conversations', 'dm_m4_author_m4_friend', 'messages', 'msg_1'), { text: 'Edited' }));
+    await assertFails(deleteDoc(doc(db(writerUid), 'conversations', 'dm_m4_author_m4_friend', 'messages', 'msg_1')));
+  }
+});
+

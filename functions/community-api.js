@@ -26,6 +26,44 @@ const COMMUNITY_MUTATION_PATHS = new Set([
   '/badges/evaluate-retroactive',
   '/badges/sync-my',
   '/badges/ack-seen',
+  '/clubs/save',
+  '/clubs/archive',
+  '/clubs/delete',
+  '/clubs/request',
+  '/clubs/requests/resolve',
+  '/social/post/create',
+  '/social/post/delete',
+  '/social/post/repost',
+  '/social/report/create',
+  '/moderation/reports/resolve',
+  '/inbox/dm/start',
+]);
+
+const COMMUNITY_SOCIAL_MUTATION_PATHS = new Set([
+  '/clubs/join',
+  '/clubs/leave',
+  '/clubs/primary',
+  '/clubs/member/manage',
+  '/clubs/meetup/save',
+  '/clubs/meetup/delete',
+  '/clubs/announcement/save',
+  '/clubs/spotlight/save',
+  '/social/post/kudos',
+  '/social/post/comment',
+  '/social/close-friends/toggle',
+  '/social/block/toggle',
+  '/inbox/request/respond',
+  '/inbox/message/send',
+  '/inbox/message/moderate',
+  '/inbox/read',
+  '/inbox/push-token/save',
+]);
+
+const COMMUNITY_READ_PATHS = new Set([
+  '/clubs/leaderboard',
+  '/social/feed',
+  '/social/snaps',
+  '/media/sign',
 ]);
 
 function exceedsMaxJsonBytes(req, maxBytes = MAX_COMMUNITY_BODY_BYTES) {
@@ -68,7 +106,7 @@ function createCommunityApp({ admin: adminClient, db, storage = null, appCheckMo
         db,
         namespace: 'community_ip',
         identifier: clientIp,
-        limit: 60,
+        limit: 180,
         windowMs: 60 * 1000,
         message: 'Too many community requests from this network. Please wait a moment.',
         memoryOnly: true,
@@ -93,10 +131,29 @@ function createCommunityApp({ admin: adminClient, db, storage = null, appCheckMo
           windowMs: 15 * 60 * 1000,
           message: 'Run upload quota reached for now. Wait a few minutes before submitting again.',
         });
+      } else if (COMMUNITY_SOCIAL_MUTATION_PATHS.has(routePath)) {
+        await enforceRateLimit({
+          db,
+          namespace: 'community_social_u',
+          identifier: identity.uid,
+          limit: 120,
+          windowMs: 5 * 60 * 1000,
+          message: 'Too many community updates right now. Wait a moment before posting again.',
+        });
+      } else if (COMMUNITY_READ_PATHS.has(routePath)) {
+        await enforceRateLimit({
+          db,
+          namespace: 'community_read_u',
+          identifier: identity.uid,
+          limit: 120,
+          windowMs: 60 * 1000,
+          message: 'Feed refresh limit reached briefly. Wait a few seconds and retry.',
+          memoryOnly: true,
+        });
       }
       releaseSlot = getLimiterForDb(db).acquireConcurrency(
         `community_slot:${identity.uid}`,
-        3,
+        5,
         'Too many concurrent community operations. Wait for the active save to finish.',
       );
 

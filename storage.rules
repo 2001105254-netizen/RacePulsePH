@@ -166,6 +166,7 @@ service firebase.storage {
     function canPersonal(action) {
       return request.auth != null && (isPlatformOwner() || (
         firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && profile().get('accessRemoved', false) != true
         && canPersonalWithRole(action, profile().role)
       ));
     }
@@ -214,6 +215,94 @@ service firebase.storage {
           || isPlatformOwner()
           || (firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
             && profile().role == 'superadmin'));
+    }
+    function canClub(action) {
+      let role = profile().role;
+      let fallback = role in ['admin', 'superadmin'];
+      return request.auth != null && (isPlatformOwner() || (
+        firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && profile().get('accessRemoved', false) != true
+        && access().status == 'active'
+        && (role == 'superadmin' || (
+          (role != 'organizer' || profile().approved)
+          && hasStoredPermission(action, fallback)
+          && hasStoredPermission('clubs.view', fallback)
+        ))
+      ));
+    }
+    match /club-assets/{ownerUid}/{clubId}/{file} {
+      allow read: if true;
+      allow create, update: if request.auth != null
+        && request.auth.uid == ownerUid
+        && canClub('clubs.manage')
+        && clubId.matches('^[a-zA-Z0-9_-]{2,64}$')
+        && file.matches('^[a-zA-Z0-9_-][a-zA-Z0-9._-]{0,127}\\.(png|jpg|jpeg|webp|avif|PNG|JPG|JPEG|WEBP|AVIF)$')
+        && request.resource.contentType != null
+        && request.resource.contentType.matches('image/(png|jpeg|jpg|webp|avif)')
+        && request.resource.size < 8 * 1024 * 1024;
+      allow delete: if request.auth != null
+        && canClub('clubs.manage')
+        && (request.auth.uid == ownerUid
+          || isPlatformOwner()
+          || (firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+            && profile().role == 'superadmin'));
+    }
+    match /social-media/{ownerUid}/{postId}/{file} {
+      allow read, delete: if request.auth != null && (
+        request.auth.uid == ownerUid
+        || isPlatformOwner()
+        || (firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+          && profile().get('accessRemoved', false) != true
+          && profile().role == 'superadmin'
+          && access().status == 'active')
+      );
+      allow create, update: if request.auth != null
+        && request.auth.uid == ownerUid
+        && canPersonal('personal.social')
+        && postId.matches('^[a-zA-Z0-9_-]{1,64}$')
+        && request.resource.contentType != null
+        && (
+          (file.matches('^[a-zA-Z0-9_-][a-zA-Z0-9._-]{0,127}\\.(png|jpg|jpeg|webp|avif|PNG|JPG|JPEG|WEBP|AVIF)$')
+            && request.resource.contentType.matches('image/(png|jpeg|jpg|webp|avif)')
+            && request.resource.size < 8 * 1024 * 1024)
+          || (file.matches('^[a-zA-Z0-9_-][a-zA-Z0-9._-]{0,127}\\.(mp4|webm|MP4|WEBM)$')
+            && request.resource.contentType.matches('video/(mp4|webm)')
+            && request.resource.size < 30 * 1024 * 1024)
+        );
+    }
+    function canUploadExistingChatConv(conv) {
+      return (conv.type == 'dm'
+          && conv.status == 'active'
+          && request.auth.uid in conv.get('members', []))
+        || (conv.type == 'club'
+          && conv.status == 'active'
+          && firestore.exists(/databases/(default)/documents/clubMembers/$(conv.clubId + '_' + request.auth.uid))
+          && firestore.get(/databases/(default)/documents/clubMembers/$(conv.clubId + '_' + request.auth.uid)).data.status == 'active');
+    }
+    function canUploadChatMediaConversation(conversationId) {
+      return firestore.exists(/databases/(default)/documents/conversations/$(conversationId))
+        && canUploadExistingChatConv(
+          firestore.get(/databases/(default)/documents/conversations/$(conversationId)).data
+        );
+    }
+    match /chat-media/{conversationId}/{ownerUid}/{file} {
+      allow read, delete: if request.auth != null && (
+        request.auth.uid == ownerUid
+        || isPlatformOwner()
+        || (firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+          && profile().get('accessRemoved', false) != true
+          && profile().role == 'superadmin'
+          && access().status == 'active')
+      );
+      allow create, update: if request.auth != null
+        && request.auth.uid == ownerUid
+        && canPersonal('personal.inbox')
+        && conversationId.matches('^(dm_[a-zA-Z0-9_-]{1,128}_[a-zA-Z0-9_-]{1,128}|club_[a-zA-Z0-9_-]{2,64})$')
+        && file.matches('^[a-zA-Z0-9_-][a-zA-Z0-9._-]{0,127}\\.(png|jpg|jpeg|webp|avif|PNG|JPG|JPEG|WEBP|AVIF)$')
+        && request.resource.contentType != null
+        && request.resource.contentType.matches('image/(png|jpeg|jpg|webp|avif)')
+        && request.resource.size < 8 * 1024 * 1024
+        && canUploadChatMediaConversation(conversationId);
     }
   }
 }

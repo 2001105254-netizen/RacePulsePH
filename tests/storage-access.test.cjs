@@ -143,3 +143,76 @@ test('badge-assets allows admin and superadmin raster uploads under 2MB and bloc
  await assertFails(uploadBytes(ref(env.authenticatedContext('badge_admin_suspended').storage(),'badge-assets/badge_admin_suspended/b_1/crest.png'),image,{contentType:'image/png'}));
  await assertFails(uploadBytes(ref(env.authenticatedContext('badge_admin_removed').storage(),'badge-assets/badge_admin_removed/b_1/crest.png'),image,{contentType:'image/png'}));
 });
+
+test('club-assets allows clubs.manage raster uploads under 8MB and blocks organizer, runner, SVG, >=8MB, and cross-owner paths',async()=>{
+ await env.withSecurityRulesDisabled(async ctx=>{
+  const root=ctx.firestore();
+  await setDoc(doc(root,'users','club_admin'),{uid:'club_admin',role:'admin',approved:true});
+  await setDoc(doc(root,'users','club_org'),{uid:'club_org',role:'organizer',approved:true});
+  await setDoc(doc(root,'users','club_runner'),{uid:'club_runner',role:'runner',approved:true});
+  await setDoc(doc(root,'users','club_admin_no_manage'),{uid:'club_admin_no_manage',role:'admin',approved:true});
+  await setDoc(doc(root,'userAccess','club_admin_no_manage'),{status:'active',scope:'all',raceIds:[],overrides:{'clubs.manage':false}});
+ });
+ const svgBytes=new Uint8Array(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'));
+ const tooBigBytes=new Uint8Array(8*1024*1024);
+ await assertFails(uploadBytes(ref(env.unauthenticatedContext().storage(),'club-assets/club_admin/bgc_crew/logo.png'),image,{contentType:'image/png'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('club_org').storage(),'club-assets/club_org/bgc_crew/logo.png'),image,{contentType:'image/png'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('club_runner').storage(),'club-assets/club_runner/bgc_crew/logo.png'),image,{contentType:'image/png'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('club_admin_no_manage').storage(),'club-assets/club_admin_no_manage/bgc_crew/logo.png'),image,{contentType:'image/png'}));
+ await assertSucceeds(uploadBytes(ref(env.authenticatedContext('club_admin').storage(),'club-assets/club_admin/bgc_crew/logo.png'),image,{contentType:'image/png'}));
+ await assertSucceeds(uploadBytes(ref(env.authenticatedContext('storage_superadmin').storage(),'club-assets/storage_superadmin/bgc_crew/cover.webp'),image,{contentType:'image/webp'}));
+ await assertSucceeds(getBytes(ref(env.unauthenticatedContext().storage(),'club-assets/club_admin/bgc_crew/logo.png')));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('club_admin').storage(),'club-assets/club_admin/bgc_crew/xss.svg'),svgBytes,{contentType:'image/svg+xml'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('club_admin').storage(),'club-assets/club_admin/bgc_crew/huge.png'),tooBigBytes,{contentType:'image/png'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('club_admin').storage(),'club-assets/storage_superadmin/bgc_crew/hijack.png'),image,{contentType:'image/png'}));
+});
+
+test('social-media restricts direct Storage reads to owner/superadmin and enforces raster <8MB or video <30MB with personal.social',async()=>{
+ await env.withSecurityRulesDisabled(async ctx=>{
+  const root=ctx.firestore();
+  await setDoc(doc(root,'users','social_owner'),{uid:'social_owner',role:'runner',approved:true});
+  await setDoc(doc(root,'users','social_peer'),{uid:'social_peer',role:'runner',approved:true});
+  await setDoc(doc(root,'users','social_admin'),{uid:'social_admin',role:'admin',approved:true});
+  await setDoc(doc(root,'users','social_denied'),{uid:'social_denied',role:'runner',approved:true});
+  await setDoc(doc(root,'userAccess','social_denied'),{status:'active',scope:'owned-assigned',raceIds:[],overrides:{'personal.social':false}});
+ });
+ const svgBytes=new Uint8Array(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'));
+ const videoBytes=new Uint8Array([0,0,0,24,102,116,121,112]);
+ await assertSucceeds(uploadBytes(ref(env.authenticatedContext('social_owner').storage(),'social-media/social_owner/post_1/photo.png'),image,{contentType:'image/png'}));
+ await assertSucceeds(uploadBytes(ref(env.authenticatedContext('social_owner').storage(),'social-media/social_owner/post_1/clip.mp4'),videoBytes,{contentType:'video/mp4'}));
+ await assertSucceeds(getBytes(ref(env.authenticatedContext('social_owner').storage(),'social-media/social_owner/post_1/photo.png')));
+ await assertSucceeds(getBytes(ref(env.authenticatedContext('storage_superadmin').storage(),'social-media/social_owner/post_1/photo.png')));
+ await assertFails(getBytes(ref(env.unauthenticatedContext().storage(),'social-media/social_owner/post_1/photo.png')));
+ await assertFails(getBytes(ref(env.authenticatedContext('social_peer').storage(),'social-media/social_owner/post_1/photo.png')));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('social_admin').storage(),'social-media/social_admin/post_1/photo.png'),image,{contentType:'image/png'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('social_denied').storage(),'social-media/social_denied/post_1/photo.png'),image,{contentType:'image/png'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('social_owner').storage(),'social-media/social_owner/post_1/xss.svg'),svgBytes,{contentType:'image/svg+xml'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('social_owner').storage(),'social-media/social_owner/post_1/big.png'),new Uint8Array(8*1024*1024),{contentType:'image/png'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('social_owner').storage(),'social-media/social_owner/post_1/big.mp4'),new Uint8Array(30*1024*1024),{contentType:'video/mp4'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('social_peer').storage(),'social-media/social_owner/post_1/hijack.png'),image,{contentType:'image/png'}));
+});
+
+test('chat-media enforces conversation membership, personal.inbox, raster <8MB, and private Storage reads',async()=>{
+ await env.withSecurityRulesDisabled(async ctx=>{
+  const root=ctx.firestore();
+  await setDoc(doc(root,'users','chat_a'),{uid:'chat_a',role:'runner',approved:true});
+  await setDoc(doc(root,'users','chat_b'),{uid:'chat_b',role:'runner',approved:true});
+  await setDoc(doc(root,'users','chat_outsider'),{uid:'chat_outsider',role:'runner',approved:true});
+  await setDoc(doc(root,'conversations','dm_chat_a_chat_b'),{conversationId:'dm_chat_a_chat_b',type:'dm',status:'active',members:['chat_a','chat_b']});
+  await setDoc(doc(root,'conversations','dm_chat_a_chat_outsider'),{conversationId:'dm_chat_a_chat_outsider',type:'dm',status:'request_pending',members:['chat_a','chat_outsider']});
+  await setDoc(doc(root,'conversations','club_manila_run'),{conversationId:'club_manila_run',type:'club',status:'active',clubId:'manila_run',members:[]});
+  await setDoc(doc(root,'clubMembers','manila_run_chat_a'),{id:'manila_run_chat_a',clubId:'manila_run',uid:'chat_a',status:'active',role:'member'});
+  await setDoc(doc(root,'clubMembers','manila_run_chat_outsider'),{id:'manila_run_chat_outsider',clubId:'manila_run',uid:'chat_outsider',status:'pending',role:'member'});
+ });
+ const svgBytes=new Uint8Array(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'));
+ await assertSucceeds(uploadBytes(ref(env.authenticatedContext('chat_a').storage(),'chat-media/dm_chat_a_chat_b/chat_a/photo.png'),image,{contentType:'image/png'}));
+ await assertSucceeds(uploadBytes(ref(env.authenticatedContext('chat_a').storage(),'chat-media/club_manila_run/chat_a/photo.webp'),image,{contentType:'image/webp'}));
+ await assertSucceeds(getBytes(ref(env.authenticatedContext('chat_a').storage(),'chat-media/dm_chat_a_chat_b/chat_a/photo.png')));
+ await assertFails(getBytes(ref(env.authenticatedContext('chat_b').storage(),'chat-media/dm_chat_a_chat_b/chat_a/photo.png')));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('chat_outsider').storage(),'chat-media/dm_chat_a_chat_b/chat_outsider/intrude.png'),image,{contentType:'image/png'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('chat_a').storage(),'chat-media/dm_chat_a_chat_outsider/chat_a/pending.png'),image,{contentType:'image/png'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('chat_outsider').storage(),'chat-media/club_manila_run/chat_outsider/pending.png'),image,{contentType:'image/png'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('chat_a').storage(),'chat-media/dm_chat_a_chat_b/chat_a/clip.mp4'),image,{contentType:'video/mp4'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('chat_a').storage(),'chat-media/dm_chat_a_chat_b/chat_a/xss.svg'),svgBytes,{contentType:'image/svg+xml'}));
+ await assertFails(uploadBytes(ref(env.authenticatedContext('chat_a').storage(),'chat-media/dm_chat_a_chat_b/chat_a/huge.png'),new Uint8Array(8*1024*1024),{contentType:'image/png'}));
+});

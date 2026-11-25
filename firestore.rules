@@ -1184,5 +1184,350 @@ service cloud.firestore {
       );
       allow create, update, delete: if false;
     }
+
+    // ========== COMMUNITY CLUBS, SOCIAL FEED, INBOX & MODERATION ==========
+    //
+    // Assumed Data Models (all client writes denied; mutations run exclusively
+    // through communityApi via Firebase Admin SDK):
+    // - publicProfiles/{uid}: Non-PII public runner card (uid, displayName,
+    //   username?, photoURL?, bio?, location?, favoriteDistance?,
+    //   primaryClubId, primaryClubName, updatedAt).
+    // - clubs/{clubId}: Running club catalog/settings (clubId, name,
+    //   description, city, scheduleSummary, joinPolicy, modules, primaryColor,
+    //   accentColor, logoUrl, logoStoragePath, coverUrl, coverStoragePath,
+    //   captainUids, linkedBadgeIds, featuredRouteIds, linkedRaceIds,
+    //   memberLimit, billingTier, subscriptionStatus, billingProvider,
+    //   paymongoCustomerId?, paymongoSubscriptionId?, status, memberCount,
+    //   requestCount, createdAt, createdBy, updatedAt, updatedBy).
+    // - clubMembers/{clubId}_{uid}: Membership record (id, clubId, uid, role,
+    //   status, displayName, username?, joinedAt, updatedAt).
+    // - clubRequests/{requestId}: Club creation application (requestId,
+    //   requesterUid, clubName, city, scheduleSummary, notes, contactHandle,
+    //   desiredModules, status, createdAt, updatedAt, reviewedBy?, reviewedAt?,
+    //   reviewNote?, reviewedClubId?).
+    // - clubMeetups/{meetupId}: Club scheduled run (meetupId, clubId, title,
+    //   description, startAtIso, locationName, lat, lon, routeId,
+    //   distanceLabel, status, createdAt, createdBy, updatedAt).
+    // - clubAnnouncements/{announcementId}: Club announcement (announcementId,
+    //   clubId, title, body, pinned, createdAt, createdBy, updatedAt).
+    // - clubSpotlights/{clubId}: Club member spotlight (clubId, targetUid,
+    //   headline, note, featuredAt, featuredBy).
+    // - socialPosts/{postId}: Community post (postId, uid, visibility, text,
+    //   mediaType, mediaItems, attachedBadgeId, attachedClubId, attachedRaceId,
+    //   attachedRunId, location, repostOfPostId, kudosCount, commentsCount,
+    //   repostsCount, createdAt, updatedAt, deletedAt, authorDisplayName,
+    //   authorUsername?, authorPhotoURL?, linkedCourse, hiddenByModeration).
+    // - routeSnaps/{snapId}: Geo-pinned snap mirroring a location post
+    //   (snapId, postId, uid, visibility, lat, lon, label, publicationId,
+    //   raceId, corridorDistanceM, captionPreview, thumbnailPath, thumbnailUrl,
+    //   hiddenByModeration, deletedAt, createdAt).
+    // - socialComments/{commentId}: Post comment (commentId, postId, uid, text,
+    //   replyToCommentId, createdAt, deletedAt, authorDisplayName,
+    //   authorUsername?, hiddenByModeration).
+    // - socialKudos/{postId}_{uid}: Reaction (id, postId, uid, recipientUid,
+    //   createdAt).
+    // - closeFriendEdges/{ownerUid}_{targetUid}: Private close-friend edge
+    //   (id, ownerUid, targetUid, createdAt).
+    // - userBlocks/{blockerUid}_{blockedUid}: Private block edge
+    //   (id, blockerUid, blockedUid, createdAt).
+    // - contentReports/{reportId}: Moderation report (reportId, reporterUid,
+    //   targetType, targetId, targetParentId?, targetUid?, reason, details,
+    //   status, createdAt, updatedAt, resolutionAction?, reviewedBy?,
+    //   reviewedAt?, resolutionNote?).
+    // - conversations/{conversationId}: DM (dm_{uid1}_{uid2}) or club chat
+    //   (club_{clubId}) thread (conversationId, type, members, clubId?,
+    //   clubName?, status, requestedByUid?, requestedToUid?, memberProfiles?,
+    //   lastMessageText, lastMessageAt, lastSenderUid, unreadByUid?,
+    //   createdAt, updatedAt, acceptedAt?).
+    // - conversations/{conversationId}/messages/{messageId}: Chat message
+    //   (messageId, conversationId, senderUid, text, shareCard?, media?,
+    //   createdAt, deletedAt, senderDisplayName, hiddenByModeration,
+    //   moderatedBy?).
+    // - friendStreaks/{dmConversationId}: Friend DM streak (id, members,
+    //   streakDays, graceRemaining, consecutiveActiveDays,
+    //   lastCompletedDateKey, pendingDateKey, pendingSenderUids, updatedAt).
+    // - activityNotifications/{notificationId}: Notification (id, uid, kind,
+    //   actorUid, actorName, targetId, summary, read, createdAt).
+    // - userPushTokens/{uid}_{tokenId}: Push token (id, uid, token, platform,
+    //   updatedAt).
+
+    function isValidEntityUid(uid) {
+      return uid is string
+        && uid.size() > 0
+        && uid.size() <= 128
+        && uid.matches('^[a-zA-Z0-9_.:-]+$');
+    }
+
+    function isValidConversationId(conversationId) {
+      return conversationId is string
+        && conversationId.size() > 0
+        && conversationId.size() <= 300
+        && conversationId.matches('^[a-zA-Z0-9_.:-]+$');
+    }
+
+    function m4AccessForCaller(caller) {
+      let accSnap = get(/databases/$(database)/documents/userAccess/$(request.auth.uid));
+      return accSnap != null
+        ? accSnap.data
+        : {'status': 'active', 'scope': caller.role in ['admin','superadmin'] ? 'all' : 'owned-assigned', 'raceIds': [], 'overrides': {}};
+    }
+
+    function m4IsSuperAdmin() {
+      let callerSnap = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return callerSnap != null
+        && callerSnap.data.role == 'superadmin'
+        && m4AccessForCaller(callerSnap.data).status == 'active';
+    }
+
+    function m4HasPermission(action) {
+      let callerSnap = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return callerSnap != null
+        && permissionForCaller(action, callerSnap.data, m4AccessForCaller(callerSnap.data));
+    }
+
+    function isClubCaptain(clubId) {
+      let clubSnap = isValidId(clubId)
+        ? get(/databases/$(database)/documents/clubs/$(clubId))
+        : null;
+      return clubSnap != null
+        && request.auth.uid in clubSnap.data.get('captainUids', []);
+    }
+
+    function isActiveClubMember(clubId) {
+      let memberSnap = isValidId(clubId)
+        ? get(/databases/$(database)/documents/clubMembers/$(clubId + '_' + request.auth.uid))
+        : null;
+      return memberSnap != null
+        && memberSnap.data.status == 'active';
+    }
+
+    function isOpenActiveClub(clubId) {
+      let clubSnap = isValidId(clubId)
+        ? get(/databases/$(database)/documents/clubs/$(clubId))
+        : null;
+      return clubSnap != null
+        && clubSnap.data.status == 'active'
+        && clubSnap.data.joinPolicy != 'invite_only';
+    }
+
+    function canReadClubContent(clubId) {
+      return m4HasPermission('clubs.view')
+        || isActiveClubMember(clubId)
+        || isOpenActiveClub(clubId);
+    }
+
+    function isBlockedPair(otherUid) {
+      return isValidEntityUid(otherUid) && (
+        exists(/databases/$(database)/documents/userBlocks/$(request.auth.uid + '_' + otherUid))
+        || exists(/databases/$(database)/documents/userBlocks/$(otherUid + '_' + request.auth.uid))
+      );
+    }
+
+    function isCloseFriendOf(ownerUid) {
+      return isValidEntityUid(ownerUid)
+        && exists(/databases/$(database)/documents/closeFriendEdges/$(ownerUid + '_' + request.auth.uid));
+    }
+
+    function canReadVisibleSocialPostData(data) {
+      return data.get('deletedAt', null) == null
+        && data.get('hiddenByModeration', false) != true
+        && !isBlockedPair(data.uid)
+        && (
+          data.visibility == 'public'
+          || (data.visibility == 'friends' && isFriendOf(data.uid))
+          || (data.visibility == 'close_friends' && isFriendOf(data.uid) && isCloseFriendOf(data.uid))
+        );
+    }
+
+    function canReadSocialPostData(data) {
+      return data.uid == request.auth.uid
+        || m4HasPermission('moderation.manage')
+        || canReadVisibleSocialPostData(data);
+    }
+
+    function canReadCommentParentPost(postId, commentUid) {
+      let postSnap = isValidId(postId)
+        ? get(/databases/$(database)/documents/socialPosts/$(postId))
+        : null;
+      return postSnap != null && (
+        postSnap.data.uid == request.auth.uid
+        || (
+          postSnap.data.get('deletedAt', null) == null
+          && postSnap.data.get('hiddenByModeration', false) != true
+          && (postSnap.data.uid == commentUid || !isBlockedPair(postSnap.data.uid))
+          && (
+            postSnap.data.visibility == 'public'
+            || (postSnap.data.visibility == 'friends' && isFriendOf(postSnap.data.uid))
+            || (postSnap.data.visibility == 'close_friends' && isFriendOf(postSnap.data.uid) && isCloseFriendOf(postSnap.data.uid))
+          )
+        )
+      );
+    }
+
+    function canReadConversationById(conversationId) {
+      let convSnap = isValidConversationId(conversationId)
+        ? get(/databases/$(database)/documents/conversations/$(conversationId))
+        : null;
+      return convSnap != null && (
+        (convSnap.data.type == 'dm' && request.auth.uid in convSnap.data.get('members', []))
+        || (convSnap.data.type == 'club' && isActiveClubMember(convSnap.data.get('clubId', '')))
+      );
+    }
+
+    match /publicProfiles/{uid} {
+      allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid);
+      allow create, update, delete: if false;
+    }
+
+    match /clubs/{clubId} {
+      allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid) && (
+        resource.data.status == 'active'
+        || m4HasPermission('clubs.view')
+      );
+      allow create, update, delete: if false;
+    }
+
+    // Keep resource.data.uid == request.auth.uid first so personal membership queries short-circuit cleanly.
+    match /clubMembers/{docId} {
+      allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid) && (
+        resource.data.uid == request.auth.uid
+        || resource.data.status == 'active'
+        || m4HasPermission('clubs.view')
+        || isClubCaptain(resource.data.clubId)
+      );
+      allow create, update, delete: if false;
+    }
+
+    // Keep resource.data.requesterUid == request.auth.uid first so applicant queries short-circuit cleanly.
+    match /clubRequests/{requestId} {
+      allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid) && (
+        resource.data.requesterUid == request.auth.uid
+        || m4HasPermission('clubs.view')
+      );
+      allow create, update, delete: if false;
+    }
+
+    match /clubMeetups/{meetupId} {
+      allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid)
+        && canReadClubContent(resource.data.clubId);
+      allow create, update, delete: if false;
+    }
+
+    match /clubAnnouncements/{announcementId} {
+      allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid)
+        && canReadClubContent(resource.data.clubId);
+      allow create, update, delete: if false;
+    }
+
+    match /clubSpotlights/{clubId} {
+      allow get: if isSignedIn() && !isRemovedAccount(request.auth.uid)
+        && canReadClubContent(resource == null ? clubId : resource.data.get('clubId', clubId));
+      allow list: if isSignedIn() && !isRemovedAccount(request.auth.uid)
+        && canReadClubContent(resource.data.clubId);
+      allow create, update, delete: if false;
+    }
+
+    match /socialPosts/{postId} {
+      allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid)
+        && canReadSocialPostData(resource.data);
+      allow create, update, delete: if false;
+    }
+
+    match /routeSnaps/{snapId} {
+      allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid)
+        && canReadSocialPostData(resource.data);
+      allow create, update, delete: if false;
+    }
+
+    match /socialComments/{commentId} {
+      allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid) && (
+        resource.data.uid == request.auth.uid
+        || (
+          resource.data.get('deletedAt', null) == null
+          && resource.data.get('hiddenByModeration', false) != true
+          && !isBlockedPair(resource.data.uid)
+          && canReadCommentParentPost(resource.data.postId, resource.data.uid)
+        )
+        || m4HasPermission('moderation.manage')
+      );
+      allow create, update, delete: if false;
+    }
+
+    match /socialKudos/{kudoId} {
+      allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid) && (
+        resource.data.uid == request.auth.uid
+        || resource.data.recipientUid == request.auth.uid
+        || m4HasPermission('moderation.manage')
+      );
+      allow create, update, delete: if false;
+    }
+
+    // Strictly private to owner and active Super Admin; targetUid cannot read.
+    match /closeFriendEdges/{edgeId} {
+      allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid) && (
+        resource.data.ownerUid == request.auth.uid
+        || m4IsSuperAdmin()
+      );
+      allow create, update, delete: if false;
+    }
+
+    // Strictly private to blocker, active Super Admin, and moderation.manage; blockedUid cannot read.
+    match /userBlocks/{blockId} {
+      allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid) && (
+        resource.data.blockerUid == request.auth.uid
+        || m4HasPermission('moderation.manage')
+      );
+      allow create, update, delete: if false;
+    }
+
+    match /contentReports/{reportId} {
+      allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid) && (
+        resource.data.reporterUid == request.auth.uid
+        || m4HasPermission('moderation.manage')
+      );
+      allow create, update, delete: if false;
+    }
+
+    // Keep request.auth.uid in resource.data.members first (without .get()) so array-contains list queries match.
+    match /conversations/{conversationId} {
+      allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid) && (
+        request.auth.uid in resource.data.members
+        || m4HasPermission('moderation.manage')
+        || (resource.data.type == 'club' && isActiveClubMember(resource.data.clubId))
+      );
+      allow create, update, delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid) && (
+          m4HasPermission('moderation.manage')
+          || canReadConversationById(conversationId)
+        );
+        allow create, update, delete: if false;
+      }
+    }
+
+    match /friendStreaks/{streakId} {
+      allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid) && (
+        request.auth.uid in resource.data.members
+        || m4IsSuperAdmin()
+      );
+      allow create, update, delete: if false;
+    }
+
+    match /activityNotifications/{notificationId} {
+      allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid) && (
+        resource.data.uid == request.auth.uid
+        || m4IsSuperAdmin()
+      );
+      allow create, update, delete: if false;
+    }
+
+    match /userPushTokens/{tokenId} {
+      allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid) && (
+        resource.data.uid == request.auth.uid
+        || m4IsSuperAdmin()
+      );
+      allow create, update, delete: if false;
+    }
   }
 }
