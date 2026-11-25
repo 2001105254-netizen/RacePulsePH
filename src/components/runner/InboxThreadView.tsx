@@ -647,21 +647,21 @@ export default function InboxThreadView({
                 type="button"
                 onClick={clearPendingPhoto}
                 aria-label="Remove attached photo"
-                className="absolute -top-1.5 -right-1.5 min-h-7 min-w-7 rounded-full bg-zinc-900 text-white flex items-center justify-center cursor-pointer"
+                className="absolute -top-2 -right-2 min-h-11 min-w-11 rounded-full bg-zinc-900 text-white flex items-center justify-center cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             </div>
           )}
           {pendingShareCard && (
-            <span className="min-h-10 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-2">
+            <span className="min-h-11 pl-3 pr-1 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-1.5">
               <Award className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />
               <span>{pendingShareCard.title}</span>
               <button
                 type="button"
                 onClick={() => setPendingShareCard(null)}
                 aria-label="Remove share card"
-                className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
+                className="min-h-11 min-w-11 flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" aria-hidden="true" />
               </button>

@@ -706,7 +706,7 @@ export default function RunnerInboxPanel({
                       type="button"
                       onClick={onOpenFriends}
                       aria-label="Find friends"
-                      className="min-h-11 lg:min-h-9 px-2.5 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-1.5 cursor-pointer"
+                      className="min-h-11 min-w-11 lg:min-h-9 px-2.5 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                       <UserPlus className="w-4 h-4 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
                       {!isCompact && <span>Friends</span>}
