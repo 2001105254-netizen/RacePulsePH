@@ -63,12 +63,13 @@ function createAccessApp({ admin: adminClient, db, appCheckMode } = {}) {
       try { identity = await adminClient.auth().verifyIdToken(bearer, true); } catch { return res.status(401).json({ error: 'Your session has expired.' }); }
 
       const isMutation = ['/save', '/restore', '/remove'].includes(path);
+      const isHeartbeat = path === '/presence/heartbeat';
       await enforceRateLimit({
         db,
-        namespace: isMutation ? 'access_mut_u' : 'access_uid',
+        namespace: isMutation ? 'access_mut_u' : isHeartbeat ? 'access_hb_u' : 'access_uid',
         identifier: identity.uid,
-        limit: isMutation ? 20 : 60,
-        windowMs: 60 * 1000,
+        limit: isMutation ? 20 : isHeartbeat ? 12 : path === '/telemetry' ? 30 : 60,
+        windowMs: isHeartbeat ? 15 * 60 * 1000 : 60 * 1000,
         message: 'Too many access requests. Please wait a moment.',
         memoryOnly: !isMutation,
       });

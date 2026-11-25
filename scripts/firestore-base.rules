@@ -20,6 +20,7 @@ service cloud.firestore {
     match /payments/{id} { allow read, write: if false; }
     match /pendingRegistrations/{id} { allow read, write: if false; }
     match /bibClaimLocks/{lockId} { allow read, write: if false; }
+    match /activePresence/{sessionHash} { allow read, write: if false; }
 
     function callerDoc() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid));
@@ -1283,6 +1284,11 @@ service cloud.firestore {
         || m4IsSuperAdmin()
       );
       allow create, update, delete: if false;
+    }
+
+    match /systemTelemetry/{docId} {
+      allow read: if isSignedIn() && !isRemovedAccount(request.auth.uid) && isSuperAdmin();
+      allow write: if false;
     }
   }
 }

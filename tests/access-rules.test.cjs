@@ -1841,3 +1841,108 @@ test('Milestone 4 clubs, social, inbox, moderation, and notifications enforce le
   }
 });
 
+test('activePresence is completely locked from clients and systemTelemetry is active Super Admin read-only', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const root = ctx.firestore();
+    const saUser = { uid: 'superadmin', role: 'superadmin', approved: true };
+    const saAccess = policy.accessFor(saUser);
+    saAccess.permissions = Object.fromEntries(policy.keys.map((key) => [key, policy.can(saUser, saAccess, key)]));
+    await setDoc(doc(root, 'userAccess', 'superadmin'), saAccess);
+
+    await setDoc(doc(root, 'users', 'm5_sa_suspended'), {
+      uid: 'm5_sa_suspended',
+      role: 'superadmin',
+      approved: true,
+      email: 'm5_sa_suspended@example.com',
+      displayName: 'Suspended SA',
+      createdAt: '2026-11-25',
+    });
+    await setDoc(doc(root, 'userAccess', 'm5_sa_suspended'), {
+      status: 'suspended',
+      scope: 'all',
+      raceIds: [],
+      overrides: {},
+      permissions: {},
+    });
+
+    await setDoc(doc(root, 'users', 'm5_sa_removed'), {
+      uid: 'm5_sa_removed',
+      role: 'superadmin',
+      approved: true,
+      email: 'm5_sa_removed@example.com',
+      displayName: 'Removed SA',
+      createdAt: '2026-11-25',
+    });
+    await setDoc(doc(root, 'userAccess', 'm5_sa_removed'), saAccess);
+    await setDoc(doc(root, 'removedAccounts', 'm5_sa_removed'), {
+      uid: 'm5_sa_removed',
+      removedAt: '2026-11-25T00:00:00Z',
+    });
+
+    await setDoc(doc(root, 'activePresence', 'sess_hash_1'), {
+      sessionHash: 'sess_hash_1',
+      surface: 'runner',
+      lastSeenAt: '2026-11-25T04:00:00Z',
+      expiresAt: '2026-11-25T04:05:00Z',
+    });
+    await setDoc(doc(root, 'systemTelemetry', 'storageSummary'), {
+      docId: 'storageSummary',
+      totalFiles: 42,
+      totalBytes: 1024000,
+      updatedAt: '2026-11-25T04:00:00Z',
+    });
+    await setDoc(doc(root, 'systemTelemetry', 'day_2026-11-25_s0'), {
+      docId: 'day_2026-11-25_s0',
+      dateKey: '2026-11-25',
+      uniqueSessions: 12,
+    });
+  });
+
+  const anonDb = env.unauthenticatedContext().firestore();
+  await assertFails(getDoc(doc(anonDb, 'activePresence', 'sess_hash_1')));
+  await assertFails(getDocs(collection(anonDb, 'activePresence')));
+  await assertFails(setDoc(doc(anonDb, 'activePresence', 'sess_anon'), { sessionHash: 'sess_anon' }));
+  await assertFails(getDoc(doc(anonDb, 'systemTelemetry', 'storageSummary')));
+  await assertFails(getDocs(collection(anonDb, 'systemTelemetry')));
+  await assertFails(setDoc(doc(anonDb, 'systemTelemetry', 'forged'), { totalFiles: 0 }));
+
+  // runner, organizer, and admin are denied both read and write on activePresence and systemTelemetry
+  for (const role of ['runner', 'organizer', 'admin']) {
+    const roleDb = db(role);
+    await assertFails(getDoc(doc(roleDb, 'activePresence', 'sess_hash_1')));
+    await assertFails(getDocs(collection(roleDb, 'activePresence')));
+    await assertFails(setDoc(doc(roleDb, 'activePresence', `sess_${role}`), { sessionHash: `sess_${role}` }));
+    await assertFails(updateDoc(doc(roleDb, 'activePresence', 'sess_hash_1'), { surface: 'tampered' }));
+    await assertFails(deleteDoc(doc(roleDb, 'activePresence', 'sess_hash_1')));
+
+    await assertFails(getDoc(doc(roleDb, 'systemTelemetry', 'storageSummary')));
+    await assertFails(getDocs(collection(roleDb, 'systemTelemetry')));
+    await assertFails(setDoc(doc(roleDb, 'systemTelemetry', `forged_${role}`), { totalFiles: 99 }));
+    await assertFails(updateDoc(doc(roleDb, 'systemTelemetry', 'storageSummary'), { totalFiles: 99 }));
+    await assertFails(deleteDoc(doc(roleDb, 'systemTelemetry', 'storageSummary')));
+  }
+
+  // superadmin is denied read and write on activePresence
+  await assertFails(getDoc(doc(db('superadmin'), 'activePresence', 'sess_hash_1')));
+  await assertFails(getDocs(collection(db('superadmin'), 'activePresence')));
+  await assertFails(setDoc(doc(db('superadmin'), 'activePresence', 'sess_sa'), { sessionHash: 'sess_sa' }));
+  await assertFails(updateDoc(doc(db('superadmin'), 'activePresence', 'sess_hash_1'), { surface: 'tampered' }));
+  await assertFails(deleteDoc(doc(db('superadmin'), 'activePresence', 'sess_hash_1')));
+
+  // Active superadmin can read systemTelemetry, and is denied write on systemTelemetry
+  await assertSucceeds(getDoc(doc(db('superadmin'), 'systemTelemetry', 'storageSummary')));
+  await assertSucceeds(getDoc(doc(db('superadmin'), 'systemTelemetry', 'day_2026-11-25_s0')));
+  await assertSucceeds(getDocs(collection(db('superadmin'), 'systemTelemetry')));
+  await assertFails(setDoc(doc(db('superadmin'), 'systemTelemetry', 'forged_sa'), { totalFiles: 0 }));
+  await assertFails(updateDoc(doc(db('superadmin'), 'systemTelemetry', 'storageSummary'), { totalFiles: 0 }));
+  await assertFails(deleteDoc(doc(db('superadmin'), 'systemTelemetry', 'storageSummary')));
+
+  // Suspended or removed Super Admin is denied read and write on systemTelemetry
+  await assertFails(getDoc(doc(db('m5_sa_suspended'), 'systemTelemetry', 'storageSummary')));
+  await assertFails(getDocs(collection(db('m5_sa_suspended'), 'systemTelemetry')));
+  await assertFails(setDoc(doc(db('m5_sa_suspended'), 'systemTelemetry', 'forged_susp'), { totalFiles: 0 }));
+  await assertFails(getDoc(doc(db('m5_sa_removed'), 'systemTelemetry', 'storageSummary')));
+  await assertFails(getDocs(collection(db('m5_sa_removed'), 'systemTelemetry')));
+});
+
+

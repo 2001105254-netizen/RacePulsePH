@@ -16,6 +16,9 @@ exports.accountApi = require('./auth-api').accountApi;
 exports.raceBibClaimApi = require('./race-bib-claim-api').raceBibClaimApi;
 exports.routeApi = require('./route-api').routeApi;
 exports.communityApi = require('./community-api').communityApi;
+const storageTelemetry = require('./storage-telemetry');
+exports.onStorageObjectFinalized = storageTelemetry.onStorageObjectFinalized;
+exports.onStorageObjectDeleted = storageTelemetry.onStorageObjectDeleted;
 const db = admin.firestore();
 
 const paymongoSecretKey = defineSecret('PAYMONGO_SECRET_KEY');

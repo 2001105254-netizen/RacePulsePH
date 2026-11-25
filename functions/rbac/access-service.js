@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const policy = require('./access-policy');
+const { getSystemTelemetrySnapshot, recordPresenceHeartbeat } = require('./telemetry-service');
 function fail(message, status = 400) { throw Object.assign(new Error(message), { status }); }
 function createAccessService(db) {
   const userRef = uid => db.doc(`users/${uid}`), accessRef = uid => db.doc(`userAccess/${uid}`);
@@ -9,6 +10,14 @@ function createAccessService(db) {
     if (!actor) fail('Your app account is unavailable.', 403);
     const actorAccess = policy.accessFor(actor, actorState.data());
     if (actorAccess.status !== 'active') fail('Your account access is suspended.', 403);
+    if (path === '/presence/heartbeat') {
+      return recordPresenceHeartbeat(db, {
+        uid: actorUid,
+        role: actor.role,
+        platform: input?.platform || 'web',
+        workspace: input?.workspace || 'personal',
+      });
+    }
     if (path === '/session') {
       const existingPerms = actorState.exists ? (actorState.data()?.permissions || {}) : null;
       const missingPermissionKey = !actorState.exists || policy.keys.some(key => typeof existingPerms[key] !== 'boolean');
@@ -45,6 +54,11 @@ function createAccessService(db) {
       return { uid: actorUid, role: actor.role, authority: policy.isAuthority(actor, actorAccess), permissions: Object.fromEntries(policy.keys.map(key => [key, policy.can(actor, actorAccess, key)])), scope: actorAccess.scope, allowedRaceIds, ownSplits, revision: actorAccess.revision };
     }
     if (!policy.isAuthority(actor, actorAccess)) fail('Super Admin access required.', 403);
+    if (path === '/telemetry') {
+      return getSystemTelemetrySnapshot(db, {
+        forceRefresh: input?.forceRefresh === true,
+      });
+    }
     if (typeof input?.uid !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(input.uid)) fail('Invalid user.');
     if (path === '/history') {
       const rows = await db.collection('accessHistory').where('targetUid', '==', input.uid).orderBy('at', 'desc').limit(100).get();

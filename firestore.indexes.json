@@ -179,6 +179,14 @@
         { "fieldPath": "uid", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "systemTelemetry",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "kind", "order": "ASCENDING" },
+        { "fieldPath": "dayKey", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [
@@ -199,6 +207,14 @@
       "fieldPath": "expiresAt",
       "ttl": true,
       "indexes": []
+    },
+    {
+      "collectionGroup": "activePresence",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" }
+      ]
     }
   ]
 }
