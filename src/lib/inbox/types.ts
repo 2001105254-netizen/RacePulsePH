@@ -19,12 +19,17 @@ export interface InboxConversationRecord {
   type: InboxConversationType;
   members: string[];
   clubId?: string;
+  clubName?: string;
+  memberProfiles?: Record<string, { displayName: string; username?: string }>;
   status: 'active' | 'request_pending';
   requestedByUid?: string;
+  requestedToUid?: string;
   lastMessageText: string;
   lastMessageAt: string;
   lastSenderUid: string;
   unreadByUid?: Record<string, number>;
+  createdAt?: string;
+  acceptedAt?: string;
   updatedAt: string;
 }
 
@@ -36,6 +41,7 @@ export interface InboxMessageRecord {
   shareCard?: InboxShareCard;
   media?: InboxChatMedia;
   senderDisplayName?: string;
+  hiddenByModeration?: boolean;
   createdAt: string;
   deletedAt: string | null;
 }

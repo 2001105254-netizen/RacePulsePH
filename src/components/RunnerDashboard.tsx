@@ -72,10 +72,10 @@ import WorkspaceShell from './WorkspaceShell';
 import AchievementUnlockToast from './runner/AchievementUnlockToast';
 import RunnerExplorePanel, { type ExploreCourseRunTarget, type ExploreMetrics } from './runner/RunnerExplorePanel';
 import RunnerHomePanel from './runner/RunnerHomePanel';
-import RunnerInboxPreviewPanel, {
+import RunnerInboxPanel, {
   type InboxFriendRequestItem,
   type InboxRaceInviteItem,
-} from './runner/RunnerInboxPreviewPanel';
+} from './runner/RunnerInboxPanel';
 import {
   RunnerOfflineBanner,
   RunnerQueueSkeleton,
@@ -249,6 +249,11 @@ export default function RunnerDashboard({
   const [requestedInboxTarget, setRequestedInboxTarget] = useState<
     { type: 'club'; clubId: string } | { type: 'dm'; targetUid: string } | null
   >(null);
+  const [inboxExtraUnread, setInboxExtraUnread] = useState(0);
+
+  useEffect(() => {
+    setInboxExtraUnread(0);
+  }, [profile.uid]);
 
   const handleExploreMetricsChange = useCallback((next: ExploreMetrics) => {
     setExploreMetrics((prev) =>
@@ -850,19 +855,26 @@ export default function RunnerDashboard({
 
   const { reminders, dismiss, notificationPermission, requestAlerts } = useRunnerReminders(runnerProfiles);
 
-  const inboxUnreadCount = countInboxUnreadTotal({
-    pendingRequestsCount: incomingRequests.length,
-    pendingInvitesCount: raceInvites.length,
-    remindersCount: reminders.length,
-  });
+  const inboxUnreadCount =
+    countInboxUnreadTotal({
+      pendingRequestsCount: incomingRequests.length,
+      pendingInvitesCount: raceInvites.length,
+      remindersCount: reminders.length,
+    }) + inboxExtraUnread;
 
-  const friendFeed = useMemo(
-    () => buildHomeFriendFeed(Object.values(friendProfilesByUid), friendActivitiesByUid),
-    [friendProfilesByUid, friendActivitiesByUid],
+  const friendProfilesList = useMemo(
+    () => Object.values(friendProfilesByUid),
+    [friendProfilesByUid],
   );
 
-  // Viewport lock: Explore & You (passes/friends) lock 100dvh; Home, Record, Inbox, You Overview/Engraving, and Forms scroll cleanly
+  const friendFeed = useMemo(
+    () => buildHomeFriendFeed(friendProfilesList, friendActivitiesByUid),
+    [friendProfilesList, friendActivitiesByUid],
+  );
+
+  // Viewport lock: Inbox, Explore & You (passes/friends) lock 100dvh; Home, Record, You Overview/Engraving, and Forms scroll cleanly
   const isLockedTab =
+    tab === 'inbox' ||
     (tab === 'explore' && (exploreSection !== 'races' || !eventsInFormFlow)) ||
     (tab === 'you' && (youSection === 'passes' || youSection === 'friends'));
   const isLocked = isDesktop && isLockedTab;
@@ -1967,12 +1979,25 @@ export default function RunnerDashboard({
           )}
 
           {tab === 'inbox' && allowedTabs.includes('inbox') && (
-            <RunnerInboxPreviewPanel
+            <RunnerInboxPanel
+              profile={profile}
               incomingRequests={incomingRequests}
               raceInvites={raceInvites}
               reminders={reminders}
+              friends={friendProfilesList}
+              races={sharedRaces}
+              recordedRuns={recordedRuns}
+              badgeCatalog={badgeCatalog}
+              userBadges={userBadges}
               canFriends={canFriends}
               canInvites={canInvites}
+              isDesktop={isDesktop}
+              isSplitPane={isSplitPane}
+              isCompact={isCompact}
+              requestedTarget={requestedInboxTarget}
+              onRequestedTargetHandled={() => setRequestedInboxTarget(null)}
+              onMobileThreadOpenChange={setMobileCanvasActive}
+              onUnreadSummaryChange={setInboxExtraUnread}
               onAcceptRequest={handleAcceptFriendRequest}
               onDeclineRequest={handleDeclineFriendRequest}
               onOpenInvite={handleOpenRaceInvite}
@@ -1993,6 +2018,36 @@ export default function RunnerDashboard({
                       setYouSection('friends');
                       selectTab('you');
                     }
+                  : undefined
+              }
+              onOpenExploreRace={
+                allowedTabs.includes('explore')
+                  ? (raceId) => {
+                      setPendingDeepLinkRaceId(raceId);
+                      switchTabThen('explore', () => {
+                        setExploreSection('races');
+                        setExploreRacesFilter('open');
+                      });
+                    }
+                  : undefined
+              }
+              onOpenExploreClub={
+                allowedTabs.includes('explore')
+                  ? () => {
+                      switchTabThen('explore', () => {
+                        setExploreSection('clubs');
+                      });
+                    }
+                  : undefined
+              }
+              onOpenBadges={
+                allowedTabs.includes('you')
+                  ? () => switchTabThen('you', () => setYouSection('badges'))
+                  : undefined
+              }
+              onOpenRuns={
+                allowedTabs.includes('you')
+                  ? () => switchTabThen('you', () => setYouSection('runs'))
                   : undefined
               }
             />

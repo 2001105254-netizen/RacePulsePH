@@ -5,6 +5,15 @@ import {
 } from '../badges/e2eFixtures';
 import { validateClubAssetUploadFile } from './client';
 import { draftToPreviewClub, validateAndBuildClubSavePayload, type ClubFormDraft } from './studioDraft';
+import {
+  buildDmConversationId,
+  type ActivityNotificationRecord,
+  type FriendStreakRecord,
+  type InboxChatMedia,
+  type InboxConversationRecord,
+  type InboxMessageRecord,
+  type InboxShareCard,
+} from '../inbox/types';
 import type {
   ClubAnnouncementRecord,
   ClubDefinition,
@@ -46,6 +55,7 @@ export const E2E_CLOSE_FRIENDS_KEY = 'racepulse_e2e_close_friends';
 export const E2E_USER_BLOCKS_KEY = 'racepulse_e2e_user_blocks';
 export const E2E_ROUTE_SNAPS_KEY = 'racepulse_e2e_route_snaps';
 export const E2E_CONVERSATIONS_KEY = 'racepulse_e2e_conversations';
+export const E2E_INBOX_MESSAGES_KEY = 'racepulse_e2e_inbox_messages';
 export const E2E_STREAKS_KEY = 'racepulse_e2e_friend_streaks';
 export const E2E_NOTIFICATIONS_KEY = 'racepulse_e2e_notifications';
 
@@ -665,6 +675,266 @@ export function buildDevPublicRunnerProfileFixture(
     favoriteDistance: '21K',
     updatedAt: new Date().toISOString(),
   };
+}
+
+export function buildDevStarterInboxData(
+  myUid: string,
+  myDisplayName: string,
+  nowIso = new Date().toISOString(),
+): {
+  conversations: InboxConversationRecord[];
+  messages: InboxMessageRecord[];
+  streaks: FriendStreakRecord[];
+  notifications: ActivityNotificationRecord[];
+} {
+  const friendUid = 'e2e-friend-1';
+  const dmId = buildDmConversationId(myUid, friendUid);
+  const clubConvId = 'club_manila_sunrise_pacers';
+
+  const conversations: InboxConversationRecord[] = [
+    {
+      conversationId: dmId,
+      type: 'dm',
+      members: [myUid, friendUid].sort(),
+      status: 'active',
+      memberProfiles: {
+        [myUid]: { displayName: myDisplayName },
+        [friendUid]: { displayName: 'Maya Santos', username: 'maya_pacers' },
+      },
+      lastMessageText: 'Warmup at Roxas Blvd 05:15 AM?',
+      lastMessageAt: nowIso,
+      lastSenderUid: friendUid,
+      unreadByUid: { [myUid]: 1, [friendUid]: 0 },
+      updatedAt: nowIso,
+    },
+    {
+      conversationId: clubConvId,
+      type: 'club',
+      clubId: 'manila_sunrise_pacers',
+      clubName: 'Manila Sunrise Pacers',
+      members: [],
+      status: 'active',
+      lastMessageText: 'Saturday long run pacers posted!',
+      lastMessageAt: nowIso,
+      lastSenderUid: friendUid,
+      updatedAt: nowIso,
+    },
+  ];
+
+  const messages: InboxMessageRecord[] = [
+    {
+      messageId: 'e2e_msg_1',
+      conversationId: dmId,
+      senderUid: friendUid,
+      senderDisplayName: 'Maya Santos',
+      text: 'Warmup at Roxas Blvd 05:15 AM?',
+      createdAt: nowIso,
+      deletedAt: null,
+    },
+    {
+      messageId: 'e2e_msg_club_1',
+      conversationId: clubConvId,
+      senderUid: friendUid,
+      senderDisplayName: 'Maya Santos',
+      text: 'Saturday long run pacers posted!',
+      createdAt: nowIso,
+      deletedAt: null,
+    },
+  ];
+
+  const streaks: FriendStreakRecord[] = [
+    {
+      id: dmId,
+      members: [myUid, friendUid].sort(),
+      streakDays: 3,
+      graceRemaining: 1,
+      consecutiveActiveDays: 3,
+      lastCompletedDateKey: nowIso.slice(0, 10),
+      pendingDateKey: null,
+      pendingSenderUids: [],
+      updatedAt: nowIso,
+    },
+  ];
+
+  const notifications: ActivityNotificationRecord[] = [
+    {
+      id: 'e2e_notif_kudos_1',
+      uid: myUid,
+      kind: 'kudos',
+      actorUid: friendUid,
+      actorName: 'Maya Santos',
+      targetId: 'e2e_post_pub_1',
+      summary: 'Maya Santos gave kudos to your morning post.',
+      read: false,
+      createdAt: nowIso,
+    },
+  ];
+
+  return { conversations, messages, streaks, notifications };
+}
+
+export function startDevDmFixture(
+  existingConversations: readonly InboxConversationRecord[],
+  input: {
+    myUid: string;
+    myDisplayName: string;
+    targetUid: string;
+    targetDisplayName: string;
+    targetUsername?: string;
+    nowIso?: string;
+  },
+): { conversations: InboxConversationRecord[]; conversation: InboxConversationRecord } {
+  const nowIso = input.nowIso || new Date().toISOString();
+  const convId = buildDmConversationId(input.myUid, input.targetUid);
+  const existing = existingConversations.find((c) => c.conversationId === convId);
+  if (existing) {
+    return { conversations: [...existingConversations], conversation: existing };
+  }
+  const conversation: InboxConversationRecord = {
+    conversationId: convId,
+    type: 'dm',
+    members: [input.myUid, input.targetUid].sort(),
+    status: 'active',
+    memberProfiles: {
+      [input.myUid]: { displayName: input.myDisplayName },
+      [input.targetUid]: {
+        displayName: input.targetDisplayName,
+        ...(input.targetUsername ? { username: input.targetUsername } : {}),
+      },
+    },
+    lastMessageText: '',
+    lastMessageAt: '',
+    lastSenderUid: '',
+    unreadByUid: { [input.myUid]: 0, [input.targetUid]: 0 },
+    updatedAt: nowIso,
+  };
+  const conversations = [conversation, ...existingConversations];
+  writeDevSessionJson(E2E_CONVERSATIONS_KEY, conversations);
+  return { conversations, conversation };
+}
+
+export function sendDevInboxMessageFixture(
+  existingConversations: readonly InboxConversationRecord[],
+  existingMessages: readonly InboxMessageRecord[],
+  existingStreaks: readonly FriendStreakRecord[],
+  input: {
+    conversationId: string;
+    messageId: string;
+    senderUid: string;
+    senderDisplayName: string;
+    text?: string;
+    shareCard?: InboxShareCard;
+    media?: InboxChatMedia;
+    nowIso?: string;
+  },
+): {
+  conversations: InboxConversationRecord[];
+  messages: InboxMessageRecord[];
+  streaks: FriendStreakRecord[];
+  created: InboxMessageRecord;
+} {
+  const nowIso = input.nowIso || new Date().toISOString();
+  const created: InboxMessageRecord = {
+    messageId: input.messageId,
+    conversationId: input.conversationId,
+    senderUid: input.senderUid,
+    senderDisplayName: input.senderDisplayName,
+    text: (input.text || '').trim(),
+    ...(input.shareCard ? { shareCard: input.shareCard } : {}),
+    ...(input.media ? { media: input.media } : {}),
+    createdAt: nowIso,
+    deletedAt: null,
+  };
+  const preview =
+    created.text ||
+    (created.media ? '[Photo]' : '') ||
+    (created.shareCard ? `Shared: ${created.shareCard.title}` : 'New message');
+
+  const conversations = existingConversations.map((c) =>
+    c.conversationId === input.conversationId
+      ? {
+          ...c,
+          lastMessageText: preview.slice(0, 140),
+          lastMessageAt: nowIso,
+          lastSenderUid: input.senderUid,
+          unreadByUid: { ...(c.unreadByUid || {}), [input.senderUid]: 0 },
+          updatedAt: nowIso,
+        }
+      : c,
+  );
+  const messages = [...existingMessages, created];
+  const streaks = existingStreaks.map((s) =>
+    s.id === input.conversationId
+      ? { ...s, streakDays: Math.max(1, s.streakDays), updatedAt: nowIso }
+      : s,
+  );
+  writeDevSessionJson(E2E_CONVERSATIONS_KEY, conversations);
+  writeDevSessionJson(E2E_INBOX_MESSAGES_KEY, messages);
+  writeDevSessionJson(E2E_STREAKS_KEY, streaks);
+  return { conversations, messages, streaks, created };
+}
+
+export function respondDevMessageRequestFixture(
+  existingConversations: readonly InboxConversationRecord[],
+  conversationId: string,
+  decision: 'accept' | 'decline',
+  nowIso = new Date().toISOString(),
+): InboxConversationRecord[] {
+  const next =
+    decision === 'accept'
+      ? existingConversations.map((c) =>
+          c.conversationId === conversationId
+            ? { ...c, status: 'active' as const, acceptedAt: nowIso, updatedAt: nowIso }
+            : c,
+        )
+      : existingConversations.filter((c) => c.conversationId !== conversationId);
+  writeDevSessionJson(E2E_CONVERSATIONS_KEY, next);
+  return next;
+}
+
+export function moderateDevInboxMessageFixture(
+  existingMessages: readonly InboxMessageRecord[],
+  conversationId: string,
+  messageId: string,
+  nowIso = new Date().toISOString(),
+): InboxMessageRecord[] {
+  const next = existingMessages.map((m) =>
+    m.conversationId === conversationId && m.messageId === messageId
+      ? { ...m, deletedAt: nowIso, hiddenByModeration: true }
+      : m,
+  );
+  writeDevSessionJson(E2E_INBOX_MESSAGES_KEY, next);
+  return next;
+}
+
+export function markDevInboxReadFixture(
+  existingConversations: readonly InboxConversationRecord[],
+  existingNotifications: readonly ActivityNotificationRecord[],
+  input: {
+    conversationId?: string;
+    myUid: string;
+    notificationIds?: readonly string[];
+    markAllNotifications?: boolean;
+  },
+): {
+  conversations: InboxConversationRecord[];
+  notifications: ActivityNotificationRecord[];
+} {
+  const idSet = new Set(input.notificationIds || []);
+  const conversations = input.conversationId
+    ? existingConversations.map((c) =>
+        c.conversationId === input.conversationId
+          ? { ...c, unreadByUid: { ...(c.unreadByUid || {}), [input.myUid]: 0 } }
+          : c,
+      )
+    : [...existingConversations];
+
+  const notifications = existingNotifications.map((n) =>
+    input.markAllNotifications || idSet.has(n.id) ? { ...n, read: true } : n,
+  );
+  writeDevSessionJson(E2E_CONVERSATIONS_KEY, conversations);
+  writeDevSessionJson(E2E_NOTIFICATIONS_KEY, notifications);
+  return { conversations, notifications };
 }
 
 export type { ClubAnnouncementRecord, ClubLeaderboardEntry, ClubMeetupRecord, ClubSpotlightRecord };
