@@ -34,6 +34,24 @@ export function triggerPercent(current: number, threshold: number): number {
   return Math.min(999, Math.round((safeCurrent / safeThreshold) * 1000) / 10);
 }
 
+export function formatTelemetryTimestampPht(isoTimestamp: string): string {
+  const parsed = new Date(isoTimestamp);
+  if (Number.isNaN(parsed.getTime())) {
+    return isoTimestamp;
+  }
+  const formatted = new Intl.DateTimeFormat('en-PH', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  }).format(parsed);
+  return `${formatted} PHT`;
+}
+
 export function triggerStatusLabel(status: TelemetryTriggerStatus): string {
   if (status === 'scale') return 'Scale';
   if (status === 'watch') return 'Watch';

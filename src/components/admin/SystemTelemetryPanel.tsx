@@ -11,11 +11,11 @@ import {
   ShieldAlert,
   Users,
 } from 'lucide-react';
-import { formatDateTime } from '../../lib/preciseTime';
 import { fetchSystemTelemetry } from '../../lib/telemetry/client';
 import {
   formatBytes,
   formatCompactCount,
+  formatTelemetryTimestampPht,
   triggerPercent,
   triggerStatusLabel,
 } from '../../lib/telemetry/formatters';
@@ -139,7 +139,7 @@ export default function SystemTelemetryPanel({
           </div>
           <p className="text-xs sm:text-sm text-[var(--text-secondary)]">
             {snapshot
-              ? `Updated ${formatDateTime(snapshot.generatedAt)} (${snapshot.cache.cached ? `cached ${snapshot.cache.ageSeconds}s` : 'fresh snapshot'})`
+              ? `Updated ${formatTelemetryTimestampPht(snapshot.generatedAt)} (${snapshot.cache.cached ? `cached ${snapshot.cache.ageSeconds}s` : 'fresh snapshot'})`
               : 'Live active users, storage sizing, Firestore counts, and ADR-003 scaling headroom.'}
           </p>
         </div>

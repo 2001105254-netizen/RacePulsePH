@@ -6,6 +6,7 @@ import {
   detectClientPlatform,
   formatBytes,
   formatCompactCount,
+  formatTelemetryTimestampPht,
   shouldSendThrottledHeartbeat,
   triggerPercent,
   triggerStatusLabel,
@@ -25,6 +26,11 @@ test('formatCompactCount formats counts cleanly across units, K, and M', () => {
   assert.equal(formatCompactCount(999), '999');
   assert.equal(formatCompactCount(1_240), '1.2K');
   assert.equal(formatCompactCount(5_000_000), '5.0M');
+
+  const phtLabel = formatTelemetryTimestampPht('2026-11-25T08:00:00.000Z');
+  assert.equal(phtLabel.includes('PHT'), true);
+  assert.equal(phtLabel.includes('0000000'), false);
+  assert.equal(formatTelemetryTimestampPht('not-a-date'), 'not-a-date');
 });
 
 test('triggerPercent and triggerStatusLabel bound percentages and map statuses cleanly', () => {
