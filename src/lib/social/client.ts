@@ -1,5 +1,7 @@
 import {
   collection,
+  doc,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
@@ -17,10 +19,12 @@ import {
   validateSocialVideoMetadata,
 } from './mediaValidation';
 import type {
+  CloseFriendEdgeRecord,
   ContentReportReason,
   ContentReportRecord,
   ContentReportStatus,
   ContentReportTargetType,
+  PublicRunnerProfile,
   RouteSnapPin,
   SocialCommentRecord,
   SocialLocationPin,
@@ -28,6 +32,7 @@ import type {
   SocialMediaType,
   SocialPostRecord,
   SocialVisibility,
+  UserBlockRecord,
 } from './types';
 
 const MEDIA_SIGN_CLIENT_TTL_MS = 10 * 60 * 1000;
@@ -317,6 +322,113 @@ export async function createPostComment(input: {
     },
     'Post comment',
   );
+}
+
+export async function fetchPostComments(
+  postId: string,
+  limit = 50,
+): Promise<{ comments: SocialCommentRecord[] }> {
+  return postSocialApi(
+    '/social/post/comments',
+    { postId, limit },
+    'Load comments',
+  );
+}
+
+export function subscribeMySocialKudos(
+  uid: string,
+  callback: (postIds: Set<string>) => void,
+): () => void {
+  if (!uid) {
+    callback(new Set());
+    return () => undefined;
+  }
+  const q = query(collection(db, 'socialKudos'), where('uid', '==', uid));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const ids = new Set<string>();
+      snap.forEach((d) => {
+        const postId = (d.data() as { postId?: string })?.postId;
+        if (typeof postId === 'string' && postId) ids.add(postId);
+      });
+      callback(ids);
+    },
+    (err) => {
+      console.warn('[social/client] subscribeMySocialKudos failed', err);
+      callback(new Set());
+    },
+  );
+}
+
+export function subscribeCloseFriendEdges(
+  ownerUid: string,
+  callback: (res: { targetUids: Set<string>; loaded: boolean }) => void,
+): () => void {
+  if (!ownerUid) {
+    callback({ targetUids: new Set(), loaded: true });
+    return () => undefined;
+  }
+  const q = query(collection(db, 'closeFriendEdges'), where('ownerUid', '==', ownerUid));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const targetUids = new Set<string>();
+      snap.forEach((d) => {
+        const edge = d.data() as CloseFriendEdgeRecord;
+        if (typeof edge?.targetUid === 'string' && edge.targetUid) {
+          targetUids.add(edge.targetUid);
+        }
+      });
+      callback({ targetUids, loaded: true });
+    },
+    (err) => {
+      console.warn('[social/client] subscribeCloseFriendEdges failed', err);
+      callback({ targetUids: new Set(), loaded: true });
+    },
+  );
+}
+
+export function subscribeUserBlocks(
+  blockerUid: string,
+  callback: (res: { blocks: UserBlockRecord[]; loaded: boolean }) => void,
+): () => void {
+  if (!blockerUid) {
+    callback({ blocks: [], loaded: true });
+    return () => undefined;
+  }
+  const q = query(collection(db, 'userBlocks'), where('blockerUid', '==', blockerUid));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const blocks: UserBlockRecord[] = snap.docs
+        .map((d) => {
+          const raw = d.data() as UserBlockRecord;
+          return {
+            id: raw.id || d.id,
+            blockerUid: raw.blockerUid || blockerUid,
+            blockedUid: raw.blockedUid,
+            createdAt: raw.createdAt || '',
+          };
+        })
+        .filter((b) => typeof b.blockedUid === 'string' && b.blockedUid.length > 0);
+      callback({ blocks, loaded: true });
+    },
+    (err) => {
+      console.warn('[social/client] subscribeUserBlocks failed', err);
+      callback({ blocks: [], loaded: true });
+    },
+  );
+}
+
+export async function loadPublicRunnerProfile(
+  targetUid: string,
+): Promise<PublicRunnerProfile | null> {
+  const clean = targetUid.trim();
+  if (!clean) return null;
+  const snap = await getDoc(doc(db, 'publicProfiles', clean));
+  if (!snap.exists()) return null;
+  return snap.data() as PublicRunnerProfile;
 }
 
 export async function toggleCloseFriend(

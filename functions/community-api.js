@@ -62,6 +62,7 @@ const COMMUNITY_SOCIAL_MUTATION_PATHS = new Set([
 const COMMUNITY_READ_PATHS = new Set([
   '/clubs/leaderboard',
   '/social/feed',
+  '/social/post/comments',
   '/social/snaps',
   '/media/sign',
 ]);

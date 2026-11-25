@@ -9,11 +9,13 @@ import {
   Compass,
   Flag,
   Navigation,
+  Plus,
   QrCode,
   Users2,
   X,
 } from 'lucide-react';
 import { db } from '../../firebase';
+import type { BadgeDefinition, UserBadgeAward } from '../../lib/badges/types';
 import {
   computeRunnerPortfolioCounts,
   computeStarterTrailProgress,
@@ -26,9 +28,13 @@ import {
 } from '../../lib/runnerShell';
 import { formatDuration, formatPace } from '../../lib/runs/runLiveHelpers';
 import type { RecordedRunSummary } from '../../lib/runs/types';
+import type { SocialPostRecord } from '../../lib/social/types';
 import { isRaceRegistrationOpen } from '../../lib/raceRegistration';
 import type { Race, RunnerProfile, UserProfile } from '../../types';
+import PublicRunnerProfileDialog from './PublicRunnerProfileDialog';
 import { RunnerQueueSkeleton } from './RunnerMobilePrimitives';
+import RunnerSocialFeedPanel from './RunnerSocialFeedPanel';
+import SocialPostComposerDialog from './SocialPostComposerDialog';
 import { formatFeeRangePH, philippineTodayStr, sortedRaceDistances } from './runnerUtils';
 
 export interface RunnerHomePanelProps {
@@ -39,6 +45,10 @@ export interface RunnerHomePanelProps {
   friendsCount: number;
   friendFeed: HomeFriendFeedItem[];
   recordedRuns?: RecordedRunSummary[];
+  canSocial?: boolean;
+  userBadges?: UserBadgeAward[];
+  badgeCatalog?: BadgeDefinition[];
+  onStartDm?: (targetUid: string) => void;
   onOpenPass?: (raceId: string) => void;
   onOpenExplore?: (section?: ExploreSection, filter?: ExploreRacesFilter, raceId?: string) => void;
   onOpenRecord?: () => void;
@@ -65,6 +75,10 @@ export default function RunnerHomePanel({
   friendsCount,
   friendFeed,
   recordedRuns = [],
+  canSocial = false,
+  userBadges = [],
+  badgeCatalog = [],
+  onStartDm,
   onOpenPass,
   onOpenExplore,
   onOpenRecord,
@@ -75,6 +89,10 @@ export default function RunnerHomePanel({
   const todayStr = philippineTodayStr();
   const [feedTab, setFeedTab] = useState<FeedTab>('discover');
   const [trailDismissed, setTrailDismissed] = useState<boolean>(() => readStarterTrailDismissed(profile.uid));
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [latestCreatedPost, setLatestCreatedPost] = useState<SocialPostRecord | null>(null);
+  const [profileTargetUid, setProfileTargetUid] = useState<string | null>(null);
+  const [blockedUids, setBlockedUids] = useState<Set<string>>(() => new Set());
   const feedTabRefs = useRef<Record<FeedTab, HTMLButtonElement | null>>({
     discover: null,
     following: null,
@@ -436,7 +454,7 @@ export default function RunnerHomePanel({
                   aria-selected={active}
                   tabIndex={active ? 0 : -1}
                   onClick={() => setFeedTab(item.key)}
-                  className={`relative min-h-11 px-4 rounded-xl border text-xs font-semibold inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
+                  className={`relative min-h-11 px-4 rounded-xl border text-xs font-semibold inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
                     active
                       ? 'border-red-600 bg-red-700 text-white after:content-[""] after:absolute after:inset-x-2.5 after:bottom-1 after:border-b-2 after:border-white'
                       : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
@@ -452,6 +470,17 @@ export default function RunnerHomePanel({
               );
             })}
           </div>
+
+          {canSocial && (
+            <button
+              type="button"
+              onClick={() => setComposerOpen(true)}
+              className="min-h-11 px-3.5 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+            >
+              <Plus className="w-4 h-4 shrink-0" aria-hidden="true" />
+              <span>New Post</span>
+            </button>
+          )}
         </div>
 
         <div
@@ -461,6 +490,23 @@ export default function RunnerHomePanel({
         >
           {feedTab === 'discover' ? (
             <>
+              <RunnerSocialFeedPanel
+                mode="discover"
+                profile={profile}
+                canSocial={canSocial}
+                races={races}
+                badgeCatalog={badgeCatalog}
+                incomingNewPost={latestCreatedPost}
+                blockedAuthorUids={blockedUids}
+                onOpenAuthorProfile={setProfileTargetUid}
+                onOpenExploreRace={
+                  onOpenExplore ? (raceId) => onOpenExplore('races', 'open', raceId) : undefined
+                }
+                onBlockedUser={(blockedUid) =>
+                  setBlockedUids((prev) => new Set([...prev, blockedUid]))
+                }
+              />
+
               {onOpenRecord && (
                 <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div className="flex items-start gap-3 min-w-0">
@@ -584,96 +630,143 @@ export default function RunnerHomePanel({
                 </>
               )}
             </>
-          ) : friendFeed.length === 0 ? (
-            <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-6 text-center space-y-3">
-              <Users2 className="w-7 h-7 text-[var(--text-secondary)] mx-auto" aria-hidden="true" />
-              <h3 className="font-display font-semibold text-base text-[var(--text-primary)]">
-                {friendsCount > 0 ? 'No friend race updates yet' : 'Follow runner friends'}
-              </h3>
-              <p className="text-xs font-normal text-[var(--text-secondary)] max-w-md mx-auto">
-                {friendsCount > 0
-                  ? 'Connected friends appear here as soon as they join or complete shared RacePulsePH events.'
-                  : 'Add friends by @username to follow their upcoming starts and completed Philippine races.'}
-              </p>
-              {onOpenFriends && (
-                <button
-                  type="button"
-                  onClick={onOpenFriends}
-                  className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-                >
-                  <Users2 className="w-4 h-4 shrink-0" aria-hidden="true" />
-                  <span>Find Runner Friends</span>
-                </button>
-              )}
-            </div>
           ) : (
             <div className="space-y-3">
-              {friendFeed.map((friend) => {
-                const initial = (friend.displayName || friend.username || 'R').charAt(0).toUpperCase();
-                return (
-                  <article
-                    key={friend.uid}
-                    className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-3 sm:p-4 space-y-3"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="w-10 h-10 rounded-full overflow-hidden bg-red-700/10 text-red-700 dark:bg-red-500/15 dark:text-red-300 border border-red-600/25 flex items-center justify-center text-sm font-semibold shrink-0">
-                          {friend.photoURL ? (
-                            <img src={friend.photoURL} alt="" width={40} height={40} className="w-full h-full object-cover" />
-                          ) : (
-                            initial
-                          )}
-                        </span>
-                        <div className="min-w-0">
-                          <h3 className="font-display font-semibold text-sm sm:text-base text-[var(--text-primary)] truncate">
-                            {friend.displayName}
-                          </h3>
-                          {friend.username && (
-                            <p className="font-mono text-xs font-normal text-[var(--text-secondary)] truncate">
-                              @{friend.username}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      <span className="font-mono text-xs font-semibold tabular-nums text-[var(--text-secondary)] shrink-0">
-                        {friend.recentRaces.length} {friend.recentRaces.length === 1 ? 'event' : 'events'}
-                      </span>
-                    </div>
+              <RunnerSocialFeedPanel
+                mode="following"
+                profile={profile}
+                canSocial={canSocial}
+                races={races}
+                badgeCatalog={badgeCatalog}
+                incomingNewPost={latestCreatedPost}
+                blockedAuthorUids={blockedUids}
+                onOpenAuthorProfile={setProfileTargetUid}
+                onOpenExploreRace={
+                  onOpenExplore ? (raceId) => onOpenExplore('races', 'open', raceId) : undefined
+                }
+                onBlockedUser={(blockedUid) =>
+                  setBlockedUids((prev) => new Set([...prev, blockedUid]))
+                }
+              />
 
-                    <div className="divide-y divide-[var(--border-subtle)] rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)]">
-                      {friend.recentRaces.slice(0, 4).map((raceItem) => (
-                        <div
-                          key={`${friend.uid}_${raceItem.raceId}_${raceItem.distance}`}
-                          className="px-3 py-2 flex items-center justify-between gap-3"
-                        >
-                          <div className="min-w-0">
-                            <p className="text-xs sm:text-sm font-semibold text-[var(--text-primary)] truncate">
-                              {raceItem.raceName}
-                            </p>
-                            <p className="text-xs font-mono font-normal text-[var(--text-secondary)] tabular-nums truncate">
-                              {raceItem.distance} · {raceItem.date}
-                            </p>
+              {friendFeed.length === 0 ? (
+                friendsCount === 0 && (
+                  <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-6 text-center space-y-3">
+                    <Users2 className="w-7 h-7 text-[var(--text-secondary)] mx-auto" aria-hidden="true" />
+                    <h3 className="font-display font-semibold text-base text-[var(--text-primary)]">
+                      Follow runner friends
+                    </h3>
+                    <p className="text-xs font-normal text-[var(--text-secondary)] max-w-md mx-auto">
+                      Add friends by @username to follow their posts, route snaps, and completed Philippine races.
+                    </p>
+                    {onOpenFriends && (
+                      <button
+                        type="button"
+                        onClick={onOpenFriends}
+                        className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+                      >
+                        <Users2 className="w-4 h-4 shrink-0" aria-hidden="true" />
+                        <span>Find Runner Friends</span>
+                      </button>
+                    )}
+                  </div>
+                )
+              ) : (
+                <div className="space-y-3">
+                  {friendFeed.map((friend) => {
+                    const initial = (friend.displayName || friend.username || 'R').charAt(0).toUpperCase();
+                    return (
+                      <article
+                        key={friend.uid}
+                        className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-3 sm:p-4 space-y-3"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="w-10 h-10 rounded-full overflow-hidden bg-red-700/10 text-red-700 dark:bg-red-500/15 dark:text-red-300 border border-red-600/25 flex items-center justify-center text-sm font-semibold shrink-0">
+                              {friend.photoURL ? (
+                                <img src={friend.photoURL} alt="" width={40} height={40} className="w-full h-full object-cover" />
+                              ) : (
+                                initial
+                              )}
+                            </span>
+                            <div className="min-w-0">
+                              <h3 className="font-display font-semibold text-sm sm:text-base text-[var(--text-primary)] truncate">
+                                {friend.displayName}
+                              </h3>
+                              {friend.username && (
+                                <p className="font-mono text-xs font-normal text-[var(--text-secondary)] truncate">
+                                  @{friend.username}
+                                </p>
+                              )}
+                            </div>
                           </div>
-
-                          {onOpenExplore && (
-                            <button
-                              type="button"
-                              onClick={() => onOpenExplore('races', 'all', raceItem.raceId)}
-                              className="min-h-11 px-3 rounded-xl border border-[var(--border-button)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-                            >
-                              <span>Open Event</span>
-                            </button>
-                          )}
+                          <span className="font-mono text-xs font-semibold tabular-nums text-[var(--text-secondary)] shrink-0">
+                            {friend.recentRaces.length} {friend.recentRaces.length === 1 ? 'event' : 'events'}
+                          </span>
                         </div>
-                      ))}
-                    </div>
-                  </article>
-                );
-              })}
+
+                        <div className="divide-y divide-[var(--border-subtle)] rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)]">
+                          {friend.recentRaces.slice(0, 4).map((raceItem) => (
+                            <div
+                              key={`${friend.uid}_${raceItem.raceId}_${raceItem.distance}`}
+                              className="px-3 py-2 flex items-center justify-between gap-3"
+                            >
+                              <div className="min-w-0">
+                                <p className="text-xs sm:text-sm font-semibold text-[var(--text-primary)] truncate">
+                                  {raceItem.raceName}
+                                </p>
+                                <p className="text-xs font-mono font-normal text-[var(--text-secondary)] tabular-nums truncate">
+                                  {raceItem.distance} · {raceItem.date}
+                                </p>
+                              </div>
+
+                              {onOpenExplore && (
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenExplore('races', 'all', raceItem.raceId)}
+                                  className="min-h-11 px-3 rounded-xl border border-[var(--border-button)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+                                >
+                                  <span>Open Event</span>
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
       </section>
+
+      <SocialPostComposerDialog
+        open={composerOpen}
+        profile={profile}
+        recordedRuns={recordedRuns}
+        userBadges={userBadges}
+        badgeCatalog={badgeCatalog}
+        races={races}
+        onClose={() => setComposerOpen(false)}
+        onPostCreated={(post) => {
+          setLatestCreatedPost(post);
+          if (post.visibility !== 'public') {
+            setFeedTab('following');
+          }
+        }}
+      />
+
+      <PublicRunnerProfileDialog
+        targetUid={profileTargetUid}
+        viewerUid={profile.uid}
+        onClose={() => setProfileTargetUid(null)}
+        onStartDm={onStartDm}
+        onBlockedUser={(blockedUid) =>
+          setBlockedUids((prev) => new Set([...prev, blockedUid]))
+        }
+      />
     </div>
   );
 }

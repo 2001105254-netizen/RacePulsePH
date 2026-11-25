@@ -54,6 +54,7 @@ import type {
   RouteSurfaceType,
   TerrainScenarioTag,
 } from '../../lib/routes/types';
+import type { RouteSnapPin } from '../../lib/social/types';
 
 if (typeof window !== 'undefined') {
   maplibregl.setWorkerUrl(maplibreWorkerUrl);
@@ -99,6 +100,10 @@ interface RouteMapCanvasProps {
   onLocateMe?: () => void;
   onCenterOnUser?: () => void;
   selectedMarkerOverlay?: React.ReactNode;
+  routeSnaps?: RouteSnapPin[];
+  selectedSnapId?: string;
+  onSelectSnap?: (snap: RouteSnapPin) => void;
+  snapOverlay?: React.ReactNode;
   imageryEnabled?: boolean;
   onToggleImagery?: (enabled: boolean) => void;
   is3DEnabled?: boolean;
@@ -149,6 +154,45 @@ function markerColorForKind(kind: RouteMarker['kind']): { bg: string; label: str
     case 'landmark':
       return { bg: '#7c2d12', label: 'P' };
   }
+}
+
+function snapPinColorForVisibility(visibility: RouteSnapPin['visibility']): string {
+  switch (visibility) {
+    case 'friends':
+      return '#059669';
+    case 'close_friends':
+      return '#d97706';
+    case 'public':
+    default:
+      return '#0284c7';
+  }
+}
+
+function buildCameraSvgNode(): SVGSVGElement {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', '14');
+  svg.setAttribute('height', '14');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', '#ffffff');
+  svg.setAttribute('stroke-width', '2.2');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+
+  const body = document.createElementNS(ns, 'path');
+  body.setAttribute(
+    'd',
+    'M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z',
+  );
+  const lens = document.createElementNS(ns, 'circle');
+  lens.setAttribute('cx', '12');
+  lens.setAttribute('cy', '13');
+  lens.setAttribute('r', '3');
+  svg.appendChild(body);
+  svg.appendChild(lens);
+  return svg;
 }
 
 function buildRouteGeoJson(route: ProcessedRoute, drawnOnly: boolean) {
@@ -235,6 +279,8 @@ function SchematicMapFallback({
   markers,
   selection,
   selectedMarkerId,
+  routeSnaps = [],
+  selectedSnapId,
   cursorVisible = true,
   editable = false,
   drawMode = 'view',
@@ -243,6 +289,7 @@ function SchematicMapFallback({
   onLocateMe,
   onCenterOnUser,
   onSelectMarker,
+  onSelectSnap,
   onSelectChainage,
   onPlaceStartPoint,
 }: {
@@ -250,6 +297,8 @@ function SchematicMapFallback({
   markers: RouteMarker[];
   selection: RouteSelectionState;
   selectedMarkerId?: string;
+  routeSnaps?: RouteSnapPin[];
+  selectedSnapId?: string;
   cursorVisible?: boolean;
   editable?: boolean;
   drawMode?: MapDrawMode;
@@ -258,6 +307,7 @@ function SchematicMapFallback({
   onLocateMe?: () => void;
   onCenterOnUser?: () => void;
   onSelectMarker?: (marker: RouteMarker) => void;
+  onSelectSnap?: (snap: RouteSnapPin) => void;
   onSelectChainage?: (chainageM: number, passNumber?: number) => void;
   onPlaceStartPoint?: (lat: number, lon: number) => Promise<boolean> | boolean | void;
 }) {
@@ -371,6 +421,31 @@ function SchematicMapFallback({
             </g>
           );
         })}
+        {routeSnaps.map((snap) => {
+          const p = project(snap.lat, snap.lon);
+          const isSelected = snap.snapId === selectedSnapId;
+          return (
+            <g
+              key={snap.snapId}
+              transform={`translate(${p.x}, ${p.y})`}
+              className="cursor-pointer"
+              onClick={(ev) => {
+                ev.stopPropagation();
+                onSelectSnap?.(snap);
+              }}
+            >
+              <circle
+                r={isSelected ? 12 : 9.5}
+                fill={snapPinColorForVisibility(snap.visibility)}
+                stroke="#ffffff"
+                strokeWidth={2}
+              />
+              <text textAnchor="middle" dy="0.35em" fill="#ffffff" fontSize="9" fontWeight="700">
+                R
+              </text>
+            </g>
+          );
+        })}
         {gpsPt && (
           <g transform={`translate(${gpsPt.x}, ${gpsPt.y})`}>
             <circle r={13} fill="#dc2626" fillOpacity={0.25} stroke="#ef4444" strokeWidth={1.5} />
@@ -412,6 +487,10 @@ export default function RouteMapCanvas({
   onLocateMe,
   onCenterOnUser,
   selectedMarkerOverlay,
+  routeSnaps = [],
+  selectedSnapId,
+  onSelectSnap,
+  snapOverlay,
   imageryEnabled,
   onToggleImagery,
   is3DEnabled,
@@ -438,6 +517,7 @@ export default function RouteMapCanvas({
   const mapRef = useRef<maplibregl.Map | null>(null);
   const mountStartMsRef = useRef<number>(typeof performance !== 'undefined' ? performance.now() : 0);
   const markerInstancesRef = useRef<maplibregl.Marker[]>([]);
+  const snapMarkerInstancesRef = useRef<maplibregl.Marker[]>([]);
   const cursorMarkerRef = useRef<maplibregl.Marker | null>(null);
   const cursorButtonRef = useRef<HTMLButtonElement | null>(null);
   const cursorModeRef = useRef<'readonly' | 'editable' | null>(null);
@@ -540,6 +620,7 @@ export default function RouteMapCanvas({
     startMenuOpen,
     onSelectChainage,
     onSelectMarker,
+    onSelectSnap,
     onMapClickCoordinate,
     onDrawnSegmentsChange,
     onPaintStrokeCommit,
@@ -558,6 +639,7 @@ export default function RouteMapCanvas({
     startMenuOpen,
     onSelectChainage,
     onSelectMarker,
+    onSelectSnap,
     onMapClickCoordinate,
     onDrawnSegmentsChange,
     onPaintStrokeCommit,
@@ -988,6 +1070,8 @@ export default function RouteMapCanvas({
       }
       markerInstancesRef.current.forEach((m) => m.remove());
       markerInstancesRef.current = [];
+      snapMarkerInstancesRef.current.forEach((m) => m.remove());
+      snapMarkerInstancesRef.current = [];
       cursorMarkerRef.current?.remove();
       cursorMarkerRef.current = null;
       cursorButtonRef.current = null;
@@ -1313,6 +1397,51 @@ export default function RouteMapCanvas({
       markerInstancesRef.current.push(instance);
     });
   }, [markers, selectedMarkerId, styleLoadedNonce]);
+
+  // Render Route Snap DOM pins with high-chroma figure-ground halo and vector camera icon
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    snapMarkerInstancesRef.current.forEach((m) => m.remove());
+    snapMarkerInstancesRef.current = [];
+
+    routeSnaps.forEach((snap) => {
+      const isSelected = snap.snapId === selectedSnapId;
+      const pinColor = snapPinColorForVisibility(snap.visibility);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'rp-route-snap-marker';
+      btn.style.cssText = [
+        'width: 30px',
+        'height: 30px',
+        'padding: 0',
+        'border-radius: 9999px',
+        `border: ${isSelected ? '3px solid #ffffff' : '2.5px solid #ffffff'}`,
+        `background: ${pinColor}`,
+        'box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45)',
+        'display: grid',
+        'place-items: center',
+        'cursor: pointer',
+        `transform: ${isSelected ? 'scale(1.16)' : 'scale(1)'}`,
+      ].join(';');
+      btn.appendChild(buildCameraSvgNode());
+      btn.title = `${snap.label || 'Route Snap'} (${snap.visibility})`;
+      btn.setAttribute(
+        'aria-label',
+        `Route snap (${snap.visibility}): ${snap.label || snap.captionPreview || 'View snapshot'}`,
+      );
+      btn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        latestCallbacksRef.current.onSelectSnap?.(snap);
+      });
+
+      const instance = new maplibregl.Marker({ element: btn })
+        .setLngLat([snap.lon, snap.lat])
+        .addTo(map);
+      snapMarkerInstancesRef.current.push(instance);
+    });
+  }, [routeSnaps, selectedSnapId, styleLoadedNonce]);
 
   // Render synchronized Starting Point / Preview Position cursor marker
   useEffect(() => {
@@ -2006,12 +2135,14 @@ export default function RouteMapCanvas({
 
   if (!webglReady || mapFatalError) {
     return (
-      <div className={`w-full ${heightClassName}`}>
+      <div className={`relative w-full ${heightClassName}`}>
         <SchematicMapFallback
           route={route}
           markers={markers}
           selection={selection}
           selectedMarkerId={selectedMarkerId}
+          routeSnaps={routeSnaps}
+          selectedSnapId={selectedSnapId}
           cursorVisible={cursorVisible}
           editable={editable}
           drawMode={drawMode}
@@ -2020,9 +2151,11 @@ export default function RouteMapCanvas({
           onLocateMe={onLocateMe}
           onCenterOnUser={onCenterOnUser}
           onSelectMarker={onSelectMarker}
+          onSelectSnap={onSelectSnap}
           onSelectChainage={onSelectChainage}
           onPlaceStartPoint={onPlaceStartPoint}
         />
+        {snapOverlay}
       </div>
     );
   }
@@ -2362,6 +2495,7 @@ export default function RouteMapCanvas({
           </div>
         )}
         {selectedMarkerOverlay}
+        {snapOverlay}
       </div>
     </div>
   );

@@ -379,7 +379,41 @@ test('social post creation auto-links <=100m course routeSnap, keeps private med
     postId: 'post_pub_1',
     text: 'Strong pace!',
   });
-  assert.equal(store.docs.get('socialPosts/post_pub_1').commentsCount, 1);
+  await service.execute('u_stranger_open', '/social/post/comment', {
+    requestId: 'req-comment-pub-002',
+    commentId: 'cmt_2_hidden',
+    postId: 'post_pub_1',
+    text: 'Hidden comment',
+  });
+  store.docs.set('socialComments/cmt_2_hidden', {
+    ...store.docs.get('socialComments/cmt_2_hidden'),
+    hiddenByModeration: true,
+  });
+  await service.execute('u_close', '/social/post/comment', {
+    requestId: 'req-comment-pub-003',
+    commentId: 'cmt_3_deleted',
+    postId: 'post_pub_1',
+    text: 'Deleted comment',
+  });
+  store.docs.set('socialComments/cmt_3_deleted', {
+    ...store.docs.get('socialComments/cmt_3_deleted'),
+    deletedAt: '2026-11-25T11:05:00.000Z',
+  });
+  assert.equal(store.docs.get('socialPosts/post_pub_1').commentsCount, 3);
+
+  const cmtList = await service.execute('u_friend', '/social/post/comments', {
+    postId: 'post_pub_1',
+    limit: 20,
+  });
+  assert.deepEqual(
+    cmtList.comments.map((c) => c.commentId),
+    ['cmt_1'],
+  );
+
+  await assert.rejects(
+    service.execute('u_friend', '/social/post/comments', { postId: 'post_priv_1' }),
+    (err) => err.status === 403,
+  );
 });
 
 test('feed visibility, cursor pagination, snaps, close-friends, block bidirectional isolation, and /media/sign revocation', async () => {
@@ -475,7 +509,20 @@ test('feed visibility, cursor pagination, snaps, close-friends, block bidirectio
   assert.ok(signFriendDenied.denied.includes('social-media/u_a/p3_cf/3.png'));
   assert.ok(signFriendDenied.signedUrls['social-media/u_a/p2_fr/2.png']);
 
-  // Blocking u_close clears closeFriendEdges and revokes feed + snap + media signing in BOTH directions
+  await service.execute('u_close', '/social/post/comment', {
+    requestId: 'req-blk-cmt-000001',
+    commentId: 'cmt_from_close',
+    postId: 'p4_stranger_pub',
+    text: 'Before block comment',
+  });
+  await service.execute('u_friend', '/social/post/comment', {
+    requestId: 'req-blk-cmt-000002',
+    commentId: 'cmt_from_friend',
+    postId: 'p4_stranger_pub',
+    text: 'Visible friend comment',
+  });
+
+  // Blocking u_close clears closeFriendEdges and revokes feed + snap + comments + media signing in BOTH directions
   await service.execute('u_a', '/social/block/toggle', {
     requestId: 'req-block-close-0001',
     targetUid: 'u_close',
@@ -484,6 +531,13 @@ test('feed visibility, cursor pagination, snaps, close-friends, block bidirectio
   assert.equal(store.docs.has('closeFriendEdges/u_a_u_close'), false);
   const blockedFeed = await service.execute('u_close', '/social/feed', { mode: 'discover', limit: 10 });
   assert.equal(blockedFeed.posts.some((p) => p.uid === 'u_a'), false);
+  const blockedComments = await service.execute('u_a', '/social/post/comments', {
+    postId: 'p4_stranger_pub',
+  });
+  assert.deepEqual(
+    blockedComments.comments.map((c) => c.commentId),
+    ['cmt_from_friend'],
+  );
   const signBlocked = await service.execute('u_close', '/media/sign', {
     storagePaths: ['social-media/u_a/p1_pub/1.png', 'social-media/u_a/p3_cf/3.png'],
   });

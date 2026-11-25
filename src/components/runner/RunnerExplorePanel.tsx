@@ -1,22 +1,16 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
-  Check,
   Compass,
-  Copy,
   ExternalLink,
   Flag,
-  Mail,
   MapPin,
   Mountain,
   Play,
   Search,
-  Trophy,
-  User,
-  Users2,
   X,
 } from 'lucide-react';
 import { isClientNavigationClick } from '../../lib/appRouting';
-import { LEGAL_CONFIG } from '../../lib/legalConfig';
+import type { BadgeDefinition } from '../../lib/badges/types';
 import { isRaceRegistrationOpen } from '../../lib/raceRegistration';
 import { buildRaceCoursePath } from '../../lib/routes/routing';
 import {
@@ -25,7 +19,7 @@ import {
   isDemoSeedEnabled,
   subscribePublishedCatalog,
 } from '../../lib/routes/routeStore';
-import type { PhilippineIslandGroup, RaceRouteCatalogEntry } from '../../lib/routes/types';
+import type { RaceRouteCatalogEntry } from '../../lib/routes/types';
 import {
   buildClubRequestMailtoHref,
   filterPublishedExploreRoutes,
@@ -37,8 +31,9 @@ import {
   type ExploreSection,
   type FilterExploreRoutesOptions,
 } from '../../lib/runnerShell';
-import type { Race, RunnerProfile } from '../../types';
+import type { Race, RunnerProfile, UserProfile } from '../../types';
 import RunnerAllRacesPanel, { type CatalogStatusFilter } from './RunnerAllRacesPanel';
+import RunnerClubsPanel from './RunnerClubsPanel';
 import RunnerEventsPanel, { type OpenEventsFilter } from './RunnerEventsPanel';
 import { RunnerQueueSkeleton } from './RunnerMobilePrimitives';
 import { philippineTodayStr } from './runnerUtils';
@@ -78,17 +73,20 @@ export interface RunnerExplorePanelProps {
   searchQuery: string;
   onSearchQueryChange: (value: string) => void;
   uid: string;
+  profile: UserProfile;
   friendIdentity?: { username?: string; displayName: string };
   runnerProfiles: RunnerProfile[];
   registeredRaceIds: Set<string>;
   initialShirtSize?: string;
   profileRunClub?: string;
+  badgeCatalog?: BadgeDefinition[];
   requestedRaceId?: string | null;
   onRequestedRaceHandled?: () => void;
   onScanQr?: () => void;
   onSaved: () => void;
   onOpenProfile?: () => void;
   onStartCourseRun?: (course: ExploreCourseRunTarget) => void;
+  onOpenClubChat?: (clubId: string) => void;
   races: Race[];
   racesLoaded: boolean;
   racesError: string | null;
@@ -123,13 +121,6 @@ const ISLAND_GROUP_OPTIONS: readonly { key: ExploreIslandGroupFilter; label: str
   { key: 'Mindanao', label: 'Mindanao' },
 ];
 
-const CLUB_CAPABILITIES: readonly string[] = [
-  'Custom club branding and verified organizer pages',
-  'Club Chat and Meetup scheduling',
-  'Club Leaderboards across RacePulsePH events',
-  'Linked Finisher Badges on runner profiles',
-];
-
 function dispatchAppNavigate(url: string) {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent('racepulse:navigate', { detail: { url } }));
@@ -148,17 +139,20 @@ export default function RunnerExplorePanel({
   searchQuery,
   onSearchQueryChange,
   uid,
+  profile,
   friendIdentity,
   runnerProfiles,
   registeredRaceIds,
   initialShirtSize,
   profileRunClub,
+  badgeCatalog = [],
   requestedRaceId,
   onRequestedRaceHandled,
   onScanQr,
   onSaved,
   onOpenProfile,
   onStartCourseRun,
+  onOpenClubChat,
   races,
   racesLoaded,
   racesError,
@@ -198,8 +192,6 @@ export default function RunnerExplorePanel({
   const [routesLoaded, setRoutesLoaded] = useState(false);
   const [islandGroup, setIslandGroup] = useState<ExploreIslandGroupFilter>('all');
 
-  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'fallback'>('idle');
-  const copyTimerRef = useRef<number | undefined>(undefined);
   const lastRequestedRaceIdRef = useRef<string | null>(null);
   const tabButtonRefs = useRef<Record<ExploreSection, HTMLButtonElement | null>>({
     races: null,
@@ -207,14 +199,6 @@ export default function RunnerExplorePanel({
     clubs: null,
   });
   const lastEmittedMetricsRef = useRef<ExploreMetrics | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (copyTimerRef.current !== undefined && typeof window !== 'undefined') {
-        window.clearTimeout(copyTimerRef.current);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     if (isDemoSeedEnabled()) {
@@ -485,39 +469,6 @@ export default function RunnerExplorePanel({
     tabButtonRefs.current[nextSection]?.focus();
   };
 
-  const supportEmail = LEGAL_CONFIG.supportEmail;
-  const clubMailtoHref = useMemo(
-    () =>
-      buildClubRequestMailtoHref({
-        supportEmail,
-        runnerDisplayName: friendIdentity?.displayName,
-        runnerUsername: friendIdentity?.username,
-        currentRunClub: trimmedRunClub || undefined,
-      }),
-    [supportEmail, friendIdentity?.displayName, friendIdentity?.username, trimmedRunClub],
-  );
-
-  const handleCopyAdminEmail = async () => {
-    if (copyTimerRef.current !== undefined && typeof window !== 'undefined') {
-      window.clearTimeout(copyTimerRef.current);
-    }
-    let copied = false;
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(supportEmail);
-        copied = true;
-      }
-    } catch {
-      copied = false;
-    }
-    setCopyStatus(copied ? 'copied' : 'fallback');
-    if (typeof window !== 'undefined') {
-      copyTimerRef.current = window.setTimeout(() => {
-        setCopyStatus('idle');
-      }, 3000);
-    }
-  };
-
   const raceFilterCounts: Record<ExploreRacesFilter, number | undefined> = {
     open: racesLoaded ? baselineCounts.total : undefined,
     upcoming: racesLoaded ? baselineCounts.catalogUpcoming : undefined,
@@ -571,7 +522,7 @@ export default function RunnerExplorePanel({
                     aria-selected={active}
                     tabIndex={active ? 0 : -1}
                     onClick={() => onSectionChange(item.key)}
-                    className={`relative min-h-11 px-3 sm:px-4 rounded-lg border text-xs font-semibold inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
+                    className={`relative min-h-11 px-3 sm:px-4 rounded-lg border text-xs font-semibold inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
                       active
                         ? 'border-red-600 bg-red-700 text-white after:content-[""] after:absolute after:inset-x-2 after:bottom-1 after:border-b-2 after:border-white'
                         : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
@@ -937,150 +888,21 @@ export default function RunnerExplorePanel({
         )}
 
         {section === 'clubs' && (
-          <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain rp-runner-scroll p-3 sm:p-4">
-            <div className="max-w-3xl mx-auto space-y-4">
-              <section className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-4 sm:p-6 space-y-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 space-y-1">
-                    <h2 className="font-display font-semibold text-xl sm:text-2xl text-[var(--text-primary)] leading-tight">
-                      Run Clubs
-                    </h2>
-                    <p className="text-sm font-normal text-[var(--text-secondary)] leading-relaxed">
-                      Admin-curated Run Clubs launch with custom branding, Club Chat, Club Leaderboards, Meetups, and Linked Badges.
-                    </p>
-                  </div>
-                  <div className="w-11 h-11 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] flex items-center justify-center shrink-0 text-red-700 dark:text-red-400">
-                    <Users2 className="w-5 h-5" aria-hidden="true" />
-                  </div>
-                </div>
-
-                {trimmedRunClub ? (
-                  <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div className="min-w-0 space-y-1">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-                        Your Profile Run Club
-                      </p>
-                      <p className="font-display font-semibold text-base text-[var(--text-primary)] truncate">
-                        {trimmedRunClub}
-                      </p>
-                      <p className="text-xs font-normal text-[var(--text-secondary)]">
-                        Displayed on your runner profile and finisher highlights.
-                      </p>
-                    </div>
-                    {onOpenProfile && (
-                      <button
-                        type="button"
-                        onClick={onOpenProfile}
-                        className="min-h-11 px-4 rounded-xl border border-[var(--border-button)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 shrink-0 cursor-pointer transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-                      >
-                        <User className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" />
-                        <span>Edit in Profile</span>
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-4 space-y-3">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                      <div className="space-y-1 min-w-0">
-                        <h3 className="font-display font-semibold text-sm text-[var(--text-primary)]">
-                          No Run Club linked on your profile yet
-                        </h3>
-                        <p className="text-xs font-normal text-[var(--text-secondary)]">
-                          Save your club or team name in your profile settings now, or ask the RacePulsePH admin team to onboard your community.
-                        </p>
-                      </div>
-                      {onOpenProfile && (
-                        <button
-                          type="button"
-                          onClick={onOpenProfile}
-                          className="min-h-11 px-4 rounded-xl border border-[var(--border-button)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 shrink-0 cursor-pointer transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-                        >
-                          <User className="w-4 h-4 text-red-700 dark:text-red-400" aria-hidden="true" />
-                          <span>Set Club in Profile</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-                    Included with Admin-curated Run Clubs
-                  </h3>
-                  <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-normal text-[var(--text-primary)]">
-                    {CLUB_CAPABILITIES.map((capability) => (
-                      <li
-                        key={capability}
-                        className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-3 flex items-start gap-2"
-                      >
-                        <Trophy
-                          className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0 mt-1"
-                          aria-hidden="true"
-                        />
-                        <span>{capability}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </section>
-
-              <section className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-4 sm:p-6 space-y-4">
-                <div className="space-y-1">
-                  <h3 className="font-display font-semibold text-base text-[var(--text-primary)]">
-                    Request a Club Page
-                  </h3>
-                  <p className="text-xs font-normal text-[var(--text-secondary)] leading-relaxed">
-                    Send your club name, home city, and weekly meetup schedule to{' '}
-                    <span className="font-mono font-semibold text-[var(--text-primary)]">{supportEmail}</span> so the RacePulsePH admin team can review and launch your club hub.
-                  </p>
-                </div>
-
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                  <a
-                    href={clubMailtoHref}
-                    className="min-h-11 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-                  >
-                    <Mail className="w-4 h-4 shrink-0" aria-hidden="true" />
-                    <span>Request a Club / Contact Admin</span>
-                  </a>
-
-                  <button
-                    type="button"
-                    onClick={handleCopyAdminEmail}
-                    className="min-h-11 px-4 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 cursor-pointer transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-                  >
-                    {copyStatus === 'copied' ? (
-                      <Check className="w-4 h-4 text-emerald-700 dark:text-emerald-400 shrink-0" aria-hidden="true" />
-                    ) : (
-                      <Copy className="w-4 h-4 text-[var(--text-secondary)] shrink-0" aria-hidden="true" />
-                    )}
-                    <span>{copyStatus === 'copied' ? 'Admin Email Copied' : 'Copy Admin Email'}</span>
-                  </button>
-                </div>
-
-                {copyStatus !== 'idle' && (
-                  <p
-                    role="status"
-                    aria-live="polite"
-                    className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
-                      copyStatus === 'copied'
-                        ? 'border-emerald-600/35 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
-                        : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)]'
-                    }`}
-                  >
-                    {copyStatus === 'copied' ? (
-                      `Copied ${supportEmail} to your clipboard.`
-                    ) : (
-                      <>
-                        Copy manually:{' '}
-                        <code className="font-mono select-all underline">{supportEmail}</code>
-                      </>
-                    )}
-                  </p>
-                )}
-              </section>
-            </div>
-          </div>
+          <RunnerClubsPanel
+            uid={uid}
+            profile={profile}
+            searchQuery={searchQuery}
+            onSearchQueryChange={onSearchQueryChange}
+            races={races}
+            publishedRoutes={publishedRoutes}
+            badgeCatalog={badgeCatalog}
+            onOpenProfile={onOpenProfile}
+            onStartCourseRun={onStartCourseRun}
+            onOpenClubChat={onOpenClubChat}
+            onOpenExploreRace={handleCatalogRegister}
+            isDesktop={isDesktop}
+            isSplitPane={resolvedSplitPane}
+          />
         )}
       </div>
     </div>

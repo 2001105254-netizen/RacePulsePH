@@ -1,10 +1,39 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, doc, getDoc, getDocs, onSnapshot, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
-import { Check, Clock, RefreshCw, Search, UserCheck, UserPlus, Users2, X } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  MessageSquare,
+  RefreshCw,
+  Search,
+  ShieldBan,
+  Star,
+  UserCheck,
+  UserPlus,
+  Users2,
+  X,
+} from 'lucide-react';
 import { db } from '../../firebase';
 import { useAccess } from '../../lib/access';
 import { AccountRequestError, searchRunnerFriends } from '../../lib/accountSecurity';
+import {
+  E2E_CLOSE_FRIENDS_KEY,
+  E2E_USER_BLOCKS_KEY,
+  readDevSessionJson,
+  toggleDevCloseFriendFixture,
+  toggleDevUserBlockFixture,
+} from '../../lib/clubs/e2eFixtures';
+import {
+  subscribeCloseFriendEdges,
+  subscribeUserBlocks,
+  toggleCloseFriend,
+  toggleUserBlock,
+} from '../../lib/social/client';
+import type { UserBlockRecord } from '../../lib/social/types';
 import { FriendActivity, FriendProfile, UserProfile } from '../../types';
+import { useFeedback } from '../ui/FeedbackProvider';
 import { ShimmerSweep } from '../ui/MotionPrimitives';
 import { usernamePattern } from './runnerUtils';
 import { RunnerQueueSkeleton } from './RunnerMobilePrimitives';
@@ -41,6 +70,7 @@ export interface RunnerFriendsPanelProps {
   profile: UserProfile;
   onOpenRace: (raceId: string) => void;
   onOpenProfile: () => void;
+  onStartDm?: (targetUid: string) => void;
   searchQuery: string;
   onSearchQueryChange: (value: string) => void;
   isDesktop: boolean;
@@ -71,6 +101,7 @@ export default function RunnerFriendsPanel({
   profile,
   onOpenRace,
   onOpenProfile,
+  onStartDm,
   searchQuery,
   onSearchQueryChange,
   isDesktop,
@@ -78,8 +109,10 @@ export default function RunnerFriendsPanel({
   desktopSearchRef,
 }: RunnerFriendsPanelProps) {
   const { can } = useAccess();
+  const { confirm, notify } = useFeedback();
   const canInvites = can('personal.invites');
   const canViewUsers = can('users.view');
+  const isE2e = import.meta.env.DEV && profile.uid.startsWith('e2e-');
   const [searchInput, setSearchInput] = useState('');
   const [searchResults, setSearchResults] = useState<FriendProfile[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
@@ -90,6 +123,10 @@ export default function RunnerFriendsPanel({
   const [incoming, setIncoming] = useState<FriendRequestRecord[]>([]);
   const [outgoing, setOutgoing] = useState<FriendRequestRecord[]>([]);
   const [invites, setInvites] = useState<RaceInviteRecord[]>([]);
+  const [closeFriendUids, setCloseFriendUids] = useState<Set<string>>(() => new Set());
+  const [blockedUsers, setBlockedUsers] = useState<UserBlockRecord[]>([]);
+  const [safetyBusyUid, setSafetyBusyUid] = useState<string | null>(null);
+  const [blockedListOpen, setBlockedListOpen] = useState(false);
   const [searching, setSearching] = useState(false);
   const [sendingUid, setSendingUid] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -200,6 +237,32 @@ export default function RunnerFriendsPanel({
       ),
     [profile.uid],
   );
+
+  useEffect(() => {
+    if (isE2e) {
+      setCloseFriendUids(new Set(readDevSessionJson<string>(E2E_CLOSE_FRIENDS_KEY) ?? []));
+      const blkUids = readDevSessionJson<string>(E2E_USER_BLOCKS_KEY) ?? [];
+      setBlockedUsers(
+        blkUids.map((blockedUid) => ({
+          id: `${profile.uid}_${blockedUid}`,
+          blockerUid: profile.uid,
+          blockedUid,
+          createdAt: '',
+        })),
+      );
+      return;
+    }
+    const unsubCf = subscribeCloseFriendEdges(profile.uid, (res) => {
+      setCloseFriendUids(res.targetUids);
+    });
+    const unsubBlocks = subscribeUserBlocks(profile.uid, (res) => {
+      setBlockedUsers(res.blocks);
+    });
+    return () => {
+      unsubCf();
+      unsubBlocks();
+    };
+  }, [isE2e, profile.uid]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -388,6 +451,87 @@ export default function RunnerFriendsPanel({
     onOpenRace(invite.raceId);
   };
 
+  const blockedUidSet = useMemo(
+    () => new Set(blockedUsers.map((b) => b.blockedUid)),
+    [blockedUsers],
+  );
+
+  const handleToggleCloseFriend = async (friend: FriendProfile) => {
+    if (safetyBusyUid) return;
+    const nextEnabled = !closeFriendUids.has(friend.uid);
+    setSafetyBusyUid(friend.uid);
+    try {
+      if (isE2e) {
+        setCloseFriendUids(toggleDevCloseFriendFixture(closeFriendUids, friend.uid, nextEnabled));
+      } else {
+        await toggleCloseFriend(friend.uid, nextEnabled);
+      }
+      notify({
+        tone: 'success',
+        title: nextEnabled ? 'Added to Close Friends' : 'Removed from Close Friends',
+        message: nextEnabled
+          ? `${friend.nickname || friend.displayName} can now view Close Friends posts and route snaps.`
+          : `${friend.nickname || friend.displayName} removed from Close Friends.`,
+      });
+    } catch (err) {
+      notify({
+        tone: 'error',
+        title: 'Close Friends update failed',
+        message: err instanceof Error ? err.message : 'Unable to update close friends.',
+      });
+    } finally {
+      setSafetyBusyUid(null);
+    }
+  };
+
+  const handleToggleBlock = async (targetUid: string, label: string, blocked: boolean) => {
+    if (safetyBusyUid) return;
+    if (blocked) {
+      const ok = await confirm({
+        title: `Block ${label}?`,
+        message: 'Blocking removes posts, route snaps, comments, and direct messages in both directions.',
+        confirmLabel: 'Block Runner',
+        destructive: true,
+      });
+      if (!ok) return;
+    }
+    setSafetyBusyUid(targetUid);
+    try {
+      if (isE2e) {
+        const nextList = toggleDevUserBlockFixture(
+          blockedUsers.map((b) => b.blockedUid),
+          targetUid,
+          blocked,
+        );
+        setBlockedUsers(
+          nextList.map((u) => ({
+            id: `${profile.uid}_${u}`,
+            blockerUid: profile.uid,
+            blockedUid: u,
+            createdAt: '',
+          })),
+        );
+        if (blocked && closeFriendUids.has(targetUid)) {
+          setCloseFriendUids(toggleDevCloseFriendFixture(closeFriendUids, targetUid, false));
+        }
+      } else {
+        await toggleUserBlock(targetUid, blocked);
+      }
+      notify({
+        tone: 'info',
+        title: blocked ? `Blocked ${label}` : `Unblocked ${label}`,
+      });
+    } catch (err) {
+      notify({
+        tone: 'error',
+        title: blocked ? 'Block failed' : 'Unblock failed',
+        message: err instanceof Error ? err.message : 'Unable to update block status.',
+      });
+    } finally {
+      setSafetyBusyUid(null);
+    }
+  };
+
   if (!profile.username) {
     return (
       <div className="flex-1 min-h-0 flex items-center justify-center p-3">
@@ -415,14 +559,16 @@ export default function RunnerFriendsPanel({
   }
 
   const friendFilterTerm = searchQuery.trim().toLowerCase();
-  const visibleFriends = friendFilterTerm
-    ? friends.filter(
-        (friend) =>
-          friend.displayName.toLowerCase().includes(friendFilterTerm) ||
-          (friend.nickname || '').toLowerCase().includes(friendFilterTerm) ||
-          friend.username.toLowerCase().includes(friendFilterTerm),
-      )
-    : friends;
+  const visibleFriends = friends.filter((friend) => {
+    if (blockedUidSet.has(friend.uid)) return false;
+    if (!friendFilterTerm) return true;
+    return (
+      friend.displayName.toLowerCase().includes(friendFilterTerm) ||
+      (friend.nickname || '').toLowerCase().includes(friendFilterTerm) ||
+      friend.username.toLowerCase().includes(friendFilterTerm)
+    );
+  });
+  const visibleSearchResults = searchResults.filter((c) => !blockedUidSet.has(c.uid));
 
   return (
     <div
@@ -545,7 +691,7 @@ export default function RunnerFriendsPanel({
                 </div>
               )}
 
-              {!searching && !error && hasSearched && searchResults.length === 0 && (
+              {!searching && !error && hasSearched && visibleSearchResults.length === 0 && (
                 <div className="border-t border-[var(--border-subtle)] pt-3 text-center space-y-2">
                   <p className="text-xs font-semibold text-[var(--text-primary)]">
                     No runners match &ldquo;{lastQuery}&rdquo;
@@ -563,11 +709,11 @@ export default function RunnerFriendsPanel({
                 </div>
               )}
 
-              {!searching && searchResults.length > 0 && (
+              {!searching && visibleSearchResults.length > 0 && (
                 <div className="border-t border-[var(--border-subtle)] pt-2">
                   <div className="flex items-center justify-between gap-2 pb-1">
                     <p role="status" className="text-xs font-semibold text-[var(--text-secondary)] tabular-nums">
-                      {searchResults.length} {searchResults.length === 1 ? 'match' : 'matches'}
+                      {visibleSearchResults.length} {visibleSearchResults.length === 1 ? 'match' : 'matches'}
                     </p>
                     <button
                       type="button"
@@ -578,7 +724,7 @@ export default function RunnerFriendsPanel({
                     </button>
                   </div>
                   <ul role="list" aria-label="Runner search results" className="divide-y divide-[var(--border-subtle)]">
-                    {searchResults.map((candidate) => {
+                    {visibleSearchResults.map((candidate) => {
                       const isFriend = friends.some((f) => f.uid === candidate.uid);
                       const isRequested = outgoing.some((r) => r.toUid === candidate.uid);
                       const incomingReq = incoming.find((r) => r.fromUid === candidate.uid);
@@ -755,7 +901,7 @@ export default function RunnerFriendsPanel({
                 Connected Friends
               </h3>
               <span className="text-xs font-mono font-semibold tabular-nums px-1.5 py-0.5 rounded bg-[var(--surface-inset)] border border-[var(--border-default)] text-red-700 dark:text-red-400">
-                {friends.length}
+                {friends.filter((f) => !blockedUidSet.has(f.uid)).length}
               </span>
             </div>
 
@@ -804,7 +950,9 @@ export default function RunnerFriendsPanel({
               </div>
             ) : visibleFriends.length === 0 ? (
               <p className="p-3 text-xs text-[var(--text-secondary)]">
-                No connected friends match &ldquo;{searchQuery}&rdquo;.
+                {friendFilterTerm
+                  ? <>No connected friends match &ldquo;{searchQuery}&rdquo;.</>
+                  : 'No visible connected friends. Manage blocked accounts below.'}
               </p>
             ) : (
               <div className="divide-y divide-[var(--border-subtle)] bg-[var(--surface-card)]">
@@ -848,10 +996,86 @@ export default function RunnerFriendsPanel({
                       ) : (
                         <p className="pl-12 text-xs text-[var(--text-secondary)]">No shared race activity yet.</p>
                       )}
+
+                      <div className="pl-12 pt-1 flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          aria-pressed={closeFriendUids.has(friend.uid)}
+                          disabled={safetyBusyUid === friend.uid}
+                          onClick={() => void handleToggleCloseFriend(friend)}
+                          className={`min-h-11 px-3 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-60 ${
+                            closeFriendUids.has(friend.uid)
+                              ? 'border-amber-600/40 bg-amber-500/15 text-amber-900 dark:text-amber-200'
+                              : 'border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
+                          }`}
+                        >
+                          <Star className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                          <span>{closeFriendUids.has(friend.uid) ? 'Close Friend' : 'Add Close Friend'}</span>
+                        </button>
+
+                        {onStartDm && (
+                          <button
+                            type="button"
+                            onClick={() => onStartDm(friend.uid)}
+                            className="min-h-11 px-3 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+                            <span>Message</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          disabled={safetyBusyUid === friend.uid}
+                          onClick={() =>
+                            void handleToggleBlock(friend.uid, friend.nickname || friend.displayName, true)
+                          }
+                          aria-label={`Block ${friend.nickname || friend.displayName}`}
+                          className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-red-500/10 text-xs font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-300 inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                        >
+                          <ShieldBan className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                          <span>Block</span>
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
               </div>
+            )}
+
+            {blockedUsers.length > 0 && (
+              <section className="m-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] overflow-hidden">
+                <button
+                  type="button"
+                  aria-expanded={blockedListOpen}
+                  onClick={() => setBlockedListOpen((open) => !open)}
+                  className="w-full min-h-11 px-3.5 py-2 flex items-center justify-between gap-2 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)] cursor-pointer"
+                >
+                  <span>Blocked Accounts ({blockedUsers.length})</span>
+                  {blockedListOpen ? (
+                    <ChevronUp className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  )}
+                </button>
+                {blockedListOpen && (
+                  <div className="divide-y divide-[var(--border-subtle)] border-t border-[var(--border-subtle)]">
+                    {blockedUsers.map((blk) => (
+                      <div key={blk.id} className="px-3.5 py-2 flex items-center justify-between gap-2 text-xs">
+                        <span className="font-mono text-[var(--text-secondary)] truncate">{blk.blockedUid}</span>
+                        <button
+                          type="button"
+                          disabled={safetyBusyUid === blk.blockedUid}
+                          onClick={() => void handleToggleBlock(blk.blockedUid, blk.blockedUid, false)}
+                          className="min-h-11 px-3 rounded-xl border border-[var(--border-button)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] cursor-pointer disabled:opacity-60"
+                        >
+                          Unblock
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
             )}
           </div>
         </aside>

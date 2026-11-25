@@ -25,6 +25,7 @@ const SOCIAL_ROUTES = new Set([
   '/social/post/delete',
   '/social/post/kudos',
   '/social/post/comment',
+  '/social/post/comments',
   '/social/post/repost',
   '/social/feed',
   '/social/snaps',
@@ -34,7 +35,12 @@ const SOCIAL_ROUTES = new Set([
   '/moderation/reports/resolve',
   '/media/sign',
 ]);
-const SOCIAL_READ_ROUTES = new Set(['/social/feed', '/social/snaps', '/media/sign']);
+const SOCIAL_READ_ROUTES = new Set([
+  '/social/feed',
+  '/social/post/comments',
+  '/social/snaps',
+  '/media/sign',
+]);
 const VALID_FEED_MODES = new Set(['discover', 'following']);
 const VALID_SNAP_SCOPES = new Set(['all', 'public', 'friends', 'close_friends']);
 const VALID_MODERATION_ACTIONS = new Set(['dismiss', 'hide_content', 'delete_content']);
@@ -740,6 +746,43 @@ function createSocialService(db, storage = null, options = {}) {
         tx.create(idempRef, { digest: reqDigest, response, createdAt: now });
         return response;
       });
+    }
+
+    if (path === '/social/post/comments') {
+      if (!canSocial && !isMod) fail('Comment access is not enabled for this account.', 403);
+      const postId = assertValidEntityId(input?.postId, 'postId');
+      const rawLimit = Number(input?.limit ?? 50);
+      const limit = Number.isInteger(rawLimit) ? Math.min(100, Math.max(1, rawLimit)) : 50;
+
+      const [postSnap, graph, commentSnaps] = await Promise.all([
+        db.doc(`socialPosts/${postId}`).get(),
+        loadSocialGraphForViewer(db, actorUid),
+        queryCollectionDocs(db, 'socialComments', (c) =>
+          c
+            .where('postId', '==', postId)
+            .orderBy('createdAt', 'asc')
+            .limit(Math.min(150, limit + 40)),
+        ),
+      ]);
+      if (!postSnap.exists) fail('Post not found.', 404);
+      const post = postSnap.data();
+      if (!canViewerReadPost(post, actorUid, { ...graph, isModerator: isMod })) {
+        fail('You do not have permission to view comments on this post.', 403);
+      }
+
+      const comments = [];
+      for (const snap of commentSnaps) {
+        const c = snap.data();
+        if (!c || !c.commentId) continue;
+        if (!isMod) {
+          if (c.deletedAt || c.hiddenByModeration === true) continue;
+          if (graph.blockedUidSet && graph.blockedUidSet.has(c.uid)) continue;
+        }
+        comments.push(c);
+        if (comments.length >= limit) break;
+      }
+
+      return { comments };
     }
 
     if (path === '/social/feed') {

@@ -78,6 +78,7 @@ export interface RunnerYouHubPanelProps {
   onScanQr: () => void;
   onOpenProfile: () => void;
   onOpenRecord?: () => void;
+  onStartDm?: (targetUid: string) => void;
   myPassesSearch: string;
   onMyPassesSearchChange: (value: string) => void;
   myPassesFilter: MyPassesFilter;
@@ -123,6 +124,7 @@ export default function RunnerYouHubPanel({
   onScanQr,
   onOpenProfile,
   onOpenRecord,
+  onStartDm,
   myPassesSearch,
   onMyPassesSearchChange,
   myPassesFilter,
@@ -919,6 +921,7 @@ export default function RunnerYouHubPanel({
               profile={profile}
               onOpenRace={onOpenExploreRace}
               onOpenProfile={onOpenProfile}
+              onStartDm={onStartDm}
               searchQuery={friendsSearch}
               onSearchQueryChange={onFriendsSearchChange}
               isDesktop={isDesktop}

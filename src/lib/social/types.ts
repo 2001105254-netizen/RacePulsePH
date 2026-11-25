@@ -93,6 +93,33 @@ export interface ContentReportRecord {
   updatedAt: string;
 }
 
+export interface PublicRunnerProfile {
+  uid: string;
+  displayName: string;
+  username?: string;
+  photoURL?: string;
+  bio?: string;
+  location?: string;
+  favoriteDistance?: string;
+  primaryClubId: string | null;
+  primaryClubName: string;
+  updatedAt: string;
+}
+
+export interface CloseFriendEdgeRecord {
+  id: string;
+  ownerUid: string;
+  targetUid: string;
+  createdAt: string;
+}
+
+export interface UserBlockRecord {
+  id: string;
+  blockerUid: string;
+  blockedUid: string;
+  createdAt: string;
+}
+
 export interface RouteSnapPin {
   snapId: string;
   postId: string;

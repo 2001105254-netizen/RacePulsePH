@@ -25,7 +25,17 @@ import {
   X,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { auth } from '../../firebase';
+import { E2E_ROUTE_SNAPS_KEY, readDevSessionJson } from '../../lib/clubs/e2eFixtures';
 import { loadGpxRoute } from '../../lib/gpxRoute';
+import { fetchRouteSnaps, signMediaPaths } from '../../lib/social/client';
+import {
+  collectUnsignedMediaPaths,
+  filterSnapsByScope,
+  type RouteSnapFilterScope,
+} from '../../lib/social/feedHelpers';
+import { SOCIAL_VISIBILITY_META } from '../../lib/social/mediaValidation';
+import type { RouteSnapPin } from '../../lib/social/types';
 import { subscribeSharedRaces } from '../../lib/racesStore';
 import { locateAtChainage } from '../../lib/routes/anchoring';
 import { buildCourseAnalytics } from '../../lib/routes/courseAnalytics';
@@ -173,6 +183,12 @@ export default function RouteExplorerPage({
   const [offlinePack, setOfflinePack] = useState<OfflineCoursePack | null>(null);
   const [offlineBusy, setOfflineBusy] = useState(false);
   const [offlineNotice, setOfflineNotice] = useState('');
+  const [snapFilter, setSnapFilter] = useState<RouteSnapFilterScope>('off');
+  const [routeSnaps, setRouteSnaps] = useState<RouteSnapPin[]>([]);
+  const [snapsLoading, setSnapsLoading] = useState(false);
+  const [snapsNotice, setSnapsNotice] = useState('');
+  const [selectedSnap, setSelectedSnap] = useState<RouteSnapPin | null>(null);
+  const [signedSnapUrls, setSignedSnapUrls] = useState<Record<string, string>>({});
 
   const geo = useRunnerGeolocation();
   const pendingFlyToUserRef = useRef(false);
@@ -409,6 +425,74 @@ export default function RouteExplorerPage({
     }
     void getOfflineCoursePack(publication.raceId, publication.distanceId).then(setOfflinePack);
   }, [publication]);
+
+  useEffect(() => {
+    if (snapFilter === 'off') {
+      setRouteSnaps([]);
+      setSelectedSnap(null);
+      setSnapsNotice('');
+      setSnapsLoading(false);
+      return;
+    }
+    if (import.meta.env.DEV) {
+      const devSnaps = readDevSessionJson<RouteSnapPin>(E2E_ROUTE_SNAPS_KEY);
+      if (devSnaps) {
+        const filtered = filterSnapsByScope(devSnaps, snapFilter, publication?.id);
+        setRouteSnaps(filtered);
+        setSelectedSnap((prev) =>
+          prev && filtered.some((s) => s.snapId === prev.snapId) ? prev : null,
+        );
+        setSnapsNotice(
+          filtered.length === 0 ? 'No route snaps match this visibility scope yet.' : '',
+        );
+        setSnapsLoading(false);
+        return;
+      }
+    }
+    if (!auth.currentUser) {
+      setRouteSnaps([]);
+      setSelectedSnap(null);
+      setSnapsNotice('Sign in to view runner route snaps.');
+      setSnapsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSnapsLoading(true);
+    setSnapsNotice('');
+    void fetchRouteSnaps({
+      scope: snapFilter,
+      publicationId: publication?.id,
+    })
+      .then(async (res) => {
+        if (cancelled) return;
+        const snaps = res.snaps || [];
+        setRouteSnaps(snaps);
+        setSelectedSnap((prev) =>
+          prev && snaps.some((s) => s.snapId === prev.snapId) ? prev : null,
+        );
+        setSnapsNotice(snaps.length === 0 ? 'No route snaps found on this course yet.' : '');
+        const unsignedPaths = collectUnsignedMediaPaths([], snaps);
+        if (unsignedPaths.length > 0) {
+          const signed = await signMediaPaths(unsignedPaths);
+          if (!cancelled) {
+            setSignedSnapUrls((prev) => ({ ...prev, ...signed.signedUrls }));
+          }
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setRouteSnaps([]);
+        setSnapsNotice(err instanceof Error && err.message ? err.message : 'Unable to load route snaps.');
+      })
+      .finally(() => {
+        if (!cancelled) setSnapsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [snapFilter, publication?.id]);
 
   const activeRaceObj = useMemo(() => {
     const raceId = publication?.raceId || legacyRace?.id;
@@ -1835,6 +1919,28 @@ export default function RouteExplorerPage({
               </div>
             )}
 
+            <div className="inline-flex items-center gap-1.5">
+              <label htmlFor="route-snaps-scope" className="sr-only">
+                Show route snaps overlay
+              </label>
+              <Select
+                id="route-snaps-scope"
+                ariaLabel="Show route snaps overlay"
+                value={snapFilter}
+                onChange={(v) => setSnapFilter(v as RouteSnapFilterScope)}
+                surface="inset"
+                size="sm"
+                className="w-auto min-w-[132px]"
+                triggerClassName="min-h-11 lg:min-h-9 text-xs"
+                options={[
+                  { value: 'off', label: 'Snaps: Off' },
+                  { value: 'public', label: 'Snaps: Public' },
+                  { value: 'friends', label: 'Snaps: Friends' },
+                  { value: 'close_friends', label: 'Snaps: Close' },
+                ]}
+              />
+            </div>
+
             {publication && publication.chapters.length > 0 && (
               <div className="hidden xl:flex items-center gap-1 border-l border-[var(--border-default)] pl-2">
                 {publication.chapters.slice(0, 4).map((chapter) => (
@@ -1908,7 +2014,9 @@ export default function RouteExplorerPage({
           <div className="flex flex-1 min-h-0 flex-col gap-2 p-2 lg:overflow-hidden">
             {((isHistorical && currentPublicationId && publication) ||
               staleOfflinePack ||
-              offlineNotice) && (
+              offlineNotice ||
+              snapsLoading ||
+              snapsNotice) && (
               <div className="shrink-0 space-y-1">
                 {isHistorical && currentPublicationId && publication && (
                   <div
@@ -1953,6 +2061,14 @@ export default function RouteExplorerPage({
                     className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-1.5 text-xs text-[var(--text-secondary)]"
                   >
                     {offlineNotice}
+                  </div>
+                )}
+                {(snapsLoading || snapsNotice) && (
+                  <div
+                    role="status"
+                    className="rounded-xl border border-sky-600/30 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-900 dark:text-sky-200"
+                  >
+                    {snapsLoading ? 'Loading runner route snaps...' : snapsNotice}
                   </div>
                 )}
               </div>
@@ -2110,6 +2226,52 @@ export default function RouteExplorerPage({
                   handleSelectChainage(proj.chainageM, proj.passNumber);
                 }}
                 flyToTrigger={flyToTrigger}
+                routeSnaps={snapFilter === 'off' ? [] : routeSnaps}
+                selectedSnapId={selectedSnap?.snapId}
+                onSelectSnap={setSelectedSnap}
+                snapOverlay={
+                  selectedSnap ? (
+                    <aside
+                      aria-label="Route snap preview"
+                      className="pointer-events-auto absolute left-3 bottom-3 z-20 w-[min(22rem,calc(100%-1.5rem))] rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 backdrop-blur p-3 shadow-xl space-y-2"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 space-y-0.5">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-[var(--border-default)] bg-[var(--surface-inset)] text-xs font-semibold text-[var(--text-primary)]">
+                            <Camera className="w-3 h-3 text-red-700 dark:text-red-400" aria-hidden="true" />
+                            <span>{SOCIAL_VISIBILITY_META[selectedSnap.visibility].label} Snap</span>
+                          </span>
+                          <p className="text-sm font-semibold text-[var(--text-primary)] truncate">
+                            {selectedSnap.label || 'Course Snap'}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedSnap(null)}
+                          aria-label="Close route snap preview"
+                          className="min-h-11 min-w-11 flex items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] shrink-0 cursor-pointer"
+                        >
+                          <X className="w-4 h-4" aria-hidden="true" />
+                        </button>
+                      </div>
+                      {(selectedSnap.thumbnailUrl || signedSnapUrls[selectedSnap.thumbnailPath]) && (
+                        <img
+                          src={selectedSnap.thumbnailUrl || signedSnapUrls[selectedSnap.thumbnailPath]}
+                          alt={selectedSnap.label || 'Runner route snap thumbnail'}
+                          className="w-full h-32 object-cover rounded-xl border border-[var(--border-default)]"
+                        />
+                      )}
+                      {selectedSnap.captionPreview && (
+                        <p className="text-xs font-normal text-[var(--text-secondary)] line-clamp-3">
+                          {selectedSnap.captionPreview}
+                        </p>
+                      )}
+                      <p className="text-xs font-mono text-[var(--text-secondary)]">
+                        {selectedSnap.createdAt.slice(0, 10)}
+                      </p>
+                    </aside>
+                  ) : null
+                }
               />
               </div>
             </div>

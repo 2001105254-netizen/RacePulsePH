@@ -244,8 +244,11 @@ export default function RunnerDashboard({
   const [myPassesMetrics, setMyPassesMetrics] = useState({ all: 0, upcoming: 0, completed: 0, showing: 0 });
   const [friendsSearch, setFriendsSearch] = useState('');
 
-  // Record preview preselected course
+  // Record preview preselected course & Inbox thread deep-link target
   const [preselectedCourse, setPreselectedCourse] = useState<ExploreCourseRunTarget | null>(null);
+  const [requestedInboxTarget, setRequestedInboxTarget] = useState<
+    { type: 'club'; clubId: string } | { type: 'dm'; targetUid: string } | null
+  >(null);
 
   const handleExploreMetricsChange = useCallback((next: ExploreMetrics) => {
     setExploreMetrics((prev) =>
@@ -366,6 +369,26 @@ export default function RunnerDashboard({
       void selectTab(homeTab, 'back', { force: true });
     }
   }, [allowedTabs, tab, homeTab, selectTab]);
+
+  const handleOpenClubChat = useCallback(
+    (clubId: string) => {
+      if (!allowedTabs.includes('inbox')) return;
+      switchTabThen('inbox', () => {
+        setRequestedInboxTarget({ type: 'club', clubId });
+      });
+    },
+    [allowedTabs, switchTabThen],
+  );
+
+  const handleStartDm = useCallback(
+    (targetUid: string) => {
+      if (!allowedTabs.includes('inbox')) return;
+      switchTabThen('inbox', () => {
+        setRequestedInboxTarget({ type: 'dm', targetUid });
+      });
+    },
+    [allowedTabs, switchTabThen],
+  );
 
   useEffect(() => {
     if (!canRecord) {
@@ -1255,7 +1278,9 @@ export default function RunnerDashboard({
 
   // Active header search config per tab/sub-section
   const activeSearchConfig =
-    tab === 'explore' && (exploreSection === 'races' || exploreSection === 'routes') && !eventsInFormFlow
+    tab === 'explore' &&
+    (exploreSection === 'races' || exploreSection === 'routes' || exploreSection === 'clubs') &&
+    !eventsInFormFlow
       ? {
           id: 'runner_explore_header_search',
           value: exploreSearch,
@@ -1263,11 +1288,15 @@ export default function RunnerDashboard({
           label:
             exploreSection === 'routes'
               ? 'Search published Philippine courses by race, region, or distance'
-              : 'Search races by name, date, or distance',
+              : exploreSection === 'clubs'
+                ? 'Search running clubs by name, city, or schedule'
+                : 'Search races by name, date, or distance',
           placeholder:
             exploreSection === 'routes'
               ? 'Search route, province, or distance... (/)'
-              : 'Search race, date, or distance... (/)',
+              : exploreSection === 'clubs'
+                ? 'Search clubs by name, city, or schedule... (/)'
+                : 'Search race, date, or distance... (/)',
         }
       : tab === 'you' && youSection === 'passes'
       ? {
@@ -1822,6 +1851,10 @@ export default function RunnerDashboard({
               friendsCount={friendsCount}
               friendFeed={friendFeed}
               recordedRuns={recordedRuns}
+              canSocial={canSocial}
+              userBadges={userBadges}
+              badgeCatalog={badgeCatalog}
+              onStartDm={allowedTabs.includes('inbox') ? handleStartDm : undefined}
               onOpenPass={
                 allowedTabs.includes('you')
                   ? (raceId) => {
@@ -1873,11 +1906,13 @@ export default function RunnerDashboard({
               searchQuery={exploreSearch}
               onSearchQueryChange={setExploreSearch}
               uid={profile.uid}
+              profile={profile}
               friendIdentity={{ username: profile.username, displayName: profile.nickname || profile.displayName }}
               runnerProfiles={runnerProfiles}
               registeredRaceIds={registeredRaceIds}
               initialShirtSize={profile.shirtSize}
               profileRunClub={profile.runClub}
+              badgeCatalog={badgeCatalog}
               requestedRaceId={scannedRaceId || pendingDeepLinkRaceId}
               onRequestedRaceHandled={handleEventsDeepLinkHandled}
               onScanQr={openQrScanner}
@@ -1895,6 +1930,7 @@ export default function RunnerDashboard({
                     }
                   : undefined
               }
+              onOpenClubChat={allowedTabs.includes('inbox') ? handleOpenClubChat : undefined}
               races={sharedRaces}
               racesLoaded={racesLoaded}
               racesError={racesError}
@@ -2004,6 +2040,7 @@ export default function RunnerDashboard({
               onScanQr={openQrScanner}
               onOpenProfile={() => setShowProfile(true)}
               onOpenRecord={allowedTabs.includes('record') ? () => selectTab('record') : undefined}
+              onStartDm={allowedTabs.includes('inbox') ? handleStartDm : undefined}
               myPassesSearch={myPassesSearch}
               onMyPassesSearchChange={setMyPassesSearch}
               myPassesFilter={myPassesFilter}
