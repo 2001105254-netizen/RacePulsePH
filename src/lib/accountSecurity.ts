@@ -24,8 +24,9 @@ async function request<T>(
   body: object,
   authenticated = false,
   unavailableFallback = emailUnavailableMessage,
+  forceTokenRefresh = false,
 ): Promise<T> {
-  const token = authenticated ? await auth.currentUser?.getIdToken() : null;
+  const token = authenticated ? await auth.currentUser?.getIdToken(forceTokenRefresh) : null;
   if (authenticated && !token) throw new Error('Please sign in again to continue.');
   const appCheckHeaders = typeof getAppCheckHeaders === 'function' ? await getAppCheckHeaders() : {};
   let response: Response;
@@ -113,7 +114,13 @@ export interface DeleteAccountResult {
 }
 
 export const deleteMyAccountAndData = async () => {
-  const result = await request<DeleteAccountResult>('/account/delete', { confirmation: 'DELETE' }, true);
+  const result = await request<DeleteAccountResult>(
+    '/account/delete',
+    { confirmation: 'DELETE' },
+    true,
+    emailUnavailableMessage,
+    true,
+  );
   if (result.deleted !== true) throw new AccountRequestError(emailUnavailableMessage);
   return result;
 };

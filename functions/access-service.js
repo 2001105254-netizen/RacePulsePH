@@ -2,12 +2,12 @@ const crypto = require('crypto');
 const policy = require('./access-policy');
 const { getSystemTelemetrySnapshot, recordPresenceHeartbeat } = require('./telemetry-service');
 function fail(message, status = 400) { throw Object.assign(new Error(message), { status }); }
-function createAccessService(db) {
+function createAccessService(db, auth = null) {
   const userRef = uid => db.doc(`users/${uid}`), accessRef = uid => db.doc(`userAccess/${uid}`);
   async function execute(actorUid, path, input) {
     const [actorDoc, actorState] = await Promise.all([userRef(actorUid).get(), accessRef(actorUid).get()]);
     const actor = actorDoc.exists ? { ...actorDoc.data(), uid: actorUid } : null;
-    if (!actor) fail('Your app account is unavailable.', 403);
+    if (!actor || actor.accessRemoved === true) fail('Your app account is unavailable.', 403);
     const actorAccess = policy.accessFor(actor, actorState.data());
     if (actorAccess.status !== 'active') fail('Your account access is suspended.', 403);
     if (path === '/presence/heartbeat') {
@@ -71,6 +71,7 @@ function createAccessService(db) {
     if (rollout.data()?.enforcementReady !== true) fail('Access changes are awaiting rollout activation.', 409);
     const digest = crypto.createHash('sha256').update(JSON.stringify({ path, input })).digest('hex');
     const historyRef = db.doc(`accessHistory/${actorUid}_${input.requestId}`);
+    let shouldRevokeTokens = false;
     await db.runTransaction(async tx => {
       const registryRef = db.doc('accessSystem/authority');
       const [freshActor, freshActorAccess, target, access, previous, registry, restore] = await Promise.all([
@@ -93,6 +94,9 @@ function createAccessService(db) {
       } catch (err) {
         fail(err.message, 400);
       }
+      const wasPrivileged = ['superadmin', 'admin'].includes(target.data().role);
+      const isDemoted = wasPrivileged && change.role !== target.data().role;
+      shouldRevokeTokens = path === '/remove' || next.status !== 'active' || isDemoted;
       const approved = change.role === 'organizer' ? (path === '/remove' ? false : change.approved ?? target.data().approved ?? false) : true;
       if (input.uid === actorUid && (change.role !== 'superadmin' || next.status !== 'active' || path === '/remove')) fail('You cannot remove your own Super Admin access.');
       if (target.data().role === 'superadmin' || change.role === 'superadmin') {
@@ -113,6 +117,18 @@ function createAccessService(db) {
       tx.create(historyRef, { targetUid: input.uid, actorUid, actorName: actor.displayName || actor.email || actorUid, at, digest, action: path.slice(1), restoreSource: path === '/restore' ? input.historyId : null,
         before: { role: target.data().role, approved: target.data().approved, access: policy.accessFor(target.data(), access.data()) }, after: { role: change.role, approved, access: after } });
     });
+    if (shouldRevokeTokens && auth && typeof auth.revokeRefreshTokens === 'function') {
+      let tokensRevoked = false;
+      try {
+        await auth.revokeRefreshTokens(input.uid);
+        tokensRevoked = true;
+      } catch (err) {
+        if (err?.code !== 'auth/user-not-found') {
+          console.warn('Refresh token revocation warning', { code: err?.code || 'revoke_failed' });
+        }
+      }
+      return { saved: true, tokensRevoked };
+    }
     return { saved: true };
   }
   return { execute };

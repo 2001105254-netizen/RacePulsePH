@@ -7,27 +7,16 @@ const {
   assertHumanFormSignals,
   enforceRateLimit,
   extractClientIp,
+  getDefaultAllowedOrigins,
   GuardError,
+  logSecurityEvent,
+  resolveRequestId,
   sendGuardError,
   setScopedCors,
+  stripPrototypePollution,
   verifyAppCheckRequest,
   verifyTurnstileRequest,
 } = require('./request-guard');
-
-const PROD_ALLOWED_ORIGINS = [
-  'https://racepulseph.com',
-  'https://www.racepulseph.com',
-  'https://racepulseph.web.app',
-  'https://racepulseph.firebaseapp.com',
-  'capacitor://localhost',
-];
-
-const LOCALHOST_ALLOWED_ORIGINS = [
-  'http://localhost:3000',
-  'http://localhost:5173',
-  'http://127.0.0.1:3000',
-  'http://127.0.0.1:5173',
-];
 
 const ALLOWED_ENTRY_CATEGORIES = new Set(['solo', 'duo', 'trio', 'group']);
 const CREATING_LOCK_WINDOW_MS = 60 * 1000;
@@ -45,14 +34,7 @@ class HttpError extends Error {
 }
 
 function getPaymentsAllowedOrigins() {
-  const allowLocalhost =
-    process.env.FUNCTIONS_EMULATOR === 'true' ||
-    process.env.RACEPULSE_ALLOW_LOCALHOST_CORS === 'true';
-  return new Set(
-    allowLocalhost
-      ? [...PROD_ALLOWED_ORIGINS, ...LOCALHOST_ALLOWED_ORIGINS]
-      : PROD_ALLOWED_ORIGINS,
-  );
+  return new Set(getDefaultAllowedOrigins());
 }
 
 function sendJson(response, status, body) {
@@ -606,11 +588,17 @@ function createPaymentsApp({
 
   return async function handlePaymentsRequest(request, response) {
     applyApiSecurityHeaders(response);
-    setScopedCors(request, response, {
+    const requestId = resolveRequestId(request, response);
+    const path = (request.path || '/').replace(/\/+$/, '') || '/';
+    const cors = setScopedCors(request, response, {
       allowedOrigins: getPaymentsAllowedOrigins(),
       methods: 'GET, POST, OPTIONS',
     });
-    if (request.method === 'OPTIONS') return response.status(204).send('');
+    if (request.method === 'OPTIONS') return response.status(cors.hasOrigin && !cors.originAllowed ? 403 : 204).send('');
+    if (path !== '/webhooks/paymongo' && cors.hasOrigin && !cors.originAllowed) {
+      logSecurityEvent({ event: 'cors_origin_rejected', decision: 'deny', route: path, requestId, status: 403, code: 'cors_origin_denied', ipBucket: extractClientIp(request) });
+      return sendJson(response, 403, { error: 'Origin is not allowed.' });
+    }
     if (
       request.method === 'POST' &&
       (!request.is('application/json') ||
@@ -621,7 +609,13 @@ function createPaymentsApp({
     ) {
       return sendJson(response, 400, { error: 'Invalid request.' });
     }
-    const path = (request.path || '/').replace(/\/+$/, '') || '/';
+    if (request.method === 'POST' && path !== '/webhooks/paymongo') {
+      try {
+        request.body = stripPrototypePollution(request.body);
+      } catch (err) {
+        return sendGuardError(response, err);
+      }
+    }
     if (request.method === 'POST' && path === '/checkout') return createCheckout(request, response);
     if (request.method === 'POST' && path === '/webhooks/paymongo') return handleWebhook(request, response);
     const statusMatch = request.method === 'GET' && path.match(/^\/payments\/(pay_[a-zA-Z0-9_]+)$/);

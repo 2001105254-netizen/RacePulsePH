@@ -51,3 +51,12 @@ test('LAN blocks bridge metadata tampering on existing chipReads', () => {
  assert.equal(authorize(operator, 'POST', '/api/chip-reads', { ...existing, monotonicTicks: '9999' }, existing), false);
  assert.equal(authorize(operator, 'POST', '/api/chip-reads', { ...existing, clockSource: 'forged' }, existing), false);
 });
+
+test('LAN enforces default-deny and explicit read permissions for GET routes', () => {
+ assert.equal(authorize(operator, 'GET', '/api/unknown', {}), false);
+ assert.equal(authorize(operator, 'GET', '/api/orders', {}), false);
+ assert.equal(authorize(operator, 'GET', '/api/chip-reads', {}), true);
+ const runner = { uid: 'runner', permissions: { 'personal.engraving': true } };
+ assert.equal(authorize(runner, 'GET', '/api/orders', {}), true);
+ assert.equal(authorize(runner, 'GET', '/api/chip-reads', {}), false);
+});

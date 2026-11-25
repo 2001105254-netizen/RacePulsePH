@@ -12,7 +12,11 @@ function authorize(s, method, route, body, existing) {
     return method === 'POST' && s.authority === true && (cleanRoute.startsWith('/api/orders') || s.scope === 'all');
   }
   if (cleanRoute === '/api/rfid-events') return method === 'GET' && can(s, 'timing.scan') && typeof payload.raceId === 'string' && scope(s, payload.raceId);
-  if (method === 'GET') return true;
+  if (method === 'GET') {
+    if (cleanRoute === '/api/orders') return can(s, 'engraving.view') || can(s, 'personal.engraving');
+    if (cleanRoute === '/api/chip-reads') return can(s, 'timing.view') || can(s, 'personal.results');
+    return false;
+  }
   if (cleanRoute === '/api/orders' || /^\/api\/orders\/[^/]+$/.test(cleanRoute)) {
     if (method === 'DELETE' && cleanRoute !== '/api/orders') return s.authority === true || (can(s, 'personal.engraving') && existing?.ownerUid === s.uid && existing?.status === 'queued');
     if (method !== 'POST' || cleanRoute !== '/api/orders') return false;

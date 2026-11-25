@@ -5,42 +5,30 @@ const {
   applyApiSecurityHeaders,
   enforceRateLimit,
   extractClientIp,
+  getDefaultAllowedOrigins,
+  logSecurityEvent,
+  resolveRequestId,
+  stripPrototypePollution,
   verifyAppCheckRequest,
 } = require('./request-guard');
 
-const PROD_ACCESS_ORIGINS = [
-  'https://racepulseph.web.app',
-  'https://racepulseph.firebaseapp.com',
-  'https://racepulseph.com',
-  'https://www.racepulseph.com',
-  'capacitor://localhost',
-];
-
-const LOCALHOST_ACCESS_ORIGINS = [
-  'http://localhost:3000',
-  'http://localhost:5173',
-];
-
 function getAccessCorsOrigins() {
-  const allowLocalhost =
-    process.env.FUNCTIONS_EMULATOR === 'true' ||
-    process.env.RACEPULSE_ALLOW_LOCALHOST_CORS === 'true';
-  return allowLocalhost
-    ? [...PROD_ACCESS_ORIGINS, ...LOCALHOST_ACCESS_ORIGINS]
-    : PROD_ACCESS_ORIGINS;
+  return getDefaultAllowedOrigins();
 }
 
 function createAccessApp({ admin: adminClient, db, appCheckMode } = {}) {
   return async (req, res) => {
     applyApiSecurityHeaders(res);
-    res.set('Access-Control-Expose-Headers', 'Retry-After');
+    const requestId = resolveRequestId(req, res);
+    res.set('Access-Control-Expose-Headers', 'Retry-After, X-Request-Id');
     const path = (req.path || '/').replace(/\/+$/, '') || '/';
+    const clientIp = extractClientIp(req);
     try {
       if (req.method !== 'POST') return res.status(405).json({ error: 'Use POST.' });
       if (!req.is('application/json') || (req.rawBody?.length || 0) > 65536 || !req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
         return res.status(400).json({ error: 'Invalid request.' });
       }
-      const clientIp = extractClientIp(req);
+      const cleanBody = stripPrototypePollution(req.body);
       await enforceRateLimit({
         db,
         namespace: 'access_ip',
@@ -60,7 +48,10 @@ function createAccessApp({ admin: adminClient, db, appCheckMode } = {}) {
       const bearer = req.get('Authorization')?.match(/^Bearer (.+)$/)?.[1];
       if (!bearer) return res.status(401).json({ error: 'Sign in to continue.' });
       let identity;
-      try { identity = await adminClient.auth().verifyIdToken(bearer, true); } catch { return res.status(401).json({ error: 'Your session has expired.' }); }
+      try { identity = await adminClient.auth().verifyIdToken(bearer, true); } catch {
+        logSecurityEvent({ event: 'invalid_id_token', decision: 'deny', route: path, requestId, status: 401, code: 'token_rejected', ipBucket: clientIp });
+        return res.status(401).json({ error: 'Your session has expired.' });
+      }
 
       const isMutation = ['/save', '/restore', '/remove'].includes(path);
       const isHeartbeat = path === '/presence/heartbeat';
@@ -74,13 +65,17 @@ function createAccessApp({ admin: adminClient, db, appCheckMode } = {}) {
         memoryOnly: !isMutation,
       });
 
-      return res.json(await createAccessService(db).execute(identity.uid, path, req.body));
+      const authClient = typeof adminClient?.auth === 'function' ? adminClient.auth() : null;
+      return res.json(await createAccessService(db, authClient).execute(identity.uid, path, cleanBody));
     } catch (error) {
       const status = error && typeof error.status === 'number' && error.status >= 400 && error.status < 600 ? error.status : 500;
       const retryAfter = Number(error?.retryAfter) || 0;
       if (retryAfter > 0) res.set('Retry-After', String(retryAfter));
+      if (status === 401 || status === 403 || status === 429) {
+        logSecurityEvent({ event: 'access_api_denied', decision: 'deny', route: path, requestId, status, code: error?.code || 'denied', ipBucket: clientIp });
+      }
       if (status >= 500) {
-        console.error('Access API error', { route: path, status, code: error?.code || 'internal' });
+        console.error('Access API error', { route: path, requestId, status, code: error?.code || 'internal' });
       }
       const safeMessage = status < 500 && error?.message ? error.message : 'Access command failed.';
       return res.status(status).json({

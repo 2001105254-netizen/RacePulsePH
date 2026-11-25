@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -239,10 +240,21 @@ namespace RacePulseRfidBridge
 
                     int statusCode;
                     string responseBody;
+                    var ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
+                    var nonce = Guid.NewGuid().ToString("N");
+                    var sigInput = ts + "." + nonce + "." + payload;
+                    string signature;
+                    using (var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(_config.BridgeKey)))
+                    {
+                        var hashBytes = hmac.ComputeHash(Encoding.UTF8.GetBytes(sigInput));
+                        signature = BitConverter.ToString(hashBytes).Replace("-", string.Empty).ToLowerInvariant();
+                    }
                     using (var content = new StringContent(payload, Encoding.UTF8, "application/json"))
                     using (var message = new HttpRequestMessage(HttpMethod.Post, _config.RacePulseEndpoint) { Content = content })
                     {
-                        message.Headers.Add("X-RacePulse-Bridge-Key", _config.BridgeKey);
+                        message.Headers.Add("X-RacePulse-Bridge-Timestamp", ts);
+                        message.Headers.Add("X-RacePulse-Bridge-Nonce", nonce);
+                        message.Headers.Add("X-RacePulse-Bridge-Signature", signature);
                         using (var response = _http.SendAsync(message, stopToken).GetAwaiter().GetResult())
                         {
                             statusCode = (int)response.StatusCode;

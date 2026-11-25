@@ -9,11 +9,15 @@ const { searchRunnerDirectory } = require('./friend-search');
 const {
   applyApiSecurityHeaders,
   assertHumanFormSignals,
+  assertRecentAuth,
   enforceRateLimit,
   extractClientIp,
   getDefaultAllowedOrigins,
   GuardError,
+  logSecurityEvent,
+  resolveRequestId,
   setScopedCors,
+  stripPrototypePollution,
   verifyAppCheckRequest,
   verifyTurnstileRequest,
 } = require('./request-guard');
@@ -322,17 +326,21 @@ function createAccountApp({
     const auth = providedAuth || admin.auth();
     const storage = providedStorage ?? (typeof admin?.storage === 'function' ? admin.storage() : null);
     applyApiSecurityHeaders(response);
-    setScopedCors(request, response, {
+    const requestId = resolveRequestId(request, response);
+    const cors = setScopedCors(request, response, {
       allowedOrigins: getAccountCorsOrigins(),
       methods: 'POST, OPTIONS',
     });
-    if (request.method === 'OPTIONS') {
-      return response.status(204).send('');
-    }
-
     const route = (request.path || '/').replace(/\/+$/, '');
     const secret = getCodeSecret();
     const clientIp = extractClientIp(request);
+    if (request.method === 'OPTIONS') {
+      return response.status(cors.hasOrigin && !cors.originAllowed ? 403 : 204).send('');
+    }
+    if (cors.hasOrigin && !cors.originAllowed) {
+      logSecurityEvent({ event: 'cors_origin_rejected', decision: 'deny', route, requestId, status: 403, code: 'cors_origin_denied', ipBucket: clientIp });
+      return response.status(403).json({ error: 'Origin is not allowed.' });
+    }
 
     async function enforceUnsubscribeIpLimit(ip) {
       await enforceRateLimit({
@@ -406,6 +414,7 @@ function createAccountApp({
       if (!request.is('application/json') || (request.rawBody?.length || 0) > 8192 || !request.body || typeof request.body !== 'object' || Array.isArray(request.body)) {
         return response.status(400).json({ error: 'Invalid account request.' });
       }
+      request.body = stripPrototypePollution(request.body);
       await verifyAppCheckRequest(request, { admin, mode: appCheckMode });
 
       if (route === '/account/delete') {
@@ -417,6 +426,7 @@ function createAccountApp({
         } catch {
           throw new AccountError(401, 'Your session has expired. Please sign in again.');
         }
+        assertRecentAuth(decoded, { maxAgeSeconds: 900 });
         await enforceRateLimit({
           db,
           secret,
@@ -478,6 +488,7 @@ function createAccountApp({
 
       if (route === '/auth/resolve-username') {
         assertHumanFormSignals(request.body);
+        await verifyTurnstileRequest(request, { expectedAction: 'resolve_username', mode: turnstileMode });
         await enforceRateLimit({
           db,
           secret,
@@ -538,10 +549,13 @@ function createAccountApp({
     } catch (error) {
       if (error instanceof AccountError || error instanceof GuardError) {
         if (error.retryAfter) response.set('Retry-After', String(error.retryAfter));
+        if (error.status === 401 || error.status === 403 || error.status === 429) {
+          logSecurityEvent({ event: 'account_api_denied', decision: 'deny', route, requestId, status: error.status, code: error?.code || 'denied', ipBucket: clientIp });
+        }
         return response.status(error.status).json({ error: error.message, ...(error.retryAfter ? { retryAfter: error.retryAfter } : {}) });
       }
       // Never include request bodies, tokens, codes, passwords or SMTP errors in logs.
-      console.error('Account request failed', { route, category: 'internal' });
+      console.error('Account request failed', { route, requestId, category: 'internal' });
       return response.status(500).json({ error: 'Could not complete this request. Please try again.' });
     }
   };

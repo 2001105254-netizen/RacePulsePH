@@ -9,6 +9,9 @@ const {
   extractClientIp,
   getDefaultAllowedOrigins,
   getLimiterForDb,
+  logSecurityEvent,
+  resolveRequestId,
+  stripPrototypePollution,
   verifyAppCheckRequest,
 } = require('./request-guard');
 
@@ -90,9 +93,11 @@ function exceedsMaxJsonBytes(req, maxBytes = MAX_COMMUNITY_BODY_BYTES) {
 function createCommunityApp({ admin: adminClient, db, storage = null, appCheckMode } = {}) {
   return async (req, res) => {
     applyApiSecurityHeaders(res);
-    res.set('Access-Control-Expose-Headers', 'Retry-After');
+    const requestId = resolveRequestId(req, res);
+    res.set('Access-Control-Expose-Headers', 'Retry-After, X-Request-Id');
     let releaseSlot = null;
     const routePath = (req.path || '/').replace(/\/+$/, '') || '/';
+    const clientIp = extractClientIp(req);
     try {
       if (req.method !== 'POST') return res.status(405).json({ error: 'Use POST.' });
       if (!req.is('application/json') || !req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
@@ -101,8 +106,8 @@ function createCommunityApp({ admin: adminClient, db, storage = null, appCheckMo
       if (exceedsMaxJsonBytes(req, MAX_COMMUNITY_BODY_BYTES)) {
         return res.status(413).json({ error: 'Request payload exceeds 2.5 MB limit.' });
       }
+      const cleanBody = stripPrototypePollution(req.body);
 
-      const clientIp = extractClientIp(req);
       await enforceRateLimit({
         db,
         namespace: 'community_ip',
@@ -120,6 +125,7 @@ function createCommunityApp({ admin: adminClient, db, storage = null, appCheckMo
       try {
         identity = await adminClient.auth().verifyIdToken(bearer, true);
       } catch {
+        logSecurityEvent({ event: 'invalid_id_token', decision: 'deny', route: routePath, requestId, status: 401, code: 'token_rejected', ipBucket: clientIp });
         return res.status(401).json({ error: 'Your session has expired.' });
       }
 
@@ -161,7 +167,7 @@ function createCommunityApp({ admin: adminClient, db, storage = null, appCheckMo
       const resolvedStorage =
         storage ?? (typeof adminClient.storage === 'function' ? adminClient.storage() : null);
       return res.json(
-        await createCommunityService(db, resolvedStorage).execute(identity.uid, routePath, req.body),
+        await createCommunityService(db, resolvedStorage).execute(identity.uid, routePath, cleanBody),
       );
     } catch (error) {
       const status =
@@ -170,9 +176,13 @@ function createCommunityApp({ admin: adminClient, db, storage = null, appCheckMo
           : 500;
       const retryAfter = Number(error?.retryAfter) || 0;
       if (retryAfter > 0) res.set('Retry-After', String(retryAfter));
+      if (status === 401 || status === 403 || status === 429) {
+        logSecurityEvent({ event: 'community_api_denied', decision: 'deny', route: routePath, requestId, status, code: error?.code || 'denied', ipBucket: clientIp });
+      }
       if (status >= 500) {
         console.error('Community API error', {
           route: routePath,
+          requestId,
           status,
           code: error?.code || 'internal',
         });

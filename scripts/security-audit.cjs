@@ -443,8 +443,115 @@ function scanWorkflowSecurity(relPath, content) {
   return findings;
 }
 
+function scanZeroTrustPolicies(rootDir) {
+  const findings = [];
+
+  const sharedRbacFiles = [
+    'access-api.js',
+    'access-service.js',
+    'access-policy.js',
+    'request-guard.js',
+    'telemetry-engine.js',
+    'telemetry-service.js',
+  ];
+  for (const name of sharedRbacFiles) {
+    const srcPath = path.join(rootDir, 'functions', name);
+    const rbacPath = path.join(rootDir, 'functions/rbac', name);
+    if (fs.existsSync(srcPath) && fs.existsSync(rbacPath)) {
+      if (fs.readFileSync(srcPath, 'utf8') !== fs.readFileSync(rbacPath, 'utf8')) {
+        findings.push({
+          rule: 'rbac-sync-drift',
+          file: `functions/rbac/${name}`,
+          line: 1,
+          detail: `functions/rbac/${name} is out of sync with functions/${name}; run node scripts/build-access-deploy.cjs.`,
+        });
+      }
+    }
+  }
+
+  const firestoreRulesPath = path.join(rootDir, 'firestore.rules');
+  if (fs.existsSync(firestoreRulesPath)) {
+    const rules = fs.readFileSync(firestoreRulesPath, 'utf8');
+    if (/\ballow\s+(?:read\s*,\s*)?write\s*:\s*if\s+true\b|\ballow\s+(?:read\s*,\s*)?write\s*:\s*if\s+request\.auth\s*!=\s*null\s*;/i.test(rules)) {
+      findings.push({
+        rule: 'firestore-wildcard-allow',
+        file: 'firestore.rules',
+        line: 1,
+        detail: 'firestore.rules must never allow unauthenticated or blanket authenticated writes.',
+      });
+    }
+  }
+
+  const storageRulesPath = path.join(rootDir, 'storage.rules');
+  if (fs.existsSync(storageRulesPath)) {
+    const sRules = fs.readFileSync(storageRulesPath, 'utf8');
+    if (/\ballow\s+(?:read\s*,\s*)?(?:write|create|update|delete)(?:\s*,\s*(?:write|create|update|delete))*\s*:\s*if\s+true\b/i.test(sRules)) {
+      findings.push({
+        rule: 'storage-wildcard-write',
+        file: 'storage.rules',
+        line: 1,
+        detail: 'storage.rules must never allow unauthenticated writes.',
+      });
+    }
+  }
+
+  const lanPolicyPath = path.join(rootDir, 'functions/lan-policy.js');
+  if (fs.existsSync(lanPolicyPath)) {
+    const lanPolicyText = fs.readFileSync(lanPolicyPath, 'utf8');
+    if (/if\s*\(\s*method\s*===\s*['"]GET['"]\s*\)\s*return\s+true\s*;/.test(lanPolicyText)) {
+      findings.push({
+        rule: 'lan-default-deny-get',
+        file: 'functions/lan-policy.js',
+        line: 1,
+        detail: 'LAN authorization must enforce explicit per-route permissions on GET routes (default-deny).',
+      });
+    }
+  }
+
+  if (fs.existsSync(path.join(rootDir, 'functions/index.js'))) {
+    const httpEndpoints = [
+      'functions/access-api.js',
+      'functions/auth-api.js',
+      'functions/community-api.js',
+      'functions/route-api.js',
+      'functions/race-bib-claim-api.js',
+      'functions/payments-service.js',
+    ];
+    for (const rel of httpEndpoints) {
+      const full = path.join(rootDir, rel);
+      if (fs.existsSync(full) && !fs.readFileSync(full, 'utf8').includes('applyApiSecurityHeaders')) {
+        findings.push({
+          rule: 'functions-security-headers',
+          file: rel,
+          line: 1,
+          detail: `${rel} must apply Zero Trust HTTP security headers via applyApiSecurityHeaders().`,
+        });
+      }
+    }
+  }
+
+  const serverTsPath = path.join(rootDir, 'server.ts');
+  if (fs.existsSync(serverTsPath)) {
+    const serverText = fs.readFileSync(serverTsPath, 'utf8');
+    const requiredTokens = ['Permissions-Policy', 'X-Frame-Options', 'X-Content-Type-Options', 'Referrer-Policy', 'validateTrustedEndpointUrl'];
+    for (const tok of requiredTokens) {
+      if (!serverText.includes(tok)) {
+        findings.push({
+          rule: 'server-zero-trust-hardening',
+          file: 'server.ts',
+          line: 1,
+          detail: `server.ts is missing required Zero Trust hardening control '${tok}'.`,
+        });
+      }
+    }
+  }
+
+  return findings;
+}
+
 function scanConfigHardening(rootDir) {
   const findings = [];
+  findings.push(...scanZeroTrustPolicies(rootDir));
 
   const gitignorePath = path.join(rootDir, '.gitignore');
   if (!fs.existsSync(gitignorePath)) {
@@ -762,4 +869,5 @@ module.exports = {
   scanDistArtifacts,
   scanFilePath,
   scanWorkflowSecurity,
+  scanZeroTrustPolicies,
 };

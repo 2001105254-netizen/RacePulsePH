@@ -356,6 +356,7 @@ async function startServer() {
   const app = express();
   const allowedOrigins = parseAllowedOrigins();
   const lanLimiter = requestGuard.createMemoryLimiter({ maxEntries: 10_000 });
+  const bridgeHmacVerifier = requestGuard.createBridgeHmacVerifier();
   if (process.env.RACEPULSE_TRUST_PROXY === 'true') {
     app.set('trust proxy', 1);
   }
@@ -378,8 +379,16 @@ async function startServer() {
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
     res.setHeader("X-Permitted-Cross-Domain-Policies", "none");
+    res.setHeader("Permissions-Policy", "camera=(self), microphone=(), geolocation=(self), payment=(self), usb=()");
+    res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+    res.setHeader("X-XSS-Protection", "0");
+    if (req.secure || req.get('x-forwarded-proto') === 'https') {
+      res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
+    }
     if (req.path.startsWith("/api")) {
       res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
       res.on('finish', () => {
         console.log(JSON.stringify({
           ts: new Date().toISOString(),
@@ -449,8 +458,13 @@ async function startServer() {
     next();
   });
 
-  // Allow bounded JSON payloads
-  app.use(express.json({ limit: "64kb" }));
+  // Allow bounded JSON payloads and preserve rawBody for HMAC verification
+  app.use(express.json({
+    limit: "64kb",
+    verify: (req, _res, buf) => {
+      (req as express.Request & { rawBody?: string }).rawBody = buf.toString('utf8');
+    },
+  }));
 
   // Scoped CORS Headers (hosted domains, Capacitor localhost, and private RFC1918 LAN terminals)
   app.use((req, res, next) => {
@@ -461,14 +475,27 @@ async function startServer() {
           res.sendStatus(403);
           return;
         }
+        if (req.path.startsWith('/api') && req.method !== 'GET' && req.method !== 'HEAD') {
+          requestGuard.logSecurityEvent({
+            event: 'lan_cors_origin_rejected',
+            decision: 'deny',
+            route: req.path,
+            requestId: String(res.locals.requestId || ''),
+            status: 403,
+            code: 'cors_origin_denied',
+            ipBucket: clientIpOf(req),
+          });
+          res.status(403).json({ error: 'Origin is not allowed.' });
+          return;
+        }
         next();
         return;
       }
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Vary", "Origin");
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-RacePulse-Bridge-Key, X-Firebase-AppCheck, X-Turnstile-Token, Idempotency-Key, X-Request-Id");
-      res.setHeader("Access-Control-Expose-Headers", "Retry-After");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-RacePulse-Bridge-Key, X-RacePulse-Bridge-Timestamp, X-RacePulse-Bridge-Nonce, X-RacePulse-Bridge-Signature, X-Firebase-AppCheck, X-Turnstile-Token, Idempotency-Key, X-Request-Id");
+      res.setHeader("Access-Control-Expose-Headers", "Retry-After, X-Request-Id");
     }
     if (req.method === "OPTIONS") {
       res.sendStatus(204);
@@ -553,12 +580,46 @@ async function startServer() {
       if (!isPlainRecord(req.body)) {
         return res.status(400).json({ error: 'Expected a JSON object body.' });
       }
-      req.body = stripPrototypeKeys(req.body);
+      try {
+        req.body = requestGuard.stripPrototypePollution(req.body);
+      } catch (err) {
+        return res.status(400).json({ error: err instanceof Error ? err.message : 'Invalid JSON payload.' });
+      }
     }
     if (route === '/api/rfid-events' && req.method === 'POST') {
       const expected = process.env.RACEPULSE_BRIDGE_KEY || '';
-      const supplied = req.get('X-RacePulse-Bridge-Key') || '';
-      if (expected.length < 32 || supplied.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(expected)) || !process.env.RACEPULSE_BRIDGE_RACE_ID) {
+      const requireHmac = process.env.RACEPULSE_BRIDGE_REQUIRE_HMAC === 'true';
+      const hasHmacHeader = Boolean(req.get('X-RacePulse-Bridge-Signature'));
+      const rawBody = (req as express.Request & { rawBody?: string }).rawBody ?? JSON.stringify(req.body);
+      let bridgeOk = false;
+      let bridgeReason = 'bridge_auth_required';
+      if (hasHmacHeader || requireHmac) {
+        const hmacRes = bridgeHmacVerifier.verify({
+          secret: expected,
+          rawBody,
+          timestampHeader: req.get('X-RacePulse-Bridge-Timestamp'),
+          nonceHeader: req.get('X-RacePulse-Bridge-Nonce'),
+          signatureHeader: req.get('X-RacePulse-Bridge-Signature'),
+        });
+        bridgeOk = Boolean(hmacRes.ok && process.env.RACEPULSE_BRIDGE_RACE_ID);
+        bridgeReason = hmacRes.reason || 'bridge_race_unset';
+      } else {
+        const supplied = req.get('X-RacePulse-Bridge-Key') || '';
+        bridgeOk = expected.length >= 32
+          && supplied.length === expected.length
+          && crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(expected))
+          && Boolean(process.env.RACEPULSE_BRIDGE_RACE_ID);
+      }
+      if (!bridgeOk) {
+        requestGuard.logSecurityEvent({
+          event: 'rfid_bridge_rejected',
+          decision: 'deny',
+          route,
+          requestId: String(res.locals.requestId || ''),
+          status: 401,
+          code: bridgeReason,
+          ipBucket: clientIp,
+        });
         const badBridge = lanLimiter.consume(`bad_bridge:${clientIp}`, { limit: 15, windowMs: 5 * 60 * 1000, penaltyMultiplier: 2 });
         if (!badBridge.allowed) {
           return sendRateLimitExceeded(res, badBridge.retryAfter, 'Too many failed bridge authentication attempts.');
@@ -588,7 +649,22 @@ async function startServer() {
         }
         return res.status(401).json({ error: 'Sign in to use race-day services.' });
       }
-      const endpoint = process.env.RACEPULSE_ACCESS_API_URL || 'https://asia-southeast1-racepulseph.cloudfunctions.net/accessApi';
+      let endpoint: string;
+      try {
+        endpoint = requestGuard.validateTrustedEndpointUrl(
+          process.env.RACEPULSE_ACCESS_API_URL || 'https://asia-southeast1-racepulseph.cloudfunctions.net/accessApi',
+        );
+      } catch {
+        requestGuard.logSecurityEvent({
+          event: 'untrusted_access_endpoint',
+          decision: 'deny',
+          route,
+          requestId: String(res.locals.requestId || ''),
+          status: 503,
+          code: 'untrusted_endpoint',
+        });
+        return res.status(503).json({ error: 'Authorization endpoint configuration is invalid.' });
+      }
       const scanningRaceId = route === '/api/chip-reads' && req.method === 'POST' && typeof req.body?.raceId === 'string'
         ? req.body.raceId
         : undefined;

@@ -60,7 +60,7 @@ test('local HTTP enforces security headers, CORS allowlist, plain JSON bodies, a
 
  const resetSlash=await request('orders/reset/','POST','operator',{id:'evil_reset',runnerName:'Test',bibNumber:'5-1',status:'queued'});
  assert.equal(resetSlash.status,403);
- assert.equal(lanCors.headers.get('access-control-expose-headers'),'Retry-After');
+ assert.equal(lanCors.headers.get('access-control-expose-headers'),'Retry-After, X-Request-Id');
  assert.match(lanCors.headers.get('access-control-allow-headers')||'',/X-Firebase-AppCheck/);
 
  // Repeated invalid bridge credentials trigger 429 + Retry-After to stop brute-force/DDoS.
@@ -167,5 +167,128 @@ test('local HTTP returns 503 without partial memory corruption when persistence 
  } finally {
   failChild.kill();
   fs.rmSync(failDir, { recursive: true, force: true });
+ }
+});
+
+test('local HTTP enforces Zero Trust headers, rejects evil-origin mutations, and accepts HMAC bridge signatures', async () => {
+ const { signHmacBridgePayload } = require('../functions/request-guard');
+ const healthRes = await request('health');
+ assert.match(healthRes.headers.get('permissions-policy') || '', /camera=\(self\)/);
+ assert.equal(healthRes.headers.get('cross-origin-opener-policy'), 'same-origin-allow-popups');
+ assert.equal(healthRes.headers.get('x-xss-protection'), '0');
+ assert.equal(healthRes.headers.get('content-security-policy'), "default-src 'none'; frame-ancestors 'none'");
+
+ const evilPost = await fetch(`http://127.0.0.1:${port}/api/orders`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', Origin: 'https://evil.example', Authorization: 'Bearer runner' },
+  body: JSON.stringify({ id: 'evil_origin_1', ownerUid: 'runner', runnerName: 'Runner', bibNumber: '5-001', status: 'queued' }),
+ });
+ assert.equal(evilPost.status, 403);
+
+ const bridgeSecret = 'test-pairing-key-012345678901234567890';
+ const ts = Math.floor(Date.now() / 1000);
+ const nonce = 'hmac_nonce_0123456789abcdef';
+ const hmacPayload = JSON.stringify({
+  id: 'hmac_ev_1',
+  epc: 'CAFEBABE1234',
+  antenna: 2,
+  timestamp: new Date().toISOString(),
+ });
+ const signature = signHmacBridgePayload({ secret: bridgeSecret, rawBody: hmacPayload, timestampSec: ts, nonce });
+
+ const hmacOk = await fetch(`http://127.0.0.1:${port}/api/rfid-events`, {
+  method: 'POST',
+  headers: {
+   'Content-Type': 'application/json',
+   'X-RacePulse-Bridge-Timestamp': String(ts),
+   'X-RacePulse-Bridge-Nonce': nonce,
+   'X-RacePulse-Bridge-Signature': signature,
+  },
+  body: hmacPayload,
+ });
+ assert.equal(hmacOk.status, 201);
+});
+
+test('local HTTP rejects legacy key when RACEPULSE_BRIDGE_REQUIRE_HMAC=true and blocks HMAC tampering/replays with 401', async () => {
+ const strictDir = fs.mkdtempSync(path.join(os.tmpdir(), 'racepulse-lan-hmac-'));
+ const strictPort = 31745;
+ const bridgeSecret = 'test-pairing-key-012345678901234567890';
+ const strictChild = spawn(process.execPath, ['dist/server.cjs'], {
+  env: {
+   ...process.env,
+   NODE_ENV: 'production',
+   PORT: String(strictPort),
+   RACEPULSE_BRIDGE_KEY: bridgeSecret,
+   RACEPULSE_BRIDGE_RACE_ID: 'race_a',
+   RACEPULSE_BRIDGE_REQUIRE_HMAC: 'true',
+   RACEPULSE_DATA_DIR: strictDir,
+   RACEPULSE_ACCESS_API_URL: `http://127.0.0.1:${fixture.address().port}`,
+  },
+  stdio: ['ignore', 'pipe', 'pipe'],
+ });
+ try {
+  const deadline = Date.now() + 20000;
+  let started = false;
+  while (Date.now() < deadline) {
+   try {
+    const r = await fetch(`http://127.0.0.1:${strictPort}/api/health`);
+    if (r.status === 200) { started = true; break; }
+   } catch {}
+   await new Promise((r) => setTimeout(r, 100));
+  }
+  assert.equal(started, true);
+
+  const legacyRes = await fetch(`http://127.0.0.1:${strictPort}/api/rfid-events`, {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json', 'X-RacePulse-Bridge-Key': bridgeSecret },
+   body: JSON.stringify({ id: 'leg_1', epc: 'DEADBEEF', antenna: 1, timestamp: new Date().toISOString() }),
+  });
+  assert.equal(legacyRes.status, 401);
+
+  const { signHmacBridgePayload } = require('../functions/request-guard');
+  const ts = Math.floor(Date.now() / 1000);
+  const nonce = 'strict_hmac_nonce_0123456789';
+  const body = JSON.stringify({ id: 'strict_1', epc: 'DEADBEEF', antenna: 1, timestamp: new Date().toISOString() });
+  const sig = signHmacBridgePayload({ secret: bridgeSecret, rawBody: body, timestampSec: ts, nonce });
+  const hmacRes = await fetch(`http://127.0.0.1:${strictPort}/api/rfid-events`, {
+   method: 'POST',
+   headers: {
+    'Content-Type': 'application/json',
+    'X-RacePulse-Bridge-Timestamp': String(ts),
+    'X-RacePulse-Bridge-Nonce': nonce,
+    'X-RacePulse-Bridge-Signature': sig,
+   },
+   body,
+  });
+  assert.equal(hmacRes.status, 201);
+
+  // Replaying the exact same nonce must be rejected with 401.
+  const hmacReplay = await fetch(`http://127.0.0.1:${strictPort}/api/rfid-events`, {
+   method: 'POST',
+   headers: {
+    'Content-Type': 'application/json',
+    'X-RacePulse-Bridge-Timestamp': String(ts),
+    'X-RacePulse-Bridge-Nonce': nonce,
+    'X-RacePulse-Bridge-Signature': sig,
+   },
+   body,
+  });
+  assert.equal(hmacReplay.status, 401);
+
+  // Tampered body with fresh nonce must be rejected with 401.
+  const hmacTampered = await fetch(`http://127.0.0.1:${strictPort}/api/rfid-events`, {
+   method: 'POST',
+   headers: {
+    'Content-Type': 'application/json',
+    'X-RacePulse-Bridge-Timestamp': String(ts),
+    'X-RacePulse-Bridge-Nonce': 'strict_hmac_fresh_9876543210',
+    'X-RacePulse-Bridge-Signature': sig,
+   },
+   body: body.replace('DEADBEEF', 'CAFEBABE'),
+  });
+  assert.equal(hmacTampered.status, 401);
+ } finally {
+  strictChild.kill();
+  fs.rmSync(strictDir, { recursive: true, force: true });
  }
 });

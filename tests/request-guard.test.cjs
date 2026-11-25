@@ -277,3 +277,165 @@ test('getDefaultAllowedOrigins excludes localhost unless emulator or RACEPULSE_A
     else process.env.RACEPULSE_ALLOW_LOCALHOST_CORS = prevLocal;
   }
 });
+
+test('applyApiSecurityHeaders sets full Zero Trust HTTP response headers', () => {
+  const headers = {};
+  const res = { set: (k, v) => { headers[String(k).toLowerCase()] = v; } };
+  guard.applyApiSecurityHeaders(res);
+  assert.equal(headers['cache-control'], 'no-store');
+  assert.equal(headers.pragma, 'no-cache');
+  assert.equal(headers['x-content-type-options'], 'nosniff');
+  assert.equal(headers['x-frame-options'], 'DENY');
+  assert.equal(headers['referrer-policy'], 'strict-origin-when-cross-origin');
+  assert.equal(headers['x-permitted-cross-domain-policies'], 'none');
+  assert.equal(headers['x-xss-protection'], '0');
+  assert.match(headers['strict-transport-security'] || '', /max-age=31536000/);
+  assert.equal(headers['content-security-policy'], "default-src 'none'; frame-ancestors 'none'");
+  assert.match(headers['permissions-policy'] || '', /camera=\(\)/);
+});
+
+test('stripPrototypePollution removes dangerous keys recursively and bounds depth', () => {
+  const dirty = JSON.parse('{"name":"Juan","__proto__":{"admin":true},"nested":{"constructor":{"x":1},"prototype":true,"ok":42},"items":[{"__proto__":{"pwn":1},"v":1}]}');
+  const clean = guard.stripPrototypePollution(dirty);
+  assert.equal(Object.hasOwn(clean, '__proto__'), false);
+  assert.equal(Object.hasOwn(clean.nested, 'constructor'), false);
+  assert.equal(Object.hasOwn(clean.nested, 'prototype'), false);
+  assert.equal(clean.nested.ok, 42);
+  assert.equal(Object.hasOwn(clean.items[0], '__proto__'), false);
+  assert.equal(clean.items[0].v, 1);
+
+  let deep = { leaf: true };
+  for (let i = 0; i < 16; i += 1) deep = { child: deep };
+  assert.throws(
+    () => guard.stripPrototypePollution(deep, 12),
+    (err) => err instanceof guard.GuardError && err.status === 400 && err.code === 'payload_too_deep',
+  );
+});
+
+test('resolveRequestId preserves valid correlation IDs and generates UUIDs otherwise', () => {
+  const headers = {};
+  const makeRes = () => ({ set: (k, v) => { headers[String(k).toLowerCase()] = v; } });
+  const validId = guard.resolveRequestId({ get: (k) => (k === 'X-Request-Id' ? 'req_trace-01:abc' : undefined) }, makeRes());
+  assert.equal(validId, 'req_trace-01:abc');
+  assert.equal(headers['x-request-id'], 'req_trace-01:abc');
+
+  const invalidId = guard.resolveRequestId({ get: () => 'bad id with spaces\n' }, makeRes());
+  assert.match(invalidId, /^[0-9a-f-]{36}$/i);
+  assert.equal(headers['x-request-id'], invalidId);
+});
+
+test('assertRecentAuth enforces fresh auth_time for step-up operations', () => {
+  const nowMs = 1_795_000_000_000;
+  const nowSec = Math.floor(nowMs / 1000);
+  assert.equal(guard.assertRecentAuth({ uid: 'u1', auth_time: nowSec - 120 }, { maxAgeSeconds: 900, now: () => nowMs }).verified, true);
+  assert.equal(guard.assertRecentAuth({ uid: 'u1' }, { maxAgeSeconds: 900, now: () => nowMs }).skipped, true);
+  assert.throws(
+    () => guard.assertRecentAuth({ uid: 'u1' }, { maxAgeSeconds: 900, now: () => nowMs, requireAuthTime: true }),
+    (err) => err instanceof guard.GuardError && err.status === 401 && err.code === 'reauth_required',
+  );
+  assert.throws(
+    () => guard.assertRecentAuth({ uid: 'u1', auth_time: nowSec - 901 }, { maxAgeSeconds: 900, now: () => nowMs }),
+    (err) => err instanceof guard.GuardError && err.status === 401 && err.code === 'reauth_required',
+  );
+  assert.throws(
+    () => guard.assertRecentAuth({ uid: 'u1', auth_time: nowSec + 301 }, { maxAgeSeconds: 900, now: () => nowMs }),
+    (err) => err instanceof guard.GuardError && err.status === 401 && err.code === 'reauth_required',
+  );
+});
+
+test('validateTrustedEndpointUrl permits HTTPS and loopback HTTP and blocks insecure targets', () => {
+  assert.equal(
+    guard.validateTrustedEndpointUrl('https://asia-southeast1-racepulseph.cloudfunctions.net/accessApi/'),
+    'https://asia-southeast1-racepulseph.cloudfunctions.net/accessApi',
+  );
+  assert.equal(guard.validateTrustedEndpointUrl('http://127.0.0.1:8080/'), 'http://127.0.0.1:8080');
+  assert.throws(() => guard.validateTrustedEndpointUrl('http://evil.example/accessApi'));
+  assert.throws(() => guard.validateTrustedEndpointUrl('https://user:pass@evil.example/accessApi'));
+  assert.throws(() => guard.validateTrustedEndpointUrl('file:///etc/passwd'));
+});
+
+test('HMAC bridge signing and verification rejects tampering, stale timestamps, wrong keys, and nonce replays', () => {
+  let clock = 1_795_000_000_000;
+  const nowSec = Math.floor(clock / 1000);
+  const secret = 'test-pairing-key-012345678901234567890';
+  const rawBody = JSON.stringify({ id: 'ev_1', epc: 'DEADBEEF', antenna: 1, timestamp: '2026-10-28T00:00:00Z' });
+  const nonce = 'nonce_0123456789abcdef';
+  const sig = guard.signHmacBridgePayload({ secret, rawBody, timestampSec: nowSec, nonce });
+
+  const verifier = guard.createBridgeHmacVerifier({ now: () => clock });
+  assert.equal(
+    verifier.verify({
+      secret,
+      rawBody,
+      timestampHeader: String(nowSec),
+      nonceHeader: nonce,
+      signatureHeader: sig,
+    }).ok,
+    true,
+  );
+  // Replay with same nonce must fail.
+  assert.equal(
+    verifier.verify({
+      secret,
+      rawBody,
+      timestampHeader: String(nowSec),
+      nonceHeader: nonce,
+      signatureHeader: sig,
+    }).reason,
+    'nonce_replayed',
+  );
+  // Tampered body must fail.
+  assert.equal(
+    verifier.verify({
+      secret,
+      rawBody: rawBody.replace('DEADBEEF', 'CAFEBABE'),
+      timestampHeader: String(nowSec),
+      nonceHeader: 'nonce_fresh_0123456789',
+      signatureHeader: sig,
+    }).reason,
+    'invalid_signature',
+  );
+  // Stale timestamp must fail.
+  assert.equal(
+    verifier.verify({
+      secret,
+      rawBody,
+      timestampHeader: String(nowSec - 301),
+      nonceHeader: 'nonce_stale_0123456789',
+      signatureHeader: sig,
+    }).reason,
+    'timestamp_skew',
+  );
+  // Wrong secret must fail.
+  assert.equal(
+    verifier.verify({
+      secret: 'wrong-pairing-key-01234567890123456789',
+      rawBody,
+      timestampHeader: String(nowSec),
+      nonceHeader: 'nonce_wrongkey_0123456',
+      signatureHeader: sig,
+    }).reason,
+    'invalid_signature',
+  );
+});
+
+test('setScopedCors reports origin validation and exposes X-Request-Id', () => {
+  const headersA = {};
+  const resA = { set: (k, v) => { headersA[String(k).toLowerCase()] = v; } };
+  const allowed = guard.setScopedCors(
+    { get: (k) => (k.toLowerCase() === 'origin' ? 'https://racepulseph.com' : undefined) },
+    resA,
+  );
+  assert.deepEqual(allowed, { hasOrigin: true, originAllowed: true });
+  assert.equal(headersA['access-control-allow-origin'], 'https://racepulseph.com');
+  assert.match(headersA['access-control-expose-headers'], /X-Request-Id/);
+
+  const headersB = {};
+  const resB = { set: (k, v) => { headersB[String(k).toLowerCase()] = v; } };
+  const blocked = guard.setScopedCors(
+    { get: (k) => (k.toLowerCase() === 'origin' ? 'https://evil.example' : undefined) },
+    resB,
+  );
+  assert.deepEqual(blocked, { hasOrigin: true, originAllowed: false });
+  assert.equal(headersB['access-control-allow-origin'], undefined);
+});

@@ -594,11 +594,15 @@ test('CORS gates localhost origins unless emulator or RACEPULSE_ALLOW_LOCALHOST_
 
     const prodLocalhostRes = makeRes();
     await handler(makeReq({ method: 'OPTIONS', headers: { origin: 'http://localhost:5173' } }), prodLocalhostRes);
+    assert.equal(prodLocalhostRes.statusCode, 403);
     assert.equal(prodLocalhostRes.headers['access-control-allow-origin'], undefined);
 
     const prodOriginRes = makeRes();
     await handler(makeReq({ method: 'OPTIONS', headers: { origin: 'https://racepulseph.com' } }), prodOriginRes);
+    assert.equal(prodOriginRes.statusCode, 204);
     assert.equal(prodOriginRes.headers['access-control-allow-origin'], 'https://racepulseph.com');
+    assert.match(prodOriginRes.headers['strict-transport-security'] || '', /max-age=31536000/);
+    assert.equal(prodOriginRes.headers['content-security-policy'], "default-src 'none'; frame-ancestors 'none'");
 
     process.env.RACEPULSE_ALLOW_LOCALHOST_CORS = 'true';
     const devLocalhostRes = makeRes();

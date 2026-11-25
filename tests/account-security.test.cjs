@@ -605,3 +605,131 @@ test('purgeAndAnonymizeUserAccount deletes M4 clubs/social/inbox docs and trigge
   assert.ok(deletedPrefixes.includes('social-media/u-m4/'));
   assert.ok(deletedPrefixes.includes('chat-media/dm_u-m4_u-other/u-m4/'));
 });
+
+test('POST /account/delete requires recent auth_time and rejects disallowed CORS origins with 403', async () => {
+  const { createAccountApp } = require('../functions/auth-api');
+  const nowSec = Math.floor(Date.now() / 1000);
+  const docs = new Map([
+    ['users/u-del', { uid: 'u-del', username: 'runner_del', role: 'runner' }],
+  ]);
+  const makeSnap = (key) => ({
+    exists: docs.has(key),
+    id: key.split('/').pop(),
+    ref: { path: key },
+    data: () => (docs.has(key) ? structuredClone(docs.get(key)) : undefined),
+  });
+  const db = {
+    doc: (key) => ({ path: key, get: async () => makeSnap(key) }),
+    collection: (name) => ({
+      where: (field, op, val) => ({
+        get: async () => {
+          const matched = [...docs.entries()]
+            .filter(([k, v]) => k.startsWith(`${name}/`) && op === '==' && v[field] === val)
+            .map(([k]) => makeSnap(k));
+          return { docs: matched, empty: matched.length === 0, forEach: (fn) => matched.forEach(fn) };
+        },
+      }),
+    }),
+    batch: () => {
+      const ops = [];
+      return {
+        delete: (ref) => ops.push(() => docs.delete(ref.path)),
+        update: (ref, patch) => ops.push(() => docs.set(ref.path, { ...docs.get(ref.path), ...structuredClone(patch) })),
+        commit: async () => ops.forEach((o) => o()),
+      };
+    },
+    runTransaction: async (cb) => {
+      const ops = [];
+      const res = await cb({
+        get: async (ref) => makeSnap(ref.path),
+        set: (ref, data) => ops.push(() => docs.set(ref.path, structuredClone(data))),
+      });
+      ops.forEach((o) => o());
+      return res;
+    },
+  };
+  let deletedUid = null;
+  const auth = {
+    verifyIdToken: async (token, checkRevoked) => {
+      assert.equal(checkRevoked, true);
+      if (token === 'stale-tok') return { uid: 'u-del', auth_time: nowSec - 1200 };
+      if (token === 'fresh-tok') return { uid: 'u-del', auth_time: nowSec - 30 };
+      throw new Error('bad');
+    },
+    deleteUser: async (uid) => { deletedUid = uid; },
+  };
+  const app = createAccountApp({
+    admin: { auth: () => auth },
+    db,
+    auth,
+    getCodeSecret: () => 'test-only-secret-that-is-not-a-production-credential',
+    getSmtpPassword: () => 'unused',
+    appCheckMode: 'off',
+    turnstileMode: 'off',
+  });
+  const makeRes = () => {
+    const headers = {};
+    let statusCode = 200;
+    let body;
+    return {
+      headers,
+      get statusCode() { return statusCode; },
+      get body() { return body; },
+      set(k, v) { headers[k.toLowerCase()] = v; },
+      status(c) { statusCode = c; return this; },
+      json(v) { body = v; return this; },
+      send(v) { body = v; return this; },
+    };
+  };
+
+  // Disallowed origin on OPTIONS and POST returns 403.
+  const evilOpt = makeRes();
+  await app({
+    method: 'OPTIONS',
+    path: '/auth/resolve-username',
+    ip: '203.0.113.11',
+    get: (h) => (h.toLowerCase() === 'origin' ? 'https://evil.example' : undefined),
+    is: () => false,
+  }, evilOpt);
+  assert.equal(evilOpt.statusCode, 403);
+
+  const evilPost = makeRes();
+  await app({
+    method: 'POST',
+    path: '/auth/resolve-username',
+    body: { username: 'runner_del' },
+    rawBody: Buffer.from('{"username":"runner_del"}', 'utf8'),
+    ip: '203.0.113.11',
+    get: (h) => (h.toLowerCase() === 'origin' ? 'https://evil.example' : h.toLowerCase() === 'content-type' ? 'application/json' : undefined),
+    is: (t) => t === 'application/json',
+  }, evilPost);
+  assert.equal(evilPost.statusCode, 403);
+
+  // Stale auth_time (>900s) rejected with 401.
+  const staleRes = makeRes();
+  await app({
+    method: 'POST',
+    path: '/account/delete',
+    body: { confirmation: 'DELETE' },
+    rawBody: Buffer.from('{"confirmation":"DELETE"}', 'utf8'),
+    ip: '203.0.113.11',
+    get: (h) => (h.toLowerCase() === 'authorization' ? 'Bearer stale-tok' : h.toLowerCase() === 'content-type' ? 'application/json' : undefined),
+    is: (t) => t === 'application/json',
+  }, staleRes);
+  assert.equal(staleRes.statusCode, 401);
+  assert.equal(deletedUid, null);
+
+  // Fresh auth_time succeeds.
+  const freshRes = makeRes();
+  await app({
+    method: 'POST',
+    path: '/account/delete',
+    body: { confirmation: 'DELETE' },
+    rawBody: Buffer.from('{"confirmation":"DELETE"}', 'utf8'),
+    ip: '203.0.113.11',
+    get: (h) => (h.toLowerCase() === 'authorization' ? 'Bearer fresh-tok' : h.toLowerCase() === 'content-type' ? 'application/json' : undefined),
+    is: (t) => t === 'application/json',
+  }, freshRes);
+  assert.equal(freshRes.statusCode, 200);
+  assert.equal(deletedUid, 'u-del');
+});

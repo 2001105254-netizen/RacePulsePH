@@ -5,34 +5,20 @@ const {
   applyApiSecurityHeaders,
   enforceRateLimit,
   extractClientIp,
+  getDefaultAllowedOrigins,
+  logSecurityEvent,
+  resolveRequestId,
   setScopedCors,
+  stripPrototypePollution,
   verifyAppCheckRequest,
 } = require('./request-guard');
-
-const PROD_CLAIM_ORIGINS = [
-  'https://racepulseph.web.app',
-  'https://racepulseph.firebaseapp.com',
-  'https://racepulseph.com',
-  'https://www.racepulseph.com',
-  'capacitor://localhost',
-];
-
-const LOCALHOST_CLAIM_ORIGINS = [
-  'http://localhost:3000',
-  'http://localhost:5173',
-];
 
 const MAX_CACHED_RACES = 20;
 const RACE_BIB_FALLBACK_TTL_MS = 30 * 1000;
 const raceBibFallbackCacheByDb = new WeakMap();
 
 function getClaimAllowedOrigins() {
-  const allowLocalhost =
-    process.env.FUNCTIONS_EMULATOR === 'true' ||
-    process.env.RACEPULSE_ALLOW_LOCALHOST_CORS === 'true';
-  return allowLocalhost
-    ? [...PROD_CLAIM_ORIGINS, ...LOCALHOST_CLAIM_ORIGINS]
-    : PROD_CLAIM_ORIGINS;
+  return getDefaultAllowedOrigins();
 }
 
 function isSyntheticRunnerUid(uid) {
@@ -344,13 +330,19 @@ function createRaceBibClaimApp({
 
   return async (request, response) => {
     applyApiSecurityHeaders(response);
-    setScopedCors(request, response, { allowedOrigins: getClaimAllowedOrigins(), methods: 'POST, OPTIONS' });
-    if (request.method === 'OPTIONS') return response.status(204).send('');
-    if (request.method !== 'POST' || !request.is('application/json') || (request.rawBody?.length || 0) > 65536) {
+    const requestId = resolveRequestId(request, response);
+    const cors = setScopedCors(request, response, { allowedOrigins: getClaimAllowedOrigins(), methods: 'POST, OPTIONS' });
+    const path = (request.path || '/').replace(/\/+$/, '') || '/';
+    if (request.method === 'OPTIONS') return response.status(cors.hasOrigin && !cors.originAllowed ? 403 : 204).send('');
+    if (cors.hasOrigin && !cors.originAllowed) {
+      logSecurityEvent({ event: 'cors_origin_rejected', decision: 'deny', route: path, requestId, status: 403, code: 'cors_origin_denied', ipBucket: extractClientIp(request) });
+      return response.status(403).json({ error: 'Origin is not allowed.' });
+    }
+    if (request.method !== 'POST' || !request.is('application/json') || (request.rawBody?.length || 0) > 65536 || !request.body || typeof request.body !== 'object' || Array.isArray(request.body)) {
       return response.status(400).json({ error: 'Invalid request.' });
     }
-    const path = (request.path || '/').replace(/\/+$/, '') || '/';
     try {
+      request.body = stripPrototypePollution(request.body);
       await verifyAppCheckRequest(request, { admin: adminClient, mode: appCheckMode });
       if (path === '/preview') return await preview(request, response);
       if (path === '/claim') return await claim(request, response);
@@ -359,7 +351,10 @@ function createRaceBibClaimApp({
       const status = typeof error?.status === 'number' && error.status >= 400 && error.status < 600 ? error.status : 500;
       const retryAfter = Number(error?.retryAfter) || 0;
       if (retryAfter > 0) response.set('Retry-After', String(retryAfter));
-      console.warn('Race bib claim request failed', { path, status, code: error?.code || 'rejected' });
+      if (status === 401 || status === 403 || status === 429) {
+        logSecurityEvent({ event: 'bib_claim_denied', decision: 'deny', route: path, requestId, status, code: error?.code || 'rejected', ipBucket: extractClientIp(request) });
+      }
+      console.warn('Race bib claim request failed', { path, requestId, status, code: error?.code || 'rejected' });
       return response.status(status).json({
         error: status < 500 && error?.message ? error.message : 'Unable to process this race bib.',
         ...(retryAfter > 0 ? { retryAfter } : {}),

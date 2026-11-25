@@ -139,3 +139,28 @@ test('evaluateNpmAudit blocks critical vulnerabilities and any unapproved high v
   assert.equal(audit.evaluateNpmAudit(reportWithCritical, 'root', audit.APPROVED_HIGH_ROOT_PACKAGES).length, 1);
   assert.equal(audit.evaluateNpmAudit(reportWithNewHigh, 'functions', new Set()).length, 1);
 });
+
+test('scanZeroTrustPolicies enforces wildcard rule bans, default-deny LAN GETs, and RBAC sync', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'racepulse-zt-audit-'));
+  try {
+    fs.mkdirSync(path.join(tmpDir, 'functions/rbac'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, 'firestore.rules'), 'rules_version = "2";\nallow read, write: if true;\n');
+    fs.writeFileSync(path.join(tmpDir, 'storage.rules'), 'rules_version = "2";\nallow write: if true;\n');
+    fs.writeFileSync(path.join(tmpDir, 'functions/lan-policy.js'), "function authorize(s, method) { if (method === 'GET') return true; }\n");
+    for (const f of ['access-api.js', 'access-service.js', 'access-policy.js', 'request-guard.js', 'telemetry-engine.js', 'telemetry-service.js']) {
+      fs.writeFileSync(path.join(tmpDir, 'functions', f), '// v1');
+      fs.writeFileSync(path.join(tmpDir, 'functions/rbac', f), f === 'access-policy.js' ? '// drifted' : '// v1');
+    }
+    const findings = audit.scanZeroTrustPolicies(tmpDir);
+    const rules = new Set(findings.map((f) => f.rule));
+    assert.ok(rules.has('firestore-wildcard-allow'));
+    assert.ok(rules.has('storage-wildcard-write'));
+    assert.ok(rules.has('lan-default-deny-get'));
+    assert.ok(rules.has('rbac-sync-drift'));
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
