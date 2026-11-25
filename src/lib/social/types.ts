@@ -48,6 +48,7 @@ export interface SocialPostRecord {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
+  hiddenByModeration?: boolean;
 }
 
 export interface SocialCommentRecord {
@@ -60,6 +61,7 @@ export interface SocialCommentRecord {
   authorUsername?: string;
   createdAt: string;
   deletedAt: string | null;
+  hiddenByModeration?: boolean;
 }
 
 export type ContentReportTargetType = 'post' | 'comment' | 'message' | 'user' | 'club';

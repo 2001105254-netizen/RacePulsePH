@@ -13,7 +13,7 @@ import type { RaceSetupLaunchRequest } from './RaceSetupPanel';
 import type { LiveBroadcastLaunchRequest } from './LiveBroadcastPanel';
 import type { EngravingLaunchRequest } from './OperatorDashboard';
 import {
-  Award, CalendarDays, Timer, Tv, Flag, MapPinned, Medal, UserCog, Users, LogOut, CheckCircle, XCircle, ShieldCheck, Search, Trash2, Printer, Sparkles, Sliders,
+  Award, Building2, CalendarDays, Timer, Tv, Flag, MapPinned, Medal, UserCog, Users, LogOut, CheckCircle, XCircle, ShieldAlert, ShieldCheck, Search, Trash2, Printer, Sparkles, Sliders,
 } from 'lucide-react';
 
 const LiveBroadcastPanel = lazy(() => import('./LiveBroadcastPanel'));
@@ -26,10 +26,12 @@ const AccessPanel = lazy(() => import('./AccessPanel'));
 const BibStudioPanel = lazy(() => import('./BibStudioPanel'));
 const HighlightsStudioPanel = lazy(() => import('./HighlightsStudioPanel'));
 const BadgeStudioPanel = lazy(() => import('./admin/BadgeStudioPanel'));
+const ClubStudioPanel = lazy(() => import('./admin/ClubStudioPanel'));
+const ModerationQueuePanel = lazy(() => import('./admin/ModerationQueuePanel'));
 
-type AdminTab = 'engraving' | 'timing' | 'race' | 'routes' | 'bibstudio' | 'highlights' | 'badges' | 'organizers' | 'runners' | 'access' | 'events' | 'hub';
+type AdminTab = 'engraving' | 'timing' | 'race' | 'routes' | 'bibstudio' | 'highlights' | 'badges' | 'clubs' | 'moderation' | 'organizers' | 'runners' | 'access' | 'events' | 'hub';
 
-const ADMIN_TAB_ORDER: readonly AdminTab[] = ['events', 'hub', 'highlights', 'badges', 'engraving', 'timing', 'race', 'routes', 'bibstudio', 'organizers', 'runners', 'access'];
+const ADMIN_TAB_ORDER: readonly AdminTab[] = ['events', 'hub', 'highlights', 'badges', 'clubs', 'moderation', 'engraving', 'timing', 'race', 'routes', 'bibstudio', 'organizers', 'runners', 'access'];
 
 interface AdminDashboardProps {
   profile: UserProfile;
@@ -85,7 +87,7 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
     setAccessTargetUid(uid);
     selectTab('access');
   };
-  const allowed: Record<AdminTab, boolean> = { engraving: can('engraving.view'), timing: can('timing.view') || can('roster.view') || can('payment.confirm'), race: can('race.view') || can('race.create'), routes: can('routes.view'), bibstudio: can('bibs.studio'), highlights: can('highlights.view'), badges: can('badges.view'), organizers: can('users.view'), runners: can('users.view'), access: isSuperAdmin, events: can('race.view'), hub: can('hub.manage') || can('hub.publish') };
+  const allowed: Record<AdminTab, boolean> = { engraving: can('engraving.view'), timing: can('timing.view') || can('roster.view') || can('payment.confirm'), race: can('race.view') || can('race.create'), routes: can('routes.view'), bibstudio: can('bibs.studio'), highlights: can('highlights.view'), badges: can('badges.view'), clubs: can('clubs.view'), moderation: can('moderation.manage'), organizers: can('users.view'), runners: can('users.view'), access: isSuperAdmin, events: can('race.view'), hub: can('hub.manage') || can('hub.publish') };
   const firstAllowedTab: AdminTab = ADMIN_TAB_ORDER.find(key => allowed[key]) || 'events';
   const active = allowed[tab] ? tab : firstAllowedTab;
   const homeTab: AdminTab = allowed.events ? 'events' : firstAllowedTab;
@@ -121,6 +123,8 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
     { key: 'hub', icon: <Tv className="w-4 h-4" />, label: 'Live Hub', shortLabel: 'Live Hub', active: active === 'hub', onClick: () => selectTab('hub') },
     { key: 'highlights', icon: <Sparkles className="w-4 h-4" />, label: 'Highlights', shortLabel: 'Highlights', active: active === 'highlights', onClick: () => selectTab('highlights') },
     { key: 'badges', icon: <Medal className="w-4 h-4" />, label: 'Badge Studio', shortLabel: 'Badges', active: active === 'badges', onClick: () => selectTab('badges') },
+    { key: 'clubs', icon: <Building2 className="w-4 h-4" />, label: 'Club Studio', shortLabel: 'Clubs', active: active === 'clubs', onClick: () => selectTab('clubs') },
+    { key: 'moderation', icon: <ShieldAlert className="w-4 h-4" />, label: 'Moderation', shortLabel: 'Safety', active: active === 'moderation', onClick: () => selectTab('moderation') },
     { key: 'engraving', icon: <Award className="w-4 h-4" />, label: 'Engraving', shortLabel: 'Engrave', active: active === 'engraving', onClick: () => selectTab('engraving') },
     { key: 'timing', icon: <Timer className="w-4 h-4" />, label: 'Timing', shortLabel: 'Timing', active: active === 'timing', onClick: () => selectTab('timing') },
     { key: 'race', icon: <Flag className="w-4 h-4" />, label: 'Race Setup', shortLabel: 'Setup', active: active === 'race', onClick: () => selectTab('race') },
@@ -202,6 +206,8 @@ export default function AdminDashboard({ profile, workspaceSwitch, pendingApprov
           {active === 'bibstudio' && <BibStudioPanel />}
           {active === 'highlights' && <HighlightsStudioPanel profile={profile} />}
           {active === 'badges' && <BadgeStudioPanel profile={profile} />}
+          {active === 'clubs' && <ClubStudioPanel profile={profile} />}
+          {active === 'moderation' && <ModerationQueuePanel profile={profile} />}
           {active === 'events' && (
             <MyRaceEventsPanel
               uid={profile.uid}
