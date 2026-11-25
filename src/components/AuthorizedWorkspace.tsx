@@ -3,6 +3,7 @@ import { signOutUser } from '../firebase';
 import { UserProfile } from '../types';
 import { useAccess } from '../lib/access';
 import { hasAnyPersonalCapability } from '../lib/runnerShell';
+import { usePresenceHeartbeat } from '../lib/telemetry/client';
 import type { WorkspaceSwitchProps } from './DesktopSidebar';
 import { AnimatedTabView, ViewLoadingSkeleton, type NavDirection } from './ui/MotionPrimitives';
 
@@ -16,6 +17,8 @@ export default function AuthorizedWorkspace({ profile, raceId, onRaceHandled }: 
   const [selected, setSelected] = useState<'operations' | 'personal'>(operations ? 'operations' : 'personal');
   const [workspaceDirection, setWorkspaceDirection] = useState<NavDirection>('forward');
   const workspace: 'operations' | 'personal' = selected === 'operations' && operations || !personal ? 'operations' : 'personal';
+
+  usePresenceHeartbeat(profile, workspace, access.ready && !access.suspended && (operations || personal));
 
   const selectWorkspace = (next: 'operations' | 'personal') => {
     setWorkspaceDirection(next === 'personal' ? 'forward' : 'back');

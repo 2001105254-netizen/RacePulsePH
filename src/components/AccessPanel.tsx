@@ -1,16 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { collection, doc, onSnapshot } from 'firebase/firestore';
-import { ArrowRight, Search, X } from 'lucide-react';
+import { Activity, ArrowRight, Search, ShieldCheck, X } from 'lucide-react';
 import { db } from '../firebase';
 import { Race, UserProfile } from '../types';
-import { accessCommand } from '../lib/access';
+import { accessCommand, useAccess } from '../lib/access';
 import { subscribeSharedRaces } from '../lib/racesStore';
 import { formatDateTime } from '../lib/preciseTime';
 import { roleLabel, roles } from '../lib/accessPolicy';
 import { AccessDraft, draftKey, draftSummary, normalizeDraft, scopeLabel } from '../lib/accessDraft';
+import { E2E_USERS_KEY, readDevSessionJson } from '../lib/badges/e2eFixtures';
 import AccessWorkspace, { AccessHistoryEntry } from './AccessWorkspace';
+import { ViewLoadingSkeleton } from './ui/MotionPrimitives';
 import { useFeedback } from './ui/FeedbackProvider';
 import { Select } from './ui/Select';
+
+const SystemTelemetryPanel = lazy(() => import('./admin/SystemTelemetryPanel'));
 
 interface AccessRecord {
   scope?: string;
@@ -40,6 +44,12 @@ export default function AccessPanel({
   initialSelectedUid?: string | null;
   onInitialSelectedHandled?: () => void;
 }) {
+  const { authority: isSuperAdmin } = useAccess();
+  const baseId = useId();
+  const isE2e = import.meta.env.DEV && Boolean(currentUserId?.startsWith('e2e-'));
+  const [sectionTab, setSectionTab] = useState<'roles' | 'telemetry'>('roles');
+  const sectionTabRefs = useRef<Partial<Record<'roles' | 'telemetry', HTMLButtonElement | null>>>({});
+
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [states, setStates] = useState<Record<string, AccessRecord>>({});
   const [search, setSearch] = useState('');
@@ -49,40 +59,84 @@ export default function AccessPanel({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!isSuperAdmin && sectionTab !== 'roles') {
+      setSectionTab('roles');
+    }
+  }, [isSuperAdmin, sectionTab]);
+
+  useEffect(() => {
     if (!initialSelectedUid) return;
     setSelected(initialSelectedUid);
+    setSectionTab('roles');
     onInitialSelectedHandled?.();
   }, [initialSelectedUid, onInitialSelectedHandled]);
 
-  useEffect(
-    () =>
-      onSnapshot(
-        collection(db, 'users'),
-        (snap) => {
-          setUsers(
-            snap.docs
-              .map((item) => item.data() as UserProfile)
-              .sort((a, b) => a.displayName.localeCompare(b.displayName)),
-          );
-          setLoading(false);
+  useEffect(() => {
+    if (isE2e) {
+      const storedUsers = readDevSessionJson<UserProfile>(E2E_USERS_KEY) ?? [
+        {
+          uid: currentUserId || 'e2e-superadmin',
+          email: 'superadmin@racepulse.ph',
+          displayName: 'Platform Super Admin',
+          role: 'superadmin',
+          approved: true,
+          createdAt: '2026-11-25T00:00:00.000Z',
         },
-        (err) => {
-          setError(err.message);
-          setLoading(false);
+        {
+          uid: 'e2e-runner-m5',
+          email: 'runner@racepulse.ph',
+          displayName: 'Ka-RacePulse Runner',
+          username: 'karp_runner',
+          role: 'runner',
+          approved: true,
+          createdAt: '2026-11-25T00:00:00.000Z',
         },
-      ),
-    [],
-  );
+      ];
+      setUsers(storedUsers);
+      setStates({});
+      setLoading(false);
+      setError('');
+      return;
+    }
+    return onSnapshot(
+      collection(db, 'users'),
+      (snap) => {
+        setUsers(
+          snap.docs
+            .map((item) => item.data() as UserProfile)
+            .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+        );
+        setLoading(false);
+      },
+      (err) => {
+        setError(err.message);
+        setLoading(false);
+      },
+    );
+  }, [isE2e, currentUserId]);
 
-  useEffect(
-    () =>
-      onSnapshot(
-        collection(db, 'userAccess'),
-        (snap) => setStates(Object.fromEntries(snap.docs.map((item) => [item.id, item.data()]))),
-        (err) => setError(err.message),
-      ),
-    [],
-  );
+  useEffect(() => {
+    if (isE2e) return;
+    return onSnapshot(
+      collection(db, 'userAccess'),
+      (snap) => setStates(Object.fromEntries(snap.docs.map((item) => [item.id, item.data()]))),
+      (err) => setError(err.message),
+    );
+  }, [isE2e]);
+
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, currentIndex: number) => {
+    const order: readonly ('roles' | 'telemetry')[] = ['roles', 'telemetry'];
+    let nextIndex = -1;
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % order.length;
+    else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + order.length) % order.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = order.length - 1;
+    if (nextIndex === -1) return;
+    event.preventDefault();
+    const nextTab = order[nextIndex];
+    setSectionTab(nextTab);
+    sectionTabRefs.current[nextTab]?.focus();
+  };
 
   const enriched = useMemo(
     () =>
@@ -150,7 +204,66 @@ export default function AccessPanel({
   ] as const;
 
   return (
-    <section className="access-directory" aria-labelledby="access-directory-title">
+    <div className="space-y-4">
+      {isSuperAdmin && (
+        <div
+          role="tablist"
+          aria-label="Super Admin access and telemetry sections"
+          className="flex flex-wrap gap-2 border-b border-[var(--border-default)] pb-3"
+        >
+          {(
+            [
+              { id: 'roles', label: 'Access & Roles', icon: ShieldCheck },
+              { id: 'telemetry', label: 'System Telemetry', icon: Activity },
+            ] as const
+          ).map((item, idx) => {
+            const Icon = item.icon;
+            const active = sectionTab === item.id;
+            return (
+              <button
+                key={item.id}
+                ref={(el) => {
+                  sectionTabRefs.current[item.id] = el;
+                }}
+                id={`${baseId}-tab-${item.id}`}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                aria-controls={`${baseId}-panel-${item.id}`}
+                tabIndex={active ? 0 : -1}
+                onClick={() => setSectionTab(item.id)}
+                onKeyDown={(ev) => handleTabKeyDown(ev, idx)}
+                className={`min-h-11 px-4 py-2 rounded-xl border text-xs font-semibold inline-flex items-center gap-2 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
+                  active
+                    ? 'border-red-600 bg-red-700 text-white'
+                    : 'border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
+                }`}
+              >
+                <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {isSuperAdmin && sectionTab === 'telemetry' ? (
+        <div
+          id={`${baseId}-panel-telemetry`}
+          role="tabpanel"
+          aria-labelledby={`${baseId}-tab-telemetry`}
+        >
+          <Suspense fallback={<ViewLoadingSkeleton label="Loading system telemetry" />}>
+            <SystemTelemetryPanel currentUserId={currentUserId} />
+          </Suspense>
+        </div>
+      ) : (
+        <section
+          id={`${baseId}-panel-roles`}
+          role={isSuperAdmin ? 'tabpanel' : undefined}
+          aria-labelledby={isSuperAdmin ? `${baseId}-tab-roles` : 'access-directory-title'}
+          className="access-directory"
+        >
       <div className="access-directory-heading">
         <div>
           <h2 id="access-directory-title">People and access</h2>
@@ -320,7 +433,9 @@ export default function AccessPanel({
           onClose={() => setSelected(null)}
         />
       )}
-    </section>
+        </section>
+      )}
+    </div>
   );
 }
 

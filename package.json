@@ -1,7 +1,7 @@
 {
   "name": "racepulseph",
   "private": true,
-  "version": "1.0.68",
+  "version": "1.0.69",
   "type": "module",
   "scripts": {
     "prepare": "node scripts/setup-git-hooks.cjs",
@@ -18,7 +18,7 @@
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
-    "test": "node --test tests/access-policy.test.cjs tests/account-client.test.cjs tests/account-security.test.cjs tests/all-screen-audit.test.cjs tests/badge-engine.test.cjs tests/club-engine.test.cjs tests/community-badges.test.cjs tests/community-clubs.test.cjs tests/community-runs.test.cjs tests/community-social-inbox.test.cjs tests/friend-search.test.cjs tests/lan-access.test.cjs tests/payments-api.test.cjs tests/race-bib-claim.test.cjs tests/release-version.test.cjs tests/request-guard.test.cjs tests/resilient-fetch.test.cjs tests/route-service.test.cjs tests/security-audit.test.cjs tests/security-client.test.cjs tests/social-engine.test.cjs tests/telemetry-engine.test.cjs tests/telemetry-service.test.cjs tests/timing-sequence.test.cjs && npx tsx --test tests/access-draft.test.ts tests/app-routing.test.ts tests/badge-presets.test.ts tests/event-analytics.test.ts tests/gpx-route-foundation.test.ts tests/highlights.test.ts tests/m4-client-validators.test.ts tests/m4-club-studio.test.ts tests/m4-inbox-client.test.ts tests/m4-runner-social-clubs.test.ts tests/public-landing-stats.test.ts tests/run-recorder.test.ts tests/runner-shell.test.ts tests/spreadsheet.test.ts",
+    "test": "node --test tests/access-policy.test.cjs tests/account-client.test.cjs tests/account-security.test.cjs tests/all-screen-audit.test.cjs tests/badge-engine.test.cjs tests/club-engine.test.cjs tests/community-badges.test.cjs tests/community-clubs.test.cjs tests/community-runs.test.cjs tests/community-social-inbox.test.cjs tests/friend-search.test.cjs tests/lan-access.test.cjs tests/payments-api.test.cjs tests/race-bib-claim.test.cjs tests/release-version.test.cjs tests/request-guard.test.cjs tests/resilient-fetch.test.cjs tests/route-service.test.cjs tests/security-audit.test.cjs tests/security-client.test.cjs tests/social-engine.test.cjs tests/telemetry-engine.test.cjs tests/telemetry-service.test.cjs tests/timing-sequence.test.cjs && npx tsx --test tests/access-draft.test.ts tests/app-routing.test.ts tests/badge-presets.test.ts tests/event-analytics.test.ts tests/gpx-route-foundation.test.ts tests/highlights.test.ts tests/m4-client-validators.test.ts tests/m4-club-studio.test.ts tests/m4-inbox-client.test.ts tests/m4-runner-social-clubs.test.ts tests/m5-telemetry-client.test.ts tests/public-landing-stats.test.ts tests/run-recorder.test.ts tests/runner-shell.test.ts tests/spreadsheet.test.ts",
     "android:sync": "npm run build && npx cap sync android && node scripts/clean-android-web-assets.cjs",
     "android:open": "npx cap open android",
     "release:android": "node scripts/build-android-release.cjs",
