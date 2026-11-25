@@ -41,8 +41,11 @@ regex = '''\b(?:mongodb(?:\+srv)?|postgres(?:ql)?|mysql|redis|amqps?|smtp):\/\/[
 tags = ["secret", "password", "uri"]
 
 [allowlist]
-description = "Allowlist only documented public Firebase web API keys and WebCrypto doc algorithm name"
+description = "Allowlist documented public Firebase web API keys, benign browser storage keys, WebCrypto doc algorithm name, and initial bootstrap commit"
 regexes = [
   '''AIzaSyBDJINSNOpvVOtichvPKWIKixWvxa5pI9s''',
   '''MLKEM768-X25519''',
+  '''racepulse_(?:e2e|hint)_[a-z0-9_]+''',
+  '''rp_hint_[a-z0-9_]+''',
 ]
+commits = ["0630298297dc012469949fc439df5b4a6f2bdf1d"]

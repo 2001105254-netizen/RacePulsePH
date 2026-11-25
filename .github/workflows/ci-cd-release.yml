@@ -123,7 +123,10 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci
+          npm --prefix functions ci
+          npm --prefix functions/rbac ci
 
       - name: Verify generated Firestore and RBAC rules are up to date
         run: |

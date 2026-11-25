@@ -7,9 +7,10 @@ function createAccessService(db, auth = null) {
   async function execute(actorUid, path, input) {
     const [actorDoc, actorState] = await Promise.all([userRef(actorUid).get(), accessRef(actorUid).get()]);
     const actor = actorDoc.exists ? { ...actorDoc.data(), uid: actorUid } : null;
-    if (!actor || actor.accessRemoved === true) fail('Your app account is unavailable.', 403);
+    if (!actor) fail('Your app account is unavailable.', 403);
     const actorAccess = policy.accessFor(actor, actorState.data());
     if (actorAccess.status !== 'active') fail('Your account access is suspended.', 403);
+    if (actor.accessRemoved === true) fail('Your app account is unavailable.', 403);
     if (path === '/presence/heartbeat') {
       return recordPresenceHeartbeat(db, {
         uid: actorUid,
