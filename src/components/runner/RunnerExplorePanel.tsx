@@ -558,6 +558,7 @@ export default function RunnerExplorePanel({
                     <button
                       key={opt.key}
                       type="button"
+                      data-tour-target={opt.key === 'open' ? 'explore-open-filter' : undefined}
                       onClick={() => onRacesFilterChange(opt.key)}
                       aria-pressed={active}
                       className={`min-h-11 lg:min-h-9 min-w-11 lg:min-w-0 px-3 rounded-lg border text-xs font-semibold inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${

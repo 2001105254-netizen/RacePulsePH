@@ -199,8 +199,15 @@ export function ingestGpsFix(state: GpsFilterState, fix: GpsRawFix): GpsFilterSt
     };
   }
 
-  // Reject isolated multipath spikes unless a second consecutive fix confirms the new neighborhood.
-  if (impliedSpeedMps > state.maxSpeedMps && rawJumpM > Math.max(40, accuracyM * 2)) {
+  // Reject isolated multipath spikes unless a second consecutive fix confirms the new neighborhood,
+  // or a sharp GNSS fix arrives within a coarse cell/Wi-Fi lock's uncertainty radius.
+  const coarseLockRefinement =
+    improvingFromCoarse && rawJumpM <= Math.max(40, prev.accuracyM * 1.5);
+  if (
+    !coarseLockRefinement &&
+    impliedSpeedMps > state.maxSpeedMps &&
+    rawJumpM > Math.max(40, accuracyM * 2)
+  ) {
     const pendingDist = state.pendingJump
       ? geodesicDistanceM(
           { latitude: state.pendingJump.lat, longitude: state.pendingJump.lon },
@@ -256,7 +263,12 @@ export function ingestGpsFix(state: GpsFilterState, fix: GpsRawFix): GpsFilterSt
   const measurementVarM2 = Math.max(9, accuracyM * accuracyM);
   const baseGain = predictedVarM2 / (predictedVarM2 + measurementVarM2);
   const minMovingGain = estimatedSpeed >= 1.2 ? Math.min(0.65, 0.18 + (estimatedSpeed / 15) * 0.32) : 0.05;
-  const gain = improvingFromCoarse ? 0.9 : Math.max(minMovingGain, baseGain);
+  const gain =
+    coarseLockRefinement && prev.fixCount === 1
+      ? 1
+      : improvingFromCoarse
+        ? 0.9
+        : Math.max(minMovingGain, baseGain);
 
   const nextLat = prev.lat + gain * (fix.lat - prev.lat);
   const nextLon = prev.lon + gain * (fix.lon - prev.lon);

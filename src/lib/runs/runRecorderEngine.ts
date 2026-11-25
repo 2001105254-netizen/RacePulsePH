@@ -14,6 +14,7 @@ import {
   computeSegmentCaloriesKcal,
   round1,
 } from './calorieEngine';
+import { shouldRefineInitialAnchorPoint } from './liveTrailTrack';
 import type {
   ActiveRunSession,
   RecordedRunCourseRef,
@@ -146,6 +147,33 @@ export function ingestRunFix(
   const lastPoint =
     session.points.length > 0 ? session.points[session.points.length - 1] : null;
   const isResumedBreak = Boolean(lastPoint && session.pendingSegmentBreak);
+
+  // Replace an opening coarse cell/Wi-Fi fix when a crisp satellite fix arrives immediately after start.
+  if (
+    session.points.length === 1 &&
+    lastPoint &&
+    !isResumedBreak &&
+    shouldRefineInitialAnchorPoint(lastPoint, nextCurrent)
+  ) {
+    const refinedStartPoint: RecordedTrackPoint = {
+      lat: nextCurrent.lat,
+      lon: nextCurrent.lon,
+      ...(nextCurrent.altitudeM !== null ? { ele: nextCurrent.altitudeM } : {}),
+      accuracyM: nextCurrent.accuracyM,
+      timestampMs: nextCurrent.updatedAtMs,
+      speedMps: nextCurrent.speedMps,
+    };
+    return {
+      ...session,
+      gpsFilter: nextFilter,
+      points: [refinedStartPoint],
+      lastElevationAnchorM: nextCurrent.altitudeM ?? null,
+      lastAcceptedAtMs: nextCurrent.updatedAtMs,
+      pendingSegmentBreak: false,
+      updatedAtMs: nextCurrent.updatedAtMs,
+    };
+  }
+
   const distM =
     lastPoint && !isResumedBreak
       ? geodesicDistanceM(

@@ -23,11 +23,13 @@ import androidx.core.app.NotificationCompat;
 import androidx.core.app.ServiceCompat;
 import com.getcapacitor.JSObject;
 import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.Granularity;
 import com.google.android.gms.location.LocationCallback;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.Priority;
+import com.google.android.gms.tasks.CancellationTokenSource;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
@@ -63,6 +65,8 @@ public class RunTrackingForegroundService extends Service {
     private final Object wakeLockSync = new Object();
     private PowerManager.WakeLock wakeLock;
     private FusedLocationProviderClient fusedClient;
+    @Nullable
+    private CancellationTokenSource currentLocationCts;
     private boolean locationUpdatesActive = false;
     private String currentTitle = DEFAULT_TITLE;
     private String currentSubtitle = DEFAULT_SUBTITLE;
@@ -311,12 +315,25 @@ public class RunTrackingForegroundService extends Service {
         }
 
         LocationRequest request = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
+            .setGranularity(Granularity.GRANULARITY_FINE)
             .setMinUpdateIntervalMillis(1000L)
+            .setMinUpdateDistanceMeters(0f)
             .setWaitForAccurateLocation(false)
             .build();
         try {
             fusedClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper());
             locationUpdatesActive = true;
+            if (currentLocationCts != null) {
+                currentLocationCts.cancel();
+            }
+            currentLocationCts = new CancellationTokenSource();
+            fusedClient
+                .getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, currentLocationCts.getToken())
+                .addOnSuccessListener((location) -> {
+                    if (locationUpdatesActive && location != null) {
+                        handleIncomingLocation(location);
+                    }
+                });
             return true;
         } catch (SecurityException ex) {
             locationUpdatesActive = false;
@@ -325,6 +342,10 @@ public class RunTrackingForegroundService extends Service {
     }
 
     private void stopLocationUpdates() {
+        if (currentLocationCts != null) {
+            currentLocationCts.cancel();
+            currentLocationCts = null;
+        }
         if (fusedClient != null && locationUpdatesActive) {
             fusedClient.removeLocationUpdates(locationCallback);
         }

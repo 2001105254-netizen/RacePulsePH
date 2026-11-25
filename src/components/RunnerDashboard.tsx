@@ -32,7 +32,14 @@ import {
 } from '../lib/badges/e2eFixtures';
 import { selectNextToastBadge } from '../lib/badges/presets';
 import type { AthleteProgression, BadgeDefinition, UserBadgeAward } from '../lib/badges/types';
-import { useAndroidBackHandler } from '../lib/capacitorAndroid';
+import {
+  hasCompletedAndroidGuide,
+  isAndroidGuideEnabled,
+  markAndroidGuideCompleted,
+  shouldAutoLaunchAndroidGuide,
+  type AndroidGuideStepId,
+} from '../lib/androidGuide';
+import { isAndroidNativeApp, useAndroidBackHandler } from '../lib/capacitorAndroid';
 import { subscribeSharedLiveResults } from '../lib/liveResultsStore';
 import { claimRaceBib, claimableEntryLabel, parseRaceBibQr, previewRaceBibClaim, RaceBibClaimPreview } from '../lib/raceBibClaim';
 import { subscribeSharedRaces } from '../lib/racesStore';
@@ -83,6 +90,7 @@ import {
   type RunnerTelemetryItem,
 } from './runner/RunnerMobilePrimitives';
 import type { MyPassesFilter } from './runner/RunnerMyRacesPanel';
+import AndroidOnboardingGuide from './runner/AndroidOnboardingGuide';
 import RunnerOnboardingHint from './runner/RunnerOnboardingHint';
 import RunnerRecordPanel from './runner/RunnerRecordPanel';
 import RunnerYouHubPanel from './runner/RunnerYouHubPanel';
@@ -250,6 +258,27 @@ export default function RunnerDashboard({
     { type: 'club'; clubId: string } | { type: 'dm'; targetUid: string } | null
   >(null);
   const [inboxExtraUnread, setInboxExtraUnread] = useState(0);
+
+  const androidGuideEnabled = useMemo(
+    () =>
+      isAndroidGuideEnabled({
+        isAndroidNative: isAndroidNativeApp(),
+        isDev: import.meta.env.DEV,
+      }),
+    [],
+  );
+  const [androidGuideOpen, setAndroidGuideOpen] = useState(false);
+  const autoLaunchedGuideUidRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(new CustomEvent('racepulse:android-guide-open', { detail: { open: androidGuideOpen } }));
+    return () => {
+      if (androidGuideOpen) {
+        window.dispatchEvent(new CustomEvent('racepulse:android-guide-open', { detail: { open: false } }));
+      }
+    };
+  }, [androidGuideOpen]);
 
   useEffect(() => {
     setInboxExtraUnread(0);
@@ -1551,7 +1580,10 @@ export default function RunnerDashboard({
   ];
 
   const showCompactHeader = !isDesktop && !(isCompact && mobileCanvasActive);
-  const showTelemetryBar = !(isCompact && (mobileCanvasActive || eventsInFormFlow || tab === 'record'));
+  const showTelemetryBar = !(
+    isCompact &&
+    (mobileCanvasActive || eventsInFormFlow || tab === 'record' || tab === 'inbox')
+  );
 
   const mobileHeaderLeftMarkup = (
     <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -1617,7 +1649,91 @@ export default function RunnerDashboard({
     imeOpen ||
     isRecordingRun ||
     (isCompact && mobileCanvasActive) ||
-    eventsInFormFlow;
+    eventsInFormFlow ||
+    androidGuideOpen;
+
+  useEffect(() => {
+    if (autoLaunchedGuideUidRef.current === profile.uid) return;
+    const blocked = Boolean(
+      initialRaceId ||
+      hasPaymentParam ||
+      showProfile ||
+      alertsOpen ||
+      showEventQrScanner ||
+      pendingBibClaim ||
+      isRecordingRun ||
+      mobileCanvasActive ||
+      eventsInFormFlow,
+    );
+    const shouldLaunch = shouldAutoLaunchAndroidGuide({
+      isAndroid: androidGuideEnabled,
+      uid: profile.uid,
+      hasCompleted: hasCompletedAndroidGuide(profile.uid),
+      canRegister,
+      hasExploreTab: allowedTabs.includes('explore'),
+      profilesLoaded: runnerProfiles !== undefined,
+      blocked,
+    });
+    if (!shouldLaunch) return;
+    autoLaunchedGuideUidRef.current = profile.uid;
+    setAndroidGuideOpen(true);
+  }, [
+    androidGuideEnabled,
+    profile.uid,
+    canRegister,
+    allowedTabs,
+    runnerProfiles,
+    initialRaceId,
+    hasPaymentParam,
+    showProfile,
+    alertsOpen,
+    showEventQrScanner,
+    pendingBibClaim,
+    isRecordingRun,
+    mobileCanvasActive,
+    eventsInFormFlow,
+  ]);
+
+  const handleAndroidGuideStepChange = useCallback(
+    (stepId: AndroidGuideStepId) => {
+      if (stepId === 'explore') {
+        if (allowedTabs.includes('home') && tabRef.current !== 'home') {
+          void selectTab('home', 'back', { force: true });
+        }
+        return;
+      }
+      if ((stepId === 'register' || stepId === 'details' || stepId === 'payment') && allowedTabs.includes('explore')) {
+        setExploreSection('races');
+        setExploreRacesFilter('open');
+        if (tabRef.current !== 'explore') {
+          void selectTab('explore', undefined, { force: true });
+        }
+      }
+    },
+    [allowedTabs, selectTab],
+  );
+
+  const handleAndroidGuideComplete = useCallback(
+    (action: 'finish' | 'skip') => {
+      markAndroidGuideCompleted(profile.uid, action === 'finish' ? 'completed' : 'skipped');
+      setAndroidGuideOpen(false);
+      if (action === 'finish' && allowedTabs.includes('explore')) {
+        setExploreSection('races');
+        setExploreRacesFilter('open');
+        if (tabRef.current !== 'explore') {
+          void selectTab('explore', undefined, { force: true });
+        }
+      }
+    },
+    [profile.uid, allowedTabs, selectTab],
+  );
+
+  const handleReplayAndroidGuide = useCallback(() => {
+    if (allowedTabs.includes('home') && tabRef.current !== 'home') {
+      void selectTab('home', 'back', { force: true });
+    }
+    setAndroidGuideOpen(true);
+  }, [allowedTabs, selectTab]);
 
   return (
     <WorkspaceShell
@@ -2108,6 +2224,11 @@ export default function RunnerDashboard({
               isCompact={isCompact}
               onCanvasModeChange={setMobileCanvasActive}
               desktopSearchRef={headerSearchRef}
+              onReplayAndroidGuide={
+                androidGuideEnabled && canRegister && allowedTabs.includes('explore')
+                  ? handleReplayAndroidGuide
+                  : undefined
+              }
               engravingNode={
                 canEngraving ? (
                   <RunnerEngravingView
@@ -2162,6 +2283,12 @@ export default function RunnerDashboard({
           instructions="Scan an organizer event QR to open registration, or scan the QR printed on your race bib to add that event and its result to My Passes."
         />
       )}
+
+      <AndroidOnboardingGuide
+        open={androidGuideOpen}
+        onStepChange={handleAndroidGuideStepChange}
+        onComplete={handleAndroidGuideComplete}
+      />
     </WorkspaceShell>
   );
 }

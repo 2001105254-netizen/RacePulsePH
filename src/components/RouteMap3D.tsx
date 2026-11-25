@@ -77,8 +77,9 @@ function RouteCanvas({ route, raceName, selectedPoint }: {
   raceName: string;
   selectedPoint?: number;
 }) {
-  const [yaw, setYaw] = useState(-28);
-  const [pitch, setPitch] = useState(58);
+  const [is3D, setIs3D] = useState(false);
+  const [yaw, setYaw] = useState(0);
+  const [pitch, setPitch] = useState(90);
   const dragStart = useRef<{ x: number; y: number; yaw: number; pitch: number } | null>(null);
   const projected = useMemo(() => projectRoute(route, yaw, pitch), [route, yaw, pitch]);
   const path = projected.map((point) => `${point.startsSegment ? 'M' : 'L'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ');
@@ -88,21 +89,32 @@ function RouteCanvas({ route, raceName, selectedPoint }: {
   const cursor = selectedPoint === undefined ? undefined : projected.reduce((nearest, point) =>
     Math.abs(point.routeIndex - selectedPoint) < Math.abs(nearest.routeIndex - selectedPoint) ? point : nearest);
 
+  const toggleViewMode = () => {
+    setIs3D((prev) => {
+      const next = !prev;
+      setYaw(next ? -28 : 0);
+      setPitch(next ? 58 : 90);
+      return next;
+    });
+  };
+
   return (
     <div className="overflow-hidden rounded-[16px] border border-[var(--border-default)] bg-[var(--surface-inset)]">
       <svg
         viewBox={`0 0 ${viewport.width} ${viewport.height}`}
         className="block aspect-[2/1] w-full touch-none cursor-grab active:cursor-grabbing"
         role="img"
-        aria-label={`3D route preview for ${raceName}. Drag to rotate the route.`}
+        aria-label={`${is3D ? '3D' : '2D'} route preview for ${raceName}. Drag to rotate the route.`}
         onPointerDown={(event) => {
           event.currentTarget.setPointerCapture(event.pointerId);
           dragStart.current = { x: event.clientX, y: event.clientY, yaw, pitch };
         }}
         onPointerMove={(event) => {
           if (!dragStart.current) return;
+          const nextPitch = Math.max(24, Math.min(90, dragStart.current.pitch - (event.clientY - dragStart.current.y) * 0.18));
           setYaw(dragStart.current.yaw + (event.clientX - dragStart.current.x) * 0.45);
-          setPitch(Math.max(24, Math.min(78, dragStart.current.pitch - (event.clientY - dragStart.current.y) * 0.18)));
+          setPitch(nextPitch);
+          setIs3D(nextPitch < 85);
         }}
         onPointerUp={() => { dragStart.current = null; }}
         onPointerCancel={() => { dragStart.current = null; }}
@@ -118,10 +130,14 @@ function RouteCanvas({ route, raceName, selectedPoint }: {
           </linearGradient>
         </defs>
         <rect width={viewport.width} height={viewport.height} fill="var(--surface-inset)" />
-        <path d={groundPath} fill="none" stroke="currentColor" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round" opacity="0.08" />
-        {projected.filter((_, index) => index > 0 && index % Math.max(1, Math.floor(projected.length / 18)) === 0).map((point, index) => (
-          <line key={index} x1={point.x} x2={point.x} y1={point.y} y2={point.groundY} stroke="currentColor" strokeOpacity="0.16" strokeWidth="1.5" />
-        ))}
+        {is3D && (
+          <>
+            <path d={groundPath} fill="none" stroke="currentColor" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round" opacity="0.08" />
+            {projected.filter((_, index) => index > 0 && index % Math.max(1, Math.floor(projected.length / 18)) === 0).map((point, index) => (
+              <line key={index} x1={point.x} x2={point.x} y1={point.y} y2={point.groundY} stroke="currentColor" strokeOpacity="0.16" strokeWidth="1.5" />
+            ))}
+          </>
+        )}
         <path d={path} fill="none" stroke="var(--surface-page)" strokeWidth="11" strokeLinecap="round" strokeLinejoin="round" opacity="0.92" />
         <path d={path} fill="none" stroke="url(#route-line)" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
         <circle cx={start.x} cy={start.y} r="7" fill="#16a34a" stroke="var(--surface-page)" strokeWidth="3" />
@@ -129,11 +145,25 @@ function RouteCanvas({ route, raceName, selectedPoint }: {
         {cursor && <circle cx={cursor.x} cy={cursor.y} r="9" fill="var(--surface-page)" stroke="currentColor" strokeWidth="3" />}
       </svg>
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border-default)] px-3 py-2">
-        <p className="text-xs text-[var(--text-secondary)]">Drag the route to rotate. Elevation comes from the GPX file.</p>
+        <p className="text-xs text-[var(--text-secondary)]">
+          {is3D ? '3D view active. Drag to rotate.' : '2D top-down view. Switch to 3D or drag to tilt.'}
+        </p>
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleViewMode}
+            aria-pressed={is3D}
+            className={`min-h-11 rounded-lg border px-3 text-xs font-semibold ${
+              is3D
+                ? 'border-red-600 bg-red-700 text-white'
+                : 'border-[var(--border-default)] text-[var(--text-primary)] hover:border-red-700/50 dark:hover:border-red-400/50 hover:text-red-700 dark:hover:text-red-400'
+            }`}
+          >
+            {is3D ? '3D' : '2D'}
+          </button>
           <button type="button" onClick={() => setYaw((current) => current - 20)} className="min-h-11 rounded-lg border border-[var(--border-default)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-700/50 dark:hover:border-red-400/50 hover:text-red-700 dark:hover:text-red-400">Turn left</button>
           <button type="button" onClick={() => setYaw((current) => current + 20)} className="min-h-11 rounded-lg border border-[var(--border-default)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-red-700/50 dark:hover:border-red-400/50 hover:text-red-700 dark:hover:text-red-400">Turn right</button>
-          <button type="button" onClick={() => { setYaw(-28); setPitch(58); }} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg p-2 text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400" aria-label="Reset route view"><RotateCcw className="h-4 w-4" aria-hidden="true" /></button>
+          <button type="button" onClick={() => { setIs3D(false); setYaw(0); setPitch(90); }} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg p-2 text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400" aria-label="Reset route view to 2D"><RotateCcw className="h-4 w-4" aria-hidden="true" /></button>
         </div>
       </div>
     </div>

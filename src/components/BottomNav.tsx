@@ -150,6 +150,7 @@ export default function BottomNav({
                   itemRefs.current[item.key] = node;
                 }}
                 type="button"
+                data-tour-target={`nav-${item.key}`}
                 onClick={item.onClick}
                 aria-label={ariaLabel}
                 aria-current={item.active ? 'page' : undefined}
@@ -229,6 +230,7 @@ export default function BottomNav({
                       itemRefs.current[item.key] = node;
                     }}
                     type="button"
+                    data-tour-target={`nav-${item.key}`}
                     onClick={item.onClick}
                     aria-label={ariaLabel}
                     aria-current={item.active ? 'page' : undefined}

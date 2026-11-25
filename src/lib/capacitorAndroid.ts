@@ -88,3 +88,7 @@ export function exitAndroidApp(): void {
   void App.exitApp().catch(() => {});
 }
 
+export function isAndroidNativeApp(): boolean {
+  return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
+}
+

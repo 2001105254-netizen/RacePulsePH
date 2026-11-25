@@ -2269,7 +2269,7 @@ export default function RunnerEventsPanel({
                   </div>
                 ) : !isDesktop ? (
                   <div id="runner_events_list" className="p-3 space-y-3 bg-[var(--surface-page)]">
-                    {filteredRaces.map((race) => {
+                    {filteredRaces.map((race, raceIndex) => {
                       const isSelected = selectedRace?.id === race.id;
                       const isJoined = registeredRaceIds.has(race.id);
                       const dists = sortedRaceDistances(race);
@@ -2358,6 +2358,7 @@ export default function RunnerEventsPanel({
                               </button>
                               <button
                                 type="button"
+                                data-tour-target={raceIndex === 0 ? 'race-register-btn' : undefined}
                                 onClick={() => {
                                   setSelectedRaceId(race.id);
                                   setShowForm(true);
@@ -2419,7 +2420,7 @@ export default function RunnerEventsPanel({
                     </div>
 
                     <div className="p-4 grid grid-cols-1 @xl:grid-cols-2 gap-4">
-                      {filteredRaces.map((race) => {
+                      {filteredRaces.map((race, raceIndex) => {
                         const isSelected = selectedRace?.id === race.id;
                         const isJoined = registeredRaceIds.has(race.id);
                         const dists = sortedRaceDistances(race);
@@ -2515,6 +2516,7 @@ export default function RunnerEventsPanel({
                               </button>
                               <button
                                 type="button"
+                                data-tour-target={raceIndex === 0 ? 'race-register-btn' : undefined}
                                 onClick={() => {
                                   setSelectedRaceId(race.id);
                                   setShowForm(true);

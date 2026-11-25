@@ -726,32 +726,6 @@ export default function RunnerInboxPanel({
                 </div>
               </div>
 
-              {/* Message Request Privacy Switch */}
-              <label
-                htmlFor={switchId}
-                className="flex items-center justify-between gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-1.5 cursor-pointer"
-              >
-                <span className="min-w-0">
-                  <span className="block text-xs font-semibold text-[var(--text-primary)]">
-                    Allow message requests
-                  </span>
-                  <span className="block text-xs font-normal text-[var(--text-secondary)] truncate">
-                    {allowRequests ? 'Clubmates can send 1 intro message' : 'Friends and club chats only'}
-                  </span>
-                </span>
-                <input
-                  id={switchId}
-                  type="checkbox"
-                  role="switch"
-                  aria-checked={allowRequests}
-                  {...({ switch: '' } as Record<string, unknown>)}
-                  disabled={savingRequestsPref}
-                  checked={allowRequests}
-                  onChange={(e) => void handleToggleAllowRequests(e.target.checked)}
-                  className="access-switch shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-                />
-              </label>
-
               {/* Conversation Scope Filter */}
               <div role="group" aria-label="Filter conversations" className="grid grid-cols-3 gap-1.5">
                 {(
@@ -796,6 +770,34 @@ export default function RunnerInboxPanel({
 
             {/* Scrollable Feed */}
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain rp-runner-scroll divide-y divide-[var(--border-subtle)] pb-[max(12px,var(--rp-safe-bottom))]">
+              {/* Message Request Privacy Switch */}
+              <div className="px-3 py-2.5">
+                <label
+                  htmlFor={switchId}
+                  className="min-h-11 flex items-center justify-between gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-3 py-2 cursor-pointer"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-xs font-semibold text-[var(--text-primary)]">
+                      Allow message requests
+                    </span>
+                    <span className="block text-xs font-normal text-[var(--text-secondary)] truncate">
+                      {allowRequests ? 'Clubmates can send 1 intro message' : 'Friends and club chats only'}
+                    </span>
+                  </span>
+                  <input
+                    id={switchId}
+                    type="checkbox"
+                    role="switch"
+                    aria-checked={allowRequests}
+                    {...({ switch: '' } as Record<string, unknown>)}
+                    disabled={savingRequestsPref}
+                    checked={allowRequests}
+                    onChange={(e) => void handleToggleAllowRequests(e.target.checked)}
+                    className="access-switch shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+                  />
+                </label>
+              </div>
+
               {/* Horizontal Active Friends & Daily Streaks Strip */}
               {(activeFriendsRail.length > 0 || activeChatClubs.length > 0) && (
                 <section aria-label="Active friends and chat streaks" className="px-3 py-2.5 space-y-2">
@@ -1273,7 +1275,7 @@ export default function RunnerInboxPanel({
 
               {/* Conversations List */}
               <section aria-label="Conversations">
-                <div className="px-3 py-2 flex items-center justify-between gap-2 bg-[var(--surface-inset)]/40">
+                <div className="px-3 py-2.5 flex items-center justify-between gap-2 bg-[var(--surface-inset)]/40">
                   <h3 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
                     Messages
                   </h3>

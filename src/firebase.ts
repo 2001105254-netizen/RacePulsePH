@@ -26,6 +26,7 @@ import {
 import { Capacitor } from '@capacitor/core';
 import { SocialLogin } from '@capgo/capacitor-social-login';
 import { initFirebaseAppCheck } from './lib/botProtection';
+import { NATIVE_GOOGLE_LOGIN_OPTIONS, mapNativeGoogleSignInError } from './lib/nativeGoogleAuth';
 
 // Configuration for the racepulseph Firebase project
 const firebaseConfig = {
@@ -152,22 +153,18 @@ async function getNativeGoogleAuthCredential() {
   try {
     const response = await SocialLogin.login({
       provider: 'google',
-      options: {
-        style: 'standard',
-      },
+      options: NATIVE_GOOGLE_LOGIN_OPTIONS,
     });
     if (response.provider !== 'google' || response.result.responseType !== 'online' || !response.result.idToken) {
       throw new Error('Google sign-in did not return an ID token.');
     }
     return GoogleAuthProvider.credential(response.result.idToken);
   } catch (err: unknown) {
-    const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code?: unknown }).code ?? '') : '';
-    if (code === 'USER_CANCELLED') {
-      const cancelErr = new Error('Google sign-in was cancelled.') as Error & { code: string };
-      cancelErr.code = 'auth/popup-closed-by-user';
-      throw cancelErr;
+    const mapped = mapNativeGoogleSignInError(err);
+    if (mapped.code !== 'auth/popup-closed-by-user') {
+      console.warn('[GoogleSignIn] Native login failed:', err instanceof Error ? err.message : String(err));
     }
-    throw err;
+    throw mapped;
   }
 }
 

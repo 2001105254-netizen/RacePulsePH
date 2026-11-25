@@ -4,6 +4,7 @@ import {
   Award,
   ClipboardList,
   Download,
+  HelpCircle,
   Lock,
   Navigation,
   QrCode,
@@ -91,6 +92,7 @@ export interface RunnerYouHubPanelProps {
   isCompact: boolean;
   onCanvasModeChange?: (active: boolean) => void;
   desktopSearchRef?: React.RefObject<HTMLInputElement | null>;
+  onReplayAndroidGuide?: () => void;
   engravingNode?: React.ReactNode;
 }
 
@@ -137,6 +139,7 @@ export default function RunnerYouHubPanel({
   isCompact,
   onCanvasModeChange,
   desktopSearchRef,
+  onReplayAndroidGuide,
   engravingNode,
 }: RunnerYouHubPanelProps) {
   const baseId = useId();
@@ -414,6 +417,17 @@ export default function RunnerYouHubPanel({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {onReplayAndroidGuide && (
+                    <button
+                      type="button"
+                      onClick={onReplayAndroidGuide}
+                      className="min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+                    >
+                      <HelpCircle className="w-3.5 h-3.5 text-red-700 dark:text-red-400 shrink-0" aria-hidden="true" />
+                      <span>Race Guide</span>
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={onOpenProfile}

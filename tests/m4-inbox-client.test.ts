@@ -5,7 +5,11 @@ import * as inboxHelpers from '../src/lib/inbox/helpers';
 import * as inboxClient from '../src/lib/inbox/client';
 import * as e2eFixtures from '../src/lib/clubs/e2eFixtures';
 import type { ClubDefinition } from '../src/lib/clubs/types';
-import type { InboxConversationRecord, InboxMessageRecord } from '../src/lib/inbox/types';
+import type {
+  ActivityNotificationRecord,
+  InboxConversationRecord,
+  InboxMessageRecord,
+} from '../src/lib/inbox/types';
 import type { FriendProfile } from '../src/types';
 
 test('validateChatMediaUploadFile & buildChatMediaStoragePath enforce <8MB raster-only rules and valid paths', () => {
@@ -277,4 +281,67 @@ test('Inbox DEV fixtures support message send, request accept/decline, moderatio
     { conversationId: dmConv.conversationId, myUid: 'e2e-runner', markAllNotifications: true },
   );
   assert.equal(marked.notifications.every((n) => n.read === true), true);
+});
+
+test('inbox client helpers detect missing-index errors and sort conversations and notifications safely', () => {
+  assert.equal(inboxClient.isFirestoreMissingIndexError({ code: 'failed-precondition' }), true);
+  assert.equal(
+    inboxClient.isFirestoreMissingIndexError(new Error('The query requires an index. You can create it here.')),
+    true,
+  );
+  assert.equal(inboxClient.isFirestoreMissingIndexError({ code: 'permission-denied', message: 'Missing permissions' }), false);
+  assert.equal(inboxClient.isFirestoreMissingIndexError(null), false);
+
+  const convOlder: InboxConversationRecord = {
+    conversationId: 'dm_u1_u2',
+    type: 'dm',
+    members: ['u1', 'u2'],
+    status: 'active',
+    lastMessageText: 'Older',
+    lastMessageAt: '2026-11-25T06:00:00.000Z',
+    lastSenderUid: 'u2',
+    updatedAt: '',
+    createdAt: '2026-11-25T05:00:00.000Z',
+  };
+  const convNewer: InboxConversationRecord = {
+    conversationId: 'dm_u1_u3',
+    type: 'dm',
+    members: ['u1', 'u3'],
+    status: 'active',
+    lastMessageText: 'Newer',
+    lastMessageAt: '2026-11-25T09:00:00.000Z',
+    lastSenderUid: 'u3',
+    updatedAt: '2026-11-25T09:00:00.000Z',
+  };
+  const inputConvs = [convOlder, convNewer];
+  const sortedConvs = inboxClient.sortConversationsDesc(inputConvs);
+  assert.deepEqual(sortedConvs.map((c) => c.conversationId), ['dm_u1_u3', 'dm_u1_u2']);
+  assert.deepEqual(inputConvs.map((c) => c.conversationId), ['dm_u1_u2', 'dm_u1_u3']);
+
+  const n1: ActivityNotificationRecord = {
+    id: 'n1',
+    uid: 'u1',
+    kind: 'kudos',
+    actorUid: 'u2',
+    actorName: 'Runner Two',
+    targetId: 'p1',
+    summary: 'Liked your run',
+    read: false,
+    createdAt: '2026-11-25T07:00:00.000Z',
+  };
+  const n2: ActivityNotificationRecord = {
+    id: 'n2',
+    uid: 'u1',
+    kind: 'comment',
+    actorUid: 'u3',
+    actorName: 'Runner Three',
+    targetId: 'p2',
+    summary: 'Commented on your run',
+    read: false,
+    createdAt: '2026-11-25T10:00:00.000Z',
+  };
+  const inputNotifs = [n1, n2];
+  const sortedNotifs = inboxClient.sortActivityNotificationsDesc(inputNotifs);
+  assert.deepEqual(sortedNotifs.map((n) => n.id), ['n2', 'n1']);
+  assert.deepEqual(inputNotifs.map((n) => n.id), ['n1', 'n2']);
 });

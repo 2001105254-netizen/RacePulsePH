@@ -150,6 +150,7 @@ export default function WorkspaceShell({
                 <button
                   key={item.key}
                   type="button"
+                  data-tour-target={`nav-${item.key}`}
                   onClick={item.onClick}
                   aria-label={ariaLabel}
                   aria-current={item.active ? 'page' : undefined}

@@ -290,6 +290,33 @@ export async function savePushToken(input: {
   );
 }
 
+export function isFirestoreMissingIndexError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const code = 'code' in err && typeof err.code === 'string' ? err.code.toLowerCase() : '';
+  if (code === 'failed-precondition') return true;
+  const message =
+    'message' in err && typeof err.message === 'string' ? err.message : '';
+  return /requires an index/i.test(message);
+}
+
+export function sortConversationsDesc(
+  conversations: readonly InboxConversationRecord[],
+): InboxConversationRecord[] {
+  return [...conversations].sort((a, b) => {
+    const aStamp = a.updatedAt || a.lastMessageAt || a.createdAt || '';
+    const bStamp = b.updatedAt || b.lastMessageAt || b.createdAt || '';
+    return bStamp.localeCompare(aStamp);
+  });
+}
+
+export function sortActivityNotificationsDesc(
+  notifications: readonly ActivityNotificationRecord[],
+): ActivityNotificationRecord[] {
+  return [...notifications].sort((a, b) =>
+    (b.createdAt || '').localeCompare(a.createdAt || ''),
+  );
+}
+
 export function subscribeDmConversations(
   uid: string,
   callback: (res: { conversations: InboxConversationRecord[]; loaded: boolean; error: string | null }) => void,
@@ -301,20 +328,32 @@ export function subscribeDmConversations(
   const q = query(
     collection(db, 'conversations'),
     where('members', 'array-contains', uid),
-    orderBy('updatedAt', 'desc'),
   );
   return onSnapshot(
     q,
     (snap) => {
-      const conversations = snap.docs.map((d) => ({
-        ...(d.data() as InboxConversationRecord),
-        conversationId: (d.data() as InboxConversationRecord).conversationId || d.id,
-      }));
+      const conversations = sortConversationsDesc(
+        snap.docs.map((d) => ({
+          ...(d.data() as InboxConversationRecord),
+          conversationId: (d.data() as InboxConversationRecord).conversationId || d.id,
+        })),
+      );
       callback({ conversations, loaded: true, error: null });
     },
     (err) => {
       console.warn('[inbox/client] subscribeDmConversations failed', err);
-      callback({ conversations: [], loaded: true, error: 'Unable to load direct messages.' });
+      const code =
+        err && typeof err === 'object' && 'code' in err && typeof err.code === 'string'
+          ? err.code
+          : '';
+      callback({
+        conversations: [],
+        loaded: true,
+        error:
+          code === 'permission-denied'
+            ? 'Direct messages are blocked by permissions right now.'
+            : 'Unable to load direct messages.',
+      });
     },
   );
 }
@@ -422,24 +461,70 @@ export function subscribeActivityNotifications(
     callback({ notifications: [], loaded: true, error: null });
     return () => undefined;
   }
-  const q = query(
+
+  let disposed = false;
+  let fellBack = false;
+  let activeUnsub: () => void = () => undefined;
+
+  const mapSnapshot = (snap: { docs: Array<{ id: string; data: () => unknown }> }) =>
+    sortActivityNotificationsDesc(
+      snap.docs.map((d) => {
+        const data = d.data() as ActivityNotificationRecord;
+        return {
+          ...data,
+          id: data.id || d.id,
+        };
+      }),
+    );
+
+  const subscribeFallback = () => {
+    const fallbackQuery = query(
+      collection(db, 'activityNotifications'),
+      where('uid', '==', uid),
+      limit(limitCount),
+    );
+    activeUnsub = onSnapshot(
+      fallbackQuery,
+      (snap) => {
+        if (disposed) return;
+        callback({ notifications: mapSnapshot(snap), loaded: true, error: null });
+      },
+      (err) => {
+        if (disposed) return;
+        console.warn('[inbox/client] subscribeActivityNotifications fallback failed', err);
+        callback({ notifications: [], loaded: true, error: 'Unable to load activity notifications.' });
+      },
+    );
+  };
+
+  const indexedQuery = query(
     collection(db, 'activityNotifications'),
     where('uid', '==', uid),
     orderBy('createdAt', 'desc'),
     limit(limitCount),
   );
-  return onSnapshot(
-    q,
+
+  activeUnsub = onSnapshot(
+    indexedQuery,
     (snap) => {
-      const notifications = snap.docs.map((d) => ({
-        ...(d.data() as ActivityNotificationRecord),
-        id: (d.data() as ActivityNotificationRecord).id || d.id,
-      }));
-      callback({ notifications, loaded: true, error: null });
+      if (disposed) return;
+      callback({ notifications: mapSnapshot(snap), loaded: true, error: null });
     },
     (err) => {
+      if (disposed) return;
+      if (!fellBack && isFirestoreMissingIndexError(err)) {
+        fellBack = true;
+        activeUnsub();
+        subscribeFallback();
+        return;
+      }
       console.warn('[inbox/client] subscribeActivityNotifications failed', err);
       callback({ notifications: [], loaded: true, error: 'Unable to load activity notifications.' });
     },
   );
+
+  return () => {
+    disposed = true;
+    activeUnsub();
+  };
 }

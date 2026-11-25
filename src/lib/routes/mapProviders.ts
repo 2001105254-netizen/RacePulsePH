@@ -376,6 +376,12 @@ export function enhanceBasemapStyleForOceanAndHybrid(
   const isDark = theme === 'dark';
 
   for (const layer of style.layers as LayerSpecification[]) {
+    if (layer.type === 'fill-extrusion') {
+      const extrusionLayout = ((layer as { layout?: Record<string, unknown> }).layout ??= {});
+      extrusionLayout.visibility = 'none';
+      continue;
+    }
+
     const layout = (layer as { layout?: Record<string, unknown> }).layout;
     const textFont = layout?.['text-font'];
     if (Array.isArray(textFont) && textFont.length > 1 && textFont.every((f) => typeof f === 'string')) {
@@ -422,6 +428,23 @@ export function enhanceBasemapStyleForOceanAndHybrid(
   }
 
   return style;
+}
+
+export function applyMap2D3DBuildingVisibility(
+  map: maplibregl.Map,
+  enable3D: boolean,
+): void {
+  const layers = map.getStyle()?.layers;
+  if (!Array.isArray(layers)) return;
+  const visibility = enable3D ? 'visible' : 'none';
+  for (const layer of layers) {
+    if (layer.type !== 'fill-extrusion') continue;
+    try {
+      map.setLayoutProperty(layer.id, 'visibility', visibility);
+    } catch {
+      // Ignore while style is swapping.
+    }
+  }
 }
 
 export function findFirstVectorOverlayLayerId(

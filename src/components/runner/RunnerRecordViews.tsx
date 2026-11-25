@@ -22,6 +22,7 @@ import type {
   RouteSelectionState,
 } from '../../lib/routes/types';
 import type { RunnerLocationProjection } from '../../lib/routes/useRunnerGeolocation';
+import type { LiveTrailSegment } from '../../lib/runs/liveTrailTrack';
 import {
   formatDuration,
   formatPace,
@@ -51,6 +52,11 @@ export interface RecordLiveViewProps {
     isStale?: boolean;
   } | null;
   liveBreadcrumbPoints: Array<{ lat: number; lon: number }>;
+  liveTrailSegments: LiveTrailSegment[];
+  isAutoFollowing: boolean;
+  is3DEnabled: boolean;
+  onToggle3D: (enabled: boolean) => void;
+  onUserPanMap: () => void;
   liveCorridor: RunnerLocationProjection | null;
   liveTrackingError: string | null;
   liveElapsedMs: number;
@@ -80,6 +86,11 @@ export function RecordLiveView({
   courseScopeId,
   liveGpsPosition,
   liveBreadcrumbPoints,
+  liveTrailSegments,
+  isAutoFollowing,
+  is3DEnabled,
+  onToggle3D,
+  onUserPanMap,
   liveCorridor,
   liveTrackingError,
   liveElapsedMs,
@@ -111,10 +122,10 @@ export function RecordLiveView({
         : 'locating';
 
   return (
-    <div className="w-full max-w-6xl mx-auto py-1 pb-[max(1rem,var(--rp-safe-bottom))] space-y-3">
+    <div className="mx-auto w-full max-w-7xl space-y-2 pb-[max(1rem,var(--rp-safe-bottom))]">
       <section
         aria-label="Active run status"
-        className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2.5 flex flex-wrap items-center justify-between gap-2"
+        className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-default)] px-1 py-2"
       >
         <div className="min-w-0 flex items-center gap-2.5">
           <span
@@ -188,14 +199,14 @@ export function RecordLiveView({
         </section>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
-        <div className="lg:col-span-7 min-w-0">
+      <div className="min-w-0 overflow-clip rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)]">
+        <div className="min-w-0 [&_[data-fullscreen=false]>div:first-of-type]:rounded-none">
           <Suspense
             fallback={
               <div
                 role="status"
                 aria-label="Loading live map"
-                className="h-[320px] sm:h-[420px] lg:h-[480px] w-full rounded-2xl border border-[var(--border-default)] bg-[var(--surface-inset)] flex items-center justify-center text-xs font-semibold text-[var(--text-secondary)]"
+                className="grid h-[clamp(16rem,45dvh,36rem)] place-items-center bg-[var(--surface-inset)] text-sm text-[var(--text-secondary)] lg:h-[clamp(20rem,56dvh,48rem)]"
               >
                 Loading Philippine route map...
               </div>
@@ -207,38 +218,44 @@ export function RecordLiveView({
               markers={markers}
               selection={selection}
               theme={theme}
-              heightClassName="h-[320px] sm:h-[420px] lg:h-[480px]"
+              heightClassName="h-[clamp(16rem,45dvh,36rem)] lg:h-[clamp(20rem,56dvh,48rem)]"
               editable={false}
               cursorVisible={false}
-              hideHud={session.mode === 'free'}
-              hideBuiltInLayerToggles={false}
+              hideHud
+              compactControls
               provenance={provenance}
               courseScopeId={courseScopeId}
+              is3DEnabled={is3DEnabled}
+              onToggle3D={onToggle3D}
               gpsLivePosition={liveGpsPosition}
               gpsBreadcrumbPoints={liveBreadcrumbPoints}
-              locateStatus={liveLocateStatus}
+              gpsBreadcrumbSegments={liveTrailSegments}
+              locateStatus={
+                !isAutoFollowing && liveLocateStatus === 'active' ? 'idle' : liveLocateStatus
+              }
               flyToTrigger={flyToTrigger}
               onCameraMove={onMapFirstCameraReady}
+              onUserPanMap={onUserPanMap}
               onLocateMe={onLocateMe}
               onCenterOnUser={onCenterOnUser}
             />
           </Suspense>
         </div>
 
-        <div className="lg:col-span-5 min-w-0 space-y-3">
+        <div className="grid min-w-0 gap-2 p-3 sm:p-4 lg:grid-cols-[minmax(0,1fr)_minmax(15rem,20rem)] lg:items-center lg:gap-x-8">
           <section
             aria-label="Live run telemetry"
-            className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] overflow-hidden"
+            className="min-w-0"
           >
-            <dl className="grid grid-cols-2 divide-x divide-y divide-[var(--border-subtle)]">
-              <div className="p-3 space-y-0.5">
-                <dt className="text-xs font-normal text-[var(--text-secondary)]">Distance</dt>
-                <dd className="font-mono text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
+            <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-[var(--text-primary)] lg:grid-cols-3 lg:items-center">
+              <div className="col-span-2 border-b border-[var(--border-subtle)] pb-2 lg:col-span-1 lg:border-b-0 lg:pb-0">
+                <dt className="text-xs text-[var(--text-secondary)]">Distance</dt>
+                <dd className="flex items-baseline gap-2 text-4xl leading-none font-semibold tabular-nums lg:text-5xl">
                   {(session.distanceM / 1000).toFixed(2)}{' '}
                   <span className="text-xs font-normal text-[var(--text-secondary)]">km</span>
                 </dd>
               </div>
-              <div className="p-3 space-y-0.5">
+              <div>
                 <dt className="text-xs font-normal text-[var(--text-secondary)]">Elapsed Time</dt>
                 <dd className="font-mono text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
                   {formatDuration(liveElapsedMs)}
@@ -247,7 +264,7 @@ export function RecordLiveView({
                   Moving {formatDuration(session.movingTimeMs)}
                 </dd>
               </div>
-              <div className="p-3 space-y-0.5">
+              <div>
                 <dt className="text-xs font-normal text-[var(--text-secondary)]">Avg Pace</dt>
                 <dd className="font-mono text-lg font-semibold tabular-nums text-[var(--text-primary)]">
                   {formatPace(liveAvgPaceSecPerKm)}
@@ -256,20 +273,50 @@ export function RecordLiveView({
                   Current {formatPace(liveCurrentPaceSecPerKm)}
                 </dd>
               </div>
-              <div className="p-3 space-y-0.5">
-                <dt className="text-xs font-normal text-[var(--text-secondary)]">
-                  Elev Gain &amp; Calories
-                </dt>
-                <dd className="font-mono text-lg font-semibold tabular-nums text-[var(--text-primary)]">
-                  +{Math.round(session.elevationGainM)} m
-                </dd>
-                <dd className="font-mono text-xs tabular-nums text-[var(--text-secondary)]">
-                  {session.totalKcal.toFixed(1)} kcal
-                </dd>
-              </div>
             </dl>
+          </section>
 
-            <div className="border-t border-[var(--border-subtle)]">
+          <div className="mt-1 grid grid-cols-2 gap-2">
+            {isPaused ? (
+              <button
+                type="button"
+                onClick={onResumeRun}
+                className="min-h-12 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+              >
+                <Play className="w-4 h-4 shrink-0" aria-hidden="true" />
+                <span>Resume</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onPauseRun}
+                className="min-h-12 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2"
+              >
+                <Pause className="w-4 h-4 shrink-0" aria-hidden="true" />
+                <span>Pause</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={onFinishRun}
+              className="min-h-12 px-4 rounded-xl border border-[var(--border-button)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              <Square className="w-4 h-4 shrink-0" aria-hidden="true" />
+              <span>Finish Run</span>
+            </button>
+
+            {isPaused && <button
+              type="button"
+              onClick={onDiscardRun}
+              className="col-span-2 min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
+            >
+              <Trash2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              <span>Discard Run</span>
+            </button>}
+          </div>
+
+            <div className="border-t border-[var(--border-subtle)] lg:col-span-2">
               <button
                 type="button"
                 onClick={onToggleSplits}
@@ -277,7 +324,7 @@ export function RecordLiveView({
                 className="w-full min-h-11 px-3 py-2 flex items-center justify-between gap-2 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)] cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
               >
                 <span className="font-mono tabular-nums">
-                  Kilometer Splits ({liveSplits.length})
+                  Run details &amp; splits ({liveSplits.length})
                 </span>
                 {splitsOpen ? (
                   <ChevronUp className="w-4 h-4 shrink-0" aria-hidden="true" />
@@ -288,6 +335,9 @@ export function RecordLiveView({
 
               {splitsOpen && (
                 <div className="border-t border-[var(--border-subtle)] max-h-48 overflow-y-auto px-3 py-2">
+                  <p className="mb-2 text-sm tabular-nums text-[var(--text-secondary)]">
+                    Elevation gain {Math.round(session.elevationGainM)} m · {session.totalKcal.toFixed(1)} kcal
+                  </p>
                   {liveSplits.length === 0 ? (
                     <p className="text-xs text-[var(--text-secondary)] py-1">
                       Per-kilometer splits appear after recording 50 meters of movement.
@@ -328,51 +378,6 @@ export function RecordLiveView({
                 </div>
               )}
             </div>
-          </section>
-
-          <div className="grid grid-cols-2 gap-2.5">
-            {isPaused ? (
-              <button
-                type="button"
-                onClick={onResumeRun}
-                className="min-h-12 px-4 rounded-xl bg-red-700 hover:bg-red-600 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-              >
-                <Play className="w-4 h-4 shrink-0" aria-hidden="true" />
-                <span>Resume</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={onPauseRun}
-                className="min-h-12 px-4 rounded-xl border border-[var(--border-button)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)] text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-              >
-                <Pause className="w-4 h-4 shrink-0" aria-hidden="true" />
-                <span>Pause</span>
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={onFinishRun}
-              className={`min-h-12 px-4 rounded-xl text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400 ${
-                isPaused
-                  ? 'border border-[var(--border-button)] bg-[var(--surface-card)] hover:bg-[var(--surface-hover)] text-[var(--text-primary)]'
-                  : 'bg-red-700 hover:bg-red-600 text-white'
-              }`}
-            >
-              <Square className="w-4 h-4 shrink-0" aria-hidden="true" />
-              <span>Finish Run</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onDiscardRun}
-              className="col-span-2 min-h-11 px-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text-secondary)] hover:text-red-700 dark:hover:text-red-400 inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-            >
-              <Trash2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-              <span>Discard Run</span>
-            </button>
-          </div>
         </div>
       </div>
     </div>

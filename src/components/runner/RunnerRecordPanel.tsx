@@ -58,6 +58,7 @@ import {
   savePendingRunUpload,
 } from '../../lib/runs/runCrashRecovery';
 import { BufferedFixCoordinator } from '../../lib/runs/bufferedFixCoordinator';
+import { buildLiveTrailSegments } from '../../lib/runs/liveTrailTrack';
 import {
   buildCourseKey,
   buildDefaultRunTitle,
@@ -97,6 +98,8 @@ import {
   RecordLiveView,
   RecordSummaryView,
 } from './RunnerRecordViews';
+
+const RouteMapCanvas = React.lazy(() => import('../routes/RouteMapCanvas'));
 
 export interface RunnerRecordPanelProps {
   profile: UserProfile;
@@ -160,6 +163,8 @@ export default function RunnerRecordPanel({
   const [nowTickMs, setNowTickMs] = useState(() => Date.now());
   const [liveTrackingError, setLiveTrackingError] = useState<string | null>(null);
   const [splitsOpen, setSplitsOpen] = useState(false);
+  const [is3DEnabled, setIs3DEnabled] = useState(false);
+  const [autoFollowLive, setAutoFollowLive] = useState(true);
   const [flyToTrigger, setFlyToTrigger] = useState<{
     lat: number;
     lon: number;
@@ -186,6 +191,8 @@ export default function RunnerRecordPanel({
   const enrichmentGenRef = useRef(0);
   const hasAutoCenteredRef = useRef(false);
   const mapReadyForFreeCenterRef = useRef(false);
+  const autoFollowLiveRef = useRef(true);
+  const pendingSetupLocateRef = useRef(false);
   const lastNotificationAtRef = useRef(0);
   const lastRawTimestampRef = useRef(0);
   const segmentStartFloorMsRef = useRef(0);
@@ -202,15 +209,21 @@ export default function RunnerRecordPanel({
   profileWeightRef.current = profile.weightKg;
   onRecordingStateChangeRef.current = onRecordingStateChange;
 
-  const centerMapOn = useCallback((lat: number, lon: number) => {
+  const centerMapOn = useCallback((lat: number, lon: number, zoom?: number) => {
     flyNonceRef.current += 1;
     setFlyToTrigger({
       lat,
       lon,
-      zoom: 16,
+      zoom,
       nonce: flyNonceRef.current,
     });
   }, []);
+
+  useEffect(() => {
+    if (phase !== 'setup' || !pendingSetupLocateRef.current || !geo.position) return;
+    pendingSetupLocateRef.current = false;
+    centerMapOn(geo.position.lat, geo.position.lon, 17);
+  }, [phase, geo.position, centerMapOn]);
 
   const updateSession = useCallback((next: ActiveRunSession | null) => {
     sessionRef.current = next;
@@ -424,13 +437,17 @@ export default function RunnerRecordPanel({
       }
 
       if (
-        nextSession.mode === 'free' &&
         mapReadyForFreeCenterRef.current &&
-        !hasAutoCenteredRef.current &&
-        nextSession.gpsFilter.current
+        nextSession.gpsFilter.current &&
+        (autoFollowLiveRef.current || !hasAutoCenteredRef.current)
       ) {
+        const isFirstCenter = !hasAutoCenteredRef.current;
         hasAutoCenteredRef.current = true;
-        centerMapOn(nextSession.gpsFilter.current.lat, nextSession.gpsFilter.current.lon);
+        centerMapOn(
+          nextSession.gpsFilter.current.lat,
+          nextSession.gpsFilter.current.lon,
+          isFirstCenter ? 17 : undefined,
+        );
       }
 
       const now = Date.now();
@@ -739,9 +756,18 @@ export default function RunnerRecordPanel({
     if (transitionLockRef.current) return;
     transitionLockRef.current = true;
     try {
+      const preStartPos =
+        geo.position &&
+        Date.now() - geo.position.updatedAtMs <= 15_000 &&
+        geo.position.accuracyM <= 35
+          ? geo.position
+          : null;
       geo.stopTracking();
+      pendingSetupLocateRef.current = false;
       hasAutoCenteredRef.current = false;
       mapReadyForFreeCenterRef.current = false;
+      autoFollowLiveRef.current = true;
+      setAutoFollowLive(true);
       lastNotificationAtRef.current = 0;
       prevCorridorChainageRef.current = undefined;
       drainCoordinatorRef.current.reset();
@@ -795,6 +821,9 @@ export default function RunnerRecordPanel({
       lastRawTimestampRef.current = 0;
       updateSession(newSession);
       setNowTickMs(newSession.startedAtMs);
+      if (preStartPos) {
+        centerMapOn(preStartPos.lat, preStartPos.lon, 17);
+      }
       setPhase('live');
 
       await persistSnapshotLatest(newSession);
@@ -917,6 +946,8 @@ export default function RunnerRecordPanel({
         current.lastAcceptedAtMs || 0,
       );
       drainCoordinatorRef.current.reset();
+      autoFollowLiveRef.current = true;
+      setAutoFollowLive(true);
       updateSession(resumed);
       setNowTickMs(now);
       setLiveTrackingError(null);
@@ -1391,6 +1422,11 @@ export default function RunnerRecordPanel({
     };
   }, [gpsCurLat, gpsCurLon, gpsCurAcc, gpsCurHeading, isGpsStale]);
 
+  const liveTrailSegments = useMemo(
+    () => buildLiveTrailSegments(session?.points ?? [], liveGpsPosition),
+    [session?.points, liveGpsPosition],
+  );
+
   const liveCorridor = useMemo(() => {
     if (!session || session.mode !== 'course' || !courseRoute || !liveGpsPosition) {
       return null;
@@ -1516,6 +1552,16 @@ export default function RunnerRecordPanel({
         }
         liveGpsPosition={liveGpsPosition}
         liveBreadcrumbPoints={liveBreadcrumbPoints}
+        liveTrailSegments={liveTrailSegments}
+        isAutoFollowing={autoFollowLive}
+        is3DEnabled={is3DEnabled}
+        onToggle3D={setIs3DEnabled}
+        onUserPanMap={() => {
+          if (autoFollowLiveRef.current) {
+            autoFollowLiveRef.current = false;
+            setAutoFollowLive(false);
+          }
+        }}
         liveCorridor={liveCorridor}
         liveTrackingError={liveTrackingError}
         liveElapsedMs={liveElapsedMs}
@@ -1529,15 +1575,17 @@ export default function RunnerRecordPanel({
           if (!mapReadyForFreeCenterRef.current) {
             mapReadyForFreeCenterRef.current = true;
             const cur = sessionRef.current;
-            if (cur?.mode === 'free' && cur.gpsFilter.current && !hasAutoCenteredRef.current) {
+            if (cur?.gpsFilter.current && (autoFollowLiveRef.current || !hasAutoCenteredRef.current)) {
               hasAutoCenteredRef.current = true;
-              centerMapOn(cur.gpsFilter.current.lat, cur.gpsFilter.current.lon);
+              centerMapOn(cur.gpsFilter.current.lat, cur.gpsFilter.current.lon, 17);
             }
           }
         }}
         onLocateMe={() => {
+          autoFollowLiveRef.current = true;
+          setAutoFollowLive(true);
           if (liveGpsPosition) {
-            centerMapOn(liveGpsPosition.lat, liveGpsPosition.lon);
+            centerMapOn(liveGpsPosition.lat, liveGpsPosition.lon, 17);
           } else if (session.status === 'paused') {
             notify({
               tone: 'info',
@@ -1553,8 +1601,10 @@ export default function RunnerRecordPanel({
           }
         }}
         onCenterOnUser={() => {
+          autoFollowLiveRef.current = true;
+          setAutoFollowLive(true);
           if (!liveGpsPosition) return;
-          centerMapOn(liveGpsPosition.lat, liveGpsPosition.lon);
+          centerMapOn(liveGpsPosition.lat, liveGpsPosition.lon, 17);
         }}
         onPauseRun={() => void handlePauseRun()}
         onResumeRun={() => void handleResumeRun()}
@@ -1712,6 +1762,59 @@ export default function RunnerRecordPanel({
         </section>
       )}
 
+      <section aria-label="Run setup" className="overflow-clip rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)]">
+        <React.Suspense fallback={<div role="status" className="grid h-[clamp(16rem,42dvh,32rem)] place-items-center bg-[var(--surface-inset)] text-sm">Loading course map...</div>}>
+          <RouteMapCanvas
+            route={courseRoute ?? emptyFreeRunRoute}
+            routeIdentityKey={loadedCourse?.id ?? 'free-run-preview'}
+            markers={courseMarkers}
+            selection={mapSelection}
+            theme={theme}
+            heightClassName="h-[clamp(16rem,42dvh,32rem)] rounded-none!"
+            cursorVisible={false}
+            hideHud
+            is3DEnabled={is3DEnabled}
+            onToggle3D={setIs3DEnabled}
+            gpsLivePosition={geo.position}
+            locateStatus={geo.status}
+            compactControls
+            flyToTrigger={geo.position ? flyToTrigger : null}
+            onLocateMe={() => {
+              if (geo.position) {
+                centerMapOn(geo.position.lat, geo.position.lon, 17);
+              } else {
+                pendingSetupLocateRef.current = true;
+                geo.startTracking();
+              }
+            }}
+            onCenterOnUser={
+              geo.position
+                ? () => centerMapOn(geo.position!.lat, geo.position!.lon, 17)
+                : undefined
+            }
+            provenance={loadedCourse?.mapLayerProvenance}
+            courseScopeId={loadedCourse ? `${loadedCourse.raceId}_${loadedCourse.distanceId}` : undefined}
+          />
+        </React.Suspense>
+        <div className="flex flex-wrap items-center justify-between gap-3 p-4">
+          <div className="min-w-0">
+            <h2 className="text-xl font-semibold text-[var(--text-primary)]">
+              {selectedCatalogEntry?.raceName ?? (selectedCourseKey ? 'Course run' : 'Free Run')}
+            </h2>
+            <p className="text-sm text-[var(--text-secondary)]">
+              {selectedCatalogEntry?.distanceLabel ?? 'Record your route with GPS'}
+            </p>
+          </div>
+          <button type="button" onClick={() => void handleStartRun()}
+            disabled={Boolean(selectedCourseKey && courseLoading)}
+            className="inline-flex min-h-12 grow items-center justify-center gap-2 rounded-xl bg-red-700 px-6 text-sm font-semibold text-white hover:bg-red-600 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60 sm:grow-0">
+            <Play className="size-4" aria-hidden="true" />
+            {selectedCourseKey && courseLoading ? 'Loading Course...' : 'Start Run'}
+          </button>
+        </div>
+      </section>
+      <details className="space-y-3">
+        <summary className="min-h-12 cursor-pointer rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] px-4 py-3 text-sm font-semibold text-[var(--text-primary)]">Course, GPS and recording settings</summary>
       <section
         aria-labelledby={`${baseId}-gnss-heading`}
         className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-4 space-y-3"
@@ -1956,7 +2059,7 @@ export default function RunnerRecordPanel({
                   ? preselectedCourse.label
                   : 'Free Run (from current location)'}
               </strong>{' '}
-              is selected. Tap Start Run below when you are ready outdoors.
+              is selected. Tap Start Run when you are ready outdoors.
             </div>
           )}
 
@@ -2058,29 +2161,7 @@ export default function RunnerRecordPanel({
         </section>
       </div>
 
-      <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--surface-card)] p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="space-y-0.5">
-          <p className="font-display font-semibold text-sm text-[var(--text-primary)]">
-            {selectedCatalogEntry
-              ? `Course Ready: ${selectedCatalogEntry.raceName} (${selectedCatalogEntry.distanceLabel})`
-              : 'Free Run Ready'}
-          </p>
-          <p className="text-xs text-[var(--text-secondary)]">
-            GPS tracking starts when you tap Start Run and saves a recovery snapshot on each
-            accepted fix.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => void handleStartRun()}
-          disabled={Boolean(selectedCourseKey && courseLoading)}
-          className="min-h-12 w-full sm:w-auto sm:min-w-[200px] px-5 rounded-xl bg-red-700 hover:bg-red-600 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 shrink-0 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:focus-visible:ring-red-400"
-        >
-          <Play className="w-4 h-4 shrink-0" aria-hidden="true" />
-          <span>{selectedCourseKey && courseLoading ? 'Loading Course...' : 'Start Run'}</span>
-        </button>
-      </div>
+      </details>
 
       {calorieInfoOpen && (
         <RecordCalorieInfoDialog

@@ -23,6 +23,7 @@ import {
 import type { ProcessedRoute } from '../../lib/routes/geometry';
 import { projectCoordinateToRoute } from '../../lib/routes/anchoring';
 import {
+  applyMap2D3DBuildingVisibility,
   applySatelliteHybridRoadStyling,
   createPhilippinesTransformRequest,
   findFirstVectorOverlayLayerId,
@@ -35,6 +36,7 @@ import {
 import {
   buildGpsAccuracyCircleGeoJson,
 } from '../../lib/routes/gpsFilter';
+import { buildLiveTrailGeoJson, type LiveTrailSegment } from '../../lib/runs/liveTrailTrack';
 import {
   ensurePhilippinesMapProtocolRegistered,
   PHILIPPINES_MAX_BOUNDS,
@@ -96,9 +98,11 @@ interface RouteMapCanvasProps {
   studioOverlaySlot?: React.ReactNode;
   gpsLivePosition?: { lat: number; lon: number; accuracyM: number; headingDeg?: number | null; isStale?: boolean } | null;
   gpsBreadcrumbPoints?: Array<{ lat: number; lon: number }>;
+  gpsBreadcrumbSegments?: LiveTrailSegment[];
   locateStatus?: 'idle' | 'locating' | 'active' | 'denied' | 'unavailable' | 'error';
   onLocateMe?: () => void;
   onCenterOnUser?: () => void;
+  onUserPanMap?: () => void;
   selectedMarkerOverlay?: React.ReactNode;
   routeSnaps?: RouteSnapPin[];
   selectedSnapId?: string;
@@ -109,6 +113,7 @@ interface RouteMapCanvasProps {
   is3DEnabled?: boolean;
   onToggle3D?: (enabled: boolean) => void;
   hideBuiltInLayerToggles?: boolean;
+  compactControls?: boolean;
   hideHud?: boolean;
   provenance?: CourseMapLayerProvenance;
   courseScopeId?: string;
@@ -483,9 +488,11 @@ export default function RouteMapCanvas({
   studioOverlaySlot,
   gpsLivePosition,
   gpsBreadcrumbPoints,
+  gpsBreadcrumbSegments,
   locateStatus = 'idle',
   onLocateMe,
   onCenterOnUser,
+  onUserPanMap,
   selectedMarkerOverlay,
   routeSnaps = [],
   selectedSnapId,
@@ -497,6 +504,7 @@ export default function RouteMapCanvas({
   onToggle3D,
   provenance,
   hideBuiltInLayerToggles = false,
+  compactControls = false,
   hideHud = false,
   courseScopeId,
   simulateTileError = false,
@@ -513,6 +521,7 @@ export default function RouteMapCanvas({
   flyToTrigger,
   onCameraMove,
 }: RouteMapCanvasProps) {
+  const [toolsExpanded, setToolsExpanded] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const mountStartMsRef = useRef<number>(typeof performance !== 'undefined' ? performance.now() : 0);
@@ -628,6 +637,7 @@ export default function RouteMapCanvas({
     onPlaceStartPoint,
     onRemoveStartPoint,
     onRequestStartPointMode,
+    onUserPanMap,
   });
   latestCallbacksRef.current = {
     route,
@@ -647,6 +657,7 @@ export default function RouteMapCanvas({
     onPlaceStartPoint,
     onRemoveStartPoint,
     onRequestStartPointMode,
+    onUserPanMap,
   };
 
   const providerConfig = useMemo(
@@ -735,6 +746,12 @@ export default function RouteMapCanvas({
     }
     if (!map.getSource('rp-gps-survey')) {
       map.addSource('rp-gps-survey', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+    }
+    if (!map.getSource('rp-gps-survey-start')) {
+      map.addSource('rp-gps-survey-start', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
       });
@@ -899,11 +916,13 @@ export default function RouteMapCanvas({
         source: 'rp-gps-survey',
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: {
-          'line-color': '#000000',
-          'line-width': 6,
-          'line-opacity': 0.75,
+          'line-color': theme === 'dark' ? '#09090b' : '#ffffff',
+          'line-width': 7.5,
+          'line-opacity': 0.94,
         },
       });
+    } else {
+      map.setPaintProperty('rp-gps-survey-casing', 'line-color', theme === 'dark' ? '#09090b' : '#ffffff');
     }
 
     if (!map.getLayer('rp-gps-survey-line')) {
@@ -913,9 +932,25 @@ export default function RouteMapCanvas({
         source: 'rp-gps-survey',
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: {
-          'line-color': '#ea580c',
-          'line-width': 3.5,
+          'line-color': theme === 'dark' ? '#38bdf8' : '#0284c7',
+          'line-width': 4.2,
           'line-opacity': 1,
+        },
+      });
+    } else {
+      map.setPaintProperty('rp-gps-survey-line', 'line-color', theme === 'dark' ? '#38bdf8' : '#0284c7');
+    }
+
+    if (!map.getLayer('rp-gps-survey-start-dot')) {
+      map.addLayer({
+        id: 'rp-gps-survey-start-dot',
+        type: 'circle',
+        source: 'rp-gps-survey-start',
+        paint: {
+          'circle-radius': 6,
+          'circle-color': '#16a34a',
+          'circle-stroke-width': 2.5,
+          'circle-stroke-color': '#ffffff',
         },
       });
     }
@@ -946,6 +981,8 @@ export default function RouteMapCanvas({
               (route.bounds.south + route.bounds.north) / 2,
             ],
         zoom: isEmptyCanvas ? 5.2 : 13,
+        pitch: 0,
+        bearing: 0,
         minZoom: 4.4,
         maxZoom: 19,
         maxBounds: PHILIPPINES_MAX_BOUNDS,
@@ -990,6 +1027,10 @@ export default function RouteMapCanvas({
       onCameraMove?.(c.lat, c.lng, map.getZoom());
     };
     map.on('moveend', notifyCamera);
+    map.on('dragstart', () => {
+      if (cancelled) return;
+      latestCallbacksRef.current.onUserPanMap?.();
+    });
 
     map.on('load', () => {
       if (!map || cancelled) return;
@@ -1260,6 +1301,7 @@ export default function RouteMapCanvas({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !map.getStyle()) return;
+    applyMap2D3DBuildingVisibility(map, active3D);
     if (!active3D) {
       try {
         if (map.getTerrain()) map.setTerrain(null);
@@ -1699,24 +1741,37 @@ export default function RouteMapCanvas({
       }
     }
 
+    const resolvedSegments: LiveTrailSegment[] =
+      gpsBreadcrumbSegments && gpsBreadcrumbSegments.length > 0
+        ? gpsBreadcrumbSegments
+        : gpsBreadcrumbPoints && gpsBreadcrumbPoints.length > 0
+          ? [gpsBreadcrumbPoints.map((pt) => [pt.lon, pt.lat] as [number, number])]
+          : [];
+
     const trailSource = map.getSource('rp-gps-survey') as maplibregl.GeoJSONSource | undefined;
     if (trailSource) {
-      if (gpsBreadcrumbPoints && gpsBreadcrumbPoints.length >= 2) {
-        trailSource.setData({
+      trailSource.setData(buildLiveTrailGeoJson(resolvedSegments));
+    }
+
+    const startDotSource = map.getSource('rp-gps-survey-start') as maplibregl.GeoJSONSource | undefined;
+    if (startDotSource) {
+      const firstCoord = resolvedSegments[0]?.[0];
+      if (firstCoord) {
+        startDotSource.setData({
           type: 'FeatureCollection',
           features: [
             {
               type: 'Feature',
               properties: {},
               geometry: {
-                type: 'LineString',
-                coordinates: gpsBreadcrumbPoints.map((pt) => [pt.lon, pt.lat]),
+                type: 'Point',
+                coordinates: firstCoord,
               },
             },
           ],
         });
       } else {
-        trailSource.setData({ type: 'FeatureCollection', features: [] });
+        startDotSource.setData({ type: 'FeatureCollection', features: [] });
       }
     }
 
@@ -1787,7 +1842,7 @@ export default function RouteMapCanvas({
         arrowEl.style.display = 'none';
       }
     }
-  }, [gpsLivePosition, gpsBreadcrumbPoints, styleLoadedNonce]);
+  }, [gpsLivePosition, gpsBreadcrumbPoints, gpsBreadcrumbSegments, styleLoadedNonce]);
 
   // Lock map pan/rotate & enforce tool-appropriate cursor + live brush/eraser pointer capture
   const lockCamera =
@@ -2283,9 +2338,9 @@ export default function RouteMapCanvas({
         {(tileErrorNotice || basemapNotice || terrainNotice) && (
           <div
             role="status"
-            className="pointer-events-auto absolute left-3 top-3 z-10 flex max-w-[calc(100%-6rem)] flex-wrap items-center gap-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 px-3 py-1.5 text-xs text-[var(--text-primary)] shadow-sm"
+            className="pointer-events-auto absolute left-3 top-3 z-10 flex max-w-[calc(100%-8rem)] flex-wrap items-center gap-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)]/95 px-3 py-2 text-xs text-[var(--text-primary)] shadow-sm"
           >
-            <span>{tileErrorNotice || terrainNotice || basemapNotice}</span>
+            <span>{tileErrorNotice || terrainNotice || (compactControls ? 'Map tiles unavailable. Showing an offline map.' : basemapNotice)}</span>
             {providerId === 'local-fallback' && !tileErrorNotice && (
               <button
                 type="button"
@@ -2300,7 +2355,22 @@ export default function RouteMapCanvas({
         )}
 
         {/* Top-right compact 2-column map zoom, fit, locate, fullscreen, satellite, 3D & preview controls */}
-        <div className="pointer-events-auto absolute right-2.5 top-2.5 z-10 grid grid-cols-2 gap-1.5">
+        <div className={`pointer-events-auto absolute right-3 top-3 z-10 grid grid-cols-2 gap-1 ${
+          compactControls && !toolsExpanded && !fullscreenActive ? '[&>button:not([data-quick-control])]:hidden' : ''
+        }`}>
+          {compactControls && !fullscreenActive && (
+            <button
+              type="button"
+              data-quick-control
+              aria-expanded={toolsExpanded}
+              aria-label="Map tools"
+              title="Map tools"
+              onClick={() => setToolsExpanded((open) => !open)}
+              className="grid size-11 place-items-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--text-primary)] shadow-sm"
+            >
+              <Layers className="size-4" aria-hidden="true" />
+            </button>
+          )}
           <button
             type="button"
             onClick={() => mapRef.current?.zoomIn({ duration: reducedMotion ? 0 : 180 })}
@@ -2331,6 +2401,7 @@ export default function RouteMapCanvas({
           {onLocateMe && (
             <button
               type="button"
+              data-quick-control
               onClick={() => {
                 if (gpsLivePosition && onCenterOnUser) {
                   onCenterOnUser();
@@ -2401,14 +2472,16 @@ export default function RouteMapCanvas({
                 onClick={toggle3D}
                 aria-pressed={active3D}
                 aria-label={active3D ? 'Switch to 2D map view' : 'Switch to 3D terrain relief view'}
-                title={active3D ? 'Switch to 2D' : '3D Terrain'}
+                title={active3D ? 'Switch to 2D' : '2D default (tap for 3D)'}
                 className={`flex min-h-11 min-w-11 lg:min-h-9 lg:min-w-9 items-center justify-center rounded-xl border text-xs font-semibold shadow-sm ${
                   active3D
                     ? 'border-red-600 bg-red-700 text-white'
                     : 'border-[var(--border-default)] bg-[var(--surface-card)]/95 text-[var(--text-primary)] hover:border-red-600/60'
                 }`}
               >
-                <Layers className="h-4 w-4" aria-hidden="true" />
+                <span className="font-mono text-[11px] font-semibold" aria-hidden="true">
+                  {active3D ? '3D' : '2D'}
+                </span>
               </button>
             </>
           )}

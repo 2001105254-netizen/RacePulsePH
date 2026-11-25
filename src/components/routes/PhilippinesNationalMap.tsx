@@ -4,6 +4,7 @@ import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Focus, Globe, Layers, Minus, Plus, RefreshCw } from 'lucide-react';
 import {
+  applyMap2D3DBuildingVisibility,
   applySatelliteHybridRoadStyling,
   createPhilippinesTransformRequest,
   findFirstVectorOverlayLayerId,
@@ -381,6 +382,8 @@ export default function PhilippinesNationalMap({
         style: providerConfig.fallbackStyle,
         center: ISLAND_GROUP_VIEWPORTS.all.center,
         zoom: ISLAND_GROUP_VIEWPORTS.all.zoom,
+        pitch: 0,
+        bearing: 0,
         minZoom: 4.4,
         maxZoom: 19,
         maxBounds: PHILIPPINES_MAX_BOUNDS,
@@ -537,6 +540,8 @@ export default function PhilippinesNationalMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !map.getStyle()) return;
+
+    applyMap2D3DBuildingVisibility(map, is3D);
 
     if (!is3D) {
       try {

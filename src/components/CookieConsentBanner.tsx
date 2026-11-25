@@ -27,10 +27,20 @@ export default function CookieConsentBanner({
 }: CookieConsentBannerProps) {
   const [consent, setConsent] = useState<CookieConsentState | null>(() => readConsentState());
   const [showPreferences, setShowPreferences] = useState(false);
+  const [guideActive, setGuideActive] = useState(false);
   const [analyticsOptIn, setAnalyticsOptIn] = useState<boolean>(() => consent?.analytics ?? false);
   const [marketingOptIn, setMarketingOptIn] = useState<boolean>(() => consent?.marketing ?? false);
   const dialogId = useId();
   const initialFocusRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const onGuideToggle = (event: Event) => {
+      const detail = (event as CustomEvent<{ open?: boolean }>).detail;
+      setGuideActive(Boolean(detail?.open));
+    };
+    window.addEventListener('racepulse:android-guide-open', onGuideToggle);
+    return () => window.removeEventListener('racepulse:android-guide-open', onGuideToggle);
+  }, []);
 
   useEffect(() => {
     const sync = () => {
@@ -77,7 +87,7 @@ export default function CookieConsentBanner({
 
   return (
     <>
-      {!consent && !showPreferences && (
+      {!consent && !showPreferences && !guideActive && (
         <div
           className={
             floating
