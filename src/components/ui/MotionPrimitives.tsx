@@ -165,9 +165,9 @@ export function AnimatedTabView({
 /** GPU-composited translateX shimmer mask disabled under reduced motion. */
 export function ShimmerSweep() {
   return (
-    <div
+    <span
       aria-hidden="true"
-      className="rp-shimmer-sweep pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-black/5 dark:via-white/10 to-transparent"
+      className="rp-shimmer-sweep block pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-black/5 dark:via-white/10 to-transparent"
     />
   );
 }

@@ -9,6 +9,7 @@ import {
 import { getBytes, ref, uploadBytes } from 'firebase/storage';
 import { auth, db, storage } from '../../firebase';
 import { authenticatedFetch } from '../access';
+import { resolveCloudFunctionBaseUrl } from '../devFunctionsProxy';
 import { CircuitOpenError, parseRetryAfterSeconds } from '../resilientFetch';
 import { round1 } from './calorieEngine';
 import type { AthleteProgression, UserBadgeAward } from '../badges/types';
@@ -85,8 +86,11 @@ export function getCommunityApiBaseUrl(configuredUrl?: string): string {
       : typeof import.meta !== 'undefined'
         ? (import.meta.env?.VITE_COMMUNITY_API_URL as string | undefined)
         : undefined;
-  const trimmed = typeof raw === 'string' ? raw.trim().replace(/\/+$/, '') : '';
-  return trimmed || DEFAULT_COMMUNITY_API_URL;
+  return resolveCloudFunctionBaseUrl({
+    configuredUrl: raw,
+    defaultUrl: DEFAULT_COMMUNITY_API_URL,
+    functionName: 'communityApi',
+  });
 }
 
 export function createCommunityRequestId(): string {

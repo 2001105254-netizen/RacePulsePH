@@ -38,11 +38,12 @@ function resolveDefaultStorageBucket() {
 }
 
 const triggerBucket = resolveDefaultStorageBucket();
+const triggerRegion = process.env.RACEPULSE_STORAGE_TRIGGER_REGION || 'us-east1';
 
 exports.onStorageObjectFinalized = onObjectFinalized(
   {
     bucket: triggerBucket,
-    region: 'asia-southeast1',
+    region: triggerRegion,
     maxInstances: 10,
   },
   (event) => handleStorageEvent(event, 'finalize'),
@@ -51,7 +52,7 @@ exports.onStorageObjectFinalized = onObjectFinalized(
 exports.onStorageObjectDeleted = onObjectDeleted(
   {
     bucket: triggerBucket,
-    region: 'asia-southeast1',
+    region: triggerRegion,
     maxInstances: 10,
   },
   (event) => handleStorageEvent(event, 'delete'),

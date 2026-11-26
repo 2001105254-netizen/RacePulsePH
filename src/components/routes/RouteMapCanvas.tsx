@@ -960,6 +960,7 @@ export default function RouteMapCanvas({
   syncRouteLayersRef.current = syncRouteLayers;
   const fitRouteBoundsRef = useRef(fitRouteBounds);
   fitRouteBoundsRef.current = fitRouteBounds;
+  const appliedStyleKeyRef = useRef<string>('');
 
   // Initialize map once immediately with the local Philippine reference grid,
   // then progressively load national vector tiles clipped strictly to PH bounds.
@@ -997,6 +998,7 @@ export default function RouteMapCanvas({
     }
 
     mapRef.current = map;
+    appliedStyleKeyRef.current = `local-fallback:${theme}`;
 
     map.on('error', (ev) => {
       if (cancelled || !map) return;
@@ -1014,6 +1016,17 @@ export default function RouteMapCanvas({
         setBasemapNotice('Live map tiles unavailable. Showing Philippine archipelago reference.');
       }
     });
+
+    if (typeof map.setMissingStyleImageResolver === 'function') {
+      map.setMissingStyleImageResolver((id) => {
+        if (cancelled || !map || !id || map.hasImage(id)) return;
+        try {
+          map.addImage(id, { width: 1, height: 1, data: new Uint8Array([0, 0, 0, 0]) });
+        } catch {
+          // Ignore if style is swapping.
+        }
+      });
+    }
 
     map.on('style.load', () => {
       if (!map || cancelled) return;
@@ -1121,6 +1134,7 @@ export default function RouteMapCanvas({
       gpsLiveMarkerRef.current = null;
       map?.remove();
       mapRef.current = null;
+      appliedStyleKeyRef.current = '';
     };
   }, [webglReady]);
 
@@ -1131,7 +1145,10 @@ export default function RouteMapCanvas({
     let cancelled = false;
     const applyStyle = async () => {
       if (providerId === 'local-fallback' || !providerConfig.styleUrl) {
-        map.setStyle(providerConfig.fallbackStyle);
+        const nextKey = `local-fallback:${theme}`;
+        if (appliedStyleKeyRef.current === nextKey) return;
+        appliedStyleKeyRef.current = nextKey;
+        map.setStyle(providerConfig.fallbackStyle, { diff: false });
         return;
       }
       try {
@@ -1142,13 +1159,15 @@ export default function RouteMapCanvas({
         );
         if (!cancelled) {
           setBasemapNotice('');
-          map.setStyle(json);
+          appliedStyleKeyRef.current = `${providerId}:${theme}`;
+          map.setStyle(json, { diff: false });
         }
       } catch {
         if (!cancelled) {
           setProviderId('local-fallback');
           setBasemapNotice('Live map tiles unavailable. Showing Philippine archipelago grid.');
-          map.setStyle(providerConfig.fallbackStyle);
+          appliedStyleKeyRef.current = `local-fallback:${theme}`;
+          map.setStyle(providerConfig.fallbackStyle, { diff: false });
         }
       }
     };

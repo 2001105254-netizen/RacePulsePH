@@ -3,6 +3,7 @@ import { doc, getDocFromServer, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { ChipRead } from '../types';
 import { authenticatedFetch, useAccess } from './access';
+import { resolveCloudFunctionBaseUrl } from './devFunctionsProxy';
 import { computeBackoffMs, parseRetryAfterSeconds } from './resilientFetch';
 
 const MAX_AUTO_RETRIES_PER_SCAN = 8;
@@ -129,7 +130,12 @@ export function useOfflineScanQueue(raceId: string) {
       flushing.current = true;
       try {
         // Verify authorization ONCE per batch rather than per queued scan.
-        const sessionUrl = `${(import.meta.env.VITE_ACCESS_API_URL || 'https://asia-southeast1-racepulseph.cloudfunctions.net/accessApi').replace(/\/$/, '')}/session`;
+        const accessBaseUrl = resolveCloudFunctionBaseUrl({
+          configuredUrl: import.meta.env.VITE_ACCESS_API_URL as string | undefined,
+          defaultUrl: 'https://asia-southeast1-racepulseph.cloudfunctions.net/accessApi',
+          functionName: 'accessApi',
+        });
+        const sessionUrl = `${accessBaseUrl}/session`;
         const session = await authenticatedFetch(sessionUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

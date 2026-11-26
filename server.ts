@@ -1,4 +1,5 @@
 import { formatRaceTime } from './src/lib/preciseTime';
+import { DEV_FUNCTIONS_PROXY_PREFIX, resolveDevProxyUpstreamUrl } from './src/lib/devFunctionsProxy';
 import express from "express";
 import path from "path";
 import fs from "fs";
@@ -458,13 +459,22 @@ async function startServer() {
     next();
   });
 
-  // Allow bounded JSON payloads and preserve rawBody for HMAC verification
-  app.use(express.json({
+  // Allow bounded JSON payloads and preserve rawBody for HMAC verification.
+  // Skip /_dev-functions/communityApi/* in non-production so GPS track uploads up to 2.5 MB
+  // are parsed by the dev-proxy body parser without relaxing the 64kb LAN cap.
+  const defaultJsonParser = express.json({
     limit: "64kb",
     verify: (req, _res, buf) => {
       (req as express.Request & { rawBody?: string }).rawBody = buf.toString('utf8');
     },
-  }));
+  });
+  app.use((req, res, next) => {
+    if (process.env.NODE_ENV !== "production" && req.path.startsWith(`${DEV_FUNCTIONS_PROXY_PREFIX}/communityApi/`)) {
+      next();
+      return;
+    }
+    defaultJsonParser(req, res, next);
+  });
 
   // Scoped CORS Headers (hosted domains, Capacitor localhost, and private RFC1918 LAN terminals)
   app.use((req, res, next) => {
@@ -967,6 +977,50 @@ async function startServer() {
   // ========== VITE / STATIC WEB FILES SERVING ==========
 
   if (process.env.NODE_ENV !== "production") {
+    // Dev-only same-origin proxy to fixed RacePulsePH Cloud Functions so http://localhost:3000
+    // works without weakening production Zero Trust CORS allowlists.
+    app.use(`${DEV_FUNCTIONS_PROXY_PREFIX}/communityApi/*`, express.json({ limit: '2.5mb' }));
+    app.post(`${DEV_FUNCTIONS_PROXY_PREFIX}/:fnName/*`, async (req, res) => {
+      const fnName = String(req.params.fnName || '');
+      const subPath = String((req.params as Record<string, string>)[0] || '');
+      const upstreamUrl = resolveDevProxyUpstreamUrl(fnName, subPath);
+      if (!upstreamUrl) {
+        res.status(400).json({ error: 'Invalid dev function proxy target.' });
+        return;
+      }
+      try {
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          Origin: 'https://racepulseph.web.app',
+        };
+        const authHeader = req.get('Authorization');
+        if (authHeader) headers.Authorization = authHeader;
+        const appCheckHeader = req.get('X-Firebase-AppCheck');
+        if (appCheckHeader) headers['X-Firebase-AppCheck'] = appCheckHeader;
+        const reqIdHeader = req.get('X-Request-Id');
+        if (reqIdHeader) headers['X-Request-Id'] = reqIdHeader;
+
+        const upstream = await fetch(upstreamUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(req.body ?? {}),
+          signal: AbortSignal.timeout(20_000),
+        });
+
+        const retryAfter = upstream.headers.get('retry-after');
+        if (retryAfter) res.setHeader('Retry-After', retryAfter);
+        const upstreamReqId = upstream.headers.get('x-request-id');
+        if (upstreamReqId) res.setHeader('X-Request-Id', upstreamReqId);
+        const contentType = upstream.headers.get('content-type') || 'application/json';
+        res.setHeader('Content-Type', contentType);
+        const text = await upstream.text();
+        res.status(upstream.status).send(text);
+      } catch (err) {
+        console.warn('[dev-functions-proxy] upstream request failed', err instanceof Error ? err.message : String(err));
+        res.status(502).json({ error: 'Unable to reach RacePulsePH Cloud Functions from dev proxy.' });
+      }
+    });
+
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },

@@ -1,7 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { StyleSpecification } from 'maplibre-gl';
-import { enhanceBasemapStyleForOceanAndHybrid } from '../src/lib/routes/mapProviders.ts';
+import { expression as styleSpecExpression } from '@maplibre/maplibre-gl-style-spec';
+import {
+  enhanceBasemapStyleForOceanAndHybrid,
+  guardNumericComparisonFilter,
+} from '../src/lib/routes/mapProviders.ts';
 import {
   buildLiveTrailGeoJson,
   buildLiveTrailSegments,
@@ -129,4 +133,119 @@ test('ingestRunFix refines an opening coarse anchor without inflating distance w
   assert.equal(session.points.length, 1, 'Sharp initial fix should replace opening coarse anchor');
   assert.equal(session.distanceM, 0, 'Coarse-to-sharp anchor refinement must not count fake jump distance');
   assert.ok(session.points[0].accuracyM <= 10);
+});
+
+test('enhanceBasemapStyleForOceanAndHybrid strips missing wood/circle images, hides US shields, and guards numeric filters', () => {
+  const style: StyleSpecification = {
+    version: 8,
+    sources: {},
+    layers: [
+      {
+        id: 'landcover_wood',
+        type: 'fill',
+        source: 'openmaptiles',
+        'source-layer': 'landcover',
+        paint: { 'fill-pattern': 'wood-pattern' },
+      },
+      {
+        id: 'place_town',
+        type: 'symbol',
+        source: 'openmaptiles',
+        'source-layer': 'place',
+        layout: {
+          'icon-image': ['step', ['zoom'], 'circle-11', 9, ''],
+          'text-field': '{name}',
+        },
+      },
+      {
+        id: 'place_city',
+        type: 'symbol',
+        source: 'openmaptiles',
+        'source-layer': 'place',
+        layout: {
+          'icon-image': 'circle-11',
+          'text-field': '{name}',
+        },
+      },
+      {
+        id: 'highway-shield-non-us',
+        type: 'symbol',
+        source: 'openmaptiles',
+        'source-layer': 'transportation_name',
+        filter: [
+          'all',
+          ['<=', ['get', 'ref_length'], 6],
+          ['match', ['geometry-type'], ['LineString', 'MultiLineString'], true, false],
+        ],
+        layout: { 'text-field': '{ref}' },
+      },
+      {
+        id: 'highway-shield-us-interstate',
+        type: 'symbol',
+        source: 'openmaptiles',
+        'source-layer': 'transportation_name',
+        filter: ['all', ['<=', ['get', 'ref_length'], 6]],
+        layout: { 'text-field': '{ref}' },
+      },
+      {
+        id: 'road_shield_us',
+        type: 'symbol',
+        source: 'openmaptiles',
+        'source-layer': 'transportation_name',
+        filter: ['all', ['<=', ['get', 'ref_length'], 6]],
+        layout: { 'text-field': '{ref}' },
+      },
+    ],
+  };
+
+  const enhanced = enhanceBasemapStyleForOceanAndHybrid(style, 'dark');
+
+  const wood = enhanced.layers.find((l) => l.id === 'landcover_wood') as { paint?: Record<string, unknown> };
+  assert.equal(wood.paint?.['fill-pattern'], undefined);
+  assert.equal(typeof wood.paint?.['fill-color'], 'string');
+
+  const town = enhanced.layers.find((l) => l.id === 'place_town') as { layout?: Record<string, unknown> };
+  assert.equal(town.layout?.['icon-image'], undefined);
+
+  const city = enhanced.layers.find((l) => l.id === 'place_city') as { layout?: Record<string, unknown> };
+  assert.equal(city.layout?.['icon-image'], undefined);
+
+  const usInterstate = enhanced.layers.find((l) => l.id === 'highway-shield-us-interstate') as {
+    layout?: Record<string, unknown>;
+  };
+  const usRoad = enhanced.layers.find((l) => l.id === 'road_shield_us') as {
+    layout?: Record<string, unknown>;
+  };
+  assert.equal(usInterstate.layout?.visibility, 'none');
+  assert.equal(usRoad.layout?.visibility, 'none');
+
+  const nonUs = enhanced.layers.find((l) => l.id === 'highway-shield-non-us') as { filter?: unknown };
+  const compiled = styleSpecExpression.createExpression(
+    nonUs.filter as never,
+    'layers[highway-shield-non-us].filter',
+    {
+      type: 'boolean',
+      'property-type': 'data-driven',
+      overridable: false,
+      transition: false,
+    } as never,
+  );
+  assert.equal(compiled.result, 'success');
+  if (compiled.result === 'success') {
+    const lineFeature = { type: 'LineString', properties: {} };
+    assert.equal(compiled.value.evaluate({ zoom: 10 }, lineFeature as never), false);
+    assert.equal(
+      compiled.value.evaluate({ zoom: 10 }, { ...lineFeature, properties: { ref_length: null } } as never),
+      false,
+    );
+    assert.equal(
+      compiled.value.evaluate({ zoom: 10 }, { ...lineFeature, properties: { ref_length: 4 } } as never),
+      true,
+    );
+  }
+
+  // Standalone guardNumericComparisonFilter should not double-wrap already guarded comparisons
+  const guardedOnce = guardNumericComparisonFilter(['all', ['<=', ['get', 'rank'], 3]]);
+  const guardedTwice = guardNumericComparisonFilter(guardedOnce);
+  assert.deepEqual(guardedTwice, guardedOnce);
 });

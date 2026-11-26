@@ -5,6 +5,7 @@ import { auth, db } from '../firebase';
 import { Race, UserProfile } from '../types';
 import { defaults } from './accessPolicy';
 import { getAppCheckHeaders } from './botProtection';
+import { resolveCloudFunctionBaseUrl } from './devFunctionsProxy';
 import { boundedFetch, parseRetryAfterSeconds } from './resilientFetch';
 import catalog from './access-presets.json';
 type AccessState = { overrides?: Record<string, boolean>; permissions?: Record<string, boolean>; scope?: string; raceIds?: string[]; status?: string; revision?: number };
@@ -134,7 +135,11 @@ export async function authenticatedFetch(url: string, init: RequestInit = {}) {
   );
 }
 export async function accessCommand(path: string, body: object) {
-  const url = (import.meta.env.VITE_ACCESS_API_URL || 'https://asia-southeast1-racepulseph.cloudfunctions.net/accessApi').replace(/\/$/, '');
+  const url = resolveCloudFunctionBaseUrl({
+    configuredUrl: import.meta.env.VITE_ACCESS_API_URL as string | undefined,
+    defaultUrl: 'https://asia-southeast1-racepulseph.cloudfunctions.net/accessApi',
+    functionName: 'accessApi',
+  });
   const response = await authenticatedFetch(`${url}/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {

@@ -368,6 +368,7 @@ export default function PhilippinesNationalMap({
 
   const syncOverlaysRef = useRef(syncNationalOverlays);
   syncOverlaysRef.current = syncNationalOverlays;
+  const appliedStyleKeyRef = useRef<string>('');
 
   useEffect(() => {
     const el = containerRef.current;
@@ -398,6 +399,7 @@ export default function PhilippinesNationalMap({
     }
 
     mapRef.current = map;
+    appliedStyleKeyRef.current = `local-fallback:${theme}`;
 
     map.on('error', (ev) => {
       if (cancelled || !map) return;
@@ -415,6 +417,17 @@ export default function PhilippinesNationalMap({
         setNotice('Showing Philippine archipelago base grid.');
       }
     });
+
+    if (typeof map.setMissingStyleImageResolver === 'function') {
+      map.setMissingStyleImageResolver((id) => {
+        if (cancelled || !map || !id || map.hasImage(id)) return;
+        try {
+          map.addImage(id, { width: 1, height: 1, data: new Uint8Array([0, 0, 0, 0]) });
+        } catch {
+          // Ignore if style is swapping.
+        }
+      });
+    }
 
     map.on('style.load', () => {
       if (!map || cancelled) return;
@@ -443,6 +456,7 @@ export default function PhilippinesNationalMap({
       markerRefs.current = [];
       map?.remove();
       mapRef.current = null;
+      appliedStyleKeyRef.current = '';
     };
   }, [webglReady]);
 
@@ -453,7 +467,10 @@ export default function PhilippinesNationalMap({
     let cancelled = false;
     const apply = async () => {
       if (providerId === 'local-fallback' || !providerConfig.styleUrl) {
-        map.setStyle(providerConfig.fallbackStyle);
+        const nextKey = `local-fallback:${theme}`;
+        if (appliedStyleKeyRef.current === nextKey) return;
+        appliedStyleKeyRef.current = nextKey;
+        map.setStyle(providerConfig.fallbackStyle, { diff: false });
         return;
       }
       try {
@@ -464,12 +481,14 @@ export default function PhilippinesNationalMap({
         );
         if (!cancelled) {
           setNotice('');
-          map.setStyle(json);
+          appliedStyleKeyRef.current = `${providerId}:${theme}`;
+          map.setStyle(json, { diff: false });
         }
       } catch {
         if (!cancelled) {
           setProviderId('local-fallback');
-          map.setStyle(providerConfig.fallbackStyle);
+          appliedStyleKeyRef.current = `local-fallback:${theme}`;
+          map.setStyle(providerConfig.fallbackStyle, { diff: false });
         }
       }
     };

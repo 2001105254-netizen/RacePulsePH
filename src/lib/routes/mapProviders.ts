@@ -367,6 +367,105 @@ const PATH_ROAD_IDS = new Set([
 ]);
 
 const HYBRID_LABEL_RE = /^(highway[_-]name|place_|label_|water_name)/;
+const NUMERIC_COMPARISON_OPS = new Set(['<', '<=', '>', '>=']);
+const US_ONLY_SHIELD_IDS = new Set(['highway-shield-us-interstate', 'road_shield_us']);
+
+function extractGetPropertyName(node: unknown): string | null {
+  if (Array.isArray(node) && node.length === 2 && node[0] === 'get' && typeof node[1] === 'string') {
+    return node[1];
+  }
+  return null;
+}
+
+function isTypeofNumberGuard(node: unknown, prop: string): boolean {
+  if (!Array.isArray(node) || node.length !== 3 || node[0] !== '==' || node[2] !== 'number') {
+    return false;
+  }
+  const typeExpr = node[1];
+  return (
+    Array.isArray(typeExpr) &&
+    typeExpr.length === 2 &&
+    typeExpr[0] === 'typeof' &&
+    extractGetPropertyName(typeExpr[1]) === prop
+  );
+}
+
+function makeTypeofNumberGuard(prop: string): unknown[] {
+  return ['==', ['typeof', ['get', prop]], 'number'];
+}
+
+export function guardNumericComparisonFilter(filter: unknown): unknown {
+  if (!Array.isArray(filter) || filter.length === 0) return filter;
+  const op = filter[0];
+
+  if (typeof op === 'string' && NUMERIC_COMPARISON_OPS.has(op) && filter.length === 3) {
+    const leftProp = extractGetPropertyName(filter[1]);
+    const rightProp = extractGetPropertyName(filter[2]);
+    if (leftProp && typeof filter[2] === 'number') {
+      return ['all', makeTypeofNumberGuard(leftProp), filter];
+    }
+    if (rightProp && typeof filter[1] === 'number') {
+      return ['all', makeTypeofNumberGuard(rightProp), filter];
+    }
+    return filter;
+  }
+
+  if (op === 'all') {
+    const existingGuards = new Set<string>();
+    for (let i = 1; i < filter.length; i += 1) {
+      const child = filter[i];
+      if (
+        Array.isArray(child) &&
+        child.length === 3 &&
+        child[0] === '==' &&
+        child[2] === 'number' &&
+        Array.isArray(child[1]) &&
+        child[1][0] === 'typeof'
+      ) {
+        const guardedProp = extractGetPropertyName(child[1][1]);
+        if (guardedProp) existingGuards.add(guardedProp);
+      }
+    }
+
+    const nextItems: unknown[] = ['all'];
+    for (let i = 1; i < filter.length; i += 1) {
+      const child = filter[i];
+      if (
+        Array.isArray(child) &&
+        child.length === 3 &&
+        typeof child[0] === 'string' &&
+        NUMERIC_COMPARISON_OPS.has(child[0])
+      ) {
+        const leftProp = extractGetPropertyName(child[1]);
+        const rightProp = extractGetPropertyName(child[2]);
+        const targetProp =
+          leftProp && typeof child[2] === 'number'
+            ? leftProp
+            : rightProp && typeof child[1] === 'number'
+              ? rightProp
+              : null;
+        if (targetProp) {
+          if (!existingGuards.has(targetProp) && !isTypeofNumberGuard(nextItems[nextItems.length - 1], targetProp)) {
+            nextItems.push(makeTypeofNumberGuard(targetProp));
+            existingGuards.add(targetProp);
+          }
+          nextItems.push(child);
+          continue;
+        }
+      }
+      nextItems.push(guardNumericComparisonFilter(child));
+    }
+    return nextItems;
+  }
+
+  return [op, ...filter.slice(1).map((item) => guardNumericComparisonFilter(item))];
+}
+
+function expressionReferencesImage(expr: unknown, imageId: string): boolean {
+  if (expr === imageId) return true;
+  if (!Array.isArray(expr)) return false;
+  return expr.some((item) => expressionReferencesImage(item, imageId));
+}
 
 export function enhanceBasemapStyleForOceanAndHybrid(
   style: StyleSpecification,
@@ -376,6 +475,10 @@ export function enhanceBasemapStyleForOceanAndHybrid(
   const isDark = theme === 'dark';
 
   for (const layer of style.layers as LayerSpecification[]) {
+    if ('filter' in layer && Array.isArray(layer.filter)) {
+      (layer as { filter?: unknown }).filter = guardNumericComparisonFilter(layer.filter);
+    }
+
     if (layer.type === 'fill-extrusion') {
       const extrusionLayout = ((layer as { layout?: Record<string, unknown> }).layout ??= {});
       extrusionLayout.visibility = 'none';
@@ -383,12 +486,25 @@ export function enhanceBasemapStyleForOceanAndHybrid(
     }
 
     const layout = (layer as { layout?: Record<string, unknown> }).layout;
+    if (US_ONLY_SHIELD_IDS.has(layer.id)) {
+      const shieldLayout = ((layer as { layout?: Record<string, unknown> }).layout ??= {});
+      shieldLayout.visibility = 'none';
+    }
+    if (layout && expressionReferencesImage(layout['icon-image'], 'circle-11')) {
+      delete layout['icon-image'];
+    }
     const textFont = layout?.['text-font'];
     if (Array.isArray(textFont) && textFont.length > 1 && textFont.every((f) => typeof f === 'string')) {
       layout!['text-font'] = [textFont[0]];
     }
 
     const paint = ((layer as { paint?: Record<string, unknown> }).paint ??= {});
+    if (paint['fill-pattern'] === 'wood-pattern') {
+      delete paint['fill-pattern'];
+      if (isDark && !paint['fill-color']) {
+        paint['fill-color'] = '#1b2a22';
+      }
+    }
     if (layer.id === 'background' && layer.type === 'background') {
       if (isDark) paint['background-color'] = '#161b22';
       continue;
